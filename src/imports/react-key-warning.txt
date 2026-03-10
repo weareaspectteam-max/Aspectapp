@@ -1,0 +1,48 @@
+ Warning: Encountered two children with the same key, `null`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version. Component Stack
+    at 74642607-0d7f-4c1d-9e11-ec17b4b69552-v2-figmaiframepreview.figma.site/svg
+    at Surface (recharts.js:6048:25)
+    at 74642607-0d7f-4c1d-9e11-ec17b4b69552-v2-figmaiframepreview.figma.site/div
+    at ChartLayoutContextProvider2 (recharts.js:25504:28)
+    at CategoricalChartWrapper2 (recharts.js:30786:7)
+    at 74642607-0d7f-4c1d-9e11-ec17b4b69552-v2-figmaiframepreview.figma.site/CategoricalChart2
+    at code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at 74642607-0d7f-4c1d-9e11-ec17b4b69552-v2-figmaiframepreview.figma.site/div
+    at recharts.js:9262:21
+    at code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at 74642607-0d7f-4c1d-9e11-ec17b4b69552-v2-figmaiframepreview.figma.site/div
+    at code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at 74642607-0d7f-4c1d-9e11-ec17b4b69552-v2-figmaiframepreview.figma.site/div
+    at code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at 74642607-0d7f-4c1d-9e11-ec17b4b69552-v2-figmaiframepreview.figma.site/div
+    at code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at 74642607-0d7f-4c1d-9e11-ec17b4b69552-v2-figmaiframepreview.figma.site/div
+    at code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at AdminDashboard (app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/src/app/components/admin-dashboard.tsx:105:34)
+    at code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at 74642607-0d7f-4c1d-9e11-ec17b4b69552-v2-figmaiframepreview.figma.site/main
+    at code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at 74642607-0d7f-4c1d-9e11-ec17b4b69552-v2-figmaiframepreview.figma.site/div
+    at code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at 74642607-0d7f-4c1d-9e11-ec17b4b69552-v2-figmaiframepreview.figma.site/div
+    at code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at App (app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/src/app/App.tsx?t=1772759386455:55:39)
+    at o$ (code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:55:4461)
+    at O (code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:570:13314)
+    at rr (code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:624:13959)
+    at b7 (code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:641:10109)
+    at 74642607-0d7f-4c1d-9e11-ec17b4b69552-v2-figmaiframepreview.figma.site/div
+    at o2 (code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:55:14021)
+    at T3 (code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:631:233330)
+    at yk (code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:631:249134)
+    at ih (code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:40:136003)
+    at hi (code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:434:8433)

@@ -1,0 +1,48 @@
+⚠️ Warning: Encountered two children with the same key, `%s`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version.%s null 
+    at svg
+    at Surface (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/node_modules/.vite/deps/recharts.js?v=0007ac30:6048:25)
+    at div
+    at ChartLayoutContextProvider2 (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/node_modules/.vite/deps/recharts.js?v=0007ac30:25504:28)
+    at CategoricalChartWrapper2 (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/node_modules/.vite/deps/recharts.js?v=0007ac30:30786:7)
+    at CategoricalChart2
+    at https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at div
+    at https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/node_modules/.vite/deps/recharts.js?v=0007ac30:9262:21
+    at https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at div
+    at https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at div
+    at https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at div
+    at https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at div
+    at https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at AdminDashboard (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/src/app/components/admin-dashboard.tsx:105:34)
+    at https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at main
+    at https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at div
+    at https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at div
+    at https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:290:12506
+    at FGCmp (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/@id/fginspector:3:55)
+    at App (https://app-ivmhtsbc5ecwj3dppcxgm34e4ib7mvan2ymrculdoggneynrvlvq.makeproxy-c.figma.site/src/app/App.tsx?t=1772759386455:55:39)
+    at o$ (https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:55:4461)
+    at O (https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:570:13314)
+    at rr (https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:624:13959)
+    at b7 (https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:641:10109)
+    at div
+    at o2 (https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:55:14021)
+    at T3 (https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:631:233330)
+    at yk (https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:631:249134)
+    at ih (https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:40:136003)
+    at hi (https://www.figma.com/webpack-artifacts/assets/code_components_preview_iframe-e6ffa6e7eaca0ef3.min.js.br:434:8433)

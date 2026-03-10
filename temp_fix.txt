@@ -1,0 +1,4 @@
+Line 1055: {task.taskType === 'special' ? '⭐' : '📌'}
+Line 1056: {task.taskType === 'special' ? 'Özel Görev' : 'Ekstra İş'}
+Line 1606: {task.type === 'special' ? '⭐' : '📌'}
+Line 1607: {task.type === 'special' ? 'Özel Görev' : 'Düzenli İş'}
