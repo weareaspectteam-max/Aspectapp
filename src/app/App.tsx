@@ -1,28 +1,26 @@
 import { useState, useEffect, useRef } from 'react';
-import { Login, UserRole } from './components/login';
+import { Bell, ArrowLeft } from 'lucide-react';
+import { AspectLogo } from './components/aspect-logo';
+import { supabase } from './lib/supabase';
+import { Login } from './components/login';
+import { NewBottomNav } from './components/new-bottom-nav';
+import { HamburgerMenu } from './components/hamburger-menu';
 import { AdminDashboard } from './components/admin-dashboard';
 import { ManagerDashboard } from './components/manager-dashboard';
 import { OperationsDashboard } from './components/operations-dashboard';
 import { AdministrativeDashboard } from './components/administrative-dashboard';
+import { StaffPersonalDashboard } from './components/staff-personal-dashboard';
 import { PendingDashboard } from './components/pending-dashboard';
-import { BusinessPanel } from './components/business-panel';
 import { QuickSales } from './components/quick-sales';
 import { LiveSalesFeed } from './components/live-sales-feed';
 import { Leaderboard } from './components/leaderboard';
 import { Messaging } from './components/messaging';
+import { RotationSystem } from './components/rotation-system';
 import { StaffProfile } from './components/staff-profile';
 import { Settings } from './components/settings';
-import { NewBottomNav } from './components/new-bottom-nav';
-import { ShiftSetup, ShiftSetupData } from './components/shift-setup';
-import { ShiftChoice } from './components/shift-choice';
-import { ShiftEnd } from './components/shift-end';
-import { CurrentStock } from './components/current-stock';
-import { HamburgerMenu } from './components/hamburger-menu';
-// ❌ REMOVED: import { Rotation } from './components/rotation'; (file deleted)
-import { RotationSystem } from './components/rotation-system';
 import { AspectAcademy } from './components/aspect-academy';
 import { AIAssistant } from './components/ai-assistant';
-import { StaffPersonalDashboard } from './components/staff-personal-dashboard';
+import { BusinessPanel } from './components/business-panel';
 import { MekanManagement } from './components/mekan-management';
 import { UserManagement } from './components/user-management';
 import { IsletmeGenelDurum } from './components/isletme-genel-durum';
@@ -38,9 +36,12 @@ import { BirthdayTestHelper } from './components/birthday-test-helper';
 import { Announcements } from './components/announcements';
 import { OperationsDemo } from './components/operations-demo';
 import { FrameTracking } from './components/frame-tracking';
-import { Bell, ArrowLeft } from 'lucide-react';
-import logoImage from 'figma:asset/6a6eb47a9fe2eac247532ef175a68c5b1b4ebed7.png';
-import { supabase } from './lib/supabase';
+import { ShiftSetup } from './components/shift-setup';
+import { ShiftChoice } from './components/shift-choice';
+import { ShiftEnd } from './components/shift-end';
+import { CurrentStock } from './components/current-stock';
+import type { UserRole } from './components/login';
+import type { ShiftSetupData } from './components/shift-setup';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -575,7 +576,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] flex items-center justify-center">
         <div className="text-center space-y-6">
-          <img src={logoImage} alt="Aspect" className="w-48 h-auto mx-auto opacity-80" />
+          <AspectLogo width={192} height={52} className="mx-auto opacity-80" />
           <div className="flex items-center justify-center gap-2">
             <div className="w-2 h-2 bg-[#9dd9ea] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
             <div className="w-2 h-2 bg-[#9dd9ea] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -627,12 +628,8 @@ export default function App() {
               </div>
 
               {/* Center: Logo */}
-              <div className="absolute left-1/2 top-[58%] -translate-x-1/2 -translate-y-1/2">
-                <img
-                  src={logoImage}
-                  alt="Aspect Operations"
-                  className="h-44 w-auto object-contain"
-                />
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                <span className="text-white font-black text-xl tracking-[0.2em] uppercase">ASPECT</span>
               </div>
 
               {/* Right: Notifications & Menu */}

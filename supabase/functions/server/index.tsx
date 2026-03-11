@@ -455,7 +455,9 @@ app.get("/make-server-4da0b637/maliyetler", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
-    if (!["yonetici", "ust-mudur", "mudur", "idari"].includes(callerRole)) {
+    // Maliyet okuma: tüm aktif roller erişebilir (personel/operasyon kağıt kapasitesine ihtiyaç duyar)
+    const allowedReadRoles = ["yonetici", "ust-mudur", "mudur", "idari", "operasyon", "personel"];
+    if (!allowedReadRoles.includes(callerRole)) {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
 

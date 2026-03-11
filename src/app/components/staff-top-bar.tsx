@@ -1,6 +1,5 @@
 import { ArrowLeft, Bell } from 'lucide-react';
 import { HamburgerMenu } from './hamburger-menu';
-import logoImage from 'figma:asset/6a6eb47a9fe2eac247532ef175a68c5b1b4ebed7.png';
 
 interface StaffTopBarProps {
   userName: string;
@@ -50,13 +49,9 @@ export function StaffTopBar({
           </div>
         </div>
 
-        {/* Center: App Logo */}
-        <div className="absolute left-1/2 top-[58%] -translate-x-1/2 -translate-y-1/2">
-          <img 
-            src={logoImage} 
-            alt="Aspect Operations" 
-            className="h-44 w-auto object-contain"
-          />
+        {/* Center: App Name */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+          <span className="text-white font-black text-xl tracking-[0.2em] uppercase">ASPECT</span>
         </div>
 
         {/* Right: Back Arrow, Bell & Menu */}

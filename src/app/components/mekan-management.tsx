@@ -268,7 +268,12 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     setFormYearlyRent((location.yearlyRent ?? 0).toString());
     setFormDailyCost((location.dailyCostPercentage ?? 0).toString());
     setFormProfit((location.profitPercentage ?? 0).toString());
-    setFormPaperType(location.paperType || '');
+    // Eski kayıtlar paperType'ı isim olarak saklıyor olabilir → ID'ye normalize et
+    const rawPaperType = location.paperType || '';
+    const resolvedPaperId = availablePapers.find(p => p.id === rawPaperType)?.id
+                         || availablePapers.find(p => p.name === rawPaperType)?.id
+                         || rawPaperType;
+    setFormPaperType(resolvedPaperId);
     setFormPrintType(location.printType || 'yarim');
     setFormWorkingHoursStart(location.workingHours?.start || '09:00');
     setFormWorkingHoursEnd(location.workingHours?.end || '18:00');
@@ -446,7 +451,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                         >
                           <option value="" className="bg-[#3a3a4e] text-gray-400">— Seçiniz —</option>
                           {availablePapers.map((p) => (
-                            <option key={p.id} value={p.name} className="bg-[#3a3a4e] text-white">
+                            <option key={p.id} value={p.id} className="bg-[#3a3a4e] text-white">
                               {p.name}
                             </option>
                           ))}
@@ -791,7 +796,9 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                             {location.printType && (
                               <span className="text-amber-300">
                                 🖨️ {location.printType === 'tam' ? 'Tam Boy' : 'Yarım Boy'}
-                                {location.paperType ? ` · ${location.paperType}` : ''}
+                                {location.paperType
+                                  ? ` · ${availablePapers.find(p => p.id === location.paperType)?.name || location.paperType}`
+                                  : ''}
                               </span>
                             )}
                           </div>

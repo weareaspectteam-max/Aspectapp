@@ -147,6 +147,10 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
   const [mekanKapasite, setMekanKapasite] = useState(0);         // pcsPerBox / setsPerBox
   const [mekanPrintType, setMekanPrintType] = useState<'tam' | 'yarim'>('yarim');
   const [mekanCurrency, setMekanCurrency] = useState('TRY');
+  // ── Manuel fallback (kapasite alınamadığında kullanıcı girer) ──
+  const [availablePapers, setAvailablePapers] = useState<any[]>([]);
+  const [manualPaperId, setManualPaperId] = useState<string>('');
+  const [manualPrintType, setManualPrintType] = useState<'tam' | 'yarim'>('yarim');
 
   // ── REYON state ──
   const [reyonAcik, setReyonAcik] = useState(false);
@@ -218,14 +222,21 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
           const mekan = (mekanlar || []).find((m: any) => m.id === selectedProject.id);
           if (mekan) {
             setMekanPrintType(mekan.printType === 'tam' ? 'tam' : 'yarim');
-            if (mekan.paperType) {
-              const paperRes = await fetch(`${API_BASE_QS}/maliyetler`, { headers: hdr });
-              if (paperRes.ok) {
-                const { papers } = await paperRes.json();
-                const paper = (papers || []).find((p: any) => p.id === mekan.paperType);
-                if (paper && paper.pcsPerBox && paper.setsPerBox) {
+            const paperRes = await fetch(`${API_BASE_QS}/maliyetler`, { headers: hdr });
+            if (paperRes.ok) {
+              const { papers } = await paperRes.json();
+              const allPapers = (papers || []).filter((p: any) => p.pcsPerBox && p.setsPerBox);
+              setAvailablePapers(allPapers);
+              if (mekan.paperType) {
+                // Önce ID ile eşleştir (doğru format), bulamazsa eski kayıtlar için isimle dene
+                const paper = allPapers.find((p: any) => p.id === mekan.paperType)
+                           || allPapers.find((p: any) => p.name === mekan.paperType);
+                if (paper) {
                   setMekanKapasite(Number(paper.pcsPerBox) / Number(paper.setsPerBox));
                   setMekanCurrency(paper.currency || 'TRY');
+                  console.log(`Mekan kağıt kapasite: ${paper.name} → ${Number(paper.pcsPerBox) / Number(paper.setsPerBox)}/takım`);
+                } else {
+                  console.log(`paperType "${mekan.paperType}" eşleşmedi. Papers:`, allPapers.map((p:any) => `${p.id}:${p.name}`));
                 }
               }
             }
@@ -372,6 +383,15 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
     });
     return result;
   };
+
+  // ── Efektif kapasite & print type (mekan verisinden veya manuel girişten) ──
+  const manualPaperObj = availablePapers.find(p => p.id === manualPaperId);
+  const manualKapasite = manualPaperObj
+    ? Number(manualPaperObj.pcsPerBox) / Number(manualPaperObj.setsPerBox)
+    : 0;
+  const effectiveKapasite = mekanKapasite > 0 ? mekanKapasite : manualKapasite;
+  const effectivePrintType = mekanKapasite > 0 ? mekanPrintType : manualPrintType;
+  const needsManualInput = mekanKapasite === 0; // mekan'dan veri alınamadı
 
   const kapanisAnomaliDetect = (): Record<string, number> => {
     if (!stokGunluk?.acilis) return {};
@@ -1212,18 +1232,74 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
                     <h3 className="font-bold text-white text-sm">Yazıcı Kapanış</h3>
                     <p className="text-xs text-gray-400">
                       {printers.length} yazıcı • bitiş sayacı & ribon değişimi
-                      {mekanKapasite > 0 && (
-                        <span className="text-[#a8e6cf]/70 ml-1">• kapasite: {mekanKapasite}/takım</span>
+                      {effectiveKapasite > 0 && (
+                        <span className="text-[#a8e6cf]/70 ml-1">• kapasite: {effectiveKapasite}/takım</span>
                       )}
                     </p>
                   </div>
                 </div>
-                {mekanKapasite === 0 && (
-                  <div className="mb-3 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 flex items-center gap-2">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <p className="text-[10px] text-amber-300">
-                      Mekan yönetiminde kağıt tipi tanımlanmamış — kapasite bilinmiyor, hesaplama tahminidir
-                    </p>
+                {needsManualInput && (
+                  <div className="mb-4 bg-amber-500/10 border border-amber-500/25 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <p className="text-[10px] text-amber-300 font-medium">
+                        Mekan'dan kağıt bilgisi alınamadı — lütfen aşağıdan manuel seçin
+                      </p>
+                    </div>
+                    {/* Kağıt tipi seçici */}
+                    {availablePapers.length > 0 ? (
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1.5 font-semibold uppercase tracking-wide">Kağıt Tipi</p>
+                        <div className="flex flex-wrap gap-2">
+                          {availablePapers.map(p => {
+                            const kap = Number(p.pcsPerBox) / Number(p.setsPerBox);
+                            const selected = manualPaperId === p.id;
+                            return (
+                              <button
+                                key={p.id}
+                                onClick={() => setManualPaperId(p.id)}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                                  selected
+                                    ? 'bg-amber-400/20 border-amber-400/60 text-amber-300'
+                                    : 'bg-white/5 border-white/15 text-gray-400 active:scale-95'
+                                }`}
+                              >
+                                {p.name || p.id}
+                                <span className="ml-1 text-[10px] opacity-70">({kap}/tkm)</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-gray-500">Tanımlı kağıt tipi yok — Maliyet Yönetimi'nden ekleyin</p>
+                    )}
+                    {/* Tam / Yarım seçici */}
+                    <div>
+                      <p className="text-[10px] text-gray-400 mb-1.5 font-semibold uppercase tracking-wide">Kağıt Modu</p>
+                      <div className="flex gap-2">
+                        {(['tam', 'yarim'] as const).map(mode => (
+                          <button
+                            key={mode}
+                            onClick={() => setManualPrintType(mode)}
+                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+                              manualPrintType === mode
+                                ? 'bg-amber-400/20 border-amber-400/60 text-amber-300'
+                                : 'bg-white/5 border-white/15 text-gray-400 active:scale-95'
+                            }`}
+                          >
+                            {mode === 'tam' ? '▣ Tam Kağıt' : '▨ Yarım Kağıt'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Seçim özeti */}
+                    {manualPaperId && (
+                      <div className="bg-amber-400/10 border border-amber-400/20 rounded-xl px-3 py-1.5 flex items-center justify-between">
+                        <span className="text-[10px] text-amber-300">Kapasite</span>
+                        <span className="text-xs font-black text-amber-200">{manualKapasite}/takım • {manualPrintType === 'tam' ? 'Tam' : 'Yarım'}</span>
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="space-y-3">
@@ -1233,10 +1309,10 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
                     const ribbonCount = Number(printerRibbonChanges[printer.id] || 0);
                     const iade = Number(printerIadePhotos[printer.id] || 0);
                     // Canlı hesaplama: kullanilanBaskı = açılış + degisim×kapasite - kapanış
-                    const kullanilanBaskı = mekanKapasite > 0
-                      ? Math.max(0, start + (ribbonCount * mekanKapasite) - end)
+                    const kullanilanBaskı = effectiveKapasite > 0
+                      ? Math.max(0, start + (ribbonCount * effectiveKapasite) - end)
                       : Math.max(0, start - end); // kapasite bilinmiyorsa sadece fark
-                    const carpan = mekanPrintType === 'tam' ? 1 : 2;
+                    const carpan = effectivePrintType === 'tam' ? 1 : 2;
                     const cikisAdedi = Math.round(kullanilanBaskı * carpan);
                     const satılan = Math.max(0, cikisAdedi - iade);
                     const hasEndInput = !!printerEndCounters[printer.id] && start > 0;
@@ -1319,9 +1395,9 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
                             <p className="text-[10px] text-[#a8e6cf]/70 font-semibold mb-2 uppercase tracking-wide">Vardiya Hesabı</p>
                             <div className="space-y-1.5">
                               {/* Formül satırı */}
-                              {mekanKapasite > 0 && (
+                              {effectiveKapasite > 0 && (
                                 <div className="text-[10px] text-gray-500 bg-black/20 rounded-lg px-2 py-1 font-mono">
-                                  {start} + {ribbonCount}×{mekanKapasite} − {end} = <span className="text-[#ffd4a3] font-bold">{kullanilanBaskı}</span> baskı
+                                  {start} + {ribbonCount}×{effectiveKapasite} − {end} = <span className="text-[#ffd4a3] font-bold">{kullanilanBaskı}</span> baskı
                                 </div>
                               )}
                               <div className="flex items-center justify-between">
@@ -1331,7 +1407,7 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
                               <div className="flex items-center justify-between">
                                 <span className="text-xs text-gray-400">
                                   Çıkış adedi
-                                  {mekanPrintType === 'yarim' && <span className="text-gray-600 ml-1">(×2 yarım)</span>}
+                                  {effectivePrintType === 'yarim' && <span className="text-gray-600 ml-1">(×2 yarım)</span>}
                                 </span>
                                 <span className="text-sm font-black text-[#9dd9ea]">{cikisAdedi}</span>
                               </div>
@@ -1361,25 +1437,25 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
                           const s = Number(pr.startCounter) || 0;
                           const e = Number(printerEndCounters[pr.id] || 0);
                           const r = Number(printerRibbonChanges[pr.id] || 0);
-                          return sum + (mekanKapasite > 0
-                            ? Math.max(0, s + r * mekanKapasite - e)
+                          return sum + (effectiveKapasite > 0
+                            ? Math.max(0, s + r * effectiveKapasite - e)
                             : Math.max(0, s - e));
                         }, 0)} adet
                       </span>
                     </div>
                     <div className="bg-[#9dd9ea]/10 border border-[#9dd9ea]/20 rounded-xl px-4 py-2.5 flex items-center justify-between">
                       <span className="text-xs text-gray-400">
-                        Toplam çıkış {mekanPrintType === 'yarim' ? '(×2 yarım)' : '(tam)'}:
+                        Toplam çıkış {effectivePrintType === 'yarim' ? '(×2 yarım)' : '(tam)'}:
                       </span>
                       <span className="text-sm font-black text-[#9dd9ea]">
                         {printers.reduce((sum, pr) => {
                           const s = Number(pr.startCounter) || 0;
                           const e = Number(printerEndCounters[pr.id] || 0);
                           const r = Number(printerRibbonChanges[pr.id] || 0);
-                          const kb = mekanKapasite > 0
-                            ? Math.max(0, s + r * mekanKapasite - e)
+                          const kb = effectiveKapasite > 0
+                            ? Math.max(0, s + r * effectiveKapasite - e)
                             : Math.max(0, s - e);
-                          return sum + Math.round(kb * (mekanPrintType === 'tam' ? 1 : 2));
+                          return sum + Math.round(kb * (effectivePrintType === 'tam' ? 1 : 2));
                         }, 0)} adet
                       </span>
                     </div>
@@ -1407,10 +1483,10 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
                           const e = Number(printerEndCounters[pr.id] || 0);
                           const r = Number(printerRibbonChanges[pr.id] || 0);
                           const ia = Number(printerIadePhotos[pr.id] || 0);
-                          const kb = mekanKapasite > 0
-                            ? Math.max(0, s + r * mekanKapasite - e)
+                          const kb = effectiveKapasite > 0
+                            ? Math.max(0, s + r * effectiveKapasite - e)
                             : Math.max(0, s - e);
-                          const cikis = Math.round(kb * (mekanPrintType === 'tam' ? 1 : 2));
+                          const cikis = Math.round(kb * (effectivePrintType === 'tam' ? 1 : 2));
                           return sum + Math.max(0, cikis - ia);
                         }, 0)} adet
                       </span>

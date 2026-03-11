@@ -1,4 +1,3 @@
-import { useId } from 'react';
 import { Package, TrendingUp, Tag, Calendar, Trophy, Target, GraduationCap, LogOut } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { StaffTopBar } from './staff-top-bar';
@@ -12,9 +11,6 @@ interface StaffProfileProps {
 }
 
 export function StaffProfile({ userName, userRole, onLogout, onNavigate }: StaffProfileProps) {
-  const uid = useId();
-  const gradientId = `colorRevenue-${uid.replace(/:/g, '')}`;
-
   const profileData = {
     name: userName,
     avatar: '👨‍💼',
@@ -136,12 +132,6 @@ export function StaffProfile({ userName, userRole, onLogout, onNavigate }: Staff
           <div className="h-48">
             <ResponsiveContainer width="100%" height={192}>
               <AreaChart data={weeklyData}>
-                <defs>
-                  <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#9dd9ea" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#9dd9ea" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#ffffff20" />
                 <XAxis dataKey="day" stroke="#9ca3af" style={{ fontSize: '12px' }} />
                 <YAxis stroke="#9ca3af" style={{ fontSize: '12px' }} />
@@ -159,7 +149,8 @@ export function StaffProfile({ userName, userRole, onLogout, onNavigate }: Staff
                   dataKey="revenue"
                   stroke="#9dd9ea"
                   strokeWidth={3}
-                  fill={`url(#${gradientId})`}
+                  fill="#9dd9ea"
+                  fillOpacity={0.15}
                 />
               </AreaChart>
             </ResponsiveContainer>
