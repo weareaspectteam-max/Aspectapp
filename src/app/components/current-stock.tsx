@@ -38,7 +38,6 @@ export function CurrentStock({ userName, userRole, projectName, onBack, onLogout
     { key: 'album11', label: '11 Kare Albüm', emoji: '📔' },
     { key: 'album13', label: '13 Kare Albüm', emoji: '📒' },
     { key: 'album15', label: '15 Kare Albüm', emoji: '📓' },
-    { key: 'passepartout', label: 'Paspartu', emoji: '🖼️' },
   ];
 
   return (

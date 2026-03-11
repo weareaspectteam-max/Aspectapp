@@ -928,4 +928,459 @@ app.put("/make-server-4da0b637/rotasyon/gunluk-izin", async (c) => {
   }
 });
 
+// ──────────────────────────────────────────
+// STOK: Günlük kayıt getir
+// GET /stok/gunluk/:mekanId/:tarih
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { mekanId, tarih } = c.req.param();
+    const bugun = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
+
+    const dunTarih = new Date(tarih);
+    dunTarih.setDate(dunTarih.getDate() - 1);
+    const dunStr = dunTarih.toISOString().split("T")[0];
+    const dun = await kv.get(`stok_gunluk_${mekanId}_${dunStr}`);
+
+    const tumEklemeler = await kv.getByPrefix(`stok_ekleme_`);
+    const eklemeler = tumEklemeler.filter(
+      (e: any) => e.mekanId === mekanId && e.tarih === tarih
+    );
+
+    const tumAktarimlar = await kv.getByPrefix(`stok_aktarim_`);
+    const bekleyenAktarimlar = tumAktarimlar.filter(
+      (a: any) => a.hedefMekanId === mekanId && a.durum === "bekliyor"
+    );
+
+    return c.json({
+      bugun: bugun || null,
+      dunKapanis: dun?.kapanish || null,
+      eklemeler,
+      bekleyenAktarimlar,
+    });
+  } catch (err) {
+    console.log("Get stok gunluk error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// STOK: Açılış kaydet
+// POST /stok/acilis
+// Body: { mekanId, tarih, sayim, not? }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/stok/acilis", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { mekanId, tarih, sayim, not: acilisNot } = await c.req.json();
+    if (!mekanId || !tarih || !sayim) {
+      return c.json({ error: "mekanId, tarih ve sayim zorunludur." }, 400);
+    }
+
+    const dunTarih = new Date(tarih);
+    dunTarih.setDate(dunTarih.getDate() - 1);
+    const dunStr = dunTarih.toISOString().split("T")[0];
+    const dun = await kv.get(`stok_gunluk_${mekanId}_${dunStr}`);
+    const dunKapanis = dun?.kapanish || null;
+
+    const anomali: Record<string, number> = {};
+    if (dunKapanis) {
+      const alanlar = ["album3","album5","album7","album9","album11","album13","album15","paspartu","ribon"];
+      for (const alan of alanlar) {
+        const fark = (sayim[alan] || 0) - (dunKapanis[alan] || 0);
+        if (fark !== 0) anomali[alan] = fark;
+      }
+    }
+
+    const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`) || {};
+    const kayit = {
+      ...existing,
+      mekanId,
+      tarih,
+      acilis: sayim,
+      acilisNot: acilisNot || "",
+      acilisYapildi: true,
+      acilisZamani: new Date().toISOString(),
+      acilisYapanId: user.id,
+      acilisYapanAd: user.user_metadata?.full_name || user.email,
+      acilisAnomali: anomali,
+    };
+
+    await kv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
+    console.log(`Stok açılışı: ${mekanId} / ${tarih} by ${user.id}`);
+    return c.json({ kayit, anomali });
+  } catch (err) {
+    console.log("Post stok acilis error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// STOK: Kapanış kaydet
+// POST /stok/kapanis
+// Body: { mekanId, tarih, sayim, not? }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { mekanId, tarih, sayim, not: kapanisNot, printerData } = await c.req.json();
+    if (!mekanId || !tarih || !sayim) {
+      return c.json({ error: "mekanId, tarih ve sayim zorunludur." }, 400);
+    }
+
+    const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
+    if (!existing) return c.json({ error: "Önce açılış kaydı yapılmalıdır." }, 400);
+
+    const tumEklemeler = await kv.getByPrefix(`stok_ekleme_`);
+    const eklemeler = tumEklemeler.filter(
+      (e: any) => e.mekanId === mekanId && e.tarih === tarih
+    );
+    const tumAktarimlar = await kv.getByPrefix(`stok_aktarim_`);
+    const gelenOnaylandi = tumAktarimlar.filter(
+      (a: any) => a.hedefMekanId === mekanId && a.tarih === tarih && a.durum === "onaylandi"
+    );
+    const gidenOnaylandi = tumAktarimlar.filter(
+      (a: any) => a.kaynakMekanId === mekanId && a.tarih === tarih && a.durum === "onaylandi"
+    );
+
+    // Toplam ribon değişim adedi (tüm yazıcılardan)
+    const toplamRibonDegisim = (printerData || []).reduce(
+      (sum: number, pr: any) => sum + (Number(pr.ribonDegisim) || 0), 0
+    );
+
+    const alanlar = ["album3","album5","album7","album9","album11","album13","album15","paspartu","ribon"];
+    const beklenen: Record<string, number> = {};
+    for (const alan of alanlar) {
+      let toplam = existing.acilis?.[alan] || 0;
+      for (const ek of eklemeler) toplam += ek.miktar?.[alan] || 0;
+      for (const ak of gelenOnaylandi) toplam += ak.gercekMiktar?.[alan] || 0;
+      for (const ak of gidenOnaylandi) toplam -= ak.gercekMiktar?.[alan] || 0;
+      // Ribon: yazıcılarda değiştirilen takım adedi beklenen stoktan düşülür
+      if (alan === "ribon") toplam -= toplamRibonDegisim;
+      beklenen[alan] = Math.max(0, toplam);
+    }
+
+    const anomali: Record<string, number> = {};
+    for (const alan of alanlar) {
+      const fark = (sayim[alan] || 0) - (beklenen[alan] || 0);
+      if (fark !== 0) anomali[alan] = fark;
+    }
+
+    // ── Vardiya Baskı & Maliyet Hesaplamaları ──
+    const mekan = await kv.get(`mekan_${mekanId}`);
+    const printType: string = mekan?.printType || "yarim"; // "tam" | "yarim"
+    const paperTypeId: string | null = mekan?.paperType || null;
+
+    let paper: any = null;
+    if (paperTypeId) {
+      paper = await kv.get(`cost_paper_${paperTypeId}`);
+    }
+
+    const kapasitePerTakim = paper
+      ? (Number(paper.pcsPerBox) / Number(paper.setsPerBox))
+      : 0;
+    // birimMaliyet: tam kağıtta boxPrice/pcsPerBox — yarım kağıtta da aynı (cikis 2x, birim 0.5x → toplam aynı)
+    const birimMaliyetTam = paper
+      ? (Number(paper.boxPrice) / Number(paper.pcsPerBox))
+      : 0;
+    // carpan: yarım kağıtta 1 baskı → 2 fotoğraf çıkışı
+    const carpan = printType === "tam" ? 1 : 2;
+
+    // Her yazıcı için hesapla
+    const enrichedPrinterData = (printerData || []).map((pr: any) => {
+      const acilisSayac = Number(pr.startCounter) || 0;
+      const kapanisSayac = Number(pr.endCounter) || 0;
+      const degisimAdedi = Number(pr.ribonDegisim) || 0;
+      const iadeFotograf = Number(pr.iadeFotograf) || 0;
+
+      // kullanilanBaskı: açılış + (değişim × kapasite) - kapanış
+      const kullanilanBaskı = Math.max(
+        0, acilisSayac + (degisimAdedi * kapasitePerTakim) - kapanisSayac
+      );
+      // stokDusum: fiziksel kağıt düşümü — tam/yarım fark etmez
+      const stokDusum = kullanilanBaskı;
+      // cikisAdedi: müşteriye çıkan fotoğraf adedi (istatistik)
+      const cikisAdedi = Math.round(kullanilanBaskı * carpan);
+      // satılanFotograf: iade çıkarılınca net satış
+      const satılanFotograf = Math.max(0, cikisAdedi - iadeFotograf);
+      // toplamMaliyet: kullanilanBaskı × birimMaliyetTam (tek alan, tam/yarım fark etmez)
+      const toplamMaliyet = birimMaliyetTam > 0
+        ? parseFloat((kullanilanBaskı * birimMaliyetTam).toFixed(4))
+        : 0;
+
+      return {
+        ...pr,
+        iadeFotograf,
+        kullanilanBaskı,
+        stokDusum,
+        cikisAdedi,
+        satılanFotograf,
+        toplamMaliyet,
+      };
+    });
+
+    // Vardiya genel toplamları
+    const vardiyaToplam = {
+      toplamKullanilanBaskı: enrichedPrinterData.reduce((s: number, p: any) => s + (p.kullanilanBaskı || 0), 0),
+      toplamStokDusum: enrichedPrinterData.reduce((s: number, p: any) => s + (p.stokDusum || 0), 0),
+      toplamCikisAdedi: enrichedPrinterData.reduce((s: number, p: any) => s + (p.cikisAdedi || 0), 0),
+      toplamIadeFotograf: enrichedPrinterData.reduce((s: number, p: any) => s + (p.iadeFotograf || 0), 0),
+      toplamSatılanFotograf: enrichedPrinterData.reduce((s: number, p: any) => s + (p.satılanFotograf || 0), 0),
+      toplamMaliyet: parseFloat(
+        enrichedPrinterData.reduce((s: number, p: any) => s + (p.toplamMaliyet || 0), 0).toFixed(4)
+      ),
+      printType,
+      carpan,
+      paperName: paper?.name || null,
+      birimMaliyet: birimMaliyetTam > 0 ? parseFloat(birimMaliyetTam.toFixed(6)) : 0,
+      currency: paper?.currency || "TRY",
+    };
+
+    const kayit = {
+      ...existing,
+      kapanish: sayim,
+      kapanisNot: kapanisNot || "",
+      kapanisYapildi: true,
+      kapanisZamani: new Date().toISOString(),
+      kapanisYapanId: user.id,
+      kapanisYapanAd: user.user_metadata?.full_name || user.email,
+      kapanisAnomali: anomali,
+      kapanisBeklenen: beklenen,
+      // Yazıcı verileri — hesaplamalar dahil
+      printerData: enrichedPrinterData,
+      toplamRibonDegisim,
+      // Vardiya baskı & maliyet özeti
+      vardiyaToplam,
+    };
+
+    await kv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
+    console.log(`Stok kapanışı: ${mekanId} / ${tarih} by ${user.id} | baskı: ${vardiyaToplam.toplamKullanilanBaskı} | satılan: ${vardiyaToplam.toplamSatılanFotograf} | maliyet: ${vardiyaToplam.toplamMaliyet} ${vardiyaToplam.currency}`);
+    return c.json({ kayit, anomali, beklenen });
+  } catch (err) {
+    console.log("Post stok kapanis error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// STOK: Gün içi ekleme
+// POST /stok/ekleme
+// Body: { mekanId, tarih, miktar: {...}, not? }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/stok/ekleme", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { mekanId, tarih, miktar, not: eklemeNot } = await c.req.json();
+    if (!mekanId || !tarih || !miktar) {
+      return c.json({ error: "mekanId, tarih ve miktar zorunludur." }, 400);
+    }
+
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const ekleme = {
+      id, mekanId, tarih, miktar,
+      not: eklemeNot || "",
+      girenKisiId: user.id,
+      girenKisiAd: user.user_metadata?.full_name || user.email,
+      girenZaman: new Date().toISOString(),
+    };
+
+    await kv.set(`stok_ekleme_${id}`, ekleme);
+    console.log(`Stok ekleme: ${mekanId} / ${tarih} by ${user.id}`);
+    return c.json({ ekleme }, 201);
+  } catch (err) {
+    console.log("Post stok ekleme error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// AKTARIM: Yeni aktarım oluştur
+// POST /aktarim
+// Body: { kaynakMekanId, hedefMekanId, tarih, miktar, not? }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/aktarim", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { kaynakMekanId, hedefMekanId, tarih, miktar, not: aktarimNot } = await c.req.json();
+    if (!kaynakMekanId || !hedefMekanId || !tarih || !miktar) {
+      return c.json({ error: "kaynakMekanId, hedefMekanId, tarih ve miktar zorunludur." }, 400);
+    }
+    if (kaynakMekanId === hedefMekanId) {
+      return c.json({ error: "Kaynak ve hedef mekan aynı olamaz." }, 400);
+    }
+
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const aktarim = {
+      id, kaynakMekanId, hedefMekanId, tarih, miktar,
+      not: aktarimNot || "",
+      durum: "bekliyor",
+      gonderenKisiId: user.id,
+      gonderenKisiAd: user.user_metadata?.full_name || user.email,
+      gonderimZamani: new Date().toISOString(),
+      alanKisiId: null,
+      alanKisiAd: null,
+      onayZamani: null,
+      gercekMiktar: null,
+      miktarAnomali: {},
+    };
+
+    await kv.set(`stok_aktarim_${id}`, aktarim);
+    console.log(`Aktarım oluşturuldu: ${id} ${kaynakMekanId} → ${hedefMekanId}`);
+    return c.json({ aktarim }, 201);
+  } catch (err) {
+    console.log("Post aktarim error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// AKTARIM: Onayla
+// PUT /aktarim/:id/onayla
+// Body: { gercekMiktar: {...} }
+// ──────────────────────────────────────────
+app.put("/make-server-4da0b637/aktarim/:id/onayla", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { id } = c.req.param();
+    const existing = await kv.get(`stok_aktarim_${id}`);
+    if (!existing) return c.json({ error: "Aktarım bulunamadı." }, 404);
+    if (existing.durum !== "bekliyor") return c.json({ error: "Bu aktarım zaten işlendi." }, 400);
+
+    const { gercekMiktar } = await c.req.json();
+
+    const alanlar = ["album3","album5","album7","album9","album11","album13","album15","paspartu","ribon"];
+    const miktarAnomali: Record<string, number> = {};
+    for (const alan of alanlar) {
+      const fark = (gercekMiktar?.[alan] || 0) - (existing.miktar?.[alan] || 0);
+      if (fark !== 0) miktarAnomali[alan] = fark;
+    }
+
+    const updated = {
+      ...existing,
+      durum: "onaylandi",
+      gercekMiktar: gercekMiktar || existing.miktar,
+      miktarAnomali,
+      alanKisiId: user.id,
+      alanKisiAd: user.user_metadata?.full_name || user.email,
+      onayZamani: new Date().toISOString(),
+    };
+
+    await kv.set(`stok_aktarim_${id}`, updated);
+    console.log(`Aktarım onaylandı: ${id} by ${user.id}`);
+    return c.json({ aktarim: updated, miktarAnomali });
+  } catch (err) {
+    console.log("Put aktarim onayla error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// AKTARIM: İptal et
+// PUT /aktarim/:id/iptal
+// ──────────────────────────────────────────
+app.put("/make-server-4da0b637/aktarim/:id/iptal", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { id } = c.req.param();
+    const existing = await kv.get(`stok_aktarim_${id}`);
+    if (!existing) return c.json({ error: "Aktarım bulunamadı." }, 404);
+    if (existing.durum !== "bekliyor") return c.json({ error: "Bu aktarım zaten işlendi." }, 400);
+
+    const updated = {
+      ...existing,
+      durum: "iptal",
+      iptalZamani: new Date().toISOString(),
+      iptalEdenId: user.id,
+    };
+    await kv.set(`stok_aktarim_${id}`, updated);
+    console.log(`Aktarım iptal: ${id} by ${user.id}`);
+    return c.json({ aktarim: updated });
+  } catch (err) {
+    console.log("Put aktarim iptal error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// AKTARIM: Bekleyen aktarımlar (mekan için)
+// GET /aktarim/bekleyen/:mekanId
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/aktarim/bekleyen/:mekanId", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { mekanId } = c.req.param();
+    const tumAktarimlar = await kv.getByPrefix(`stok_aktarim_`);
+    const bekleyen = tumAktarimlar.filter(
+      (a: any) => a.hedefMekanId === mekanId && a.durum === "bekliyor"
+    );
+    return c.json({ aktarimlar: bekleyen });
+  } catch (err) {
+    console.log("Get aktarim bekleyen error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// STOK: Anomali geçmişi
+// GET /stok/anomali/:mekanId
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/stok/anomali/:mekanId", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur", "mudur", "operasyon"].includes(callerRole)) {
+      return c.json({ error: "Yetki yok." }, 403);
+    }
+
+    const { mekanId } = c.req.param();
+    const tumKayitlar = await kv.getByPrefix(`stok_gunluk_${mekanId}_`);
+    const anomaliler = tumKayitlar
+      .filter((k: any) => {
+        const acilisVar = k.acilisAnomali && Object.keys(k.acilisAnomali).length > 0;
+        const kapanisVar = k.kapanisAnomali && Object.keys(k.kapanisAnomali).length > 0;
+        return acilisVar || kapanisVar;
+      })
+      .sort((a: any, b: any) => b.tarih.localeCompare(a.tarih));
+
+    return c.json({ anomaliler });
+  } catch (err) {
+    console.log("Get stok anomali error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 Deno.serve(app.fetch);

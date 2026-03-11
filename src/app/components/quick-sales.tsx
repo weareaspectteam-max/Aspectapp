@@ -1,10 +1,20 @@
 import { useState, useEffect } from 'react';
-import { Send, Clock, ShoppingCart, X, Plus, Trash2, Tag, XCircle, CheckCircle, ArrowLeft, AlertCircle, Camera, ChevronRight, UserPlus, Package, Printer, Grid3x3, Film } from 'lucide-react';
+import { Send, Clock, ShoppingCart, X, Plus, Trash2, Tag, XCircle, CheckCircle, ArrowLeft, AlertCircle, Camera, ChevronRight, UserPlus, Package, Printer, Grid3x3, Film, AlertTriangle, TrendingDown, TrendingUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ProjectSelector } from './project-selector';
 import { StaffTopBar } from './staff-top-bar';
 import { NewBottomNav } from './new-bottom-nav';
 import { getTasks, getStaffMembers, type StaffMember } from '../services/rotation-service';
+import {
+  getGunlukStok, postAcilis, postKapanis,
+  bosStok, bugunTarih,
+  stokAlanAdi, stokAlanEmoji,
+  type StokSayim, type StokGunluk, type StokEkleme, type PrinterKapanis,
+} from '../services/stock-service';
+import { authHeaders } from '../lib/api';
+import { projectId } from '/utils/supabase/info';
+
+const API_BASE_QS = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
 interface Project {
   id: string;
@@ -52,17 +62,8 @@ const albumItems = [
   { key: 'album11', label: '11 Kare', emoji: '📔' },
   { key: 'album13', label: '13 Kare', emoji: '📒' },
   { key: 'album15', label: '15 Kare', emoji: '📓' },
-  { key: 'passepartout', label: 'Paspartu', emoji: '🖼️' },
 ];
 
-const closingAlbumItems = [
-  { key: 'album3', label: '3 Kare', emoji: '📘' },
-  { key: 'album5', label: '5 Kare', emoji: '📗' },
-  { key: 'album7', label: '7 Kare', emoji: '📙' },
-  { key: 'album9', label: '9 Kare', emoji: '📕' },
-  { key: 'album11', label: '11 Kare', emoji: '📔' },
-  { key: 'album15', label: '15 Kare', emoji: '📒' },
-];
 
 export function QuickSales({ userName, userRole, onProjectSelect, preSelectedProject, onBack, onLogout, onNavigate }: QuickSalesProps) {
   const [selectedProject, setSelectedProject] = useState<Project | null>(() => {
@@ -105,9 +106,16 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
   const [frameShowSuccess, setFrameShowSuccess] = useState(false);
 
   // ── SHIFT START state ──
-  const [shiftStock, setShiftStock] = useState<Record<string, number>>({
-    album3: 0, album5: 0, album7: 0, album9: 0, album11: 0, album13: 0, album15: 0, passepartout: 0
-  });
+  const [stokGunluk, setStokGunluk] = useState<StokGunluk | null>(null);
+  const [dunKapanis, setDunKapanis] = useState<StokSayim | null>(null);
+  const [acilisSayim, setAcilisSayim] = useState<StokSayim>(bosStok());
+  const [acilisNot, setAcilisNot] = useState('');
+  const [acilisAnomaliNeden, setAcilisAnomaliNeden] = useState('');
+  const [stokYukleniyor, setStokYukleniyor] = useState(false);
+  const [stokKaydediliyor, setStokKaydediliyor] = useState(false);
+  const [stokEklemeler, setStokEklemeler] = useState<StokEkleme[]>([]);
+  const [showAcilisAnomaliUyari, setShowAcilisAnomaliUyari] = useState(false);
+  const [showKapanisAnomaliUyari, setShowKapanisAnomaliUyari] = useState(false);
   const [printers, setPrinters] = useState([{ id: '1', label: 'Yazıcı 1', startCounter: '' }]);
   const [printerEndCounters, setPrinterEndCounters] = useState<Record<string, string>>({});
   const [shiftShelves, setShiftShelves] = useState<Record<string, number>>({
@@ -118,8 +126,13 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
   const [shiftStartDone, setShiftStartDone] = useState(false);
 
   // ── SHIFT END state ──
+  const [kapanisSayim, setKapanisSayim] = useState<StokSayim>(bosStok());
+  const [kapanisNot, setKapanisNot] = useState('');
+  const [kapanisAnomali, setKapanisAnomali] = useState<Partial<StokSayim>>({});
+  const [kapanisBeklenen, setKapanisBeklenen] = useState<StokSayim | null>(null);
+  const [kapanisAnomaliNeden, setKapanisAnomaliNeden] = useState('');
   const [printerRibbonChanges, setPrinterRibbonChanges] = useState<Record<string, string>>({});
-  const [ribbonEndCount, setRibbonEndCount] = useState('');
+  const [printerIadePhotos, setPrinterIadePhotos] = useState<Record<string, string>>({});
   const [showClosingCount, setShowClosingCount] = useState(false);
   const [showDamagedAlbums, setShowDamagedAlbums] = useState(false);
   const [closingCount, setClosingCount] = useState<{ shelfEnd: Record<string, number>; damagedAlbums: Record<string, number> }>({
@@ -129,6 +142,18 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
   const [venuePhotoTaken, setVenuePhotoTaken] = useState(false);
   const [venuePhotoPreview, setVenuePhotoPreview] = useState<string | null>(null);
   const [shiftEndDone, setShiftEndDone] = useState(false);
+
+  // ── MEKAN kağıt ayarları ──
+  const [mekanKapasite, setMekanKapasite] = useState(0);         // pcsPerBox / setsPerBox
+  const [mekanPrintType, setMekanPrintType] = useState<'tam' | 'yarim'>('yarim');
+  const [mekanCurrency, setMekanCurrency] = useState('TRY');
+
+  // ── REYON state ──
+  const [reyonAcik, setReyonAcik] = useState(false);
+  const [reyonKapanisSayim, setReyonKapanisSayim] = useState<StokSayim>(bosStok());
+  const [reyonGunIciEkleme, setReyonGunIciEkleme] = useState<Record<string, number>>({
+    album3: 0, album5: 0, album7: 0, album9: 0, album11: 0, album13: 0, album15: 0,
+  });
 
   useEffect(() => {
     const load = async () => {
@@ -161,6 +186,54 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
         });
       });
       setRotationPersonnel(list);
+
+      // Stok verisini yükle
+      setStokYukleniyor(true);
+      const tarih = bugunTarih();
+      const stokData = await getGunlukStok(selectedProject.id, tarih);
+      setStokGunluk(stokData.bugun);
+      setDunKapanis(stokData.dunKapanis);
+      setStokEklemeler(stokData.eklemeler || []);
+
+      if (stokData.bugun?.acilisYapildi) {
+        setAcilisSayim(stokData.bugun.acilis as StokSayim);
+        setShiftStartDone(true);
+        if (stokData.bugun.kapanisYapildi) {
+          setKapanisSayim(stokData.bugun.kapanish as StokSayim);
+          setKapanisAnomali(stokData.bugun.kapanisAnomali || {});
+          setKapanisBeklenen(stokData.bugun.kapanisBeklenen || null);
+          setShiftEndDone(true);
+        }
+      } else if (stokData.dunKapanis) {
+        setAcilisSayim({ ...stokData.dunKapanis });
+      }
+      setStokYukleniyor(false);
+
+      // Mekan'ın kağıt tipi + kapasite bilgisini yükle (canlı hesaplama için)
+      try {
+        const hdr = await authHeaders();
+        const mekanRes = await fetch(`${API_BASE_QS}/mekanlar`, { headers: hdr });
+        if (mekanRes.ok) {
+          const { mekanlar } = await mekanRes.json();
+          const mekan = (mekanlar || []).find((m: any) => m.id === selectedProject.id);
+          if (mekan) {
+            setMekanPrintType(mekan.printType === 'tam' ? 'tam' : 'yarim');
+            if (mekan.paperType) {
+              const paperRes = await fetch(`${API_BASE_QS}/maliyetler`, { headers: hdr });
+              if (paperRes.ok) {
+                const { papers } = await paperRes.json();
+                const paper = (papers || []).find((p: any) => p.id === mekan.paperType);
+                if (paper && paper.pcsPerBox && paper.setsPerBox) {
+                  setMekanKapasite(Number(paper.pcsPerBox) / Number(paper.setsPerBox));
+                  setMekanCurrency(paper.currency || 'TRY');
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.log('Mekan kağıt verisi yüklenemedi:', e);
+      }
     };
     load();
   }, [selectedProject]);
@@ -281,6 +354,7 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
   const updatePrinterLabel = (id: string, val: string) => setPrinters(p => p.map(pr => pr.id === id ? { ...pr, label: val } : pr));
   const updatePrinterEnd = (id: string, val: string) => setPrinterEndCounters(p => ({ ...p, [id]: val }));
   const updatePrinterRibbon = (id: string, val: string) => setPrinterRibbonChanges(p => ({ ...p, [id]: val }));
+  const updatePrinterIade = (id: string, val: string) => setPrinterIadePhotos(p => ({ ...p, [id]: val }));
   const handleTeamPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -288,9 +362,72 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
     reader.onloadend = () => { setTeamPhotoPreview(reader.result as string); setTeamPhotoTaken(true); };
     reader.readAsDataURL(file);
   };
-  const handleShiftStartComplete = () => {
-    setShiftStartDone(true);
-    setActiveMode('sales');
+  // ── Anomali tespiti (submit öncesi) ──
+  const acilisAnomaliDetect = (): Record<string, number> => {
+    if (!dunKapanis) return {};
+    const result: Record<string, number> = {};
+    (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).forEach(alan => {
+      const fark = (acilisSayim[alan] ?? 0) - (dunKapanis[alan] ?? 0);
+      if (fark !== 0) result[alan] = fark;
+    });
+    return result;
+  };
+
+  const kapanisAnomaliDetect = (): Record<string, number> => {
+    if (!stokGunluk?.acilis) return {};
+    const toplamRibonDegisim = printers.reduce(
+      (sum, pr) => sum + (Number(printerRibbonChanges[pr.id] || 0)), 0
+    );
+    const result: Record<string, number> = {};
+    (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).forEach(alan => {
+      let beklenen = (stokGunluk!.acilis as StokSayim)[alan] || 0;
+      for (const ek of stokEklemeler) {
+        beklenen += (ek.miktar as Record<string, number>)[alan] || 0;
+      }
+      // Ribon: değiştirilen takım adedi stoktan düşer
+      if (alan === 'ribon') beklenen -= toplamRibonDegisim;
+      beklenen = Math.max(0, beklenen);
+      const fark = (kapanisSayim[alan] ?? 0) - beklenen;
+      if (fark !== 0) result[alan] = fark;
+    });
+    return result;
+  };
+
+  const handleAcilisSubmitClick = () => {
+    const anomali = acilisAnomaliDetect();
+    if (Object.keys(anomali).length > 0) {
+      setShowAcilisAnomaliUyari(true);
+    } else {
+      handleShiftStartComplete();
+    }
+  };
+
+  const handleKapanisSubmitClick = () => {
+    if (reyonAcik) {
+      handleShiftEndComplete();
+      return;
+    }
+    const anomali = kapanisAnomaliDetect();
+    if (Object.keys(anomali).length > 0) {
+      setShowKapanisAnomaliUyari(true);
+    } else {
+      handleShiftEndComplete();
+    }
+  };
+
+  const handleShiftStartComplete = async () => {
+    if (!selectedProject) return;
+    setStokKaydediliyor(true);
+    const tarih = bugunTarih();
+    const result = await postAcilis(selectedProject.id, tarih, acilisSayim, acilisNot);
+    setStokKaydediliyor(false);
+    if (result) {
+      setStokGunluk(result.kayit);
+      setShiftStartDone(true);
+      setActiveMode('sales');
+    } else {
+      alert('Açılış kaydedilirken hata oluştu. Lütfen tekrar deneyin.');
+    }
   };
 
   // ── Shift End helpers ──
@@ -303,11 +440,47 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
     reader.onloadend = () => { setVenuePhotoPreview(reader.result as string); setVenuePhotoTaken(true); };
     reader.readAsDataURL(file);
   };
-  const handleShiftEndComplete = () => {
-    if (!venuePhotoTaken) return;
-    setShiftEndDone(true);
-    setShowShiftEndSuccess(true);
-    setTimeout(() => { setShowShiftEndSuccess(false); onNavigate('profile'); }, 3000);
+  const handleShiftEndComplete = async () => {
+    if (!venuePhotoTaken || !selectedProject) return;
+    setStokKaydediliyor(true);
+    const tarih = bugunTarih();
+
+    // Reyon modunda kapanisSayim'i reyon datadan hesapla
+    let finalKapanisSayim = kapanisSayim;
+    if (reyonAcik) {
+      const computed: StokSayim = { ...acilisSayim };
+      (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).forEach(alan => {
+        const reyonAcilis = shiftShelves[alan as string] || 0;
+        const gunIciEkleme = reyonGunIciEkleme[alan as string] || 0;
+        const reyonKapanis = reyonKapanisSayim[alan] || 0;
+        const satilan = Math.max(0, (reyonAcilis + gunIciEkleme) - reyonKapanis);
+        computed[alan] = Math.max(0, (acilisSayim[alan] || 0) - satilan);
+      });
+      finalKapanisSayim = computed;
+    }
+
+    // Yazıcı verilerini topla (sayaç azalıyor: start - end)
+    const printerData = printers.map(pr => ({
+      id: pr.id,
+      label: pr.label,
+      startCounter: Number(pr.startCounter) || 0,
+      endCounter: Number(printerEndCounters[pr.id] || 0),
+      ribonDegisim: Number(printerRibbonChanges[pr.id] || 0),
+      iadeFotograf: Number(printerIadePhotos[pr.id] || 0),
+    }));
+
+    const result = await postKapanis(selectedProject.id, tarih, finalKapanisSayim, kapanisNot, printerData);
+    setStokKaydediliyor(false);
+    if (result) {
+      setKapanisAnomali(result.anomali || {});
+      setKapanisBeklenen(result.beklenen || null);
+      setStokGunluk(result.kayit);
+      setShiftEndDone(true);
+      setShowShiftEndSuccess(true);
+      setTimeout(() => { setShowShiftEndSuccess(false); onNavigate('profile'); }, 3000);
+    } else {
+      alert('Kapanış kaydedilirken hata oluştu. Lütfen tekrar deneyin.');
+    }
   };
 
   return (
@@ -422,36 +595,106 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
                 )}
               </div>
 
-              {/* 1 — Albüm Stoğu */}
-              <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center shadow-lg">
-                    <Package className="w-5 h-5 text-[#2d3748]" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-white text-sm">Albüm Stoğu</h3>
-                    <p className="text-xs text-gray-400">Depo başlangıç miktarları</p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {albumItems.map(({ key, label, emoji }) => (
-                    <div key={key} className="flex items-center justify-between bg-black/30 border border-white/10 rounded-xl px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xl">{emoji}</span>
-                        <span className="text-sm font-semibold text-white">{label}</span>
-                      </div>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        value={shiftStock[key] || ''}
-                        onChange={e => updateShiftStock(key, parseInt(e.target.value) || 0)}
-                        placeholder="0"
-                        className="w-20 px-2 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#9dd9ea]/50 text-center font-bold text-lg"
-                      />
+              {/* 1 — Açılış Stok Sayımı */}
+              {stokYukleniyor ? (
+                <div className="text-center py-6 text-gray-400 text-sm">Stok verisi yükleniyor...</div>
+              ) : (
+                <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center shadow-lg">
+                      <Package className="w-5 h-5 text-[#2d3748]" />
                     </div>
-                  ))}
+                    <div>
+                      <h3 className="font-bold text-white text-sm">Açılış Stok Sayımı</h3>
+                      <p className="text-xs text-gray-400">{dunKapanis ? 'Dünün kapanışından yüklendi — sayıp onaylayın' : 'Fiziksel sayım yapın'}</p>
+                    </div>
+                  </div>
+                  {dunKapanis && !stokGunluk?.acilisYapildi && (
+                    <div className="mb-3 bg-[#9dd9ea]/10 border border-[#9dd9ea]/25 rounded-xl px-3 py-2 flex items-center gap-2">
+                      <span className="text-sm">📋</span>
+                      <p className="text-xs text-[#9dd9ea]">Dünün kapanışından otomatik yüklendi. Fiziksel sayımı yapıp fark varsa düzeltin.</p>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    {(Object.keys(stokAlanAdi) as Array<keyof StokSayim>).map((alan) => {
+                      const beklenen = dunKapanis?.[alan] ?? null;
+                      const gercek = acilisSayim[alan] ?? 0;
+                      const fark = beklenen !== null ? gercek - beklenen : 0;
+                      const sapmaVar = beklenen !== null && fark !== 0;
+                      return (
+                        <div key={alan} className="flex items-center justify-between bg-black/30 border border-white/10 rounded-xl px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <span className="text-xl">{stokAlanEmoji[alan]}</span>
+                            <div>
+                              <span className="text-sm font-semibold text-white">{stokAlanAdi[alan]}</span>
+                              {beklenen !== null && (
+                                <p className="text-xs text-gray-500">Beklenen: {beklenen}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {sapmaVar && (
+                              <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${fark > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                {fark > 0 ? '+' : ''}{fark}
+                              </span>
+                            )}
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              value={acilisSayim[alan] || ''}
+                              onChange={e => setAcilisSayim(p => ({ ...p, [alan]: parseInt(e.target.value) || 0 }))}
+                              placeholder="0"
+                              disabled={!!stokGunluk?.acilisYapildi}
+                              className={`w-20 px-2 py-2 border rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#9dd9ea]/50 text-center font-bold text-lg disabled:opacity-60 ${
+                                sapmaVar ? (fark < 0 ? 'bg-red-500/10 border-red-500/40' : 'bg-green-500/10 border-green-500/40') : 'bg-white/10 border-white/20'
+                              }`}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Anomali uyarı bandı */}
+                  {dunKapanis && !stokGunluk?.acilisYapildi &&
+                    (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).some(a => (acilisSayim[a] ?? 0) !== (dunKapanis[a] ?? 0)) && (
+                    <div className="mt-4 bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <p className="text-xs text-amber-300">Dünkü kapanıştan farklı — göndermeden önce kontrol edin.</p>
+                    </div>
+                  )}
+
+                  {/* Kayıtlı anomali göster */}
+                  {stokGunluk?.acilisYapildi && Object.keys(stokGunluk.acilisAnomali || {}).length > 0 && (
+                    <div className="mt-3 bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
+                      <p className="text-xs font-bold text-amber-400 mb-1">⚠️ Açılış anomalileri kaydedildi</p>
+                      {(Object.entries(stokGunluk.acilisAnomali || {}) as [string, number][]).map(([alan, fark]) => (
+                        <p key={alan} className="text-xs text-gray-300">
+                          {stokAlanEmoji[alan]} {stokAlanAdi[alan]}: {fark > 0 ? '+' : ''}{fark}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Açılış notu — kayıt öncesi giriş, sonrası görüntü */}
+                  {stokGunluk?.acilisYapildi ? (
+                    stokGunluk.acilisNot ? (
+                      <div className="mt-3 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5">
+                        <p className="text-xs text-gray-500 mb-0.5">Açılış notu</p>
+                        <p className="text-sm text-gray-300">{stokGunluk.acilisNot}</p>
+                      </div>
+                    ) : null
+                  ) : (
+                    <textarea
+                      value={acilisNot}
+                      onChange={e => setAcilisNot(e.target.value)}
+                      placeholder="Açılış notu (isteğe bağlı)..."
+                      className="mt-3 w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-sm placeholder:text-gray-400 focus:outline-none resize-none"
+                      rows={2}
+                    />
+                  )}
                 </div>
-              </div>
+              )}
 
               {/* 2 — Yazıcı Sayaçları */}
               <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5">
@@ -509,33 +752,54 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
 
               {/* 3 — Reyon Albümleri */}
               <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center shadow-lg">
-                    <Grid3x3 className="w-5 h-5 text-[#2d3748]" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-white text-sm">Reyon Albümleri</h3>
-                    <p className="text-xs text-gray-400">Reyondaki hazır albüm adedi</p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {albumItems.map(({ key, label, emoji }) => (
-                    <div key={key} className="flex items-center justify-between bg-black/30 border border-white/10 rounded-xl px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xl">{emoji}</span>
-                        <span className="text-sm font-semibold text-white">{label}</span>
-                      </div>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        value={shiftShelves[key] || ''}
-                        onChange={e => updateShiftShelves(key, parseInt(e.target.value) || 0)}
-                        placeholder="0"
-                        className="w-20 px-2 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#9dd9ea]/50 text-center font-bold text-lg"
-                      />
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center shadow-lg">
+                      <Grid3x3 className="w-5 h-5 text-[#2d3748]" />
                     </div>
-                  ))}
+                    <div>
+                      <h3 className="font-bold text-white text-sm">Reyon</h3>
+                      <p className="text-xs text-gray-400">Bugün reyon açılacak mı?</p>
+                    </div>
+                  </div>
+                  {/* Toggle switch */}
+                  <button
+                    onClick={() => setReyonAcik(v => !v)}
+                    disabled={!!stokGunluk?.acilisYapildi}
+                    className={`relative w-12 h-6 rounded-full transition-colors disabled:opacity-50 ${reyonAcik ? 'bg-[#9dd9ea]' : 'bg-white/20'}`}
+                  >
+                    <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-all ${reyonAcik ? 'left-[26px]' : 'left-0.5'}`} />
+                  </button>
                 </div>
+
+                {reyonAcik ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-[#9dd9ea] bg-[#9dd9ea]/10 border border-[#9dd9ea]/20 rounded-xl px-3 py-2 mb-2">
+                      Reyona koyulan albüm adedini girin — kapanışta kalanı sayacaksınız, fark = satılan
+                    </p>
+                    {albumItems.map(({ key, label, emoji }) => (
+                      <div key={key} className="flex items-center justify-between bg-black/30 border border-white/10 rounded-xl px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xl">{emoji}</span>
+                          <span className="text-sm font-semibold text-white">{label}</span>
+                        </div>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={shiftShelves[key] || ''}
+                          onChange={e => setShiftShelves(p => ({ ...p, [key]: parseInt(e.target.value) || 0 }))}
+                          placeholder="0"
+                          disabled={!!stokGunluk?.acilisYapildi}
+                          className="w-20 px-2 py-2 bg-white/10 border border-white/20 rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#9dd9ea]/50 text-center font-bold text-lg disabled:opacity-60"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-center">
+                    <p className="text-xs text-gray-500">Reyon kullanılmayacak — kapanışta tam stok sayımı yapılacak</p>
+                  </div>
+                )}
               </div>
 
               {/* 4 — Personel Fotoğrafı */}
@@ -581,16 +845,26 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
 
               {/* Vardiyayı Aç Butonu */}
               <button
-                onClick={handleShiftStartComplete}
-                disabled={!teamPhotoTaken || !printers.some(p => p.startCounter.trim() !== '')}
+                onClick={handleAcilisSubmitClick}
+                disabled={
+                  !!stokGunluk?.acilisYapildi ||
+                  stokKaydediliyor ||
+                  !teamPhotoTaken ||
+                  !printers.some(p => p.startCounter.trim() !== '')
+                }
                 className={`w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2 shadow-lg ${
-                  teamPhotoTaken && printers.some(p => p.startCounter.trim() !== '')
+                  !stokGunluk?.acilisYapildi && !stokKaydediliyor && teamPhotoTaken && printers.some(p => p.startCounter.trim() !== '')
                     ? 'bg-gradient-to-r from-[#a8e6cf] to-[#8dd9b8] text-[#2d3748] hover:shadow-xl active:scale-[0.98]'
                     : 'bg-white/10 text-gray-500 cursor-not-allowed border border-white/10'
                 }`}
               >
-                <CheckCircle className="w-5 h-5" />
-                Vardiyayı Aç → Satışa Geç
+                {stokKaydediliyor ? (
+                  <span>Kaydediliyor...</span>
+                ) : stokGunluk?.acilisYapildi ? (
+                  <><CheckCircle className="w-5 h-5" /> Açılış Tamamlandı ✓</>
+                ) : (
+                  <><CheckCircle className="w-5 h-5" /> Vardiyayı Aç → Satışa Geç</>
+                )}
               </button>
             </div>
           )}
@@ -934,17 +1208,38 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#ffd4a3] to-[#ffc78f] flex items-center justify-center shadow-lg">
                     <Printer className="w-5 h-5 text-[#744210]" />
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <h3 className="font-bold text-white text-sm">Yazıcı Kapanış</h3>
-                    <p className="text-xs text-gray-400">{printers.length} yazıcı • bitiş sayacı & ribon değişimi</p>
+                    <p className="text-xs text-gray-400">
+                      {printers.length} yazıcı • bitiş sayacı & ribon değişimi
+                      {mekanKapasite > 0 && (
+                        <span className="text-[#a8e6cf]/70 ml-1">• kapasite: {mekanKapasite}/takım</span>
+                      )}
+                    </p>
                   </div>
                 </div>
+                {mekanKapasite === 0 && (
+                  <div className="mb-3 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 flex items-center gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <p className="text-[10px] text-amber-300">
+                      Mekan yönetiminde kağıt tipi tanımlanmamış — kapasite bilinmiyor, hesaplama tahminidir
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-3">
                   {printers.map(printer => {
                     const start = Number(printer.startCounter) || 0;
                     const end = Number(printerEndCounters[printer.id] || 0);
-                    const diff = Math.max(0, end - start);
                     const ribbonCount = Number(printerRibbonChanges[printer.id] || 0);
+                    const iade = Number(printerIadePhotos[printer.id] || 0);
+                    // Canlı hesaplama: kullanilanBaskı = açılış + degisim×kapasite - kapanış
+                    const kullanilanBaskı = mekanKapasite > 0
+                      ? Math.max(0, start + (ribbonCount * mekanKapasite) - end)
+                      : Math.max(0, start - end); // kapasite bilinmiyorsa sadece fark
+                    const carpan = mekanPrintType === 'tam' ? 1 : 2;
+                    const cikisAdedi = Math.round(kullanilanBaskı * carpan);
+                    const satılan = Math.max(0, cikisAdedi - iade);
+                    const hasEndInput = !!printerEndCounters[printer.id] && start > 0;
                     return (
                       <div key={printer.id} className="bg-black/30 border border-white/10 rounded-xl p-3 space-y-3">
                         {/* Başlık */}
@@ -966,10 +1261,10 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
                             placeholder="0"
                             className="w-full px-3 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#ffd4a3]/50 text-center font-bold text-lg"
                           />
-                          {printerEndCounters[printer.id] && start > 0 && (
+                          {hasEndInput && (
                             <div className="flex items-center justify-between bg-[#ffd4a3]/10 border border-[#ffd4a3]/20 rounded-lg px-3 py-1.5 mt-1.5">
-                              <span className="text-xs text-gray-400">Bu vardiyada baskı:</span>
-                              <span className="text-sm font-black text-[#ffd4a3]">{diff} adet</span>
+                              <span className="text-xs text-gray-400">Kullanılan baskı:</span>
+                              <span className="text-sm font-black text-[#ffd4a3]">{kullanilanBaskı} adet</span>
                             </div>
                           )}
                         </div>
@@ -993,6 +1288,66 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
                             </div>
                           )}
                         </div>
+
+                        {/* İade Fotoğraf */}
+                        <div>
+                          <p className="text-xs text-gray-400 mb-1.5 flex items-center gap-1.5">
+                            <span className="text-[#ffb3ba]">↩️</span>
+                            <span>İade Fotoğraf Adedi</span>
+                            <span className="text-gray-600 text-[10px]">(isteğe bağlı)</span>
+                          </p>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            value={printerIadePhotos[printer.id] || ''}
+                            onChange={e => updatePrinterIade(printer.id, e.target.value)}
+                            placeholder="0"
+                            disabled={shiftEndDone}
+                            className="w-full px-3 py-2.5 bg-[#ffb3ba]/10 border border-[#ffb3ba]/20 rounded-lg text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#ffb3ba]/40 text-center font-bold text-lg disabled:opacity-60"
+                          />
+                          {iade > 0 && (
+                            <div className="flex items-center justify-between bg-[#ffb3ba]/10 border border-[#ffb3ba]/20 rounded-lg px-3 py-1.5 mt-1.5">
+                              <span className="text-xs text-gray-400">İade:</span>
+                              <span className="text-sm font-black text-[#ffb3ba]">−{iade} adet</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* ── Canlı Hesaplama Özeti ── */}
+                        {hasEndInput && (
+                          <div className="bg-gradient-to-br from-[#a8e6cf]/10 to-[#8dd9b8]/5 border border-[#a8e6cf]/25 rounded-xl p-3">
+                            <p className="text-[10px] text-[#a8e6cf]/70 font-semibold mb-2 uppercase tracking-wide">Vardiya Hesabı</p>
+                            <div className="space-y-1.5">
+                              {/* Formül satırı */}
+                              {mekanKapasite > 0 && (
+                                <div className="text-[10px] text-gray-500 bg-black/20 rounded-lg px-2 py-1 font-mono">
+                                  {start} + {ribbonCount}×{mekanKapasite} − {end} = <span className="text-[#ffd4a3] font-bold">{kullanilanBaskı}</span> baskı
+                                </div>
+                              )}
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-gray-400">Kullanılan baskı</span>
+                                <span className="text-sm font-black text-[#ffd4a3]">{kullanilanBaskı}</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-gray-400">
+                                  Çıkış adedi
+                                  {mekanPrintType === 'yarim' && <span className="text-gray-600 ml-1">(×2 yarım)</span>}
+                                </span>
+                                <span className="text-sm font-black text-[#9dd9ea]">{cikisAdedi}</span>
+                              </div>
+                              {iade > 0 && (
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs text-gray-400">İade düşüldü</span>
+                                  <span className="text-sm font-black text-[#ffb3ba]">−{iade}</span>
+                                </div>
+                              )}
+                              <div className="flex items-center justify-between border-t border-white/10 pt-1.5 mt-1">
+                                <span className="text-xs font-bold text-white">Net Satılan</span>
+                                <span className="text-base font-black text-[#a8e6cf]">{satılan} 📸</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1000,12 +1355,31 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
                 {printers.length > 1 && (
                   <div className="mt-3 space-y-2">
                     <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 flex items-center justify-between">
-                      <span className="text-xs text-gray-400">Toplam baskı (tüm yazıcılar):</span>
+                      <span className="text-xs text-gray-400">Toplam kullanılan baskı:</span>
                       <span className="text-sm font-black text-[#a8e6cf]">
                         {printers.reduce((sum, pr) => {
                           const s = Number(pr.startCounter) || 0;
                           const e = Number(printerEndCounters[pr.id] || 0);
-                          return sum + Math.max(0, e - s);
+                          const r = Number(printerRibbonChanges[pr.id] || 0);
+                          return sum + (mekanKapasite > 0
+                            ? Math.max(0, s + r * mekanKapasite - e)
+                            : Math.max(0, s - e));
+                        }, 0)} adet
+                      </span>
+                    </div>
+                    <div className="bg-[#9dd9ea]/10 border border-[#9dd9ea]/20 rounded-xl px-4 py-2.5 flex items-center justify-between">
+                      <span className="text-xs text-gray-400">
+                        Toplam çıkış {mekanPrintType === 'yarim' ? '(×2 yarım)' : '(tam)'}:
+                      </span>
+                      <span className="text-sm font-black text-[#9dd9ea]">
+                        {printers.reduce((sum, pr) => {
+                          const s = Number(pr.startCounter) || 0;
+                          const e = Number(printerEndCounters[pr.id] || 0);
+                          const r = Number(printerRibbonChanges[pr.id] || 0);
+                          const kb = mekanKapasite > 0
+                            ? Math.max(0, s + r * mekanKapasite - e)
+                            : Math.max(0, s - e);
+                          return sum + Math.round(kb * (mekanPrintType === 'tam' ? 1 : 2));
                         }, 0)} adet
                       </span>
                     </div>
@@ -1017,6 +1391,30 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
                         </span>
                       </div>
                     )}
+                    {printers.some(pr => Number(printerIadePhotos[pr.id] || 0) > 0) && (
+                      <div className="bg-[#ffb3ba]/10 border border-[#ffb3ba]/20 rounded-xl px-4 py-2.5 flex items-center justify-between">
+                        <span className="text-xs text-gray-400">Toplam iade fotoğraf:</span>
+                        <span className="text-sm font-black text-[#ffb3ba]">
+                          −{printers.reduce((sum, pr) => sum + Number(printerIadePhotos[pr.id] || 0), 0)} adet
+                        </span>
+                      </div>
+                    )}
+                    <div className="bg-gradient-to-r from-[#a8e6cf]/15 to-[#8dd9b8]/10 border border-[#a8e6cf]/30 rounded-xl px-4 py-2.5 flex items-center justify-between">
+                      <span className="text-xs font-bold text-white">Net Satılan 📸</span>
+                      <span className="text-sm font-black text-[#a8e6cf]">
+                        {printers.reduce((sum, pr) => {
+                          const s = Number(pr.startCounter) || 0;
+                          const e = Number(printerEndCounters[pr.id] || 0);
+                          const r = Number(printerRibbonChanges[pr.id] || 0);
+                          const ia = Number(printerIadePhotos[pr.id] || 0);
+                          const kb = mekanKapasite > 0
+                            ? Math.max(0, s + r * mekanKapasite - e)
+                            : Math.max(0, s - e);
+                          const cikis = Math.round(kb * (mekanPrintType === 'tam' ? 1 : 2));
+                          return sum + Math.max(0, cikis - ia);
+                        }, 0)} adet
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1034,8 +1432,12 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
                         <Package className="w-5 h-5 text-[#744210]" />
                       </div>
                       <div>
-                        <h3 className="font-bold text-white text-sm">Kapanış Sayımı</h3>
-                        <p className="text-xs text-gray-400">Reyon bitiş ve bozuk albümler</p>
+                        <h3 className="font-bold text-white text-sm">
+                          {reyonAcik ? 'Reyon Kapanış Sayımı' : 'Kapanış Stok Sayımı'}
+                        </h3>
+                        <p className="text-xs text-gray-400">
+                          {reyonAcik ? 'Reyonda kalan albüm adedi' : 'Tüm ürünlerin kapanış miktarı'}
+                        </p>
                       </div>
                     </div>
                     <motion.div animate={{ rotate: showClosingCount ? 180 : 0 }} transition={{ duration: 0.2 }}>
@@ -1052,82 +1454,263 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
-                      className="space-y-4 mt-3 overflow-hidden"
+                      className="overflow-hidden"
                     >
-                      {/* Reyon Bitiş */}
-                      <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-4">
-                        <h4 className="font-bold text-white mb-3 flex items-center gap-2 text-sm">
-                          <CheckCircle className="w-4 h-4 text-[#a8e6cf]" /> Reyon Bitiş
-                        </h4>
-                        <div className="grid grid-cols-2 gap-2">
-                          {closingAlbumItems.map(({ key, label, emoji }) => (
-                            <div key={key} className="bg-black/30 border border-white/10 rounded-xl p-3">
-                              <div className="text-xl text-center mb-1">{emoji}</div>
-                              <div className="text-xs text-gray-400 text-center mb-2">{label}</div>
-                              <input
-                                type="number"
-                                inputMode="numeric"
-                                value={closingCount.shelfEnd[key] || ''}
-                                onChange={e => updateClosingCount('shelfEnd', key, parseInt(e.target.value) || 0)}
-                                placeholder="0"
-                                className="w-full px-2 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#a8e6cf]/50 text-center font-bold text-base"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      <div className="mt-2 backdrop-blur-xl bg-gradient-to-br from-white/8 to-white/3 border border-white/15 rounded-2xl p-5 space-y-3">
 
-                      {/* Bozuk Albümler */}
-                      <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl overflow-hidden">
-                        <button
-                          onClick={() => setShowDamagedAlbums(p => !p)}
-                          className="w-full flex items-center justify-between p-4 active:bg-white/5 transition-colors"
-                        >
-                          <div className="flex items-center gap-2">
-                            <AlertCircle className="w-4 h-4 text-[#ffb3ba]" />
-                            <span className="font-bold text-white text-sm">Bozuk Albümler</span>
-                            {Object.values(closingCount.damagedAlbums).some(v => v > 0) && (
-                              <span className="text-xs bg-[#ffb3ba]/20 text-[#ffb3ba] border border-[#ffb3ba]/30 rounded-full px-2 py-0.5 font-semibold">
-                                {Object.values(closingCount.damagedAlbums).reduce((a, b) => a + b, 0)} adet
-                              </span>
-                            )}
-                          </div>
-                          <motion.svg
-                            animate={{ rotate: showDamagedAlbums ? 180 : 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="w-4 h-4 text-gray-400"
-                            fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </motion.svg>
-                        </button>
-                        <AnimatePresence>
-                          {showDamagedAlbums && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="px-4 pb-4 grid grid-cols-2 gap-2">
-                                {closingAlbumItems.map(({ key, label, emoji }) => (
-                                  <div key={key} className="bg-black/30 border border-white/10 rounded-xl p-3">
-                                    <div className="text-xl text-center mb-1">{emoji}</div>
-                                    <div className="text-xs text-gray-400 text-center mb-2">{label}</div>
-                                    <input
-                                      type="number"
-                                      inputMode="numeric"
-                                      value={closingCount.damagedAlbums[key] || ''}
-                                      onChange={e => updateClosingCount('damagedAlbums', key, parseInt(e.target.value) || 0)}
-                                      placeholder="0"
-                                      className="w-full px-2 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#ffb3ba]/50 text-center font-bold text-base"
-                                    />
+                        {/* ── REYON MODU ── */}
+                        {reyonAcik ? (
+                          <>
+                            <div className="bg-[#9dd9ea]/10 border border-[#9dd9ea]/20 rounded-xl p-3">
+                              <p className="text-xs font-semibold text-[#9dd9ea]">
+                                📊 Gün içi ekleme yaptıysanız girin → Satılan = (Açılış + Ekleme) − Kalan
+                              </p>
+                            </div>
+
+                            {albumItems.map(({ key, label, emoji }) => {
+                              const acilis = shiftShelves[key] || 0;
+                              const gunIciEkleme = reyonGunIciEkleme[key] || 0;
+                              const kapanis = reyonKapanisSayim[key as keyof StokSayim] || 0;
+                              const satilan = Math.max(0, (acilis + gunIciEkleme) - kapanis);
+                              return (
+                                <div key={key} className="bg-black/30 border border-white/10 rounded-xl px-4 py-3 space-y-2">
+                                  {/* Başlık + satılan badge */}
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-xl">{emoji}</span>
+                                    <span className="text-sm font-semibold text-white flex-1">{label}</span>
+                                    {satilan > 0 && (
+                                      <span className="text-xs bg-[#a8e6cf]/20 text-[#a8e6cf] border border-[#a8e6cf]/30 rounded-lg px-2 py-0.5 font-bold">
+                                        −{satilan} satıldı
+                                      </span>
+                                    )}
                                   </div>
-                                ))}
+                                  {/* 3 sütun: Açılış | +Ekleme | Kalan */}
+                                  <div className="grid grid-cols-3 gap-2">
+                                    {/* Açılış — salt okunur */}
+                                    <div className="text-center">
+                                      <p className="text-[10px] text-gray-500 mb-1">Açılış</p>
+                                      <div className="w-full px-2 py-2 bg-white/5 border border-white/10 rounded-xl text-gray-400 text-center font-bold text-base">
+                                        {acilis}
+                                      </div>
+                                    </div>
+                                    {/* Gün içi ekleme */}
+                                    <div className="text-center">
+                                      <p className="text-[10px] text-[#ffd4a3] mb-1">+ Ekleme</p>
+                                      <input
+                                        type="number"
+                                        inputMode="numeric"
+                                        value={reyonGunIciEkleme[key] || ''}
+                                        onChange={e => setReyonGunIciEkleme(p => ({ ...p, [key]: parseInt(e.target.value) || 0 }))}
+                                        placeholder="0"
+                                        disabled={shiftEndDone}
+                                        className="w-full px-2 py-2 bg-[#ffd4a3]/10 border border-[#ffd4a3]/30 rounded-xl text-[#ffd4a3] placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#ffd4a3]/50 text-center font-bold text-base disabled:opacity-60"
+                                      />
+                                    </div>
+                                    {/* Kalan */}
+                                    <div className="text-center">
+                                      <p className="text-[10px] text-[#9dd9ea] mb-1">Kalan</p>
+                                      <input
+                                        type="number"
+                                        inputMode="numeric"
+                                        value={reyonKapanisSayim[key as keyof StokSayim] || ''}
+                                        onChange={e => setReyonKapanisSayim(p => ({ ...p, [key]: parseInt(e.target.value) || 0 }))}
+                                        placeholder="0"
+                                        disabled={shiftEndDone}
+                                        className="w-full px-2 py-2 bg-[#9dd9ea]/10 border border-[#9dd9ea]/30 rounded-xl text-[#9dd9ea] placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#9dd9ea]/50 text-center font-bold text-base disabled:opacity-60"
+                                      />
+                                    </div>
+                                  </div>
+                                  {/* Özet satır */}
+                                  {(acilis > 0 || gunIciEkleme > 0) && (
+                                    <div className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-1.5 text-xs text-gray-400">
+                                      <span>{acilis} + {gunIciEkleme} − {kapanis}</span>
+                                      <span className={`font-bold ${satilan > 0 ? 'text-[#a8e6cf]' : 'text-gray-500'}`}>
+                                        = {satilan} satıldı
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+
+                            {/* Toplam satış özeti */}
+                            {albumItems.some(({ key }) => (shiftShelves[key] || 0) > 0 || (reyonGunIciEkleme[key] || 0) > 0) && (
+                              <div className="bg-[#a8e6cf]/10 border border-[#a8e6cf]/20 rounded-xl p-3">
+                                <p className="text-xs font-semibold text-[#a8e6cf] mb-2">🎯 Reyon satış özeti:</p>
+                                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                  {albumItems.map(({ key, label }) => {
+                                    const acilis = shiftShelves[key] || 0;
+                                    const gunIciEkleme = reyonGunIciEkleme[key] || 0;
+                                    if (acilis === 0 && gunIciEkleme === 0) return null;
+                                    const kapanis = reyonKapanisSayim[key as keyof StokSayim] || 0;
+                                    const satilan = Math.max(0, (acilis + gunIciEkleme) - kapanis);
+                                    return (
+                                      <span key={key} className="text-xs text-gray-300">
+                                        {label}: <strong className="text-[#a8e6cf]">{satilan} satıldı</strong>
+                                        {gunIciEkleme > 0 && <span className="text-[#ffd4a3]"> (+{gunIciEkleme} eklendi)</span>}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
                               </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
+                            )}
+                          </>
+                        ) : (
+                          /* ── TAM STOK MODU ── */
+                          <>
+                            {kapanisBeklenen && (
+                              <div className="bg-[#9dd9ea]/10 border border-[#9dd9ea]/20 rounded-xl p-3">
+                                <p className="text-xs font-semibold text-[#9dd9ea] mb-1">📊 Beklenen kapanış (açılış + eklemeler)</p>
+                                <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+                                  {(Object.keys(stokAlanAdi) as Array<keyof StokSayim>).filter(a => (kapanisBeklenen[a] ?? 0) > 0).map(alan => (
+                                    <span key={alan} className="text-xs text-gray-400">{stokAlanEmoji[alan]} {kapanisBeklenen[alan]}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {(Object.keys(stokAlanAdi) as Array<keyof StokSayim>).map((alan) => {
+                              // Ribon için yazıcı değişim verilerinden client-side beklenen hesapla
+                              const toplamRibonDegisim = printers.reduce((sum, pr) => sum + Number(printerRibbonChanges[pr.id] || 0), 0);
+                              const clientBeklenenRibon = Math.max(0, (acilisSayim.ribon || 0) - toplamRibonDegisim);
+
+                              // Kapanış öncesi ribon için client hesabını göster, sonrası için server değerini
+                              let beklenen = kapanisBeklenen?.[alan] ?? null;
+                              if (alan === 'ribon' && !shiftEndDone) {
+                                beklenen = clientBeklenenRibon;
+                              }
+
+                              const gercek = kapanisSayim[alan] ?? 0;
+                              const fark = beklenen !== null ? gercek - beklenen : 0;
+                              const sapmaVar = beklenen !== null && fark !== 0;
+                              return (
+                                <div key={alan} className="bg-black/30 border border-white/10 rounded-xl px-4 py-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-xl">{stokAlanEmoji[alan]}</span>
+                                      <div>
+                                        <span className="text-sm font-semibold text-white">{stokAlanAdi[alan]}</span>
+                                        {alan === 'ribon' ? (
+                                          <p className="text-xs text-[#9dd9ea]/80 mt-0.5">
+                                            Açılış <span className="font-bold text-white">{acilisSayim.ribon || 0}</span>
+                                            {' − '}Değişim <span className="font-bold text-[#ffd4a3]">{toplamRibonDegisim}</span>
+                                            {' = '}Beklenen <span className="font-bold text-[#9dd9ea]">{clientBeklenenRibon}</span>
+                                          </p>
+                                        ) : (
+                                          beklenen !== null && <p className="text-xs text-gray-500">Beklenen: {beklenen}</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {sapmaVar && (
+                                        <span className={`text-xs font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 ${fark > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                          {fark > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                          {fark > 0 ? '+' : ''}{fark}
+                                        </span>
+                                      )}
+                                      <input
+                                        type="number"
+                                        inputMode="numeric"
+                                        value={kapanisSayim[alan] || ''}
+                                        onChange={e => setKapanisSayim(p => ({ ...p, [alan]: parseInt(e.target.value) || 0 }))}
+                                        placeholder="0"
+                                        disabled={shiftEndDone}
+                                        className={`w-20 px-2 py-2 border rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#ffd4a3]/50 text-center font-bold text-lg disabled:opacity-60 ${
+                                          sapmaVar ? (fark < 0 ? 'bg-red-500/10 border-red-500/40' : 'bg-green-500/10 border-green-500/40') : 'bg-white/10 border-white/20'
+                                        }`}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                            {!shiftEndDone && !reyonAcik && stokGunluk?.acilis &&
+                              (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).some(a => {
+                                let bek = (stokGunluk!.acilis as StokSayim)[a] || 0;
+                                for (const ek of stokEklemeler) bek += (ek.miktar as Record<string, number>)[a] || 0;
+                                if (a === 'ribon') bek -= printers.reduce((s, pr) => s + (Number(printerRibbonChanges[pr.id] || 0)), 0);
+                                return (kapanisSayim[a] ?? 0) !== Math.max(0, bek);
+                              }) && (
+                              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                                <p className="text-xs text-amber-300">Stok sapması var — göndermeden önce kontrol edin.</p>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {/* Kapanış notu — her iki modda da */}
+                        {shiftEndDone ? (
+                          stokGunluk?.kapanisNot ? (
+                            <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5">
+                              <p className="text-xs text-gray-500 mb-0.5">Kapanış notu</p>
+                              <p className="text-sm text-gray-300">{stokGunluk.kapanisNot}</p>
+                            </div>
+                          ) : null
+                        ) : (
+                          <textarea
+                            value={kapanisNot}
+                            onChange={e => setKapanisNot(e.target.value)}
+                            placeholder="Kapanış notu (isteğe bağlı)..."
+                            className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-sm placeholder:text-gray-400 focus:outline-none resize-none"
+                            rows={2}
+                          />
+                        )}
+
+                                {shiftEndDone && Object.keys(kapanisAnomali).length > 0 && (
+                          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
+                            <p className="text-xs font-bold text-amber-400 mb-1">⚠️ Kapanış anomalileri kaydedildi</p>
+                            {(Object.entries(kapanisAnomali) as [string, number][]).map(([alan, fark]) => (
+                              <p key={alan} className="text-xs text-gray-300">
+                                {stokAlanEmoji[alan]} {stokAlanAdi[alan]}: {fark > 0 ? '+' : ''}{fark}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Vardiya baskı & satış özeti — kapanış sonrası */}
+                        {shiftEndDone && (stokGunluk as any)?.vardiyaToplam && (() => {
+                          const vt = (stokGunluk as any).vardiyaToplam;
+                          return (
+                            <div className="bg-gradient-to-br from-[#a8e6cf]/10 to-[#8dd9b8]/5 border border-[#a8e6cf]/25 rounded-xl p-4 space-y-2">
+                              <p className="text-xs font-bold text-[#a8e6cf] mb-2">📊 Vardiya Baskı & Satış Özeti</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="bg-black/20 rounded-xl px-3 py-2 text-center">
+                                  <p className="text-[10px] text-gray-500 mb-0.5">Kullanılan Baskı</p>
+                                  <p className="text-base font-black text-white">{vt.toplamKullanilanBaskı}</p>
+                                  <p className="text-[10px] text-gray-600">stok düşümü</p>
+                                </div>
+                                <div className="bg-black/20 rounded-xl px-3 py-2 text-center">
+                                  <p className="text-[10px] text-gray-500 mb-0.5">Çıkış Adedi</p>
+                                  <p className="text-base font-black text-[#9dd9ea]">{vt.toplamCikisAdedi}</p>
+                                  <p className="text-[10px] text-gray-600">{vt.printType === 'tam' ? 'tam kağıt' : 'yarım kağıt ×2'}</p>
+                                </div>
+                                {vt.toplamIadeFotograf > 0 && (
+                                  <div className="bg-black/20 rounded-xl px-3 py-2 text-center">
+                                    <p className="text-[10px] text-gray-500 mb-0.5">İade</p>
+                                    <p className="text-base font-black text-[#ffb3ba]">−{vt.toplamIadeFotograf}</p>
+                                    <p className="text-[10px] text-gray-600">fotoğraf</p>
+                                  </div>
+                                )}
+                                <div className="bg-black/20 rounded-xl px-3 py-2 text-center">
+                                  <p className="text-[10px] text-gray-500 mb-0.5">Satılan</p>
+                                  <p className="text-base font-black text-[#a8e6cf]">{vt.toplamSatılanFotograf}</p>
+                                  <p className="text-[10px] text-gray-600">net fotoğraf</p>
+                                </div>
+                                {vt.toplamMaliyet > 0 && (
+                                  <div className={`bg-black/20 rounded-xl px-3 py-2 text-center ${vt.toplamIadeFotograf > 0 ? '' : 'col-span-2'}`}>
+                                    <p className="text-[10px] text-gray-500 mb-0.5">Toplam Maliyet</p>
+                                    <p className="text-base font-black text-[#ffd4a3]">
+                                      {vt.toplamMaliyet.toFixed(2)} {vt.currency}
+                                    </p>
+                                    {vt.paperName && <p className="text-[10px] text-gray-600">{vt.paperName}</p>}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </motion.div>
                   )}
@@ -1177,21 +1760,148 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
 
               {/* Vardiyayı Tamamla */}
               <button
-                onClick={handleShiftEndComplete}
-                disabled={!venuePhotoTaken}
+                onClick={handleKapanisSubmitClick}
+                disabled={
+                  shiftEndDone ||
+                  stokKaydediliyor ||
+                  !venuePhotoTaken
+                }
                 className={`w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2 shadow-lg ${
-                  venuePhotoTaken
+                  !shiftEndDone && !stokKaydediliyor && venuePhotoTaken
                     ? 'bg-gradient-to-r from-[#a8e6cf] to-[#8dd9b8] text-[#2d3748] hover:shadow-xl active:scale-[0.98]'
                     : 'bg-white/10 text-gray-500 cursor-not-allowed border border-white/10'
                 }`}
               >
-                <CheckCircle className="w-5 h-5" />
-                Vardiyayı Tamamla
+                {stokKaydediliyor ? (
+                  <span>Kaydediliyor...</span>
+                ) : shiftEndDone ? (
+                  <><CheckCircle className="w-5 h-5" /> Kapanış Tamamlandı ✓</>
+                ) : (
+                  <><CheckCircle className="w-5 h-5" /> Vardiyayı Tamamla</>
+                )}
               </button>
             </div>
           )}
         </>
       )}
+
+      {/* ── Açılış Anomali Onay Modali ── */}
+      <AnimatePresence>
+        {showAcilisAnomaliUyari && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center max-w-[480px] mx-auto px-5"
+            onClick={() => setShowAcilisAnomaliUyari(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+              className="w-full bg-gradient-to-b from-[#3a3a4e] to-[#2f3439] border border-amber-500/30 rounded-3xl p-6 shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-6 h-6 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">Anomali Tespit Edildi</h3>
+                  <p className="text-xs text-gray-400">Dünkü kapanıştan farklılık var</p>
+                </div>
+              </div>
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3 mb-4 space-y-1">
+                {(Object.entries(acilisAnomaliDetect()) as [string, number][]).map(([alan, fark]) => (
+                  <div key={alan} className="flex items-center justify-between text-sm">
+                    <span className="text-gray-300">{stokAlanEmoji[alan]} {stokAlanAdi[alan]}</span>
+                    <span className={`font-bold ${fark > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {fark > 0 ? '+' : ''}{fark} adet
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 mb-5 text-center">
+                Sayımı tekrar kontrol edebilir ya da yine de gönderebilirsiniz.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowAcilisAnomaliUyari(false)}
+                  className="flex-1 py-3 rounded-2xl bg-white/10 border border-white/20 text-white font-semibold text-sm active:scale-[0.98] transition-all"
+                >
+                  ← Geri Dön
+                </button>
+                <button
+                  onClick={() => { setShowAcilisAnomaliUyari(false); handleShiftStartComplete(); }}
+                  className="flex-1 py-3 rounded-2xl bg-amber-500/80 text-white font-bold text-sm active:scale-[0.98] transition-all"
+                >
+                  Yine de Gönder
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Kapanış Anomali Onay Modali ── */}
+      <AnimatePresence>
+        {showKapanisAnomaliUyari && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center max-w-[480px] mx-auto px-5"
+            onClick={() => setShowKapanisAnomaliUyari(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+              className="w-full bg-gradient-to-b from-[#3a3a4e] to-[#2f3439] border border-amber-500/30 rounded-3xl p-6 shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-6 h-6 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">Anomali Tespit Edildi</h3>
+                  <p className="text-xs text-gray-400">Beklenen stoktan farklılık var</p>
+                </div>
+              </div>
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3 mb-4 space-y-1">
+                {(Object.entries(kapanisAnomaliDetect()) as [string, number][]).map(([alan, fark]) => (
+                  <div key={alan} className="flex items-center justify-between text-sm">
+                    <span className="text-gray-300">{stokAlanEmoji[alan]} {stokAlanAdi[alan]}</span>
+                    <span className={`font-bold ${fark > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {fark > 0 ? '+' : ''}{fark} adet
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 mb-5 text-center">
+                Sayımı tekrar kontrol edebilir ya da yine de gönderebilirsiniz.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowKapanisAnomaliUyari(false)}
+                  className="flex-1 py-3 rounded-2xl bg-white/10 border border-white/20 text-white font-semibold text-sm active:scale-[0.98] transition-all"
+                >
+                  ← Geri Dön
+                </button>
+                <button
+                  onClick={() => { setShowKapanisAnomaliUyari(false); handleShiftEndComplete(); }}
+                  className="flex-1 py-3 rounded-2xl bg-amber-500/80 text-white font-bold text-sm active:scale-[0.98] transition-all"
+                >
+                  Yine de Gönder
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Manual Picker Modal */}
       <AnimatePresence>

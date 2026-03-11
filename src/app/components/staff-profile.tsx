@@ -1,4 +1,5 @@
-import { TrendingUp, DollarSign, Package, Award, Target, Calendar, Trophy, LogOut, Tag, GraduationCap } from 'lucide-react';
+import { useId } from 'react';
+import { Package, TrendingUp, Tag, Calendar, Trophy, Target, GraduationCap, LogOut } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { StaffTopBar } from './staff-top-bar';
 import { NewBottomNav } from './new-bottom-nav';
@@ -11,6 +12,9 @@ interface StaffProfileProps {
 }
 
 export function StaffProfile({ userName, userRole, onLogout, onNavigate }: StaffProfileProps) {
+  const uid = useId();
+  const gradientId = `colorRevenue-${uid.replace(/:/g, '')}`;
+
   const profileData = {
     name: userName,
     avatar: '👨‍💼',
@@ -130,10 +134,10 @@ export function StaffProfile({ userName, userRole, onLogout, onNavigate }: Staff
             Haftalık Performans
           </h3>
           <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%" minHeight={192}>
+            <ResponsiveContainer width="100%" height={192}>
               <AreaChart data={weeklyData}>
                 <defs>
-                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#9dd9ea" stopOpacity={0.3} />
                     <stop offset="95%" stopColor="#9dd9ea" stopOpacity={0} />
                   </linearGradient>
@@ -155,7 +159,7 @@ export function StaffProfile({ userName, userRole, onLogout, onNavigate }: Staff
                   dataKey="revenue"
                   stroke="#9dd9ea"
                   strokeWidth={3}
-                  fill="url(#colorRevenue)"
+                  fill={`url(#${gradientId})`}
                 />
               </AreaChart>
             </ResponsiveContainer>

@@ -28,6 +28,7 @@ export interface ShiftSetupData {
   printer: {
     startCounter: string;
   };
+  reyonAcik: boolean;
   shelves: {
     album3: number;
     album5: number;
@@ -42,10 +43,12 @@ export interface ShiftSetupData {
     taken: boolean;
     preview: string | null;
   };
+  acilisNot: string;
 }
 
 export function ShiftSetup({ userName, userRole, projectName, onComplete, onLogout, onNavigate, onBack }: ShiftSetupProps) {
   const [currentStep, setCurrentStep] = useState<'stock' | 'printer' | 'shelf' | 'team-photo'>('stock');
+  const [acilisNot, setAcilisNot] = useState('');
   
   // Stok state
   const [stock, setStock] = useState({
@@ -63,6 +66,7 @@ export function ShiftSetup({ userName, userRole, projectName, onComplete, onLogo
   const [printerStart, setPrinterStart] = useState('');
 
   // Reyon state
+  const [reyonAcik, setReyonAcik] = useState(false);
   const [shelfAlbums, setShelfAlbums] = useState({
     album3: 0,
     album5: 0,
@@ -107,8 +111,10 @@ export function ShiftSetup({ userName, userRole, projectName, onComplete, onLogo
     const setupData: ShiftSetupData = {
       stock,
       printer: { startCounter: printerStart },
+      reyonAcik,
       shelves: shelfAlbums,
       teamPhoto: { taken: teamPhotoTaken, preview: teamPhotoPreview },
+      acilisNot,
     };
     onComplete(setupData);
   };
@@ -121,7 +127,8 @@ export function ShiftSetup({ userName, userRole, projectName, onComplete, onLogo
       return printerStart.trim() !== '';
     }
     if (currentStep === 'shelf') {
-      return Object.values(shelfAlbums).some(val => val > 0);
+      // Reyon kapalıysa adım her zaman tamamlanmış sayılır
+      return !reyonAcik || Object.values(shelfAlbums).some(val => val > 0);
     }
     if (currentStep === 'team-photo') {
       return teamPhotoTaken;
@@ -155,7 +162,6 @@ export function ShiftSetup({ userName, userRole, projectName, onComplete, onLogo
             { key: 'album11', label: '11 Kare Albüm', emoji: '📔' },
             { key: 'album13', label: '13 Kare Albüm', emoji: '📒' },
             { key: 'album15', label: '15 Kare Albüm', emoji: '📓' },
-            { key: 'passepartout', label: 'Paspartu', emoji: '🖼️' },
           ].map(({ key, label, emoji }) => (
             <div key={key} className="flex items-center justify-between bg-black/40 backdrop-blur-sm border border-white/10 rounded-xl p-4">
               <div className="flex items-center gap-3">
@@ -171,6 +177,14 @@ export function ShiftSetup({ userName, userRole, projectName, onComplete, onLogo
               />
             </div>
           ))}
+
+          <textarea
+            value={acilisNot}
+            onChange={e => setAcilisNot(e.target.value)}
+            placeholder="Açılış notu (isteğe bağlı)..."
+            className="mt-3 w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-sm placeholder:text-gray-400 focus:outline-none resize-none"
+            rows={2}
+          />
         </div>
       </div>
     </motion.div>
@@ -229,42 +243,60 @@ export function ShiftSetup({ userName, userRole, projectName, onComplete, onLogo
       className="space-y-4"
     >
       <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center shadow-lg">
-            <Grid3x3 className="w-6 h-6 text-[#2d3748]" />
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center shadow-lg">
+              <Grid3x3 className="w-6 h-6 text-[#2d3748]" />
+            </div>
+            <div>
+              <h3 className="font-bold text-white">Reyon</h3>
+              <p className="text-xs text-gray-400">Bugün reyon açılacak mı?</p>
+            </div>
           </div>
-          <div>
-            <h3 className="font-bold text-white">Reyon Albümleri</h3>
-            <p className="text-xs text-gray-400">Reyonda bulunan hazır albümler</p>
-          </div>
+          {/* Toggle switch */}
+          <button
+            onClick={() => setReyonAcik(v => !v)}
+            className={`relative w-12 h-6 rounded-full transition-colors ${reyonAcik ? 'bg-[#9dd9ea]' : 'bg-white/20'}`}
+          >
+            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-all ${reyonAcik ? 'left-[26px]' : 'left-0.5'}`} />
+          </button>
         </div>
 
-        <div className="space-y-3">
-          {[
-            { key: 'album3', label: '3 Kare Albüm', emoji: '📘' },
-            { key: 'album5', label: '5 Kare Albüm', emoji: '📗' },
-            { key: 'album7', label: '7 Kare Albüm', emoji: '📙' },
-            { key: 'album9', label: '9 Kare Albüm', emoji: '📕' },
-            { key: 'album11', label: '11 Kare Albüm', emoji: '📔' },
-            { key: 'album13', label: '13 Kare Albüm', emoji: '📒' },
-            { key: 'album15', label: '15 Kare Albüm', emoji: '📓' },
-            { key: 'passepartout', label: 'Paspartu', emoji: '🖼️' },
-          ].map(({ key, label, emoji }) => (
-            <div key={key} className="flex items-center justify-between bg-black/40 backdrop-blur-sm border border-white/10 rounded-xl p-4">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{emoji}</span>
-                <span className="font-semibold text-white">{label}</span>
+        {reyonAcik ? (
+          <div className="space-y-3">
+            <p className="text-xs text-[#9dd9ea] bg-[#9dd9ea]/10 border border-[#9dd9ea]/20 rounded-xl px-3 py-2">
+              Reyona koyulan albüm adedini girin — kapanışta kalanı sayacaksınız, fark = satılan
+            </p>
+            {[
+              { key: 'album3', label: '3 Kare Albüm', emoji: '📘' },
+              { key: 'album5', label: '5 Kare Albüm', emoji: '📗' },
+              { key: 'album7', label: '7 Kare Albüm', emoji: '📙' },
+              { key: 'album9', label: '9 Kare Albüm', emoji: '📕' },
+              { key: 'album11', label: '11 Kare Albüm', emoji: '📔' },
+              { key: 'album13', label: '13 Kare Albüm', emoji: '📒' },
+              { key: 'album15', label: '15 Kare Albüm', emoji: '📓' },
+            ].map(({ key, label, emoji }) => (
+              <div key={key} className="flex items-center justify-between bg-black/40 backdrop-blur-sm border border-white/10 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{emoji}</span>
+                  <span className="font-semibold text-white">{label}</span>
+                </div>
+                <input
+                  type="number"
+                  value={shelfAlbums[key as keyof typeof shelfAlbums] || ''}
+                  onChange={(e) => updateShelfAlbums(key as keyof typeof shelfAlbums, parseInt(e.target.value) || 0)}
+                  placeholder="0"
+                  className="w-24 px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#9dd9ea]/50 focus:border-[#9dd9ea]/50 transition-all text-center font-bold"
+                />
               </div>
-              <input
-                type="number"
-                value={shelfAlbums[key as keyof typeof shelfAlbums] || ''}
-                onChange={(e) => updateShelfAlbums(key as keyof typeof shelfAlbums, parseInt(e.target.value) || 0)}
-                placeholder="0"
-                className="w-24 px-3 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#9dd9ea]/50 focus:border-[#9dd9ea]/50 transition-all text-center font-bold"
-              />
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-black/20 border border-white/10 rounded-xl px-4 py-4 text-center">
+            <p className="text-sm text-gray-500">Reyon kullanılmayacak</p>
+            <p className="text-xs text-gray-600 mt-1">Kapanışta tam stok sayımı yapılacak</p>
+          </div>
+        )}
       </div>
     </motion.div>
   );
