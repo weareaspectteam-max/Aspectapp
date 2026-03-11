@@ -58,10 +58,13 @@ app.get("/make-server-4da0b637/health", (c) => {
 // ──────────────────────────────────────────
 app.post("/make-server-4da0b637/auth/signup", async (c) => {
   try {
-    const { email, password, full_name, phone } = await c.req.json();
+    const { email, password, full_name, phone, birth_date } = await c.req.json();
 
     if (!email || !password || !full_name) {
       return c.json({ error: "E-posta, şifre ve ad soyad zorunludur." }, 400);
+    }
+    if (!birth_date) {
+      return c.json({ error: "Doğum tarihi zorunludur." }, 400);
     }
 
     const supabase = getAdminClient();
@@ -73,6 +76,7 @@ app.post("/make-server-4da0b637/auth/signup", async (c) => {
         full_name: full_name.trim(),
         role: "bekleyen", // Yeni kullanıcılar bekleyen olarak başlar
         phone: phone?.trim() || "",
+        birth_date: birth_date,
       },
       // E-posta sunucusu yapılandırılmadığı için otomatik onaylıyoruz
       email_confirm: true,

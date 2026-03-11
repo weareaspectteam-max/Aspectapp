@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Mail, Lock, Eye, EyeOff, Camera, User, UserPlus, LogIn, Phone, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Camera, User, UserPlus, LogIn, Phone, Calendar, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase, SERVER_URL } from '../lib/supabase';
 import { buildHeaders } from '../lib/api';
@@ -24,6 +24,7 @@ export function Login({ onLogin }: LoginProps) {
   const [signUpName, setSignUpName] = useState('');
   const [signUpEmail, setSignUpEmail] = useState('');
   const [signUpPhone, setSignUpPhone] = useState('');
+  const [signUpBirthDate, setSignUpBirthDate] = useState('');
   const [signUpPassword, setSignUpPassword] = useState('');
   const [signUpPasswordConfirm, setSignUpPasswordConfirm] = useState('');
   const [showSignUpPassword, setShowSignUpPassword] = useState(false);
@@ -86,6 +87,10 @@ export function Login({ onLogin }: LoginProps) {
 
     if (!signUpName.trim()) { setError('Ad Soyad zorunludur.'); return; }
     if (!signUpEmail.trim()) { setError('E-posta zorunludur.'); return; }
+    if (!signUpBirthDate) { setError('Doğum tarihi zorunludur.'); return; }
+    const birthYear = new Date(signUpBirthDate).getFullYear();
+    const currentYear = new Date().getFullYear();
+    if (birthYear < 1900 || birthYear > currentYear - 15) { setError('Geçerli bir doğum tarihi girin.'); return; }
     if (signUpPassword.length < 6) { setError('Şifre en az 6 karakter olmalı.'); return; }
     if (signUpPassword !== signUpPasswordConfirm) { setError('Şifreler eşleşmiyor.'); return; }
 
@@ -93,12 +98,13 @@ export function Login({ onLogin }: LoginProps) {
     try {
       const res = await fetch(`${SERVER_URL}/auth/signup`, {
         method: 'POST',
-        headers: buildHeaders(), // publicAnonKey ile gateway'i geç, user token gerekmez
+        headers: buildHeaders(),
         body: JSON.stringify({
           email: signUpEmail.toLowerCase().trim(),
           password: signUpPassword,
           full_name: signUpName.trim(),
           phone: signUpPhone.trim(),
+          birth_date: signUpBirthDate,
         }),
       });
 
@@ -451,6 +457,28 @@ export function Login({ onLogin }: LoginProps) {
                         className="w-full pl-12 pr-4 py-4 bg-black/40 backdrop-blur-sm border border-white/10 rounded-2xl text-white placeholder:text-gray-500 focus:outline-none focus:border-[#9dd9ea]/50 transition-all"
                         disabled={loading}
                         autoComplete="tel"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Birth Date */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Doğum Tarihi</label>
+                  <div className="relative group">
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#ffd4a3] to-[#9dd9ea] rounded-2xl opacity-0 group-focus-within:opacity-100 blur-sm transition-opacity" />
+                    <div className="relative flex items-center">
+                      <div className="absolute left-4 text-gray-400 group-focus-within:text-[#ffd4a3] transition-colors pointer-events-none z-10">
+                        <Calendar className="w-5 h-5" />
+                      </div>
+                      <input
+                        type="date"
+                        value={signUpBirthDate}
+                        onChange={(e) => setSignUpBirthDate(e.target.value)}
+                        max={new Date(new Date().setFullYear(new Date().getFullYear() - 15)).toISOString().split('T')[0]}
+                        min="1900-01-01"
+                        className={`w-full pl-12 pr-4 py-4 bg-black/40 backdrop-blur-sm border border-white/10 rounded-2xl focus:outline-none focus:border-[#ffd4a3]/50 transition-all [color-scheme:dark] ${signUpBirthDate ? 'text-white' : 'text-gray-500'}`}
+                        disabled={loading}
                       />
                     </div>
                   </div>
