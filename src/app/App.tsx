@@ -702,6 +702,7 @@ export default function App() {
 
         {/* Birthday Test Helper - Development only */}
         <BirthdayTestHelper />
+
       </div>
     </div>
   );

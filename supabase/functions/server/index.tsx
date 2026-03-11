@@ -1412,8 +1412,8 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
-    // Türkiye saatiyle bugünün tarihi
-    const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" });
+    // Frontend bugunTarih() ile aynı format: UTC tabanlı YYYY-MM-DD
+    const today = new Date().toISOString().split("T")[0];
 
     // Tüm mekanları çek → id→mekan map
     const mekanlarList = await kv.getByPrefix("mekan_");
@@ -1426,14 +1426,30 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
     const tumKayitlar = await kv.getByPrefix("stok_gunluk_");
     const bugunKayitlar = (tumKayitlar || []).filter((k: any) => k.tarih === today);
 
-    // Her kaydın satislar[] dizisini düzleştir, mekan bilgisiyle zenginleştir
-    const tumSatislar: any[] = [];
+    // Satış + Kare kayıtlarını unified feed'e topla
+    const feed: any[] = [];
     for (const kayit of bugunKayitlar) {
       const mekan = mekanMap[kayit.mekanId] || { name: kayit.mekanId, emoji: "📍", color: "#9dd9ea" };
+
+      // Satışlar
       const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
       for (const satis of satislar) {
-        tumSatislar.push({
+        feed.push({
+          type: "satis",
           ...satis,
+          mekanId: kayit.mekanId,
+          mekanAdi: mekan.name,
+          mekanEmoji: mekan.emoji,
+          mekanColor: mekan.color,
+        });
+      }
+
+      // Kare kayıtları
+      const kareKayitlari = kayit.kareKayitlari || [];
+      for (const kare of kareKayitlari) {
+        feed.push({
+          type: "kare",
+          ...kare,
           mekanId: kayit.mekanId,
           mekanAdi: mekan.name,
           mekanEmoji: mekan.emoji,
@@ -1443,12 +1459,15 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
     }
 
     // Zamana göre azalan sırala (en yeni önce)
-    tumSatislar.sort(
+    feed.sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
 
-    console.log(`Canlı satış feed: ${today} — ${tumSatislar.length} satış, ${bugunKayitlar.length} mekan`);
-    return c.json({ satislar: tumSatislar, mekanlar: mekanlarList || [] });
+    const tumSatislar = feed.filter((f) => f.type === "satis");
+    const tumKareler = feed.filter((f) => f.type === "kare");
+
+    console.log(`Canlı feed: ${today} — ${tumSatislar.length} satış, ${tumKareler.length} kare, ${bugunKayitlar.length} mekan`);
+    return c.json({ feed, satislar: tumSatislar, kareler: tumKareler, mekanlar: mekanlarList || [] });
   } catch (err) {
     console.log("Get canli satis error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);

@@ -602,10 +602,6 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
                   <h1 className="text-2xl font-bold text-white">Operasyon</h1>
                   <span className="text-2xl">⚡</span>
                 </div>
-                <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-[#a8e6cf] to-[#8dd9b8] rounded-xl text-[#2d3748] shadow-lg">
-                  <span className="font-bold">Bugün: 12</span>
-                  <span className="text-lg">🔥</span>
-                </div>
               </div>
               <p className="text-sm text-gray-400">{selectedProject.name} • Tüm vardiya işlemleri</p>
             </div>

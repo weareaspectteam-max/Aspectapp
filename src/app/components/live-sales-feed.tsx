@@ -1,28 +1,34 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Filter, TrendingUp, DollarSign, Package, Clock, Tag, RefreshCw, AlertCircle } from 'lucide-react';
+import { RefreshCw, Wifi, Camera, ShoppingBag, MapPin, ChevronDown, ChevronUp, TrendingUp, Clock, AlertCircle } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 
-// VardiyaSatis yapısı + mekan bilgisi
-interface CanliSatis {
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface FeedItem {
+  type: 'satis' | 'kare';
   id: string;
-  items: { product: string; quantity: number; unitPrice: number; color: string }[];
-  totalPrice: number;
-  discount: number;
-  finalPrice: number;
-  paymentMethod: 'cash' | 'iban' | 'card';
-  currency: string;
-  currencyPrice?: number | null;
   timestamp: string;
   kaydeden?: string;
   kaydedenId?: string;
-  iptal: boolean;
-  // Mekan bilgisi (server tarafından eklenir)
   mekanId: string;
   mekanAdi: string;
   mekanEmoji: string;
   mekanColor: string;
+  // Sadece satis
+  items?: { product: string; quantity: number; unitPrice: number; color: string }[];
+  totalPrice?: number;
+  discount?: number;
+  finalPrice?: number;
+  paymentMethod?: 'cash' | 'iban' | 'card';
+  currency?: string;
+  currencyPrice?: number | null;
+  iptal?: boolean;
+  // Sadece kare
+  photographerName?: string;
+  photographerId?: string;
+  frameCount?: number;
 }
 
 interface Mekan {
@@ -40,45 +46,226 @@ interface LiveSalesFeedProps {
 }
 
 const BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
-const REFRESH_INTERVAL = 30_000; // 30 saniye
+const REFRESH_INTERVAL = 30_000;
 
-/** items[] dizisini görüntü metnine çevirir: "3'lü", "2× 5'li + Paspartu" */
-function formatProduct(items: CanliSatis['items']): string {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function productShort(items?: FeedItem['items']) {
   if (!items?.length) return '-';
-  return items
-    .map((item) => {
-      const qty = item.quantity > 1 ? `${item.quantity}× ` : '';
-      return `${qty}${item.product}`;
-    })
-    .join(' + ');
+  return items.map(i => (i.quantity > 1 ? `${i.quantity}× ` : '') + i.product).join(' + ');
 }
 
-/** Ana ürün adına göre gradient rengi */
-function getProductColor(items: CanliSatis['items']): string {
-  const first = items?.[0]?.product || '';
-  const colors: Record<string, string> = {
-    "3'lü": 'from-[#9dd9ea] to-[#7ec8dd]',
-    "5'li": 'from-[#b8d4f1] to-[#9cc0e8]',
-    "7'li": 'from-[#d4b5f7] to-[#c79ff0]',
-    "9'lu": 'from-[#ffb3d9] to-[#ff99cc]',
-    "11'li": 'from-[#ffe5b4] to-[#ffd89b]',
-    "13'lü": 'from-[#c8f0a0] to-[#b0e080]',
-    "15'li": 'from-[#a8e6cf] to-[#8dd9b8]',
-    Paspartu: 'from-[#ffd4a3] to-[#ffc78f]',
-  };
-  return colors[first] || 'from-gray-500 to-gray-600';
+function clockTime(ts: string) {
+  return new Date(ts).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
 }
 
-/** timestamp'ten "şimdi / 5 dk önce / 2 sa önce" döndürür */
-function formatRelativeTime(ts: string): string {
-  const diff = Date.now() - new Date(ts).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return 'şimdi';
-  if (mins < 60) return `${mins} dk önce`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} sa önce`;
-  return new Date(ts).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' });
+function payLabel(p?: string) {
+  if (p === 'cash') return { label: 'NAKİT', bg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' };
+  if (p === 'card') return { label: 'KART', bg: 'bg-blue-500/20 text-blue-300 border-blue-500/30' };
+  if (p === 'iban') return { label: 'IBAN', bg: 'bg-violet-500/20 text-violet-300 border-violet-500/30' };
+  return { label: '-', bg: 'bg-white/10 text-white/40 border-white/20' };
 }
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function PulseDot({ color }: { color: string }) {
+  return (
+    <span className="relative flex h-2 w-2">
+      <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ backgroundColor: color }} />
+      <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: color }} />
+    </span>
+  );
+}
+
+function StatChip({ icon, value, label, color }: { icon: React.ReactNode; value: string | number; label: string; color: string }) {
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shrink-0" style={{ backgroundColor: `${color}15`, borderColor: `${color}40` }}>
+      <span style={{ color }}>{icon}</span>
+      <div>
+        <div className="text-xs font-bold text-white leading-none">{value}</div>
+        <div className="text-[10px] text-white/40 leading-none mt-0.5">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+function SatisBubble({ item }: { item: FeedItem }) {
+  const pay = payLabel(item.paymentMethod);
+  const originalPrice = (item.discount || 0) > 0 ? (item.finalPrice || 0) + (item.discount || 0) : null;
+  const discountPct = originalPrice ? Math.round((item.discount! / originalPrice) * 100) : null;
+  const mekanColor = item.mekanColor || '#9dd9ea';
+
+  return (
+    <div className={`flex gap-2.5 ${item.iptal ? 'opacity-40' : ''}`}>
+      {/* zaman sütunu */}
+      <div className="flex flex-col items-center w-10 shrink-0 pt-0.5">
+        <span className="text-[10px] font-mono text-white/40">{clockTime(item.timestamp)}</span>
+        <div className="w-px flex-1 mt-1" style={{ backgroundColor: `${mekanColor}40` }} />
+      </div>
+      {/* kart */}
+      <div
+        className="flex-1 mb-2.5 rounded-xl border px-3 py-2.5 relative overflow-hidden"
+        style={{ backgroundColor: `${mekanColor}10`, borderColor: `${mekanColor}30` }}
+      >
+        <div className="absolute left-0 top-0 bottom-0 w-0.5 rounded-l-xl" style={{ backgroundColor: mekanColor }} />
+
+        {/* Üst satır: ürün adı + ödeme metodu */}
+        <div className="flex items-center justify-between gap-2 mb-1.5">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <ShoppingBag className="w-3 h-3 shrink-0" style={{ color: mekanColor }} />
+            <span className="text-xs font-bold text-white truncate">{productShort(item.items)}</span>
+            {item.iptal && (
+              <span className="text-[9px] text-red-400 border border-red-400/50 rounded px-1 shrink-0">İPTAL</span>
+            )}
+          </div>
+          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-md border shrink-0 ${pay.bg}`}>
+            {pay.label}
+          </span>
+        </div>
+
+        {/* Alt satır: mekan · satıcı + fiyat grubu */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <span className="text-[10px]">{item.mekanEmoji}</span>
+            <span className="text-[10px] font-medium truncate" style={{ color: mekanColor }}>{item.mekanAdi}</span>
+            <span className="text-[10px] text-white/25 shrink-0">·</span>
+            <span className="text-[10px] text-white/40 truncate">{item.kaydeden}</span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {discountPct !== null && (
+              <span className="text-[9px] font-bold text-orange-300 bg-orange-500/15 border border-orange-500/30 rounded px-1.5 py-0.5">
+                %{discountPct} iskonto
+              </span>
+            )}
+            {originalPrice !== null && (
+              <span className="text-[10px] text-white/30 line-through">
+                ₺{originalPrice.toLocaleString('tr-TR')}
+              </span>
+            )}
+            <span className="text-sm font-bold text-white">
+              ₺{(item.finalPrice || 0).toLocaleString('tr-TR')}
+            </span>
+          </div>
+        </div>
+
+        {/* Döviz bilgisi */}
+        {item.currency && item.currency !== 'TRY' && item.currencyPrice && (
+          <div className="text-[9px] text-white/30 mt-1 text-right">
+            {item.currencyPrice} {item.currency}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function KareBubble({ item }: { item: FeedItem }) {
+  const mekanColor = item.mekanColor || '#a78bfa';
+  return (
+    <div className="flex gap-2.5">
+      <div className="flex flex-col items-center w-10 shrink-0 pt-0.5">
+        <span className="text-[10px] font-mono text-white/40">{clockTime(item.timestamp)}</span>
+        <div className="w-px flex-1 mt-1 bg-purple-500/30" />
+      </div>
+      <div className="flex-1 mb-2.5 rounded-xl border border-purple-500/25 px-3 py-2.5 bg-purple-500/8 relative overflow-hidden">
+        <div className="absolute left-0 top-0 bottom-0 w-0.5 rounded-l-xl bg-purple-400" />
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Camera className="w-3 h-3 text-purple-400 shrink-0" />
+            <span className="text-xs font-semibold text-white truncate">
+              {item.photographerName || item.kaydeden || 'Bilinmeyen'}
+            </span>
+            <span className="text-white/25 shrink-0 mx-0.5">·</span>
+            <MapPin className="w-3 h-3 shrink-0" style={{ color: mekanColor }} />
+            <span className="text-[10px] font-medium truncate" style={{ color: mekanColor }}>
+              {item.mekanAdi}
+            </span>
+          </div>
+          <span className="text-[10px] font-bold text-purple-300 bg-purple-500/20 border border-purple-500/30 px-2.5 py-1 rounded-xl shrink-0">
+            {item.frameCount} kare
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface MekanPanelProps {
+  mekan: Mekan;
+  items: FeedItem[];
+  defaultOpen?: boolean;
+}
+
+function MekanPanel({ mekan, items, defaultOpen = true }: MekanPanelProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  const sales = items.filter(i => i.type === 'satis' && !i.iptal);
+  const kares = items.filter(i => i.type === 'kare');
+  const rev = sales.reduce((s, i) => s + (i.finalPrice || 0), 0);
+  const totalFrames = kares.reduce((s, i) => s + (i.frameCount || 0), 0);
+  const lastItem = items[0];
+  const minsAgoLast = lastItem
+    ? Math.floor((Date.now() - new Date(lastItem.timestamp).getTime()) / 60_000)
+    : null;
+
+  return (
+    <div className="rounded-2xl border overflow-hidden" style={{ borderColor: `${mekan.color}35`, backgroundColor: '#1e1e2e' }}>
+      <button
+        className="w-full flex items-center gap-3 px-4 py-3 transition-all active:scale-[0.99]"
+        style={{ backgroundColor: `${mekan.color}12` }}
+        onClick={() => setOpen(o => !o)}
+      >
+        <div
+          className="w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0"
+          style={{ backgroundColor: `${mekan.color}25`, border: `1px solid ${mekan.color}40` }}
+        >
+          {mekan.emoji}
+        </div>
+        <div className="flex-1 text-left">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-white">{mekan.name}</span>
+            {minsAgoLast !== null && minsAgoLast < 10 && <PulseDot color={mekan.color} />}
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-[10px] text-white/40">{sales.length} satış</span>
+            <span className="text-[10px] text-white/20">·</span>
+            <span className="text-[10px] text-white/40">{totalFrames} kare</span>
+            {minsAgoLast !== null && (
+              <>
+                <span className="text-[10px] text-white/20">·</span>
+                <span className="text-[10px] text-white/40">son: {minsAgoLast}dk önce</span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm font-bold" style={{ color: mekan.color }}>
+            ₺{rev.toLocaleString('tr-TR')}
+          </span>
+          {open ? <ChevronUp className="w-4 h-4 text-white/30" /> : <ChevronDown className="w-4 h-4 text-white/30" />}
+        </div>
+      </button>
+
+      {open && (
+        <div className="px-3 pt-3 pb-1">
+          {items.length === 0 ? (
+            <div className="text-center py-6 text-xs text-white/30">Henüz kayıt yok</div>
+          ) : (
+            items.map(item =>
+              item.type === 'satis'
+                ? <SatisBubble key={item.id} item={item} />
+                : <KareBubble key={item.id} item={item} />
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+type ViewMode = 'mekan' | 'zaman';
+type TypeFilter = 'all' | 'satis' | 'kare';
 
 export function LiveSalesFeed({
   userName,
@@ -86,14 +273,21 @@ export function LiveSalesFeed({
   onLogout = () => {},
   onNavigate = () => {},
 }: LiveSalesFeedProps = {}) {
-  const [satislar, setSatislar] = useState<CanliSatis[]>([]);
+  const [feed, setFeed] = useState<FeedItem[]>([]);
   const [mekanlar, setMekanlar] = useState<Mekan[]>([]);
-  const [selectedFilter, setSelectedFilter] = useState<string>('all');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [viewMode, setViewMode] = useState<ViewMode>('mekan');
   const [loading, setLoading] = useState(true);
+  const [spinning, setSpinning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [tick, setTick] = useState(0);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [countdown, setCountdown] = useState(30);
 
-  const fetchSatislar = useCallback(async (showLoading = false) => {
+  const AUTO_INTERVAL = 30; // saniye
+
+  const fetchFeed = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
     setError(null);
     try {
@@ -104,7 +298,7 @@ export function LiveSalesFeed({
         throw new Error(body.error || `HTTP ${res.status}`);
       }
       const data = await res.json();
-      setSatislar(data.satislar || []);
+      setFeed(data.feed || data.satislar || []);
       setMekanlar(data.mekanlar || []);
       setLastUpdate(new Date());
     } catch (err: any) {
@@ -115,247 +309,273 @@ export function LiveSalesFeed({
     }
   }, []);
 
-  // İlk yükleme
-  useEffect(() => {
-    fetchSatislar(true);
-  }, [fetchSatislar]);
-
-  // 30 saniyede bir otomatik yenile
-  useEffect(() => {
-    const interval = setInterval(() => fetchSatislar(false), REFRESH_INTERVAL);
-    return () => clearInterval(interval);
-  }, [fetchSatislar]);
-
-  // Filtrelenmiş satışlar
-  const filteredSatislar = satislar.filter((s) => {
-    if (selectedFilter === 'all') return true;
-    if (selectedFilter === 'son1saat') {
-      return Date.now() - new Date(s.timestamp).getTime() <= 3_600_000;
-    }
-    return s.mekanId === selectedFilter;
-  });
-
-  const stats = {
-    totalSales: filteredSatislar.length,
-    totalRevenue: filteredSatislar.reduce((sum, s) => sum + s.finalPrice, 0),
-    averagePrice:
-      filteredSatislar.length > 0
-        ? Math.round(
-            filteredSatislar.reduce((sum, s) => sum + s.finalPrice, 0) / filteredSatislar.length
-          )
-        : 0,
+  const handleRefresh = () => {
+    setSpinning(true);
+    fetchFeed(false).finally(() => setSpinning(false));
   };
 
-  // Filtre listesi: sabit "Tümü" + her mekan + "Son 1 Saat"
-  const filters = [
-    { label: 'Tümü', value: 'all', emoji: null, color: null },
-    ...mekanlar.map((m) => ({ label: m.name, value: m.id, emoji: m.emoji, color: m.color })),
-    { label: 'Son 1 Saat', value: 'son1saat', emoji: '⏱', color: null },
-  ];
+  useEffect(() => { fetchFeed(true); }, [fetchFeed]);
+
+  useEffect(() => {
+    const id = setInterval(() => fetchFeed(false), REFRESH_INTERVAL);
+    return () => clearInterval(id);
+  }, [fetchFeed]);
+
+  // Auto-refresh kiosk modu
+  useEffect(() => {
+    if (!autoRefresh) { setCountdown(AUTO_INTERVAL); return; }
+    const id = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          fetchFeed(false);
+          return AUTO_INTERVAL;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [autoRefresh, fetchFeed]);
+
+  // Reset countdown on manual refresh
+  useEffect(() => {
+    if (spinning) setCountdown(AUTO_INTERVAL);
+  }, [spinning]);
+
+  // Tick for relative time display
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 10_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const secsSinceUpdate = lastUpdate
+    ? Math.floor((Date.now() - lastUpdate.getTime()) / 1000)
+    : null;
+  const refreshLabel =
+    secsSinceUpdate === null
+      ? 'Yükleniyor…'
+      : secsSinceUpdate < 5
+      ? 'Az önce güncellendi'
+      : `${secsSinceUpdate}sn önce`;
+
+  const filtered = feed.filter(i => typeFilter === 'all' || i.type === typeFilter);
+  const sales = filtered.filter(i => i.type === 'satis' && !i.iptal);
+  const kares = filtered.filter(i => i.type === 'kare');
+  const totalRev = sales.reduce((s, i) => s + (i.finalPrice || 0), 0);
+  const totalFrames = kares.reduce((s, i) => s + (i.frameCount || 0), 0);
+
+  // Mekan grouped (sırala: son kayıt en üste)
+  const grouped = mekanlar
+    .map(m => ({
+      mekan: m,
+      items: filtered
+        .filter(i => i.mekanId === m.id)
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
+    }))
+    .filter(g => g.items.length > 0)
+    .sort((a, b) => new Date(b.items[0].timestamp).getTime() - new Date(a.items[0].timestamp).getTime());
+
+  // Zaman görünümü
+  const timeSorted = [...filtered].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
 
   return (
-    <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
-      {/* Header */}
-      <div className="px-6 pt-6 pb-4">
-        <div className="flex items-center justify-between mb-1">
+    <div className="min-h-screen bg-[#12121c] pb-24 font-sans">
+      {/* ── STICKY STATUS BAR ── */}
+      <div className="sticky top-0 z-30 bg-[#12121c] border-b border-white/8">
+        <div className="flex items-center justify-between px-4 py-2.5">
           <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-bold text-white">Canlı Satışlar</h1>
-            <span className="text-3xl">⚡</span>
+            <PulseDot color={error ? '#f87171' : '#4ade80'} />
+            <span className="text-xs font-bold text-white tracking-wide">
+              {error ? 'HATA' : 'CANLI'}
+            </span>
+            {!error && (
+              <span className="text-[10px] text-white/30 ml-1">{refreshLabel}</span>
+            )}
           </div>
-          <button
-            onClick={() => fetchSatislar(true)}
-            className="p-2 bg-white/10 border border-white/20 rounded-xl hover:bg-white/20 transition-all active:scale-95"
-            title="Yenile"
-          >
-            <RefreshCw className={`w-5 h-5 text-white ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="flex items-center gap-2">
+            <Wifi className="w-3.5 h-3.5 text-emerald-400/70" />
+
+            {/* ── AUTO-REFRESH TOGGLE ── */}
+            <button
+              onClick={() => {
+                setAutoRefresh(a => !a);
+                setCountdown(AUTO_INTERVAL);
+              }}
+              title={autoRefresh ? 'Otomatik yenilemeyi durdur' : 'Otomatik yenilemeyi başlat'}
+              className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-90 ${
+                autoRefresh
+                  ? 'bg-emerald-500/20 border border-emerald-500/40'
+                  : 'bg-white/8 border border-white/15 hover:bg-white/15'
+              }`}
+            >
+              {/* SVG geri sayım halkası */}
+              <svg
+                className="absolute inset-0 w-8 h-8 -rotate-90"
+                viewBox="0 0 32 32"
+              >
+                {/* arka halka */}
+                <circle
+                  cx="16" cy="16" r="12"
+                  fill="none"
+                  stroke={autoRefresh ? 'rgba(52,211,153,0.15)' : 'rgba(255,255,255,0.06)'}
+                  strokeWidth="2"
+                />
+                {/* ilerleme halkası */}
+                {autoRefresh && (
+                  <circle
+                    cx="16" cy="16" r="12"
+                    fill="none"
+                    stroke="#34d399"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeDasharray="75.4"
+                    strokeDashoffset={75.4 * (countdown / AUTO_INTERVAL)}
+                    style={{ transition: 'stroke-dashoffset 0.8s linear' }}
+                  />
+                )}
+              </svg>
+              {/* İkon veya sayı */}
+              {autoRefresh ? (
+                <span className="relative text-[10px] font-bold text-emerald-300 leading-none tabular-nums">
+                  {countdown}
+                </span>
+              ) : (
+                <RefreshCw className="relative w-3 h-3 text-white/50" />
+              )}
+            </button>
+
+            <button
+              onClick={handleRefresh}
+              className="p-1.5 rounded-lg bg-white/8 hover:bg-white/15 transition-all active:scale-95"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 text-white/60 ${spinning || loading ? 'animate-spin' : ''}`}
+              />
+            </button>
+          </div>
         </div>
-        <p className="text-sm text-gray-400">
-          Ekip performansını anlık takip edin 📈
-        </p>
-        {lastUpdate && !loading && (
-          <p className="text-xs text-gray-500 mt-1">
-            Son güncelleme: {lastUpdate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-          </p>
-        )}
       </div>
 
-      {/* Hata durumu */}
-      {error && (
-        <div className="px-6 mb-4">
-          <div className="backdrop-blur-xl bg-red-500/10 border border-red-500/30 rounded-2xl p-4 flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm text-red-300 font-medium">Veriler yüklenemedi</p>
-              <p className="text-xs text-red-400 mt-0.5">{error}</p>
-            </div>
+      <div className="px-4">
+        {/* ── ERROR ── */}
+        {error && (
+          <div className="mt-3 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 flex items-center gap-3">
+            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+            <p className="text-xs text-red-300 flex-1">{error}</p>
             <button
-              onClick={() => fetchSatislar(true)}
-              className="px-3 py-1.5 bg-red-500/20 border border-red-500/40 text-red-300 text-xs rounded-lg hover:bg-red-500/30 transition-all"
+              onClick={() => fetchFeed(true)}
+              className="text-[10px] text-red-300 border border-red-400/40 px-2 py-1 rounded-lg shrink-0"
             >
               Tekrar dene
             </button>
           </div>
+        )}
+
+        {/* ── COMPACT STAT CHIPS ── */}
+        <div className="flex gap-2 mt-3 overflow-x-auto pb-1 no-scrollbar">
+          <StatChip
+            icon={<ShoppingBag className="w-3 h-3" />}
+            value={sales.length}
+            label="satış"
+            color="#4ade80"
+          />
+          <StatChip
+            icon={<TrendingUp className="w-3 h-3" />}
+            value={`₺${totalRev.toLocaleString('tr-TR')}`}
+            label="gelir"
+            color="#fbbf24"
+          />
+          <StatChip
+            icon={<Camera className="w-3 h-3" />}
+            value={totalFrames}
+            label="kare"
+            color="#a78bfa"
+          />
+          <StatChip
+            icon={<Clock className="w-3 h-3" />}
+            value={filtered.length}
+            label="toplam"
+            color="#60a5fa"
+          />
         </div>
-      )}
 
-      {/* Stats Cards */}
-      <div className="px-6 mb-6">
-        <div className="grid grid-cols-3 gap-3">
-          <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center">
-                <Package className="w-4 h-4 text-[#2d3748]" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-white">{stats.totalSales}</div>
-            <div className="text-xs text-gray-400">Satış</div>
-          </div>
-
-          <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] flex items-center justify-center">
-                <DollarSign className="w-4 h-4 text-[#2d3748]" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-white">₺{stats.totalRevenue.toLocaleString('tr-TR')}</div>
-            <div className="text-xs text-gray-400">Toplam</div>
-          </div>
-
-          <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#ffd4a3] to-[#ffc78f] flex items-center justify-center">
-                <TrendingUp className="w-4 h-4 text-[#744210]" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-white">₺{stats.averagePrice.toLocaleString('tr-TR')}</div>
-            <div className="text-xs text-gray-400">Ortalama</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filtreler */}
-      <div className="px-6 mb-4">
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
-          {filters.map((f) => {
-            const isActive = selectedFilter === f.value;
-            return (
+        {/* ── FILTER + VIEW TOGGLE ROW ── */}
+        <div className="flex items-center gap-2 mt-3">
+          <div className="flex bg-white/6 rounded-xl p-0.5 border border-white/10">
+            {(['all', 'satis', 'kare'] as TypeFilter[]).map(t => (
               <button
-                key={f.value}
-                onClick={() => setSelectedFilter(f.value)}
-                className={`px-4 py-2 rounded-xl font-medium whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                  isActive
-                    ? 'bg-[#9dd9ea] text-[#2d3748] shadow-lg'
-                    : 'bg-white/10 text-white border border-white/20 hover:border-[#9dd9ea]/60'
+                key={t}
+                onClick={() => setTypeFilter(t)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  typeFilter === t ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/60'
                 }`}
-                style={
-                  !isActive && f.color
-                    ? { borderColor: f.color + '80', color: f.color }
-                    : {}
-                }
               >
-                {f.emoji && <span>{f.emoji}</span>}
-                <span>{f.label}</span>
+                {t === 'all' ? 'Tümü' : t === 'satis' ? '💰 Satış' : '📷 Kare'}
               </button>
-            );
-          })}
+            ))}
+          </div>
+
+          <div className="flex bg-white/6 rounded-xl p-0.5 border border-white/10 ml-auto">
+            <button
+              onClick={() => setViewMode('mekan')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
+                viewMode === 'mekan' ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/60'
+              }`}
+            >
+              <MapPin className="w-3 h-3" /> Mekan
+            </button>
+            <button
+              onClick={() => setViewMode('zaman')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
+                viewMode === 'zaman' ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/60'
+              }`}
+            >
+              <Clock className="w-3 h-3" /> Zaman
+            </button>
+          </div>
         </div>
-      </div>
 
-      {/* İçerik */}
-      <div className="px-6 space-y-3">
-        {/* Yükleniyor */}
-        {loading && (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <div className="w-10 h-10 border-2 border-[#9dd9ea] border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm text-gray-400">Satışlar yükleniyor…</p>
-          </div>
-        )}
-
-        {/* Boş durum */}
-        {!loading && !error && filteredSatislar.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-3xl">
-              🛒
+        {/* ── CONTENT ── */}
+        <div className="mt-4 space-y-3">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="w-8 h-8 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+              <p className="text-xs text-white/30">Yükleniyor…</p>
             </div>
-            <p className="text-white font-semibold">Henüz satış yok</p>
-            <p className="text-sm text-gray-400 text-center px-8">
-              {selectedFilter === 'all'
-                ? 'Bugün için henüz kayıtlı satış bulunmuyor.'
-                : selectedFilter === 'son1saat'
-                ? 'Son 1 saatte satış kaydedilmemiş.'
-                : 'Bu mekanda bugün satış kaydedilmemiş.'}
-            </p>
-          </div>
-        )}
-
-        {/* Satış kartları */}
-        {!loading &&
-          filteredSatislar.map((satis, index) => {
-            const productLabel = formatProduct(satis.items);
-            const productGradient = getProductColor(satis.items);
-            const timeLabel = formatRelativeTime(satis.timestamp);
-            const staffInitial = satis.kaydeden?.charAt(0)?.toUpperCase() || '?';
-
-            return (
-              <div
-                key={satis.id}
-                className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-4 hover:shadow-md transition-all animate-in slide-in-from-right"
-                style={{ animationDelay: `${index * 40}ms` }}
-              >
-                {/* Üst satır: personel + mekan + zaman */}
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center text-[#2d3748] font-bold text-sm shrink-0">
-                    {staffInitial}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-white truncate">
-                      {satis.kaydeden || 'Bilinmeyen'}
-                    </div>
-                    <div className="text-xs flex items-center gap-1 mt-0.5">
-                      <span>{satis.mekanEmoji}</span>
-                      <span style={{ color: satis.mekanColor || '#9dd9ea' }} className="truncate">
-                        {satis.mekanAdi}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 text-xs text-gray-400 shrink-0">
-                    <Clock className="w-3 h-3" />
-                    {timeLabel}
-                  </div>
-                </div>
-
-                {/* Alt satır: ürün etiketi + fiyat */}
-                <div className="flex items-center justify-between">
-                  <div
-                    className={`px-4 py-2 rounded-xl bg-gradient-to-r ${productGradient} text-white font-bold text-sm shadow-md max-w-[60%] truncate`}
-                  >
-                    {productLabel}
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-white">
-                      ₺{satis.finalPrice.toLocaleString('tr-TR')}
-                    </div>
-                    {satis.discount > 0 && (
-                      <div className="flex items-center gap-1 text-xs font-semibold text-[#ffd4a3] justify-end mt-0.5">
-                        <Tag className="w-3 h-3" />
-                        ₺{satis.discount.toLocaleString('tr-TR')} iskonto
-                      </div>
-                    )}
-                  </div>
-                </div>
+          ) : !error && filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-2xl">
+                {typeFilter === 'kare' ? '📷' : '🛒'}
               </div>
-            );
-          })}
-      </div>
-
-      {/* Canlı göstergesi */}
-      <div className="fixed top-20 right-6 z-20">
-        <div className="backdrop-blur-xl bg-white/10 rounded-full px-4 py-2 shadow-lg border border-white/20 flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${error ? 'bg-red-400' : 'bg-[#a8e6cf] animate-pulse'}`} />
-          <span className="text-xs font-semibold text-white">
-            {error ? 'HATA' : 'CANLI'}
-          </span>
+              <p className="text-sm text-white/30">Henüz kayıt yok</p>
+            </div>
+          ) : viewMode === 'mekan' ? (
+            grouped.length > 0 ? (
+              grouped.map((g, i) => (
+                <MekanPanel
+                  key={g.mekan.id}
+                  mekan={g.mekan}
+                  items={g.items}
+                  defaultOpen={i === 0}
+                />
+              ))
+            ) : (
+              <div className="text-center py-12 text-sm text-white/30">Kayıt bulunamadı</div>
+            )
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-[#1e1e2e] px-3 pt-3 pb-1">
+              {timeSorted.length === 0 ? (
+                <div className="text-center py-10 text-xs text-white/30">Kayıt bulunamadı</div>
+              ) : (
+                timeSorted.map(item =>
+                  item.type === 'satis'
+                    ? <SatisBubble key={item.id} item={item} />
+                    : <KareBubble key={item.id} item={item} />
+                )
+              )}
+            </div>
+          )}
         </div>
       </div>
 
