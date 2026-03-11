@@ -32,16 +32,33 @@ const getAdminClient = () =>
 // Helper: verify caller and return user
 // Supabase projesi ES256 (asimetrik) JWT kullandığından gateway bunu reddedebilir.
 // Çözüm: gateway için Authorization: Bearer <anonKey> (HS256), kullanıcı için X-Access-Token: <userJWT> (ES256).
-// Her iki durumu da destekler: önce X-Access-Token, sonra Authorization header.
+// Sadece X-Access-Token'a bakar — Authorization'daki anonKey bir kullanıcı JWT'si değildir.
 const verifyToken = async (c: any) => {
   const xToken = c.req.header("X-Access-Token");
-  const authHeader = c.req.header("Authorization");
-  const token = xToken || authHeader?.split(" ")[1];
-  if (!token) return null;
-  const supabase = getAdminClient();
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  if (error || !user) return null;
-  return user;
+
+  // Sadece X-Access-Token kullan; Authorization header'ı Supabase gateway içindir,
+  // anonKey ile auth.getUser() her zaman başarısız olur.
+  if (!xToken) {
+    console.log("[verifyToken] X-Access-Token header eksik — 401");
+    return null;
+  }
+
+  try {
+    const supabase = getAdminClient();
+    const { data: { user }, error } = await supabase.auth.getUser(xToken);
+    if (error) {
+      console.log("[verifyToken] getUser hatası:", error.message);
+      return null;
+    }
+    if (!user) {
+      console.log("[verifyToken] getUser: kullanıcı bulunamadı");
+      return null;
+    }
+    return user;
+  } catch (err) {
+    console.log("[verifyToken] beklenmeyen hata:", err);
+    return null;
+  }
 };
 
 // ──────────────────────────────────────────

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Bell, ArrowLeft } from 'lucide-react';
 import { AspectLogo } from './components/aspect-logo';
 import { supabase } from './lib/supabase';
+import { setAuthToken } from './lib/api';
 import { Login } from './components/login';
 import { NewBottomNav } from './components/new-bottom-nav';
 import { HamburgerMenu } from './components/hamburger-menu';
@@ -63,12 +64,17 @@ export default function App() {
   // ─── Supabase session yönetimi ───────────────────
   useEffect(() => {
     // Mevcut session'ı kontrol et
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        _applySession(session.user, session.access_token);
-      }
-      setAuthLoading(false);
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (session?.user) {
+          _applySession(session.user, session.access_token);
+        }
+        setAuthLoading(false);
+      })
+      .catch(() => {
+        // Ağ hatası vb. olsa bile loading ekranından çıkılsın
+        setAuthLoading(false);
+      });
 
     // Auth state değişikliklerini dinle
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -79,6 +85,7 @@ export default function App() {
       } else if (event === 'TOKEN_REFRESHED') {
         // Sadece token'ı güncelle, aktif tab'ı değiştirme
         setAccessToken(session.access_token);
+        setAuthToken(session.access_token);
       }
     });
 
@@ -94,6 +101,7 @@ export default function App() {
     setUserName(name);
     setAccessToken(token);
     setIsLoggedIn(true);
+    setAuthToken(token); // ← Cache'e yaz, authHeaders() için fallback
 
     // Sadece ilk girişte dashboard'a yönlendir, sonraki token yenilemelerinde değil
     if (!sessionApplied.current) {
@@ -103,12 +111,13 @@ export default function App() {
   };
 
   const _resetState = () => {
-    sessionApplied.current = false; // ← Çıkışta işareti sıfırla
+    sessionApplied.current = false;
     setIsLoggedIn(false);
     setUserRole('personel');
     setUserName('');
     setUserId('');
     setAccessToken('');
+    setAuthToken(''); // ← Cache'i temizle
     setActiveTab('');
     setSelectedProject('');
     setShiftSetupCompleted(false);
@@ -125,6 +134,7 @@ export default function App() {
     setUserName(name);
     setAccessToken(token);
     setIsLoggedIn(true);
+    setAuthToken(token); // ← Cache'e yaz
     setActiveTab(role === 'bekleyen' ? '' : 'dashboard');
   };
 
@@ -545,6 +555,7 @@ export default function App() {
           <FrameTracking
             userName={userName}
             userRole={userRole}
+            accessToken={accessToken}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />

@@ -4,7 +4,7 @@
  * Supabase KV Store API entegrasyonu
  */
 
-import { authHeaders } from '../lib/api';
+import { authHeaders, buildHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -91,11 +91,10 @@ export interface Location {
 // STAFF MEMBERS
 // ==========================================
 
-export const getStaffMembers = async (): Promise<StaffMember[]> => {
+export const getStaffMembers = async (token?: string): Promise<StaffMember[]> => {
   try {
-    const res = await fetch(`${API_BASE}/rotasyon/personel`, {
-      headers: await authHeaders(),
-    });
+    const headers = token ? buildHeaders(token) : await authHeaders();
+    const res = await fetch(`${API_BASE}/rotasyon/personel`, { headers });
     if (!res.ok) {
       console.error('getStaffMembers error:', res.status, await res.text());
       return [];
@@ -112,11 +111,10 @@ export const getStaffMembers = async (): Promise<StaffMember[]> => {
 // LOCATIONS
 // ==========================================
 
-export const getLocations = async (): Promise<Location[]> => {
+export const getLocations = async (token?: string): Promise<Location[]> => {
   try {
-    const res = await fetch(`${API_BASE}/mekanlar`, {
-      headers: await authHeaders(),
-    });
+    const headers = token ? buildHeaders(token) : await authHeaders();
+    const res = await fetch(`${API_BASE}/mekanlar`, { headers });
     if (!res.ok) {
       console.error('getLocations error:', res.status, await res.text());
       return [];

@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  ArrowLeft, Camera, Activity, BarChart3, Plus, Clock,
+  ArrowLeft, Camera, Clock,
   MapPin, CheckCircle, Trash2, RefreshCw, TrendingUp,
   Award, Layers, ChevronRight, UserPlus, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { getTasks, getLocations, getStaffMembers, type Location, type StaffMember } from '../services/rotation-service';
+import { getLocations, getStaffMembers, type Location, type StaffMember } from '../services/rotation-service';
+import { getToken } from '../lib/api';
 
 interface FrameEntry {
   id: string;
@@ -21,37 +22,18 @@ interface FrameEntry {
 interface FrameTrackingProps {
   userName: string;
   userRole: string;
+  accessToken: string;
   onNavigate: (tab: string) => void;
   onLogout: () => void;
 }
 
-const STORAGE_KEY = 'aspect_frame_tracking';
 
-const generateMockEntries = (locations: Location[]): FrameEntry[] => {
-  if (locations.length === 0) return [];
-  const today = new Date();
-  const fmt = (h: number, m: number) => {
-    const d = new Date(today);
-    d.setHours(h, m, 0, 0);
-    return d.toISOString();
-  };
-  const loc0 = locations[0];
-  const loc1 = locations[1] || locations[0];
-  return [
-    { id: 'mock-1', photographerName: 'Gizem Acar', photographerId: 'user-16', frameCount: 145, location: loc0.name, locationIcon: loc0.icon, timestamp: fmt(9, 15), enteredBy: 'Sistem' },
-    { id: 'mock-2', photographerName: 'Berk Polat', photographerId: 'user-17', frameCount: 98, location: loc1.name, locationIcon: loc1.icon, timestamp: fmt(10, 32), enteredBy: 'Sistem' },
-    { id: 'mock-3', photographerName: 'Nisa Erdoğan', photographerId: 'user-18', frameCount: 213, location: loc0.name, locationIcon: loc0.icon, timestamp: fmt(11, 5), enteredBy: 'Sistem' },
-    { id: 'mock-4', photographerName: 'Ege Yavuz', photographerId: 'user-19', frameCount: 76, location: loc1.name, locationIcon: loc1.icon, timestamp: fmt(12, 48), enteredBy: 'Sistem' },
-    { id: 'mock-5', photographerName: 'Gizem Acar', photographerId: 'user-16', frameCount: 167, location: loc0.name, locationIcon: loc0.icon, timestamp: fmt(14, 20), enteredBy: 'Sistem' },
-    { id: 'mock-6', photographerName: 'Simge Çakır', photographerId: 'user-20', frameCount: 122, location: loc1.name, locationIcon: loc1.icon, timestamp: fmt(15, 10), enteredBy: 'Sistem' },
-  ];
-};
 
 type TabType = 'entry' | 'live' | 'report';
 type ReportFilter = 'today' | 'week' | 'month';
 type EntryStep = 'location' | 'photographer' | 'frames';
 
-export function FrameTracking({ userName, userRole, onNavigate, onLogout }: FrameTrackingProps) {
+export function FrameTracking({ userName, userRole, accessToken, onNavigate, onLogout }: FrameTrackingProps) {
   const [activeTab, setActiveTab] = useState<TabType>('entry');
   const [entries, setEntries] = useState<FrameEntry[]>([]);
   const [reportFilter, setReportFilter] = useState<ReportFilter>('today');
@@ -72,17 +54,23 @@ export function FrameTracking({ userName, userRole, onNavigate, onLogout }: Fram
   const [manualSearch, setManualSearch] = useState('');
 
   useEffect(() => {
-    // Mekanları yükle
-    const locs = getLocations();
-    setLocations(locs);
+    const init = async () => {
+      // accessToken prop'u direkt kullan — modül cache'ine bağımlılığı ortadan kaldırır
+      const token = accessToken || await getToken();
 
-    // Tüm personeli yükle
-    const staff = getStaffMembers();
-    setAllStaff(staff);
+      // Mekanları yükle
+      const locs = await getLocations(token);
+      setLocations(Array.isArray(locs) ? locs : []);
 
-    // Kayıtları yükle
-    loadEntries(locs);
-  }, []);
+      // Tüm personeli yükle
+      const staff = await getStaffMembers(token);
+      setAllStaff(Array.isArray(staff) ? staff : []);
+
+      // Kayıtları yükle
+      loadEntries(locs);
+    };
+    init();
+  }, [accessToken]);
 
   const loadEntries = (_locs?: Location[]) => {
     // localStorage kaldırıldı - KV store entegrasyonu yapılacak
@@ -91,35 +79,10 @@ export function FrameTracking({ userName, userRole, onNavigate, onLogout }: Fram
   };
 
   // Seçili mekan için bugünkü rotasyon personelini bul
-  const getRotationPersonnelForLocation = useCallback((location: Location): StaffMember[] => {
-    const today = new Date().toISOString().split('T')[0];
-    const tasks = getTasks();
-    const todayTasks = tasks.filter(t =>
-      t.date === today &&
-      t.location === location.name &&
-      (t.status === 'sent' || t.status === 'draft' || t.status === 'revised')
-    );
-
-    const personnelIds = new Set<string>();
-    const personnelList: StaffMember[] = [];
-
-    todayTasks.forEach(task => {
-      task.personnel.forEach(p => {
-        if (!personnelIds.has(p.id)) {
-          personnelIds.add(p.id);
-          personnelList.push({
-            id: p.id,
-            name: p.name,
-            avatar: p.avatar,
-            role: p.role,
-            status: 'active',
-          });
-        }
-      });
-    });
-
-    // Rotasyonda kimse yoksa tüm personeli göster (fallback)
-    return personnelList;
+  const getRotationPersonnelForLocation = useCallback((_location: Location): StaffMember[] => {
+    // Rotasyon personelini burada sync çekemedik (getTasks async);
+    // ileride useEffect'te önceden yüklenmiş tasksFromStore state'i kullanılacak.
+    return [];
   }, []);
 
   const handleLocationSelect = (loc: Location) => {

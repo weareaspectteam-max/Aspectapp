@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { MapPin, Plus, Trash2, Edit2, X, Save, ArrowLeft, RefreshCw, AlertCircle, CheckCircle, ChevronDown } from 'lucide-react';
 import { projectId } from '/utils/supabase/info';
-import { authHeaders } from '../lib/api';
+import { buildHeaders } from '../lib/api';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -47,6 +47,12 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // ── Tanı / diagnostik state ──────────────────────────────────
+  const [diagStatus, setDiagStatus] = useState<'idle' | 'ok' | 'error'>('idle');
+  const [diagDetail, setDiagDetail] = useState('');
+  const [diagHttpCode, setDiagHttpCode] = useState<number | null>(null);
+  const [showDiag, setShowDiag] = useState(false);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
@@ -101,16 +107,40 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   const loadMekanlar = async () => {
     setLoading(true);
     setError('');
+    setDiagStatus('idle');
+    setDiagDetail('');
+    setDiagHttpCode(null);
     try {
-      const res = await fetch(`${API_BASE}/mekanlar`, { headers: await authHeaders() });
-      const data = await res.json();
+      const headers = buildHeaders(accessToken);
+      const hasToken = !!(headers['X-Access-Token']);
+      console.log('[MekanMgmt] Token mevcut:', hasToken, '| accessToken uzunluğu:', accessToken?.length ?? 0, '| Endpoint:', `${API_BASE}/mekanlar`);
+
+      const res = await fetch(`${API_BASE}/mekanlar`, { headers });
+      let data: any = {};
+      try { data = await res.json(); } catch { data = {}; }
+
+      setDiagHttpCode(res.status);
+
       if (!res.ok) {
-        showError(data.error || 'Mekanlar yüklenemedi.');
+        const errMsg = data.error || 'Mekanlar yüklenemedi.';
+        const fullMsg = `HTTP ${res.status}: ${errMsg}`;
+        console.error('[MekanMgmt] API hatası:', fullMsg, '| Token vardı:', hasToken);
+        setDiagStatus('error');
+        setDiagDetail(`HTTP ${res.status} — ${errMsg}${!hasToken ? ' (⚠️ Token eksik!)' : ''}`);
+        showError(fullMsg);
         return;
       }
-      setLocations(data.mekanlar || []);
+
+      const list: Location[] = data.mekanlar || [];
+      console.log('[MekanMgmt] Yüklendi. Mekan sayısı:', list.length);
+      setDiagStatus('ok');
+      setDiagDetail(`${list.length} mekan başarıyla yüklendi.`);
+      setLocations(list);
     } catch (err) {
-      console.error('loadMekanlar error:', err);
+      console.error('[MekanMgmt] Ağ/parse hatası:', err);
+      setDiagStatus('error');
+      setDiagDetail(`Ağ hatası: ${err}`);
+      setDiagHttpCode(null);
       showError('Sunucuya bağlanılamadı.');
     } finally {
       setLoading(false);
@@ -133,7 +163,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   const loadAvailablePapers = async () => {
     setPapersLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/maliyetler`, { headers: await authHeaders() });
+      const res = await fetch(`${API_BASE}/maliyetler`, { headers: buildHeaders(accessToken) });
       if (!res.ok) return;
       const data = await res.json();
       const papers: { id: string; name: string }[] = (data.papers || []).map((p: any) => ({
@@ -155,7 +185,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     try {
       const res = await fetch(`${API_BASE}/mekanlar`, {
         method: 'POST',
-        headers: await authHeaders(),
+        headers: buildHeaders(accessToken),
         body: JSON.stringify({
           name: formName.trim(),
           emoji: formEmoji,
@@ -189,7 +219,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     try {
       const res = await fetch(`${API_BASE}/mekanlar/${editingLocation.id}`, {
         method: 'PUT',
-        headers: await authHeaders(),
+        headers: buildHeaders(accessToken),
         body: JSON.stringify({
           name: formName.trim(),
           emoji: formEmoji,
@@ -222,7 +252,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     try {
       const res = await fetch(`${API_BASE}/mekanlar/${id}`, {
         method: 'DELETE',
-        headers: await authHeaders(),
+        headers: buildHeaders(accessToken),
       });
       const data = await res.json();
       if (!res.ok) { showError(data.error || 'Mekan silinemedi.'); return; }
@@ -242,7 +272,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     try {
       const res = await fetch(`${API_BASE}/mekanlar/${locationId}`, {
         method: 'PUT',
-        headers: await authHeaders(),
+        headers: buildHeaders(accessToken),
         body: JSON.stringify({ ...location, photoPrice: newPrice }),
       });
       const data = await res.json();
@@ -369,6 +399,45 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           {locations.length} mekan kayıtlı
         </p>
       </div>
+
+      {/* ─── API Tanı Kartı ─────────────────────────────────── */}
+      {diagStatus !== 'idle' && (
+        <div className="px-6 mb-2">
+          <button
+            onClick={() => setShowDiag(v => !v)}
+            className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-xs font-semibold transition-all ${
+              diagStatus === 'ok'
+                ? 'bg-green-500/10 border-green-500/30 text-green-300'
+                : 'bg-red-500/10 border-red-500/30 text-red-300'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <span>{diagStatus === 'ok' ? '✅' : '❌'}</span>
+              <span>Supabase Bağlantısı: {diagStatus === 'ok' ? 'Başarılı' : 'Hatalı'}</span>
+              {diagHttpCode && (
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${
+                  diagStatus === 'ok'
+                    ? 'bg-green-500/20 border-green-500/40 text-green-200'
+                    : 'bg-red-500/20 border-red-500/40 text-red-200'
+                }`}>
+                  HTTP {diagHttpCode}
+                </span>
+              )}
+            </span>
+            <span className="text-gray-400">{showDiag ? '▲' : '▼'}</span>
+          </button>
+          {showDiag && (
+            <div className={`mt-1 px-4 py-3 rounded-xl border text-xs font-mono leading-relaxed ${
+              diagStatus === 'ok'
+                ? 'bg-green-500/5 border-green-500/20 text-green-300'
+                : 'bg-red-500/5 border-red-500/20 text-red-300'
+            }`}>
+              <p className="text-gray-400 mb-1">📡 Endpoint: <span className="text-gray-200">{API_BASE}/mekanlar</span></p>
+              <p>🔎 Detay: {diagDetail}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Bildirim Alanı */}
       <div className="px-6 space-y-2 mb-2">
