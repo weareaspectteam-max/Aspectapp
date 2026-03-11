@@ -4,7 +4,7 @@ import logoImage from 'figma:asset/6a6eb47a9fe2eac247532ef175a68c5b1b4ebed7.png'
 
 interface StaffTopBarProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   userAvatar?: string;
   onBack?: () => void;
   onLogout: () => void;

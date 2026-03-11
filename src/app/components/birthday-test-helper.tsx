@@ -53,8 +53,8 @@ export function BirthdayTestHelper() {
       }
     ];
 
-    localStorage.setItem('aspectUsers', JSON.stringify(testUsers));
-    setMessage('✅ Test kullanıcıları eklendi! (Ahmet bugün, Ayşe yarın doğum günü)');
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
+    setMessage('✅ Test kullanıcıları eklendi! (KV store entegrasyonu yapılacak)');
     
     setTimeout(() => {
       window.location.reload();
@@ -62,9 +62,8 @@ export function BirthdayTestHelper() {
   };
 
   const clearTestData = () => {
-    localStorage.removeItem('aspectUsers');
-    localStorage.removeItem('dismissedBirthdayNotifications');
-    setMessage('🗑️ Test verileri temizlendi!');
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
+    setMessage('🗑️ Test verileri temizlendi! (KV store entegrasyonu yapılacak)');
     
     setTimeout(() => {
       window.location.reload();
@@ -72,18 +71,8 @@ export function BirthdayTestHelper() {
   };
 
   const setCurrentUser = (userName: string) => {
-    const usersData = localStorage.getItem('aspectUsers');
-    if (usersData) {
-      const users = JSON.parse(usersData);
-      const user = users.find((u: any) => u.name === userName);
-      if (user) {
-        localStorage.setItem('aspectUser', JSON.stringify(user));
-        setMessage(`✅ Şu an ${userName} olarak giriş yaptınız!`);
-        setTimeout(() => {
-          window.location.reload();
-        }, 1500);
-      }
-    }
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
+    setMessage(`⚠️ Test helper'ı KV store entegrasyonu bekliyor`);
   };
 
   if (!showHelper) {

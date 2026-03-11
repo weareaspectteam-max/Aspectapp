@@ -16,12 +16,12 @@ interface LiveSale {
 
 interface LiveSalesFeedProps {
   userName?: string;
-  userRole?: 'admin' | 'staff';
+  userRole?: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout?: () => void;
   onNavigate?: (tab: string) => void;
 }
 
-export function LiveSalesFeed({ userName, userRole = 'admin', onLogout = () => {}, onNavigate = () => {} }: LiveSalesFeedProps = {}) {
+export function LiveSalesFeed({ userName, userRole = 'yonetici', onLogout = () => {}, onNavigate = () => {} }: LiveSalesFeedProps = {}) {
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [locationData, setLocationData] = useState<{ [key: string]: { emoji: string; color: string } }>({});
@@ -83,11 +83,11 @@ export function LiveSalesFeed({ userName, userRole = 'admin', onLogout = () => {
     },
   ]);
 
-  // Load location data from localStorage
+  // localStorage kaldırıldı - KV store entegrasyonu yapılacak
   useEffect(() => {
-    const stored = localStorage.getItem('aspect_locations');
-    if (stored) {
-      const locations = JSON.parse(stored);
+    // Boş başlıyoruz - mekan verisi KV store'dan gelecek
+    if (false) {
+      const locations: any[] = [];
       const data: { [key: string]: { emoji: string; color: string } } = {};
       locations.forEach((loc: any) => {
         data[loc.name] = { emoji: loc.emoji, color: loc.color };
@@ -150,7 +150,7 @@ export function LiveSalesFeed({ userName, userRole = 'admin', onLogout = () => {
             <h1 className="text-3xl font-bold text-white">Canlı Satışlar</h1>
             <span className="text-3xl">⚡</span>
           </div>
-          {userRole === 'admin' && (
+          {['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole) && (
             <button
               onClick={handleResetSales}
               className="px-4 py-2 bg-gradient-to-br from-[#ff5555] to-[#ff3333] text-white rounded-xl font-bold text-sm shadow-lg hover:shadow-xl transition-all active:scale-95 border border-white/20"

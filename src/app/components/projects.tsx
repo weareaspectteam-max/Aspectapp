@@ -23,12 +23,9 @@ interface Location {
 export function Projects() {
   const [locations, setLocations] = useState<Location[]>([]);
 
-  // Load locations from Mekan Yönetimi
+  // localStorage kaldırıldı - KV store entegrasyonu yapılacak
   useEffect(() => {
-    const stored = localStorage.getItem('aspect_locations');
-    if (stored) {
-      setLocations(JSON.parse(stored));
-    }
+    // Boş başlıyoruz
   }, []);
 
   // ✅ DYNAMIC: Projects from Mekan Yönetimi

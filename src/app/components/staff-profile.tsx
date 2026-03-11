@@ -5,7 +5,7 @@ import { NewBottomNav } from './new-bottom-nav';
 
 interface StaffProfileProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -45,10 +45,10 @@ export function StaffProfile({ userName, userRole, onLogout, onNavigate }: Staff
   return (
     <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
       {/* Sticky Top Bar */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <StaffTopBar
           userName={userName}
-          userRole="staff"
+          userRole={userRole}
           onLogout={onLogout}
           onNavigate={onNavigate}
           onBack={() => onNavigate('home')}
@@ -130,7 +130,7 @@ export function StaffProfile({ userName, userRole, onLogout, onNavigate }: Staff
             Haftalık Performans
           </h3>
           <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minHeight={192}>
               <AreaChart data={weeklyData}>
                 <defs>
                   <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
@@ -280,7 +280,7 @@ export function StaffProfile({ userName, userRole, onLogout, onNavigate }: Staff
       </div>
 
       {/* Bottom Navigation - Only for staff */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <NewBottomNav
           activeTab="profile"
           onTabChange={onNavigate}

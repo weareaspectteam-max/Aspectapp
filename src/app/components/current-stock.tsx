@@ -5,7 +5,7 @@ import { NewBottomNav } from './new-bottom-nav';
 
 interface CurrentStockProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   projectName: string;
   onBack: () => void;
   onLogout: () => void;
@@ -44,7 +44,7 @@ export function CurrentStock({ userName, userRole, projectName, onBack, onLogout
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] relative pb-20">
       {/* Sticky Top Bar - Only for staff */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <StaffTopBar
           userName={userName}
           userRole={userRole}
@@ -185,7 +185,7 @@ export function CurrentStock({ userName, userRole, projectName, onBack, onLogout
       </div>
 
       {/* Bottom Navigation - Only for staff */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <NewBottomNav
           activeTab="stock"
           onTabChange={onNavigate}

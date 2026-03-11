@@ -6,7 +6,7 @@ import { NewBottomNav } from './new-bottom-nav';
 
 interface ShiftSetupProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   projectName: string;
   onComplete: (setupData: ShiftSetupData) => void;
   onLogout: () => void;
@@ -351,7 +351,7 @@ export function ShiftSetup({ userName, userRole, projectName, onComplete, onLogo
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] relative pb-20">
       {/* Sticky Top Bar - Only for staff */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <StaffTopBar
           userName={userName}
           userRole={userRole}
@@ -501,7 +501,7 @@ export function ShiftSetup({ userName, userRole, projectName, onComplete, onLogo
       </div>
 
       {/* Bottom Navigation - Only for staff */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <NewBottomNav
           activeTab="home"
           onTabChange={onNavigate}

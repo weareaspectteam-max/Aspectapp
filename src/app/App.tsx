@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Login, UserRole } from './components/login';
 import { AdminDashboard } from './components/admin-dashboard';
 import { ManagerDashboard } from './components/manager-dashboard';
@@ -40,11 +40,15 @@ import { OperationsDemo } from './components/operations-demo';
 import { FrameTracking } from './components/frame-tracking';
 import { Bell, ArrowLeft } from 'lucide-react';
 import logoImage from 'figma:asset/6a6eb47a9fe2eac247532ef175a68c5b1b4ebed7.png';
+import { supabase } from './lib/supabase';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>('personel');
   const [userName, setUserName] = useState('');
+  const [userId, setUserId] = useState('');
+  const [accessToken, setAccessToken] = useState('');
+  const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('');
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [shiftSetupCompleted, setShiftSetupCompleted] = useState(false);
@@ -53,67 +57,57 @@ export default function App() {
   const [showShiftSetup, setShowShiftSetup] = useState(false);
   const [showShiftEnd, setShowShiftEnd] = useState(false);
   const [showCurrentStock, setShowCurrentStock] = useState(false);
+  const sessionApplied = useRef(false); // ← İlk giriş işareti
 
-  // LocalStorage'dan kullanıcı bilgilerini yükle
+  // ─── Supabase session yönetimi ───────────────────
   useEffect(() => {
-    const storedUser = localStorage.getItem('aspectUser');
-    if (storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-
-        // 🔧 MIGRATION: Eski email tabanlı ID'leri düzelt
-        if (user.id && user.id.includes('@')) {
-          const stableId = `mock-user-${user.role}`;
-          
-          // aspect_users'ı güncelle
-          try {
-            const aspectUsersStr = localStorage.getItem('aspect_users');
-            let aspectUsers: any[] = aspectUsersStr ? JSON.parse(aspectUsersStr) : [];
-            
-            // stableId zaten var mı?
-            const alreadyExists = aspectUsers.find((u: any) => u.id === stableId);
-            if (!alreadyExists) {
-              aspectUsers.push({
-                id: stableId,
-                email: user.email,
-                full_name: user.name,
-                role: user.role,
-                created_at: new Date().toISOString(),
-                last_sign_in: new Date().toISOString(),
-                phone: '',
-              });
-              localStorage.setItem('aspect_users', JSON.stringify(aspectUsers));
-            }
-          } catch (e) { /* silent */ }
-          
-          // aspectUser'ı güncelle
-          user.id = stableId;
-          localStorage.setItem('aspectUser', JSON.stringify(user));
-        }
-
-        setUserRole(user.role);
-        setUserName(user.name);
-        setIsLoggedIn(true);
-        setActiveTab(user.role === 'bekleyen' ? '' : 'dashboard');
-      } catch (error) {
-        console.error('Kullanıcı bilgileri yüklenemedi:', error);
-        localStorage.removeItem('aspectUser');
+    // Mevcut session'ı kontrol et
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        _applySession(session.user, session.access_token);
       }
-    }
+      setAuthLoading(false);
+    });
+
+    // Auth state değişikliklerini dinle
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        _resetState();
+      } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        _applySession(session.user, session.access_token);
+      } else if (event === 'TOKEN_REFRESHED') {
+        // Sadece token'ı güncelle, aktif tab'ı değiştirme
+        setAccessToken(session.access_token);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const handleLogin = (role: UserRole, name: string) => {
+  const _applySession = (user: any, token: string) => {
+    const role: UserRole = (user.user_metadata?.role as UserRole) || 'bekleyen';
+    const name: string = user.user_metadata?.full_name || user.email || '';
+
+    setUserId(user.id);
     setUserRole(role);
     setUserName(name);
+    setAccessToken(token);
     setIsLoggedIn(true);
-    // Bekleyen kullanıcılar için tab yok, diğerleri için dashboard
-    setActiveTab(role === 'bekleyen' ? '' : 'dashboard');
+
+    // Sadece ilk girişte dashboard'a yönlendir, sonraki token yenilemelerinde değil
+    if (!sessionApplied.current) {
+      sessionApplied.current = true;
+      setActiveTab(role === 'bekleyen' ? '' : 'dashboard');
+    }
   };
 
-  const handleLogout = () => {
+  const _resetState = () => {
+    sessionApplied.current = false; // ← Çıkışta işareti sıfırla
     setIsLoggedIn(false);
     setUserRole('personel');
     setUserName('');
+    setUserId('');
+    setAccessToken('');
     setActiveTab('');
     setSelectedProject('');
     setShiftSetupCompleted(false);
@@ -122,8 +116,20 @@ export default function App() {
     setShowShiftSetup(false);
     setShowShiftEnd(false);
     setShowCurrentStock(false);
-    // LocalStorage'ı temizle
-    localStorage.removeItem('aspectUser');
+  };
+
+  const handleLogin = (role: UserRole, name: string, uid: string, token: string) => {
+    setUserId(uid);
+    setUserRole(role);
+    setUserName(name);
+    setAccessToken(token);
+    setIsLoggedIn(true);
+    setActiveTab(role === 'bekleyen' ? '' : 'dashboard');
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    _resetState();
   };
 
   const handleShiftSetupComplete = (setupData: ShiftSetupData) => {
@@ -224,7 +230,7 @@ export default function App() {
       return (
         <CurrentStock
           userName={userName}
-          userRole="staff"
+          userRole={userRole}
           projectName={selectedProject}
           onBack={handleBackFromStock}
           onLogout={handleLogout}
@@ -237,7 +243,7 @@ export default function App() {
       return (
         <ShiftEnd
           userName={userName}
-          userRole="staff"
+          userRole={userRole}
           projectName={selectedProject}
           onBack={handleBackFromShiftEnd}
           onLogout={handleLogout}
@@ -250,7 +256,7 @@ export default function App() {
       return (
         <ShiftChoice
           userName={userName}
-          userRole="staff"
+          userRole={userRole}
           projectName={selectedProject}
           onStartShiftSetup={handleStartShiftSetup}
           onStartSales={handleStartSales}
@@ -267,7 +273,7 @@ export default function App() {
       return (
         <ShiftSetup 
           userName={userName}
-          userRole="staff"
+          userRole={userRole}
           projectName={selectedProject} 
           onComplete={handleShiftSetupComplete}
           onLogout={handleLogout}
@@ -287,7 +293,7 @@ export default function App() {
           return (
             <ShiftChoice
               userName={userName}
-              userRole="staff"
+              userRole={userRole}
               projectName={selectedProject}
               onStartShiftSetup={handleStartShiftSetup}
               onStartSales={handleStartSales}
@@ -307,7 +313,7 @@ export default function App() {
         return (
           <QuickSales 
             userName={userName} 
-            userRole={isStaffRole ? 'staff' : 'admin'} 
+            userRole={userRole} 
             onProjectSelect={handleProjectSelect}
             preSelectedProject={isStaffRole && shiftSetupCompleted ? selectedProject : undefined}
             onLogout={handleLogout}
@@ -316,13 +322,13 @@ export default function App() {
         );
       
       case 'live-feed':
-        return <LiveSalesFeed userName={userName} userRole={isStaffRole ? 'staff' : 'admin'} onLogout={handleLogout} onNavigate={handleNavigate} />;
+        return <LiveSalesFeed userName={userName} userRole={userRole} onLogout={handleLogout} onNavigate={handleNavigate} />;
       
       case 'leaderboard':
         return (
           <Leaderboard 
             userName={userName}
-            userRole={isStaffRole ? 'staff' : 'admin'}
+            userRole={userRole}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -332,7 +338,7 @@ export default function App() {
         return (
           <Messaging 
             currentUser={userName}
-            userRole={isStaffRole ? 'staff' : 'admin'}
+            userRole={userRole}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -362,7 +368,7 @@ export default function App() {
         return (
           <StaffProfile 
             userName={userName}
-            userRole={isStaffRole ? 'staff' : 'admin'}
+            userRole={userRole}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -372,7 +378,7 @@ export default function App() {
         return (
           <Settings 
             userName={userName}
-            userRole={isStaffRole ? 'staff' : 'admin'}
+            userRole={userRole}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -382,7 +388,7 @@ export default function App() {
         return (
           <AspectAcademy 
             userName={userName}
-            userRole={isStaffRole ? 'staff' : 'admin'}
+            userRole={userRole}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -391,7 +397,7 @@ export default function App() {
       case 'aspect-ai':
         return (
           <AIAssistant 
-            userRole={isStaffRole ? 'staff' : 'admin'}
+            userRole={userRole}
             userName={userName}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
@@ -413,6 +419,7 @@ export default function App() {
           <MekanManagement 
             userName={userName}
             userRole={userRole}
+            accessToken={accessToken}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -472,6 +479,7 @@ export default function App() {
           <CostManagement 
             userName={userName}
             userRole={userRole}
+            accessToken={accessToken}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -515,7 +523,7 @@ export default function App() {
         return (
           <Announcements 
             userName={userName}
-            userRole={isStaffRole ? 'staff' : 'admin'}
+            userRole={userRole}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -525,7 +533,7 @@ export default function App() {
         return (
           <OperationsDemo 
             userName={userName}
-            userRole={isStaffRole ? 'staff' : 'admin'}
+            userRole={userRole}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -559,9 +567,24 @@ export default function App() {
       return <ManagerDashboard userName={userName} roleTitle="Müdür" onLogout={handleLogout} onNavigate={handleNavigate} />;
     } else {
       // Yönetici
-      return <AdminDashboard userName={userName} userRole="admin" onLogout={handleLogout} onNavigate={handleNavigate} />;
+      return <AdminDashboard userName={userName} userRole={userRole} onLogout={handleLogout} onNavigate={handleNavigate} />;
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] flex items-center justify-center">
+        <div className="text-center space-y-6">
+          <img src={logoImage} alt="Aspect" className="w-48 h-auto mx-auto opacity-80" />
+          <div className="flex items-center justify-center gap-2">
+            <div className="w-2 h-2 bg-[#9dd9ea] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <div className="w-2 h-2 bg-[#9dd9ea] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <div className="w-2 h-2 bg-[#9dd9ea] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!isLoggedIn) {
     return <Login onLogin={handleLogin} />;
@@ -605,9 +628,9 @@ export default function App() {
 
               {/* Center: Logo */}
               <div className="absolute left-1/2 top-[58%] -translate-x-1/2 -translate-y-1/2">
-                <img 
-                  src={logoImage} 
-                  alt="Aspect Operations" 
+                <img
+                  src={logoImage}
+                  alt="Aspect Operations"
                   className="h-44 w-auto object-contain"
                 />
               </div>
@@ -622,14 +645,14 @@ export default function App() {
                     <ArrowLeft className="w-5 h-5 text-white" />
                   </button>
                 )}
-                
+
                 <button className="relative flex items-center justify-center w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-all active:scale-95">
                   <Bell className="w-5 h-5 text-white" />
                   <div className="absolute top-1 right-1 w-2 h-2 bg-[#ffd4a3] rounded-full border border-[#2a2a3a]"></div>
                 </button>
-                <HamburgerMenu 
+                <HamburgerMenu
                   userName={userName}
-                  userRole={isStaffRole ? 'staff' : 'admin'}
+                  userRole={userRole}
                   onLogout={handleLogout}
                   onNavigate={handleNavigate}
                 />
@@ -645,7 +668,7 @@ export default function App() {
 
         {/* Bottom Navigation */}
         {!(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock) && (
-          <NewBottomNav activeTab={activeTab} onTabChange={handleNavigate} userRole={isStaffRole ? 'staff' : 'admin'} />
+          <NewBottomNav activeTab={activeTab} onTabChange={handleNavigate} userRole={userRole} />
         )}
 
         {/* Birthday Test Helper - Development only */}

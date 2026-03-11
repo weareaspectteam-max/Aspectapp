@@ -8,7 +8,7 @@ import { CurrencyWidget } from './currency-widget';
 
 interface AdminDashboardProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -70,8 +70,8 @@ function StatCard({ title, value, change, icon, color = 'blue', onClick }: StatC
 export function AdminDashboard({ userName, userRole, onLogout, onNavigate }: AdminDashboardProps) {
   const [showPerformanceList, setShowPerformanceList] = useState(false);
 
-  // Load locations from LocalStorage
-  const locations: Location[] = JSON.parse(localStorage.getItem('aspect_locations') || '[]');
+  // localStorage kaldırıldı - KV store entegrasyonu yapılacak
+  const locations: Location[] = [];
 
   // Genel istatistikler - Tüm projeler
   const totalRevenue = 45200;

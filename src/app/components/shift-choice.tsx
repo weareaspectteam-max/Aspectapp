@@ -5,7 +5,7 @@ import { NewBottomNav } from './new-bottom-nav';
 
 interface ShiftChoiceProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   projectName: string;
   onStartShiftSetup: () => void;
   onStartSales: () => void;
@@ -20,7 +20,7 @@ export function ShiftChoice({ userName, userRole, projectName, onStartShiftSetup
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] relative pb-20">
       {/* Sticky Top Bar - Only for staff */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <StaffTopBar
           userName={userName}
           userRole={userRole}
@@ -377,7 +377,7 @@ export function ShiftChoice({ userName, userRole, projectName, onStartShiftSetup
       </div>
 
       {/* Bottom Navigation - Only for staff */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <NewBottomNav
           activeTab="home"
           onTabChange={onNavigate}

@@ -3,7 +3,7 @@ import { Calendar, DollarSign, Package, TrendingUp, Hash, MapPin, User, Save } f
 
 interface DataEntryProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
 }
 
@@ -42,12 +42,9 @@ export function DataEntry({ userName }: DataEntryProps) {
     ribbonChanges: 0,
   });
 
-  // Load locations from Mekan Yönetimi (LocalStorage)
+  // localStorage kaldırıldı - KV store entegrasyonu yapılacak
   useEffect(() => {
-    const stored = localStorage.getItem('aspect_locations');
-    if (stored) {
-      setLocations(JSON.parse(stored));
-    }
+    // Boş başlıyoruz
   }, []);
 
   const albumTypes = [

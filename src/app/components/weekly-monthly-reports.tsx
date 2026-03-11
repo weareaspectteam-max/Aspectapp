@@ -180,7 +180,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
   // Yetki Kontrolü Fonksiyonları
   const canViewReport = (report: Report): boolean => {
     // Admin ve Üst Müdür tüm raporları görebilir
-    if (userRole === 'yonetici' || userRole === 'ust-mudur' || userRole === 'admin') {
+    if (userRole === 'yonetici' || userRole === 'ust-mudur') {
       return true;
     }
     // Müdür ve Operasyon sadece kendi raporlarını görebilir
@@ -192,7 +192,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
     if (report.status !== 'draft') return false;
     
     // Admin herkesin taslağını düzenleyebilir
-    if (userRole === 'yonetici' || userRole === 'admin') {
+    if (userRole === 'yonetici') {
       return true;
     }
     

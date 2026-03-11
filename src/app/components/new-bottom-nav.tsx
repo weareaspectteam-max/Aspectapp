@@ -2,12 +2,15 @@ import { Home, Zap, Trophy, MessageCircle, User, Users, Sparkles, Activity } fro
 
 interface NewBottomNavProps {
   activeTab: string;
-  onTabChange: (tab: string) => void;
-  userRole: 'admin' | 'staff';
+  onTabChange?: (tab: string) => void;
+  onNavigate?: (tab: string) => void;
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
 }
 
-export function NewBottomNav({ activeTab, onTabChange, userRole }: NewBottomNavProps) {
-  const tabs = userRole === 'admin' 
+export function NewBottomNav({ activeTab, onTabChange, onNavigate, userRole }: NewBottomNavProps) {
+  const handleNav = onNavigate || onTabChange || (() => {});
+  const isAdmin = ['yonetici', 'ust-mudur'].includes(userRole);
+  const tabs = isAdmin
     ? [
         { id: 'dashboard', label: 'Dashboard', icon: Home },
         { id: 'live-feed', label: 'Canlı', icon: Activity },
@@ -33,7 +36,7 @@ export function NewBottomNav({ activeTab, onTabChange, userRole }: NewBottomNavP
           return (
             <button
               key={tab.id}
-              onClick={() => onTabChange(tab.id)}
+              onClick={() => handleNav(tab.id)}
               className={`flex-1 flex flex-col items-center gap-1 py-2 px-3 rounded-2xl transition-all ${
                 isActive
                   ? 'bg-gradient-to-b from-[#9dd9ea]/20 to-transparent'

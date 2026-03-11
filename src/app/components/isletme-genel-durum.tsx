@@ -30,23 +30,15 @@ type DateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'last3month
 
 interface IsletmeGenelDurumProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onNavigate: (tab: string) => void;
 }
 
 export function IsletmeGenelDurum({ userName, userRole, onNavigate }: IsletmeGenelDurumProps) {
   // Get current user role from localStorage
   const getCurrentUserRole = () => {
-    const storedUser = localStorage.getItem('aspectUser');
-    if (storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        return user.role || 'staff';
-      } catch {
-        return 'staff';
-      }
-    }
-    return 'staff';
+    // localStorage kaldırıldı - prop'tan alıyoruz
+    return userRole || 'personel';
   };
 
   const currentRole = getCurrentUserRole();
@@ -293,17 +285,8 @@ export function IsletmeGenelDurum({ userName, userRole, onNavigate }: IsletmeGen
       return;
     }
     
-    // Get current user from localStorage
-    const storedUser = localStorage.getItem('aspectUser');
-    let currentUserName = 'Bilinmeyen Kullanıcı';
-    if (storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        currentUserName = user.name || 'Bilinmeyen Kullanıcı';
-      } catch {
-        currentUserName = 'Bilinmeyen Kullanıcı';
-      }
-    }
+    // localStorage kaldırıldı - prop'tan alıyoruz
+    const currentUserName = userName || 'Bilinmeyen Kullanıcı';
     
     const newExpense: Expense = {
       id: `expense-${Date.now()}`,

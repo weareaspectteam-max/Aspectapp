@@ -7,7 +7,7 @@ import { StaffPerformanceList } from './staff-performance-list';
 
 interface AdminDashboardProps {
   userName: string;
-  userRole: 'admin' | 'manager' | 'project_lead' | 'staff' | 'administrative' | 'unassigned';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
   pendingStockRequests?: Array<{
@@ -396,8 +396,8 @@ export function AdminDashboard({ userName, userRole, onLogout, onNavigate, pendi
                     </div>
                   </div>
 
-                  {/* 2️⃣ Günlük Kar Hedefi - Sadece Admin Görür */}
-                  {userRole === 'admin' && (
+                  {/* 2️⃣ Günlük Kar Hedefi - Sadece Yönetici Görür */}
+                  {['yonetici', 'ust-mudur'].includes(userRole) && (
                     <div className="space-y-1 mb-3">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-gray-300">🎯 Günlük Kar Hedefi</span>
@@ -418,8 +418,8 @@ export function AdminDashboard({ userName, userRole, onLogout, onNavigate, pendi
                     </div>
                   )}
 
-                  {/* 3️⃣ Yıllık Kar Beklentisi (Kümülatif) - Sadece Admin Görür */}
-                  {userRole === 'admin' && (
+                  {/* 3️⃣ Yıllık Kar Beklentisi (Kümülatif) - Sadece Yönetici Görür */}
+                  {['yonetici', 'ust-mudur'].includes(userRole) && (
                     <div className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-gray-300">📈 Yıllık Kar Beklentisi</span>

@@ -1,6 +1,6 @@
+import { getTasks, getLocations } from '../services/rotation-service';
 import { useState, useEffect } from 'react';
 import { MapPin, Clock, CheckCircle2, Navigation, AlertTriangle } from 'lucide-react';
-import { getTasks } from '../services/rotation-service';
 
 interface Project {
   id: string;
@@ -15,7 +15,7 @@ interface Project {
 interface Location {
   id: string;
   name: string;
-  emoji: string;
+  icon: string;
   color: string;
   workingHours?: {
     start: string;
@@ -38,10 +38,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate }
 
   // Mevcut kullanıcı rolünü al
   const getCurrentUserRole = (): string => {
-    try {
-      const stored = localStorage.getItem('aspectUser');
-      if (stored) return JSON.parse(stored).role ?? 'personel';
-    } catch { /* silent */ }
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
     return 'personel';
   };
   const userRole = getCurrentUserRole();
@@ -52,50 +49,22 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate }
 
   // Load locations from Mekan Yönetimi
   useEffect(() => {
-    const stored = localStorage.getItem('aspect_locations');
-    console.log('🔍 ProjectSelector - localStorage aspect_locations:', stored);
-    if (stored) {
-      const parsedLocations = JSON.parse(stored);
-      console.log('✅ ProjectSelector - Parsed locations:', parsedLocations);
-      setLocations(parsedLocations);
-    } else {
-      console.log('❌ ProjectSelector - No locations found in localStorage');
-    }
+    const load = async () => {
+      const locs = await getLocations();
+      setLocations(Array.isArray(locs) ? locs : []);
+    };
+    load();
   }, []);
 
   // Bugünkü rotasyonda hangi mekanlar var → mevcut kullanıcı için
   useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem('aspectUser');
-      if (!storedUser) return;
-      const currentUser = JSON.parse(storedUser);
-      const today = new Date().toISOString().split('T')[0];
-      const tasks = getTasks();
-      const venues = new Set<string>();
-      tasks.forEach(task => {
-        if (
-          task.date === today &&
-          (task.status === 'sent' || task.status === 'draft' || task.status === 'revised') &&
-          task.personnel.some((p: { id: string }) => p.id === currentUser.id)
-        ) {
-          venues.add(task.location);
-        }
-      });
-      setMyRotationVenues(venues);
-    } catch {
-      // silent
-    }
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
+    setMyRotationVenues(new Set());
   }, []);
 
   // ✅ DYNAMIC: Convert Mekan Yönetimi locations to projects
-  const projects: Project[] = locations.map((location, index) => {
-    const gradient = index === 0 
-      ? 'from-[#9dd9ea] to-[#7ec8dd]' 
-      : index === 1 
-      ? 'from-[#a8e6cf] to-[#8edec0]' 
-      : 'from-[#ffd4a3] to-[#ffc78f]';
-    
-    const workingHours = location.workingHours 
+  const projects: Project[] = locations.map((location) => {
+    const workingHours = location.workingHours
       ? `${location.workingHours.start} - ${location.workingHours.end}`
       : '09:00 - 18:00';
 
@@ -104,8 +73,8 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate }
       name: location.name,
       location: location.name.includes('Beach') ? 'Çeşme' : location.name.includes('Turu') ? 'Çeşme Liman' : 'Alaçatı',
       shift: workingHours,
-      color: gradient,
-      icon: location.emoji,
+      color: location.color || '#9dd9ea',
+      icon: location.icon,
     };
   });
 
@@ -152,7 +121,10 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate }
         <div className="backdrop-blur-xl bg-gradient-to-br from-white/15 to-white/10 rounded-2xl p-4 border-2 border-[#9dd9ea]/30 shadow-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${selectedProject.color} flex items-center justify-center text-2xl shadow-md`}>
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shadow-md"
+                style={{ backgroundColor: selectedProject.color + '99' }}
+              >
                 {selectedProject.icon}
               </div>
               <div>
@@ -253,7 +225,8 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate }
               <button
                 key={project.id}
                 onClick={() => handleProjectSelect(project)}
-                className={`w-full bg-gradient-to-br ${project.color} rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all active:scale-[0.98] text-left relative overflow-hidden`}
+                className="w-full rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all active:scale-[0.98] text-left relative overflow-hidden"
+                style={{ backgroundColor: project.color }}
               >
                 {/* Rotasyon etiketi */}
                 {hasRotationData && (
@@ -276,7 +249,10 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate }
                   </div>
                 )}
                 <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center text-3xl">
+                  <div
+                    className="w-14 h-14 rounded-xl flex items-center justify-center text-3xl"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.25)' }}
+                  >
                     {project.icon}
                   </div>
                   <div className="flex-1 pr-24">

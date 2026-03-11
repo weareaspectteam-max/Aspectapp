@@ -18,7 +18,7 @@ interface Project {
 
 interface OperationsDemoProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -97,7 +97,7 @@ export function OperationsDemo({ userName, userRole, onLogout, onNavigate }: Ope
     return (
       <ShiftChoice
         userName={userName}
-        userRole="staff"
+        userRole={userRole}
         projectName={selectedProject.name}
         onStartShiftSetup={handleStartShiftSetup}
         onStartSales={handleStartSales}
@@ -114,7 +114,7 @@ export function OperationsDemo({ userName, userRole, onLogout, onNavigate }: Ope
     return (
       <ShiftSetup
         userName={userName}
-        userRole="staff"
+        userRole={userRole}
         projectName={selectedProject.name}
         onComplete={handleShiftSetupComplete}
         onLogout={onLogout}
@@ -128,7 +128,7 @@ export function OperationsDemo({ userName, userRole, onLogout, onNavigate }: Ope
     return (
       <QuickSales
         userName={userName}
-        userRole="staff"
+        userRole={userRole}
         onProjectSelect={handleProjectSelectInSales}
         preSelectedProject={selectedProject?.name}
         onLogout={onLogout}
@@ -142,7 +142,7 @@ export function OperationsDemo({ userName, userRole, onLogout, onNavigate }: Ope
     return (
       <CurrentStock
         userName={userName}
-        userRole="staff"
+        userRole={userRole}
         projectName={selectedProject.name}
         onBack={handleBackToChoice}
         onLogout={onLogout}
@@ -155,7 +155,7 @@ export function OperationsDemo({ userName, userRole, onLogout, onNavigate }: Ope
     return (
       <ShiftEnd
         userName={userName}
-        userRole="staff"
+        userRole={userRole}
         projectName={selectedProject.name}
         onBack={handleBackToChoice}
         onLogout={onLogout}

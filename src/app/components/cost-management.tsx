@@ -1,9 +1,14 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Camera, Building2, Users, MapPin, Edit2, Trash2, X, Save, ChevronRight, Plus, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Edit2, Trash2, Save, ChevronRight, Plus, RefreshCw, Loader2 } from 'lucide-react';
+import { projectId } from '/utils/supabase/info';
+import { getToken, buildHeaders } from '../lib/api';
+
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
 interface CostManagementProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
+  accessToken: string;
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -63,8 +68,11 @@ interface Location {
 
 type ViewType = 'main' | 'products' | 'recurring' | 'salaries' | 'rents';
 
-export function CostManagement({ userName, userRole, onLogout, onNavigate }: CostManagementProps) {
+export function CostManagement({ userName, userRole, accessToken, onLogout, onNavigate }: CostManagementProps) {
   const [currentView, setCurrentView] = useState<ViewType>('main');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
   
   // Exchange rates
   const [isAutoExchange, setIsAutoExchange] = useState(false);
@@ -129,93 +137,118 @@ export function CostManagement({ userName, userRole, onLogout, onNavigate }: Cos
     extraCostPercentage: '15',
   });
 
-  // Load data from localStorage
-  useEffect(() => {
-    // Exchange rates
-    const storedRates = localStorage.getItem('aspect_exchange_rates');
-    if (storedRates) {
-      const parsed = JSON.parse(storedRates);
-      setExchangeRates(parsed.rates || parsed);
-      setIsAutoExchange(parsed.isAuto || false);
-    }
+  const albumDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exchangeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Albums - migrate old format and ensure all sizes exist
-    const storedAlbums = localStorage.getItem('aspect_album_costs');
-    if (storedAlbums) {
-      const parsed = JSON.parse(storedAlbums);
-      // Migrate old format (amount) to new format (tamBoy / yarimBoy)
-      const migrated: AlbumCost[] = parsed.map((a: any) => ({
-        size: a.size,
-        tamBoy: a.tamBoy ?? a.amount ?? 0,
-        yarimBoy: a.yarimBoy ?? (a.amount ? Math.round(a.amount * 0.8) : 0),
-        currency: a.currency ?? 'TRY',
-      }));
-      // Ensure 13-size exists
-      const has13 = migrated.some((a) => a.size === 13);
-      if (!has13) {
-        migrated.splice(5, 0, { size: 13, tamBoy: 75, yarimBoy: 60, currency: 'TRY' });
-        migrated.sort((a, b) => a.size - b.size);
+  // ─── Token helper ───────────────────────────────────────
+  // getToken ve buildHeaders artık ../lib/api'den geliyor
+
+  // ─── Veri yükle — sadece mount'ta bir kez ────────────────
+  const fetchData = async () => {
+    setIsLoading(true);
+    setApiError(null);
+    try {
+      const token = await getToken();
+      const freshHeaders = buildHeaders(token);
+      const [costRes, mekanRes] = await Promise.all([
+        fetch(`${API_BASE}/maliyetler`, { headers: freshHeaders }),
+        fetch(`${API_BASE}/mekanlar`, { headers: freshHeaders }),
+      ]);
+
+      if (!costRes.ok) {
+        const rawText = await costRes.text();
+        console.log('[CostMgmt] token prefix:', token?.substring(0, 20));
+        console.log('[CostMgmt] Maliyet HTTP status:', costRes.status);
+        console.log('[CostMgmt] Maliyet raw response:', rawText);
+        let err: any = {};
+        try { err = JSON.parse(rawText); } catch {}
+        setApiError(err.error || err.message || `HTTP ${costRes.status}: ${rawText.slice(0, 200)}`);
+      } else {
+        const data = await costRes.json();
+        const er = data.exchangeRates;
+        setExchangeRates({ EUR: er.EUR, USD: er.USD, GBP: er.GBP });
+        setIsAutoExchange(er.isAuto || false);
+        setAlbumCosts(data.albums || []);
+        setPapers(data.papers || []);
+        setRecurringCosts(data.recurring || []);
+        setSalaries(data.salaries || []);
       }
-      setAlbumCosts(migrated);
-      localStorage.setItem('aspect_album_costs', JSON.stringify(migrated));
+
+      if (mekanRes.ok) {
+        const mekanData = await mekanRes.json();
+        setLocations(mekanData.mekanlar || []);
+      }
+    } catch (err) {
+      console.log('[CostMgmt] fetch error:', err);
+      setApiError('Sunucuya bağlanılamadı.');
+    } finally {
+      setIsLoading(false);
     }
+  };
 
-    // Papers
-    const storedPapers = localStorage.getItem('aspect_paper_costs');
-    if (storedPapers) setPapers(JSON.parse(storedPapers));
-
-    // Recurring costs
-    const storedRecurring = localStorage.getItem('aspect_recurring_costs');
-    if (storedRecurring) setRecurringCosts(JSON.parse(storedRecurring));
-
-    // Salaries
-    const storedSalaries = localStorage.getItem('aspect_salaries');
-    if (storedSalaries) setSalaries(JSON.parse(storedSalaries));
-
-    // Locations
-    const storedLocations = localStorage.getItem('aspect_locations');
-    if (storedLocations) setLocations(JSON.parse(storedLocations));
+  // user-management ile aynı: boş deps → sadece mount'ta çalışır, döngü yok
+  useEffect(() => {
+    fetchData();
   }, []);
 
-  // Save to localStorage
+  // ─── API Kayıt Fonksiyonları ──────────────────────
   const saveExchangeRates = (rates: ExchangeRates, isAuto: boolean) => {
     setExchangeRates(rates);
     setIsAutoExchange(isAuto);
-    localStorage.setItem('aspect_exchange_rates', JSON.stringify({ rates, isAuto }));
+    if (exchangeDebounceRef.current) clearTimeout(exchangeDebounceRef.current);
+    exchangeDebounceRef.current = setTimeout(async () => {
+      try {
+        const token = await getToken();
+        await fetch(`${API_BASE}/maliyetler/doviz`, {
+          method: 'PUT',
+          headers: buildHeaders(token),
+          body: JSON.stringify({ ...rates, isAuto }),
+        });
+      } catch (err) {
+        console.log('Döviz kaydetme hatası:', err);
+      }
+    }, 600);
   };
 
   const saveAlbumCosts = (costs: AlbumCost[]) => {
     setAlbumCosts(costs);
-    localStorage.setItem('aspect_album_costs', JSON.stringify(costs));
+    if (albumDebounceRef.current) clearTimeout(albumDebounceRef.current);
+    albumDebounceRef.current = setTimeout(async () => {
+      try {
+        const token = await getToken();
+        await fetch(`${API_BASE}/maliyetler/albumler`, {
+          method: 'PUT',
+          headers: buildHeaders(token),
+          body: JSON.stringify({ albums: costs }),
+        });
+      } catch (err) {
+        console.log('Albüm kaydetme hatası:', err);
+      }
+    }, 600);
   };
 
   const savePapers = (newPapers: PaperCost[]) => {
     setPapers(newPapers);
-    localStorage.setItem('aspect_paper_costs', JSON.stringify(newPapers));
   };
 
   const saveRecurringCosts = (costs: RecurringCost[]) => {
     setRecurringCosts(costs);
-    localStorage.setItem('aspect_recurring_costs', JSON.stringify(costs));
   };
 
   const saveSalaries = (newSalaries: Salary[]) => {
     setSalaries(newSalaries);
-    localStorage.setItem('aspect_salaries', JSON.stringify(newSalaries));
   };
 
-  // Fetch real exchange rates
+  // ─── Kur güncelle ───────────────────────────────
   const fetchExchangeRates = async () => {
     try {
       const response = await fetch('https://api.exchangerate-api.com/v4/latest/TRY');
       const data = await response.json();
-      
       const newRates: ExchangeRates = {
         EUR: 1 / data.rates.EUR,
         USD: 1 / data.rates.USD,
         GBP: 1 / data.rates.GBP,
       };
-      
       saveExchangeRates(newRates, true);
       alert('Kurlar başarıyla güncellendi!');
     } catch (error) {
@@ -274,51 +307,76 @@ export function CostManagement({ userName, userRole, onLogout, onNavigate }: Cos
   };
 
   // Paper form handlers
-  const handleAddPaper = () => {
+  const handleAddPaper = async () => {
     if (!paperForm.name.trim() || !paperForm.boxPrice || !paperForm.pcsPerBox || !paperForm.setsPerBox) {
       alert('Lütfen tüm alanları doldurun!');
       return;
     }
-
-    const newPaper: PaperCost = {
-      id: Date.now().toString(),
-      name: paperForm.name.trim(),
-      boxPrice: parseFloat(paperForm.boxPrice),
-      currency: paperForm.currency,
-      pcsPerBox: parseInt(paperForm.pcsPerBox),
-      setsPerBox: parseInt(paperForm.setsPerBox),
-    };
-
-    savePapers([...papers, newPaper]);
-    resetPaperForm();
+    setIsSaving(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/maliyetler/kagitlar`, {
+        method: 'POST',
+        headers: buildHeaders(token),
+        body: JSON.stringify({
+          name: paperForm.name.trim(),
+          boxPrice: parseFloat(paperForm.boxPrice),
+          currency: paperForm.currency,
+          pcsPerBox: parseInt(paperForm.pcsPerBox),
+          setsPerBox: parseInt(paperForm.setsPerBox),
+        }),
+      });
+      if (!res.ok) { const e = await res.json(); alert(e.error || 'Kağıt eklenemedi.'); return; }
+      const { paper } = await res.json();
+      setPapers(prev => [...prev, paper]);
+      resetPaperForm();
+    } catch (err) {
+      console.log('Kağıt ekleme hatası:', err);
+      alert('Sunucu hatası!');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleUpdatePaper = () => {
+  const handleUpdatePaper = async () => {
     if (!editingPaper || !paperForm.name.trim() || !paperForm.boxPrice || !paperForm.pcsPerBox || !paperForm.setsPerBox) {
       alert('Lütfen tüm alanları doldurun!');
       return;
     }
-
-    const updated = papers.map(p =>
-      p.id === editingPaper.id
-        ? {
-            ...p,
-            name: paperForm.name.trim(),
-            boxPrice: parseFloat(paperForm.boxPrice),
-            currency: paperForm.currency,
-            pcsPerBox: parseInt(paperForm.pcsPerBox),
-            setsPerBox: parseInt(paperForm.setsPerBox),
-          }
-        : p
-    );
-
-    savePapers(updated);
-    resetPaperForm();
+    setIsSaving(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/maliyetler/kagitlar/${editingPaper.id}`, {
+        method: 'PUT',
+        headers: buildHeaders(token),
+        body: JSON.stringify({
+          name: paperForm.name.trim(),
+          boxPrice: parseFloat(paperForm.boxPrice),
+          currency: paperForm.currency,
+          pcsPerBox: parseInt(paperForm.pcsPerBox),
+          setsPerBox: parseInt(paperForm.setsPerBox),
+        }),
+      });
+      if (!res.ok) { const e = await res.json(); alert(e.error || 'Kağıt güncellenemedi.'); return; }
+      const { paper } = await res.json();
+      setPapers(prev => prev.map(p => p.id === paper.id ? paper : p));
+      resetPaperForm();
+    } catch (err) {
+      console.log('Kağıt güncelleme hatası:', err);
+      alert('Sunucu hatası!');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleDeletePaper = (id: string) => {
-    if (confirm('Bu kağıt tipini silmek istediğinize emin misiniz?')) {
-      savePapers(papers.filter(p => p.id !== id));
+  const handleDeletePaper = async (id: string) => {
+    if (!confirm('Bu kağıt tipini silmek istediğinize emin misiniz?')) return;
+    try {
+      const token = await getToken();
+      await fetch(`${API_BASE}/maliyetler/kagitlar/${id}`, { method: 'DELETE', headers: buildHeaders(token) });
+      setPapers(prev => prev.filter(p => p.id !== id));
+    } catch (err) {
+      console.log('Kağıt silme hatası:', err);
     }
   };
 
@@ -347,49 +405,74 @@ export function CostManagement({ userName, userRole, onLogout, onNavigate }: Cos
   };
 
   // Recurring form handlers
-  const handleAddRecurring = () => {
+  const handleAddRecurring = async () => {
     if (!recurringForm.name.trim() || !recurringForm.amount) {
       alert('Lütfen tüm alanları doldurun!');
       return;
     }
-
-    const newCost: RecurringCost = {
-      id: Date.now().toString(),
-      name: recurringForm.name.trim(),
-      amount: parseFloat(recurringForm.amount),
-      currency: recurringForm.currency,
-      frequency: recurringForm.frequency,
-    };
-
-    saveRecurringCosts([...recurringCosts, newCost]);
-    resetRecurringForm();
+    setIsSaving(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/maliyetler/giderler`, {
+        method: 'POST',
+        headers: buildHeaders(token),
+        body: JSON.stringify({
+          name: recurringForm.name.trim(),
+          amount: parseFloat(recurringForm.amount),
+          currency: recurringForm.currency,
+          frequency: recurringForm.frequency,
+        }),
+      });
+      if (!res.ok) { const e = await res.json(); alert(e.error || 'Gider eklenemedi.'); return; }
+      const { gider } = await res.json();
+      setRecurringCosts(prev => [...prev, gider]);
+      resetRecurringForm();
+    } catch (err) {
+      console.log('Gider ekleme hatası:', err);
+      alert('Sunucu hatası!');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleUpdateRecurring = () => {
+  const handleUpdateRecurring = async () => {
     if (!editingRecurring || !recurringForm.name.trim() || !recurringForm.amount) {
       alert('Lütfen tüm alanları doldurun!');
       return;
     }
-
-    const updated = recurringCosts.map(c =>
-      c.id === editingRecurring.id
-        ? {
-            ...c,
-            name: recurringForm.name.trim(),
-            amount: parseFloat(recurringForm.amount),
-            currency: recurringForm.currency,
-            frequency: recurringForm.frequency,
-          }
-        : c
-    );
-
-    saveRecurringCosts(updated);
-    resetRecurringForm();
+    setIsSaving(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/maliyetler/giderler/${editingRecurring.id}`, {
+        method: 'PUT',
+        headers: buildHeaders(token),
+        body: JSON.stringify({
+          name: recurringForm.name.trim(),
+          amount: parseFloat(recurringForm.amount),
+          currency: recurringForm.currency,
+          frequency: recurringForm.frequency,
+        }),
+      });
+      if (!res.ok) { const e = await res.json(); alert(e.error || 'Gider güncellenemedi.'); return; }
+      const { gider } = await res.json();
+      setRecurringCosts(prev => prev.map(c => c.id === gider.id ? gider : c));
+      resetRecurringForm();
+    } catch (err) {
+      console.log('Gider güncelleme hatası:', err);
+      alert('Sunucu hatası!');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleDeleteRecurring = (id: string) => {
-    if (confirm('Bu gideri silmek istediğinize emin misiniz?')) {
-      saveRecurringCosts(recurringCosts.filter(c => c.id !== id));
+  const handleDeleteRecurring = async (id: string) => {
+    if (!confirm('Bu gideri silmek istediğinize emin misiniz?')) return;
+    try {
+      const token = await getToken();
+      await fetch(`${API_BASE}/maliyetler/giderler/${id}`, { method: 'DELETE', headers: buildHeaders(token) });
+      setRecurringCosts(prev => prev.filter(c => c.id !== id));
+    } catch (err) {
+      console.log('Gider silme hatası:', err);
     }
   };
 
@@ -416,51 +499,76 @@ export function CostManagement({ userName, userRole, onLogout, onNavigate }: Cos
   };
 
   // Salary form handlers
-  const handleAddSalary = () => {
+  const handleAddSalary = async () => {
     if (!salaryForm.name.trim() || !salaryForm.amount) {
       alert('Lütfen tüm alanları doldurun!');
       return;
     }
-
-    const newSalary: Salary = {
-      id: Date.now().toString(),
-      name: salaryForm.name.trim(),
-      amount: parseFloat(salaryForm.amount),
-      currency: salaryForm.currency,
-      frequency: salaryForm.frequency,
-      extraCostPercentage: parseFloat(salaryForm.extraCostPercentage),
-    };
-
-    saveSalaries([...salaries, newSalary]);
-    resetSalaryForm();
+    setIsSaving(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/maliyetler/maaslar`, {
+        method: 'POST',
+        headers: buildHeaders(token),
+        body: JSON.stringify({
+          name: salaryForm.name.trim(),
+          amount: parseFloat(salaryForm.amount),
+          currency: salaryForm.currency,
+          frequency: salaryForm.frequency,
+          extraCostPercentage: parseFloat(salaryForm.extraCostPercentage),
+        }),
+      });
+      if (!res.ok) { const e = await res.json(); alert(e.error || 'Maaş eklenemedi.'); return; }
+      const { maas } = await res.json();
+      setSalaries(prev => [...prev, maas]);
+      resetSalaryForm();
+    } catch (err) {
+      console.log('Maaş ekleme hatası:', err);
+      alert('Sunucu hatası!');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleUpdateSalary = () => {
+  const handleUpdateSalary = async () => {
     if (!editingSalary || !salaryForm.name.trim() || !salaryForm.amount) {
       alert('Lütfen tüm alanları doldurun!');
       return;
     }
-
-    const updated = salaries.map(s =>
-      s.id === editingSalary.id
-        ? {
-            ...s,
-            name: salaryForm.name.trim(),
-            amount: parseFloat(salaryForm.amount),
-            currency: salaryForm.currency,
-            frequency: salaryForm.frequency,
-            extraCostPercentage: parseFloat(salaryForm.extraCostPercentage),
-          }
-        : s
-    );
-
-    saveSalaries(updated);
-    resetSalaryForm();
+    setIsSaving(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/maliyetler/maaslar/${editingSalary.id}`, {
+        method: 'PUT',
+        headers: buildHeaders(token),
+        body: JSON.stringify({
+          name: salaryForm.name.trim(),
+          amount: parseFloat(salaryForm.amount),
+          currency: salaryForm.currency,
+          frequency: salaryForm.frequency,
+          extraCostPercentage: parseFloat(salaryForm.extraCostPercentage),
+        }),
+      });
+      if (!res.ok) { const e = await res.json(); alert(e.error || 'Maaş güncellenemedi.'); return; }
+      const { maas } = await res.json();
+      setSalaries(prev => prev.map(s => s.id === maas.id ? maas : s));
+      resetSalaryForm();
+    } catch (err) {
+      console.log('Maaş güncelleme hatası:', err);
+      alert('Sunucu hatası!');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleDeleteSalary = (id: string) => {
-    if (confirm('Bu maaşı silmek istediğinize emin misiniz?')) {
-      saveSalaries(salaries.filter(s => s.id !== id));
+  const handleDeleteSalary = async (id: string) => {
+    if (!confirm('Bu maaşı silmek istediğinize emin misiniz?')) return;
+    try {
+      const token = await getToken();
+      await fetch(`${API_BASE}/maliyetler/maaslar/${id}`, { method: 'DELETE', headers: buildHeaders(token) });
+      setSalaries(prev => prev.filter(s => s.id !== id));
+    } catch (err) {
+      console.log('Maaş silme hatası:', err);
     }
   };
 
@@ -1457,6 +1565,7 @@ export function CostManagement({ userName, userRole, onLogout, onNavigate }: Cos
                   {currentView === 'salaries' && '👥 Personel Maaşları'}
                   {currentView === 'rents' && '📍 Mekan Kiraları'}
                 </h1>
+                {isSaving && <Loader2 className="w-4 h-4 text-[#9dd9ea] animate-spin" />}
               </div>
               <p className="text-sm text-gray-400">
                 {currentView === 'main' && 'Sabit maliyetlerinizi yönetin'}
@@ -1470,14 +1579,31 @@ export function CostManagement({ userName, userRole, onLogout, onNavigate }: Cos
         </div>
       </div>
 
-      {/* Content */}
-      <div className="pt-4">
-        {currentView === 'main' && renderMainView()}
-        {currentView === 'products' && renderProductsView()}
-        {currentView === 'recurring' && renderRecurringView()}
-        {currentView === 'salaries' && renderSalariesView()}
-        {currentView === 'rents' && renderRentsView()}
-      </div>
+      {/* Loading / Error / Content */}
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-24 gap-4">
+          <Loader2 className="w-10 h-10 text-[#9dd9ea] animate-spin" />
+          <p className="text-gray-400 text-sm">Veriler yükleniyor...</p>
+        </div>
+      ) : apiError ? (
+        <div className="px-6 pt-8 text-center">
+          <p className="text-red-400 mb-4">{apiError}</p>
+          <button
+            onClick={fetchData}
+            className="px-6 py-3 bg-[#9dd9ea]/20 border border-[#9dd9ea]/40 rounded-xl text-white font-semibold"
+          >
+            Tekrar Dene
+          </button>
+        </div>
+      ) : (
+        <div className="pt-4">
+          {currentView === 'main' && renderMainView()}
+          {currentView === 'products' && renderProductsView()}
+          {currentView === 'recurring' && renderRecurringView()}
+          {currentView === 'salaries' && renderSalariesView()}
+          {currentView === 'rents' && renderRentsView()}
+        </div>
+      )}
     </div>
   );
 }

@@ -65,7 +65,7 @@ interface Equipment {
 
 interface EquipmentPageProps {
   userName?: string;
-  userRole?: 'admin' | 'staff';
+  userRole?: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout?: () => void;
   onNavigate?: (tab: string) => void;
   embedded?: boolean;                       // Location Management içinde gösterim

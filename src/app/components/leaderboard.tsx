@@ -14,7 +14,7 @@ interface StaffMember {
 
 interface LeaderboardProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -116,7 +116,7 @@ export function Leaderboard({ userName, userRole, onLogout, onNavigate }: Leader
   return (
     <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
       {/* Sticky Top Bar */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <StaffTopBar
           userName={userName}
           userRole={userRole}
@@ -144,7 +144,7 @@ export function Leaderboard({ userName, userRole, onLogout, onNavigate }: Leader
               <div className="font-semibold text-sm text-white mb-1">{topThree[1].name}</div>
               <div className="text-3xl font-bold text-white mb-1">{topThree[1].salesCount}</div>
               <div className="text-xs text-gray-400">satış 🥈</div>
-              {userRole === 'admin' && (
+              {['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole) && (
                 <div className="text-sm font-bold text-[#a8e6cf] mt-1">
                   {topThree[1].revenue.toLocaleString('tr-TR')} ₺
                 </div>
@@ -168,7 +168,7 @@ export function Leaderboard({ userName, userRole, onLogout, onNavigate }: Leader
               <div className="font-bold text-base text-white mb-1">{topThree[0].name}</div>
               <div className="text-4xl font-bold bg-gradient-to-r from-[#ffe5b4] to-[#ffd89b] bg-clip-text text-transparent mb-1">{topThree[0].salesCount}</div>
               <div className="text-xs text-gray-400">satış 🏆</div>
-              {userRole === 'admin' && (
+              {['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole) && (
                 <div className="text-base font-bold text-[#a8e6cf] mt-1">
                   {topThree[0].revenue.toLocaleString('tr-TR')} ₺
                 </div>
@@ -192,7 +192,7 @@ export function Leaderboard({ userName, userRole, onLogout, onNavigate }: Leader
               <div className="font-semibold text-sm text-white mb-1">{topThree[2].name}</div>
               <div className="text-3xl font-bold text-white mb-1">{topThree[2].salesCount}</div>
               <div className="text-xs text-gray-400">satış 🥉</div>
-              {userRole === 'admin' && (
+              {['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole) && (
                 <div className="text-sm font-bold text-[#a8e6cf] mt-1">
                   {topThree[2].revenue.toLocaleString('tr-TR')} ₺
                 </div>
@@ -236,7 +236,7 @@ export function Leaderboard({ userName, userRole, onLogout, onNavigate }: Leader
                   <div className="text-xs text-gray-400 flex items-center gap-1">
                     <span className="text-lg">🎯</span>
                     {member.salesCount} satış
-                    {userRole === 'admin' && (
+                    {['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole) && (
                       <>
                         <span className="mx-1">•</span>
                         <span className="text-[#a8e6cf] font-semibold">{member.revenue.toLocaleString('tr-TR')} ₺</span>
@@ -275,7 +275,7 @@ export function Leaderboard({ userName, userRole, onLogout, onNavigate }: Leader
       </div>
 
       {/* Bottom Navigation - Only for staff */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <NewBottomNav
           activeTab="leaderboard"
           onTabChange={onNavigate}

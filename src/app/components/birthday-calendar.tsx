@@ -29,58 +29,11 @@ export function BirthdayCalendar({ userName, userRole, onLogout, onNavigate, onB
   }, []);
 
   const loadBirthdays = () => {
-    const usersData = localStorage.getItem('aspectUsers');
-    const currentUser = localStorage.getItem('aspectUser');
-    if (usersData) {
-      try {
-        const users = JSON.parse(usersData);
-        const current = currentUser ? JSON.parse(currentUser) : null;
-        
-        // Filter out users who want to hide their birthday
-        const usersWithBirthdays = users.filter((u: any) => {
-          if (!u.birthday) return false;
-          // Don't show if user wants to hide their birthday (except if it's the current user viewing their own)
-          if (u.hideBirthdayFromOthers === true && current && u.name !== current.name) {
-            return false;
-          }
-          return true;
-        });
-        
-        // Sort by upcoming birthdays
-        const sorted = usersWithBirthdays.sort((a: any, b: any) => {
-          const dateA = getNextBirthday(a.birthday);
-          const dateB = getNextBirthday(b.birthday);
-          return dateA.getTime() - dateB.getTime();
-        });
-
-        setBirthdays(sorted);
-
-        // Get today's birthdays
-        const today = new Date();
-        const todayStr = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-        
-        const todayBdays = sorted.filter((u: any) => {
-          const bday = new Date(u.birthday);
-          const bdayStr = `${String(bday.getMonth() + 1).padStart(2, '0')}-${String(bday.getDate()).padStart(2, '0')}`;
-          return bdayStr === todayStr;
-        });
-
-        setTodayBirthdays(todayBdays);
-
-        // Get upcoming birthdays (next 30 days)
-        const thirtyDaysLater = new Date();
-        thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
-
-        const upcoming = sorted.filter((u: any) => {
-          const nextBday = getNextBirthday(u.birthday);
-          return nextBday >= today && nextBday <= thirtyDaysLater && !todayBdays.includes(u);
-        });
-
-        setUpcomingBirthdays(upcoming);
-      } catch (error) {
-        console.error('Doğum günleri yüklenemedi:', error);
-      }
-    }
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
+    // Boş başlıyoruz
+    setBirthdays([]);
+    setTodayBirthdays([]);
+    setUpcomingBirthdays([]);
   };
 
   const getNextBirthday = (birthdayStr: string): Date => {

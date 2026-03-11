@@ -3,7 +3,7 @@ import { Home, FileText, BarChart3, MessageSquare, Folder, MessageCircle } from 
 interface BottomNavProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
 }
 
 export function BottomNav({ activeTab, onTabChange, userRole }: BottomNavProps) {
@@ -22,7 +22,7 @@ export function BottomNav({ activeTab, onTabChange, userRole }: BottomNavProps) 
     { id: 'ai', label: 'AI Yardım', icon: MessageSquare },
   ];
 
-  const tabs = userRole === 'admin' ? adminTabs : staffTabs;
+  const tabs = ['yonetici', 'ust-mudur'].includes(userRole) ? adminTabs : staffTabs;
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border max-w-[480px] mx-auto">

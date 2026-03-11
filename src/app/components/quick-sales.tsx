@@ -34,7 +34,7 @@ interface CartItem {
 
 interface QuickSalesProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onProjectSelect?: (projectName: string) => void;
   preSelectedProject?: string;
   onBack?: () => void;
@@ -131,38 +131,38 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
   const [shiftEndDone, setShiftEndDone] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem('aspect_exchange_rates');
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        const rates = parsed.rates || parsed;
-        setExchangeRates({ USD: rates.USD || 34.52, EUR: rates.EUR || 37.89, GBP: rates.GBP || 43.26 });
-      } catch {}
-    }
-    setAllStaff(getStaffMembers());
+    const load = async () => {
+      setExchangeRates({ USD: 34.52, EUR: 37.89, GBP: 43.26 });
+      const staff = await getStaffMembers();
+      setAllStaff(Array.isArray(staff) ? staff : []);
+    };
+    load();
   }, []);
 
   // Load rotation personnel when project changes
   useEffect(() => {
     if (!selectedProject) return;
-    const today = new Date().toISOString().split('T')[0];
-    const tasks = getTasks();
-    const todayTasks = tasks.filter(t =>
-      t.date === today &&
-      t.location === selectedProject.name &&
-      (t.status === 'sent' || t.status === 'draft' || t.status === 'revised')
-    );
-    const ids = new Set<string>();
-    const list: StaffMember[] = [];
-    todayTasks.forEach(task => {
-      task.personnel.forEach(p => {
-        if (!ids.has(p.id)) {
-          ids.add(p.id);
-          list.push({ id: p.id, name: p.name, avatar: p.avatar, role: p.role, status: 'active' });
-        }
+    const load = async () => {
+      const today = new Date().toISOString().split('T')[0];
+      const tasks = await getTasks();
+      const todayTasks = (Array.isArray(tasks) ? tasks : []).filter(t =>
+        t.date === today &&
+        t.location === selectedProject.name &&
+        (t.status === 'sent' || t.status === 'draft' || t.status === 'revised')
+      );
+      const ids = new Set<string>();
+      const list: StaffMember[] = [];
+      todayTasks.forEach(task => {
+        task.personnel.forEach(p => {
+          if (!ids.has(p.id)) {
+            ids.add(p.id);
+            list.push({ id: p.id, name: p.name, avatar: p.avatar, role: p.role, status: 'active' });
+          }
+        });
       });
-    });
-    setRotationPersonnel(list);
+      setRotationPersonnel(list);
+    };
+    load();
   }, [selectedProject]);
 
   const products = [
@@ -254,11 +254,7 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
       timestamp: new Date().toISOString(),
       enteredBy: userName,
     };
-    try {
-      const stored = localStorage.getItem(FRAME_STORAGE_KEY);
-      const existing = stored ? JSON.parse(stored) : [];
-      localStorage.setItem(FRAME_STORAGE_KEY, JSON.stringify([entry, ...existing]));
-    } catch {}
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
     setFramePhotographer(null);
     setFrameCount('');
     setFrameShowSuccess(true);
@@ -316,11 +312,11 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
 
   return (
     <div className="pb-32 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <StaffTopBar userName={userName} userRole={userRole} onBack={() => onNavigate('home')} onLogout={onLogout} onNavigate={onNavigate} showBackButton={true} />
       )}
 
-      {(userRole === 'admin' || !preSelectedProject) && (
+      {(['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole) || !preSelectedProject) && (
         <ProjectSelector
           onProjectSelect={(project) => {
             setSelectedProject(project);
@@ -338,7 +334,7 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
         </div>
       ) : (
         <>
-          {!(userRole === 'staff' && preSelectedProject) && (
+          {!(['personel', 'operasyon', 'bekleyen'].includes(userRole) && preSelectedProject) && (
             <div className="px-6 pb-4 pt-6">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
@@ -1410,7 +1406,7 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
         </motion.div>
       )}
 
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <NewBottomNav activeTab="home" onTabChange={onNavigate} userRole={userRole} />
       )}
     </div>

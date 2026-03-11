@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { User, Lock, Shield, Users, Zap } from 'lucide-react';
 
+type UserRole = 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
+
 interface ModernLoginProps {
-  onLogin: (role: 'admin' | 'staff', name: string) => void;
+  onLogin: (role: UserRole, name: string) => void;
 }
 
 export function ModernLogin({ onLogin }: ModernLoginProps) {
-  const [selectedRole, setSelectedRole] = useState<'admin' | 'staff' | null>(null);
+  const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
 
@@ -37,42 +39,42 @@ export function ModernLogin({ onLogin }: ModernLoginProps) {
           <label className="text-sm font-semibold text-foreground mb-3 block">Rol Seçin</label>
           <div className="grid grid-cols-2 gap-4">
             <button
-              onClick={() => setSelectedRole('admin')}
+              onClick={() => setSelectedRole('yonetici')}
               className={`group relative p-6 rounded-3xl border-2 transition-all ${
-                selectedRole === 'admin'
+                selectedRole === 'yonetici'
                   ? 'border-primary bg-gradient-to-br from-primary/5 to-primary/10 shadow-xl shadow-primary/10'
                   : 'border-border bg-white hover:border-primary/50 hover:shadow-lg'
               }`}
             >
               <div className={`w-14 h-14 rounded-2xl mx-auto mb-3 flex items-center justify-center transition-all ${
-                selectedRole === 'admin' 
+                selectedRole === 'yonetici' 
                   ? 'bg-gradient-to-br from-[#b8d4f1] to-[#a7c7e7] shadow-lg' 
                   : 'bg-muted group-hover:bg-[#b8d4f1]/10'
               }`}>
-                <Shield className={`w-7 h-7 ${selectedRole === 'admin' ? 'text-white' : 'text-muted-foreground'}`} />
+                <Shield className={`w-7 h-7 ${selectedRole === 'yonetici' ? 'text-white' : 'text-muted-foreground'}`} />
               </div>
-              <div className={`font-bold mb-1 ${selectedRole === 'admin' ? 'text-primary' : 'text-foreground'}`}>
+              <div className={`font-bold mb-1 ${selectedRole === 'yonetici' ? 'text-primary' : 'text-foreground'}`}>
                 Yönetici
               </div>
               <div className="text-xs text-muted-foreground">Tam Erişim</div>
             </button>
 
             <button
-              onClick={() => setSelectedRole('staff')}
+              onClick={() => setSelectedRole('personel')}
               className={`group relative p-6 rounded-3xl border-2 transition-all ${
-                selectedRole === 'staff'
+                selectedRole === 'personel'
                   ? 'border-[#9dd9ea] bg-gradient-to-br from-[#9dd9ea]/5 to-[#9dd9ea]/10 shadow-xl shadow-[#9dd9ea]/10'
                   : 'border-border bg-white hover:border-[#9dd9ea]/50 hover:shadow-lg'
               }`}
             >
               <div className={`w-14 h-14 rounded-2xl mx-auto mb-3 flex items-center justify-center transition-all ${
-                selectedRole === 'staff' 
+                selectedRole === 'personel' 
                   ? 'bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] shadow-lg' 
                   : 'bg-muted group-hover:bg-[#9dd9ea]/10'
               }`}>
-                <Users className={`w-7 h-7 ${selectedRole === 'staff' ? 'text-white' : 'text-muted-foreground'}`} />
+                <Users className={`w-7 h-7 ${selectedRole === 'personel' ? 'text-white' : 'text-muted-foreground'}`} />
               </div>
-              <div className={`font-bold mb-1 ${selectedRole === 'staff' ? 'text-[#7ec8dd]' : 'text-foreground'}`}>
+              <div className={`font-bold mb-1 ${selectedRole === 'personel' ? 'text-[#7ec8dd]' : 'text-foreground'}`}>
                 Personel
               </div>
               <div className="text-xs text-muted-foreground">Personel</div>

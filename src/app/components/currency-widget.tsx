@@ -11,22 +11,9 @@ export function CurrencyWidget() {
   const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'EUR' | 'GBP' | null>(null);
   const [tryAmount, setTryAmount] = useState('');
 
-  // Load exchange rates from localStorage on mount
+  // localStorage kaldırıldı - varsayılan kurları kullan
   useEffect(() => {
-    const storedRates = localStorage.getItem('aspect_exchange_rates');
-    if (storedRates) {
-      try {
-        const parsed = JSON.parse(storedRates);
-        const rates = parsed.rates || parsed;
-        setExchangeRates({
-          USD: rates.USD || 34.52,
-          EUR: rates.EUR || 37.89,
-          GBP: rates.GBP || 43.26,
-        });
-      } catch (error) {
-        console.error('Error loading exchange rates:', error);
-      }
-    }
+    // KV store entegrasyonu yapılacak
   }, []);
 
   // Calculate foreign currency amount based on TRY input

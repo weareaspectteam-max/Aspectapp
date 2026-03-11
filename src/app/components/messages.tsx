@@ -6,7 +6,7 @@ import { NewBottomNav } from './new-bottom-nav';
 interface Message {
   id: string;
   sender: string;
-  senderRole: 'admin' | 'staff';
+  senderRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   content: string;
   timestamp: string;
   read: boolean;
@@ -15,7 +15,7 @@ interface Message {
 interface Conversation {
   id: string;
   name: string;
-  role: 'admin' | 'staff';
+  role: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   lastMessage: string;
   timestamp: string;
   unread: number;
@@ -24,7 +24,7 @@ interface Conversation {
 
 interface MessagesProps {
   currentUser: string;
-  currentRole: 'admin' | 'staff';
+  currentRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -39,7 +39,7 @@ export function Messages({ currentUser, currentRole, onLogout, onNavigate }: Mes
     {
       id: '1',
       name: 'Ahmet Yılmaz',
-      role: 'admin',
+      role: 'yonetici',
       lastMessage: 'ZOKA lokasyonunun bugünkü raporu hazır',
       timestamp: '14:32',
       unread: 2,
@@ -48,7 +48,7 @@ export function Messages({ currentUser, currentRole, onLogout, onNavigate }: Mes
     {
       id: '2',
       name: 'Ayşe Demir',
-      role: 'staff',
+      role: 'personel',
       lastMessage: 'Yazıcı ribbonu değiştirildi',
       timestamp: '13:45',
       unread: 0,
@@ -57,7 +57,7 @@ export function Messages({ currentUser, currentRole, onLogout, onNavigate }: Mes
     {
       id: '3',
       name: 'Mehmet Kaya',
-      role: 'staff',
+      role: 'personel',
       lastMessage: 'Balık Hali veri girişi tamamlandı',
       timestamp: '12:15',
       unread: 1,
@@ -66,7 +66,7 @@ export function Messages({ currentUser, currentRole, onLogout, onNavigate }: Mes
     {
       id: '4',
       name: 'Zeynep Şahin',
-      role: 'staff',
+      role: 'personel',
       lastMessage: 'Bugünkü albüm satışları çok iyi',
       timestamp: 'Dün',
       unread: 0,
@@ -78,7 +78,7 @@ export function Messages({ currentUser, currentRole, onLogout, onNavigate }: Mes
     {
       id: '1',
       sender: 'Ahmet Yılmaz',
-      senderRole: 'admin',
+      senderRole: 'yonetici',
       content: 'Merhaba, bugünkü ZOKA raporu nasıl gidiyor?',
       timestamp: '14:25',
       read: true,
@@ -94,7 +94,7 @@ export function Messages({ currentUser, currentRole, onLogout, onNavigate }: Mes
     {
       id: '3',
       sender: 'Ahmet Yılmaz',
-      senderRole: 'admin',
+      senderRole: 'yonetici',
       content: 'Harika! Raporu tamamlayınca bana bildir lütfen.',
       timestamp: '14:30',
       read: true,
@@ -120,18 +120,18 @@ export function Messages({ currentUser, currentRole, onLogout, onNavigate }: Mes
   );
 
   const teamMembers = [
-    { id: '1', name: 'Ali Veli', role: 'staff' as const, avatar: '👨', discount: '9%' },
-    { id: '2', name: 'Ayşe Demir', role: 'staff' as const, avatar: '👩', discount: '11%' },
-    { id: '3', name: 'Burak Yıldız', role: 'staff' as const, avatar: '👨', discount: '10%' },
-    { id: '4', name: 'Can Öz', role: 'staff' as const, avatar: '👨‍🦱', discount: '15%' },
-    { id: '5', name: 'Cem Beyaz', role: 'staff' as const, avatar: '👨', discount: '14%' },
-    { id: '6', name: 'Deniz Kara', role: 'staff' as const, avatar: '👩', discount: '13%' },
-    { id: '7', name: 'Ege Deniz', role: 'staff' as const, avatar: '👨', discount: '8%' },
-    { id: '8', name: 'Fatma Nur', role: 'staff' as const, avatar: '👩', discount: '11%' },
-    { id: '9', name: 'Mehmet Kaya', role: 'staff' as const, avatar: '👨', discount: '12%' },
-    { id: '10', name: 'Merve Ak', role: 'staff' as const, avatar: '👩‍🦰', discount: '12%' },
-    { id: '11', name: 'Selin Güneş', role: 'staff' as const, avatar: '👩', discount: '7%' },
-    { id: '12', name: 'Zeynep Şahin', role: 'staff' as const, avatar: '👩‍🦰', discount: '10%' },
+    { id: '1', name: 'Ali Veli', role: 'personel' as const, avatar: '👨', discount: '9%' },
+    { id: '2', name: 'Ayşe Demir', role: 'personel' as const, avatar: '👩', discount: '11%' },
+    { id: '3', name: 'Burak Yıldız', role: 'personel' as const, avatar: '👨', discount: '10%' },
+    { id: '4', name: 'Can Öz', role: 'personel' as const, avatar: '👨‍🦱', discount: '15%' },
+    { id: '5', name: 'Cem Beyaz', role: 'personel' as const, avatar: '👨', discount: '14%' },
+    { id: '6', name: 'Deniz Kara', role: 'personel' as const, avatar: '👩', discount: '13%' },
+    { id: '7', name: 'Ege Deniz', role: 'personel' as const, avatar: '👨', discount: '8%' },
+    { id: '8', name: 'Fatma Nur', role: 'personel' as const, avatar: '👩', discount: '11%' },
+    { id: '9', name: 'Mehmet Kaya', role: 'personel' as const, avatar: '👨', discount: '12%' },
+    { id: '10', name: 'Merve Ak', role: 'personel' as const, avatar: '👩‍🦰', discount: '12%' },
+    { id: '11', name: 'Selin Güneş', role: 'personel' as const, avatar: '👩', discount: '7%' },
+    { id: '12', name: 'Zeynep Şahin', role: 'personel' as const, avatar: '👩‍🦰', discount: '10%' },
   ].sort((a, b) => a.name.localeCompare(b.name, 'tr')); // Alfabetik sıralama
 
   const toggleTeamMember = (id: string) => {
@@ -151,7 +151,7 @@ export function Messages({ currentUser, currentRole, onLogout, onNavigate }: Mes
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] relative pb-20">
       {/* Sticky Top Bar - Only for staff */}
-      {currentRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(currentRole) && (
         <StaffTopBar
           userName={currentUser}
           userRole={currentRole}
@@ -226,11 +226,11 @@ export function Messages({ currentUser, currentRole, onLogout, onNavigate }: Mes
                     </div>
                     <div className="mt-1">
                       <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] ${
-                        conv.role === 'admin' 
+                        conv.role === 'yonetici' 
                           ? 'bg-[#9dd9ea]/20 text-[#9dd9ea]' 
                           : 'bg-[#a8e6cf]/20 text-[#a8e6cf]'
                       }`}>
-                        {conv.role === 'admin' ? 'Yönetici' : 'Personel'}
+                        {conv.role === 'yonetici' ? 'Yönetici' : 'Personel'}
                       </span>
                     </div>
                   </div>
@@ -325,7 +325,7 @@ export function Messages({ currentUser, currentRole, onLogout, onNavigate }: Mes
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-xl font-black text-white flex items-center gap-2">
                   <Users className="w-5 h-5 text-[#ffd4a3]" />
-                  Ekip {currentRole === 'admin' && '(İskonto Oranları)'}
+                  Ekip {['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(currentRole) && '(İskonto Oranları)'}
                 </h2>
                 <button
                   onClick={() => {
@@ -363,7 +363,7 @@ export function Messages({ currentUser, currentRole, onLogout, onNavigate }: Mes
                     </div>
                     <div className="flex-1 text-left">
                       <div className="font-semibold text-white text-sm">{member.name}</div>
-                      {currentRole === 'admin' && (
+                      {['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(currentRole) && (
                         <div className="text-xs text-[#ffd4a3]">İskonto: {member.discount}</div>
                       )}
                     </div>

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 interface HamburgerMenuProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
   darkMode?: boolean;
@@ -24,16 +24,7 @@ export function HamburgerMenu({ userName, userRole, onLogout, onNavigate, darkMo
 
   // Get current logged in user role
   const getCurrentUserRole = (): UserRole => {
-    const storedUser = localStorage.getItem('aspectUser');
-    if (storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        return user.role;
-      } catch (error) {
-        console.error('Error parsing user:', error);
-      }
-    }
-    return userRole === 'admin' ? 'yonetici' : 'personel';
+    return userRole as UserRole;
   };
 
   const currentUserRole = getCurrentUserRole();

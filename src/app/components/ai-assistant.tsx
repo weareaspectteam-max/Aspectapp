@@ -353,18 +353,20 @@ function AIResponseCard({ data }: { data: Message['data'] }) {
 }
 
 interface AIAssistantProps {
-  userRole?: 'admin' | 'staff';
+  userRole?: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   userName?: string;
   onLogout?: () => void;
   onNavigate?: (tab: string) => void;
 }
 
-export function AIAssistant({ userRole = 'admin', userName = 'User', onLogout = () => {}, onNavigate = () => {} }: AIAssistantProps) {
+export function AIAssistant({ userRole = 'yonetici', userName = 'User', onLogout = () => {}, onNavigate = () => {} }: AIAssistantProps) {
+  const isAdminRole = ['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole);
+  const isStaffRole = ['personel', 'operasyon', 'bekleyen'].includes(userRole);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
       type: 'assistant',
-      content: userRole === 'admin' 
+      content: isAdminRole
         ? '👋 Merhaba! Aspect AI\'ya hoş geldiniz. Satış raporları, stok durumu, personel performansı veya operasyonel sorularınızı yanıtlayabilirim.'
         : '👋 Merhaba! Aspect AI\'ya hoş geldiniz. Stok durumu hakkında sorularınızı yanıtlayabilirim. Lütfen bir lokasyon seçin ve stok bilgilerini sorgulayın.',
     },
@@ -378,11 +380,8 @@ export function AIAssistant({ userRole = 'admin', userName = 'User', onLogout = 
   const [locations, setLocations] = useState<string[]>([]);
   
   useEffect(() => {
-    const stored = localStorage.getItem('aspect_locations');
-    if (stored) {
-      const locs = JSON.parse(stored);
-      setLocations(locs.map((loc: any) => loc.name));
-    }
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
+    // Boş başlıyoruz
   }, []);
 
   const scrollToBottom = () => {
@@ -407,7 +406,7 @@ export function AIAssistant({ userRole = 'admin', userName = 'User', onLogout = 
     '🌅 Gün batımı çekimi',
   ];
 
-  const quickQuestions = userRole === 'admin' ? adminQuickQuestions : photographyQuestions;
+  const quickQuestions = isAdminRole ? adminQuickQuestions : photographyQuestions;
 
   const handleSend = (question?: string) => {
     const messageText = question || input;
@@ -569,7 +568,7 @@ export function AIAssistant({ userRole = 'admin', userName = 'User', onLogout = 
     const hasTekne = lowerQuestion.includes('tekne');
     
     // FOR STAFF: Only return data for stock queries, nothing else
-    if (userRole === 'staff') {
+    if (isStaffRole) {
       // Only show stock data (without revenue/profit info)
       if (lowerQuestion.includes('stok')) {
         if (hasZoka) {
@@ -880,7 +879,7 @@ export function AIAssistant({ userRole = 'admin', userName = 'User', onLogout = 
     if (lowerQuestion.includes('stok')) {
       if (hasZoka) {
         return {
-          stocks: userRole === 'admin' ? [
+          stocks: isStaffRole ? [
             { name: '3\'lü Albüm', quantity: '52', status: '✅ Normal' },
             { name: '5\'li Albüm', quantity: '48', status: '✅ Normal' },
             { name: '7\'li Albüm', quantity: '18', status: '⚠️ Azalmış' },
@@ -902,7 +901,7 @@ export function AIAssistant({ userRole = 'admin', userName = 'User', onLogout = 
         };
       } else if (hasHayal) {
         return {
-          stocks: userRole === 'admin' ? [
+          stocks: isStaffRole ? [
             { name: '3\'lü Albüm', quantity: '38', status: '✅ Normal' },
             { name: '5\'li Albüm', quantity: '42', status: '✅ Normal' },
             { name: '7\'li Albüm', quantity: '25', status: '✅ Normal' },
@@ -924,7 +923,7 @@ export function AIAssistant({ userRole = 'admin', userName = 'User', onLogout = 
         };
       } else if (hasBalik) {
         return {
-          stocks: userRole === 'admin' ? [
+          stocks: isStaffRole ? [
             { name: '3\'lü Albüm', quantity: '45', status: '✅ Normal' },
             { name: '5\'li Albüm', quantity: '28', status: '⚠️ Azalmış' },
             { name: '7\'li Albüm', quantity: '22', status: '⚠️ Azalmış' },
@@ -946,7 +945,7 @@ export function AIAssistant({ userRole = 'admin', userName = 'User', onLogout = 
         };
       } else if (hasTekne) {
         return {
-          stocks: userRole === 'admin' ? [
+          stocks: isStaffRole ? [
             { name: '3\'lü Albüm', quantity: '30', status: '✅ Normal' },
             { name: '5\'li Albüm', quantity: '35', status: '✅ Normal' },
             { name: '7\'li Albüm', quantity: '20', status: '✅ Normal' },
@@ -1151,17 +1150,17 @@ export function AIAssistant({ userRole = 'admin', userName = 'User', onLogout = 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] flex flex-col">
       {/* Top Bar for Staff */}
-      {userRole === 'staff' && (
+      {isStaffRole && (
         <StaffTopBar
           userName={userName}
-          userRole="staff"
+          userRole={userRole}
           onLogout={onLogout}
           onNavigate={onNavigate}
         />
       )}
 
       {/* Header - only for admin */}
-      {userRole === 'admin' && (
+      {isAdminRole && (
         <div className="backdrop-blur-xl bg-gradient-to-br from-white/5 to-white/0 border-b border-white/10 pt-6 px-6 pb-4">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center shadow-lg">
@@ -1176,7 +1175,7 @@ export function AIAssistant({ userRole = 'admin', userName = 'User', onLogout = 
       )}
 
       {/* For staff, add header after top bar */}
-      {userRole === 'staff' && (
+      {isStaffRole && (
         <div className="backdrop-blur-xl bg-gradient-to-br from-white/5 to-white/0 border-b border-white/10 px-6 pb-4">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center shadow-lg">
@@ -1234,7 +1233,7 @@ export function AIAssistant({ userRole = 'admin', userName = 'User', onLogout = 
               >
                 📦 Stok
               </button>
-              {userRole === 'admin' && (
+              {isAdminRole && (
                 <>
                   <button
                     onClick={() => handleSend(`${selectedLocation} personel performansı ${selectedDate}`)}
@@ -1300,7 +1299,7 @@ export function AIAssistant({ userRole = 'admin', userName = 'User', onLogout = 
       {/* Quick Questions */}
       <div className="px-4 py-3 border-t border-white/10 bg-gradient-to-br from-white/5 to-white/0 backdrop-blur-xl">
         {/* Add label for staff quick questions */}
-        {userRole === 'staff' && (
+        {isStaffRole && (
           <div className="text-xs text-gray-400 mb-2 font-semibold px-1">📸 Fotoğrafçılık İpuçları</div>
         )}
         <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
@@ -1309,7 +1308,7 @@ export function AIAssistant({ userRole = 'admin', userName = 'User', onLogout = 
               key={question}
               onClick={() => handleSend(question)}
               className={`flex-shrink-0 px-4 py-2 backdrop-blur-sm border rounded-full text-xs font-semibold transition-all active:scale-95 ${
-                userRole === 'staff'
+                isStaffRole
                   ? 'bg-gradient-to-br from-[#ffd4a3]/20 to-[#ffc78f]/10 border-[#ffd4a3]/30 text-[#ffd4a3] hover:bg-[#ffd4a3]/30'
                   : 'bg-white/10 border-white/20 text-white hover:bg-white/20'
               }`}

@@ -7,7 +7,7 @@ import {
 
 interface LocationVisitsProps {
   userName?: string;
-  userRole?: 'admin' | 'staff';
+  userRole?: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout?: () => void;
   onNavigate?: (tab: string) => void;
   embedded?: boolean;
@@ -76,7 +76,7 @@ const statusConfig = {
 
 export function LocationVisits({ 
   userName = '', 
-  userRole = 'admin', 
+  userRole = 'yonetici', 
   onLogout = () => {}, 
   onNavigate = () => {},
   embedded = false,
@@ -111,12 +111,10 @@ export function LocationVisits({
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load from localStorage
+  // localStorage kaldırıldı - KV store entegrasyonu yapılacak
   useEffect(() => {
-    const stored = localStorage.getItem('aspect_visits');
-    if (stored) {
-      setVisits(JSON.parse(stored));
-    } else {
+    // Boş başlıyoruz
+    if (false) {
       // Initialize with mock data
       const initialVisits: Visit[] = [
         {
@@ -197,16 +195,10 @@ export function LocationVisits({
         }
       ];
       setVisits(initialVisits);
-      localStorage.setItem('aspect_visits', JSON.stringify(initialVisits));
     }
   }, []);
 
-  // Save to localStorage
-  useEffect(() => {
-    if (visits.length > 0) {
-      localStorage.setItem('aspect_visits', JSON.stringify(visits));
-    }
-  }, [visits]);
+  // localStorage kaldırıldı - KV store entegrasyonu yapılacak
 
   // Handle external trigger for new visit
   useEffect(() => {
@@ -299,7 +291,7 @@ export function LocationVisits({
       visitDate,
       visitTime,
       manager: userName || 'Yönetici',
-      managerRole: userRole === 'admin' ? 'Yönetici' : 'Müdür',
+      managerRole: ['yonetici', 'ust-mudur'].includes(userRole ?? '') ? 'Yönetici' : 'Müdür',
       visitType,
       status: 'completed',
       duration,

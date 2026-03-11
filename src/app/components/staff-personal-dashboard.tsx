@@ -37,7 +37,7 @@ export function StaffPersonalDashboard({ userName, onLogout = () => {}, onNaviga
       {/* Staff Top Bar */}
       <StaffTopBar
         userName={userName}
-        userRole="staff"
+        userRole="personel"
         onLogout={onLogout}
         onNavigate={onNavigate}
       />

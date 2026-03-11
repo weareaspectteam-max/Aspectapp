@@ -6,6 +6,7 @@ import {
   RefreshCw, Repeat, Zap, Star
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { supabase } from '../lib/supabase';
 import {
   getStaffMembers,
   getLocations,
@@ -89,6 +90,8 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('month');
   const [preselectedLocation, setPreselectedLocation] = useState<string>('');
   const [editingLeaveRequest, setEditingLeaveRequest] = useState<LeaveRequest | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string>('');
 
   // Data from service
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
@@ -101,77 +104,61 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
   // LOAD DATA
   // ==========================================
   useEffect(() => {
+    // Mevcut kullanıcı ID'sini al
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) setCurrentUserId(session.user.id);
+    });
     loadData();
-    migrateOldTimestamps();
   }, []);
 
-  // ==========================================
-  // AUTO-CLEANUP EXPIRED LEAVE REQUESTS
-  // ==========================================
+  // İzin listesi yüklenince süresi dolmuşları temizle (fire-and-forget)
   useEffect(() => {
-    // Component mount olduğunda temizlik yap
-    cleanupExpiredLeaveRequests();
-    
-    // İzin listesi her değiştiğinde temizlik yap
-    // (Yeni izin eklendiğinde, onaylandığında, reddedildiğinde)
-  }, [leaveRequests]);
+    if (leaveRequests.length > 0) {
+      cleanupExpiredLeaveRequests();
+    }
+  }, [leaveRequests.length]);
 
-  const loadData = () => {
-    setStaffMembers(getStaffMembers());
-    setLocations(getLocations());
-    setTasks(getTasks());
-    setLeaveRequests(getLeaveRequests());
-    setDailyOnLeave(getDailyOnLeave());
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [staff, locs, taskList, leaveList, dailyLeave] = await Promise.all([
+        getStaffMembers(),
+        getLocations(),
+        getTasks(),
+        getLeaveRequests(),
+        getDailyOnLeave(),
+      ]);
+      setStaffMembers(staff);
+      setLocations(locs);
+      setTasks(taskList);
+      setLeaveRequests(leaveList);
+      setDailyOnLeave(dailyLeave);
+    } catch (err) {
+      console.error('loadData error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Refresh tasks when needed
-  const refreshTasks = () => {
-    setTasks(getTasks());
+  const refreshTasks = async () => {
+    const taskList = await getTasks();
+    setTasks(taskList);
   };
 
   // Refresh leave requests when needed
-  const refreshLeaveRequests = () => {
-    cleanupExpiredLeaveRequests(); // Önce temizlik yap
-    setLeaveRequests(getLeaveRequests()); // Sonra güncel listeyi al
-  };
-
-  // Migration: Eski saat formatındaki revisedAt değerlerini ISO formatına çevir
-  const migrateOldTimestamps = () => {
-    const allTasks = getTasks();
-    let updated = false;
-
-    allTasks.forEach(task => {
-      if (task.revisedAt && task.revisedAt.length <= 5) {
-        // Eski format: "14:35" (5 karakter veya daha az)
-        // Yeni format: ISO timestamp
-        const today = new Date();
-        const [hours, minutes] = task.revisedAt.split(':');
-        today.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-        
-        updateTask(task.id, {
-          revisedAt: today.toISOString()
-        });
-        updated = true;
-      }
-    });
-
-    if (updated) {
-      refreshTasks();
-    }
+  const refreshLeaveRequests = async () => {
+    const leaveList = await getLeaveRequests();
+    setLeaveRequests(leaveList);
   };
 
   // ==========================================
   // COMPUTED VALUES
   // ==========================================
 
-  // Get current user ID
+  // Get current user ID - Supabase session'dan
   const getCurrentUserId = (): string => {
-    const storedUser = localStorage.getItem('aspectUser');
-    if (storedUser) {
-      const userData = JSON.parse(storedUser);
-      return userData.id || 'user-001';
-    }
-    return 'user-001';
+    return currentUserId;
   };
 
   // 📋 GÖREV PLANLA SEKMESI: Sadece bugün ve gelecek görevleri göster
@@ -298,74 +285,70 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
     setShowCancelModal(true);
   };
 
-  const handleCancelTask = () => {
+  const handleCancelTask = async () => {
     if (!cancellingTask || !cancelReason.trim()) return;
-    
+
     const currentTime = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-    
-    updateTask(cancellingTask.id, {
+
+    await updateTask(cancellingTask.id, {
       status: 'cancelled',
       cancelledAt: currentTime,
       cancelReason: cancelReason,
     });
-    
-    // Send cancel message
+
     const message = formatCancelMessage({ ...cancellingTask, cancelReason });
     sendMessageToRotationChannel(message);
-    
-    // Show notification
+
     setNotificationMessage('Görev iptal edildi ❌');
     setShowSuccessNotification(true);
     setTimeout(() => setShowSuccessNotification(false), 3000);
-    
+
     setShowCancelModal(false);
     setCancellingTask(null);
     setCancelReason('');
     refreshTasks();
   };
 
-  const handleReactivateTask = (task: Task) => {
+  const handleReactivateTask = async (task: Task) => {
     const currentTime = new Date().toISOString();
-    
-    updateTask(task.id, {
+
+    await updateTask(task.id, {
       status: 'revised',
       cancelledAt: undefined,
       cancelReason: undefined,
       revisedAt: currentTime,
       revisionCount: (task.revisionCount || 0) + 1,
     });
-    
-    // Send revision message
+
     const message = formatRevisionMessage(task);
     sendMessageToRotationChannel(message);
-    
+
     setNotificationMessage('Görev yeniden aktif edildi 🔄');
     setShowSuccessNotification(true);
     setTimeout(() => setShowSuccessNotification(false), 3000);
-    
+
     refreshTasks();
   };
 
-  const handleEditTask = (task: Task) => {
+  const handleEditTask = async (task: Task) => {
     if (task.status === 'sent') {
-      // If editing a sent task, mark as revised
       const currentTime = new Date().toISOString();
-      updateTask(task.id, {
+      await updateTask(task.id, {
         status: 'revised',
         revisedAt: currentTime,
         revisionCount: (task.revisionCount || 0) + 1,
       });
       refreshTasks();
     }
-    
+
     handleOpenTaskModal(task.type === 'regular' ? 'regular_location' : 'extra_special', task);
   };
 
-  const handleRemoveTask = (taskId: string) => {
+  const handleRemoveTask = async (taskId: string) => {
     if (confirm('Bu görevi silmek istediğinize emin misiniz?')) {
-      deleteTask(taskId);
+      await deleteTask(taskId);
       refreshTasks();
-      
+
       setNotificationMessage('Görev silindi 🗑️');
       setShowSuccessNotification(true);
       setTimeout(() => setShowSuccessNotification(false), 3000);
@@ -376,24 +359,22 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
   // SEND TASKS
   // ==========================================
 
-  const handleSendTasks = (sendAll: boolean) => {
+  const handleSendTasks = async (sendAll: boolean) => {
     const currentTime = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-    
-    // Get sendable tasks (draft + revised)
+
     const sendableTasks = todayTasks.filter(t => t.status === 'draft' || t.status === 'revised');
     const tasksToSendIds = sendAll ? sendableTasks.map(t => t.id) : selectedTasks;
-    
+
     const onLeavePersonnel = getOnLeavePersonnel();
     const standbyPersonnel = getStandbyPersonnel();
-    
+
     const onLeaveToSend = sendAll ? onLeavePersonnel.map(p => p.id) : selectedOnLeave;
     const standbyToSend = sendAll ? standbyPersonnel.map(p => p.id) : selectedStandby;
-    
-    // Update task statuses
+
     const updates = tasksToSendIds.map(taskId => {
       const task = sendableTasks.find(t => t.id === taskId);
       if (!task) return null;
-      
+
       return {
         id: taskId,
         changes: {
@@ -402,9 +383,9 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
         }
       };
     }).filter(Boolean) as { id: string; changes: Partial<Task> }[];
-    
+
     if (updates.length > 0) {
-      updateMultipleTasks(updates);
+      await updateMultipleTasks(updates);
     }
     
     // Send messages
@@ -494,7 +475,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
     setSelectedStandby([]);
   };
 
-  const handleRemoveOnLeave = (personnelId: string) => {
+  const handleRemoveOnLeave = async (personnelId: string) => {
     const updatedOnLeave = { ...dailyOnLeave };
     if (updatedOnLeave[selectedDate]) {
       updatedOnLeave[selectedDate] = updatedOnLeave[selectedDate].filter(id => id !== personnelId);
@@ -502,24 +483,23 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
         delete updatedOnLeave[selectedDate];
       }
     }
-    saveDailyOnLeave(updatedOnLeave);
     setDailyOnLeave(updatedOnLeave);
+    await saveDailyOnLeave(updatedOnLeave);
   };
 
-  const handleMoveOnLeaveToStandby = (personnelIds: string[]) => {
+  const handleMoveOnLeaveToStandby = async (personnelIds: string[]) => {
     const updatedOnLeave = { ...dailyOnLeave };
-    
+
     if (updatedOnLeave[selectedDate]) {
-      // Tüm seçili personelleri bir kerede çıkar
       updatedOnLeave[selectedDate] = updatedOnLeave[selectedDate].filter(id => !personnelIds.includes(id));
-      
+
       if (updatedOnLeave[selectedDate].length === 0) {
         delete updatedOnLeave[selectedDate];
       }
     }
-    
-    saveDailyOnLeave(updatedOnLeave);
+
     setDailyOnLeave(updatedOnLeave);
+    await saveDailyOnLeave(updatedOnLeave);
     setSelectedOnLeave([]);
     
     setNotificationMessage(`${personnelIds.length} personel beklemeye alındı ⏳`);
@@ -545,7 +525,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
   // MOVE STANDBY TO ON-LEAVE
   // ==========================================
   
-  const handleMoveStandbyToOnLeave = (personnelIds: string[]) => {
+  const handleMoveStandbyToOnLeave = async (personnelIds: string[]) => {
     // ✅ İzinli yapılacak personellerin o tarihte görevi var mı kontrol et
     const tasksOnDate = tasks.filter(task => task.date === selectedDate);
     const personnelWithTasks: string[] = [];
@@ -585,10 +565,10 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
       }
     });
     
-    saveDailyOnLeave(updatedOnLeave);
     setDailyOnLeave(updatedOnLeave);
+    await saveDailyOnLeave(updatedOnLeave);
     setSelectedStandby([]);
-    
+
     setNotificationMessage('Personel izinli olarak atandı 🏖️');
     setShowSuccessNotification(true);
     setTimeout(() => setShowSuccessNotification(false), 3000);
@@ -734,7 +714,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
       {userRole === 'personel' && (
         <StaffTopBar
           userName={userName}
-          userRole="staff"
+          userRole={userRole}
           onLogout={onLogout}
           onNavigate={onNavigate}
         />
@@ -2183,8 +2163,8 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
                           {canApproveReject && (
                             <div className="grid grid-cols-2 gap-2">
                               <button
-                                onClick={() => {
-                                  updateLeaveStatus(request.id, 'rejected');
+                                onClick={async () => {
+                                  await updateLeaveStatus(request.id, 'rejected');
                                   refreshLeaveRequests();
                                 }}
                                 className="flex items-center justify-center gap-1.5 py-2.5 bg-red-500/20 border border-red-500/40 text-red-200 rounded-xl font-bold text-xs hover:bg-red-500/30 transition-all active:scale-95 group-hover:shadow-md"
@@ -2193,8 +2173,8 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
                                 <span>Reddet</span>
                               </button>
                               <button
-                                onClick={() => {
-                                  updateLeaveStatus(request.id, 'approved');
+                                onClick={async () => {
+                                  await updateLeaveStatus(request.id, 'approved');
                                   refreshLeaveRequests();
                                 }}
                                 className="flex items-center justify-center gap-1.5 py-2.5 bg-green-500/20 border border-green-500/40 text-green-200 rounded-xl font-bold text-xs hover:bg-green-500/30 transition-all active:scale-95 group-hover:shadow-md"

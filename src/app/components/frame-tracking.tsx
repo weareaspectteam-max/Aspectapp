@@ -84,22 +84,9 @@ export function FrameTracking({ userName, userRole, onNavigate, onLogout }: Fram
     loadEntries(locs);
   }, []);
 
-  const loadEntries = (locs?: Location[]) => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        setEntries(JSON.parse(stored));
-      } else {
-        const usedLocs = locs || locations;
-        if (usedLocs.length > 0) {
-          const mock = generateMockEntries(usedLocs);
-          setEntries(mock);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(mock));
-        }
-      }
-    } catch {
-      setEntries([]);
-    }
+  const loadEntries = (_locs?: Location[]) => {
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
+    setEntries([]);
     setLastRefresh(new Date());
   };
 
@@ -168,7 +155,7 @@ export function FrameTracking({ userName, userRole, onNavigate, onLogout }: Fram
 
     const updated = [newEntry, ...entries];
     setEntries(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
 
     // Reset - mekân korunur, sadece fotoğrafçı ve kare sıfırlanır
     setSelectedPhotographer(null);
@@ -184,7 +171,7 @@ export function FrameTracking({ userName, userRole, onNavigate, onLogout }: Fram
   const handleDelete = (id: string) => {
     const updated = entries.filter(e => e.id !== id);
     setEntries(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
   };
 
   // Bugünün kayıtları

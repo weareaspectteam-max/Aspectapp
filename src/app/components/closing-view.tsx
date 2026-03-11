@@ -14,7 +14,7 @@ interface ClosingViewProps {
   projectName: string;
   onClose: () => void;
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
 }
 
 export function ClosingView({ projectName, onClose, userName, userRole }: ClosingViewProps) {
@@ -35,7 +35,7 @@ export function ClosingView({ projectName, onClose, userName, userRole }: Closin
   ];
 
   // Personelse sadece kendi satışlarını göster
-  const visibleSales = userRole === 'staff' 
+  const visibleSales = userRole === 'personel' 
     ? allSales.filter(sale => sale.staff === userName)
     : allSales;
 
@@ -91,11 +91,11 @@ export function ClosingView({ projectName, onClose, userName, userRole }: Closin
             {/* Summary Cards */}
             <div className="grid grid-cols-3 gap-3 mb-4">
               <div className="bg-white/10 backdrop-blur rounded-xl p-4">
-                <div className="text-white/70 text-xs mb-1">{userRole === 'staff' ? 'Benim Cirom' : 'Toplam Ciro'}</div>
+                <div className="text-white/70 text-xs mb-1">{userRole === 'personel' ? 'Benim Cirom' : 'Toplam Ciro'}</div>
                 <div className="text-2xl font-bold">₺{totalRevenue.toLocaleString()}</div>
               </div>
               <div className="bg-white/10 backdrop-blur rounded-xl p-4">
-                <div className="text-white/70 text-xs mb-1">{userRole === 'staff' ? 'Benim Satışım' : 'Toplam Satış'}</div>
+                <div className="text-white/70 text-xs mb-1">{userRole === 'personel' ? 'Benim Satışım' : 'Toplam Satış'}</div>
                 <div className="text-2xl font-bold">{totalSales} adet</div>
               </div>
               <div className="bg-white/10 backdrop-blur rounded-xl p-4">
@@ -127,7 +127,7 @@ export function ClosingView({ projectName, onClose, userName, userRole }: Closin
           {/* Content */}
           <div className="p-6 space-y-6">
             {/* Staff Performance - Sadece yönetici görsün */}
-            {userRole === 'admin' && (
+            {userRole === 'yonetici' && (
               <div>
                 <h3 className="text-lg font-bold text-foreground mb-3 flex items-center gap-2">
                   <Users className="w-5 h-5 text-primary" />
@@ -171,7 +171,7 @@ export function ClosingView({ projectName, onClose, userName, userRole }: Closin
             <div>
               <h3 className="text-lg font-bold text-foreground mb-3 flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-primary" />
-                {userRole === 'staff' ? 'Benim Satışlarım' : 'Tüm Satışlar'} ({totalSales})
+                {userRole === 'personel' ? 'Benim Satışlarım' : 'Tüm Satışlar'} ({totalSales})
               </h3>
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {visibleSales.map((sale) => (
@@ -186,7 +186,7 @@ export function ClosingView({ projectName, onClose, userName, userRole }: Closin
                       <div>
                         <div className="font-semibold text-foreground">{sale.product}</div>
                         <div className="text-xs text-muted-foreground flex items-center gap-2">
-                          {userRole === 'admin' && (
+                          {userRole === 'yonetici' && (
                             <>
                               <span className="flex items-center gap-1">
                                 <Users className="w-3 h-3" />

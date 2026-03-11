@@ -1,50 +1,65 @@
+// ⚠️ DİKKAT: BU DOSYA KULLANILMIYOR
+// Bu dosya eski bir Figma import'undan kalmış bir spec/dokümantasyon dosyasıdır.
+// Hiçbir bileşen tarafından import edilmemektedir.
+// Referans amaçlı tutulmaktadır — aktif kod değildir.
+//
+// ROL SİSTEMİ: Aşağıdaki tüm roller güncel 7-rol sistemine göre güncellenmiştir.
+// Aktif UserRole tipi için → /src/app/components/login.tsx
+// Roller: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen'
+
 📌 1. GENEL TANIM
-Turistik fotoğrafçılık işletmesi için rol tabanlı kullanıcı yönetim paneli. Admin kullanıcıları yönetir, roller atar, askıya alır veya siler. 3 farklı görünüm modu var.
+Turistik fotoğrafçılık işletmesi için rol tabanlı kullanıcı yönetim paneli. Yönetici kullanıcıları yönetir, roller atar, askıya alır veya siler. 3 farklı görünüm modu var.
 
 🎨 2. TASARIM SİSTEMİ
 Renk Paleti (Rol Bazlı):
 const roleColors = {
-  admin: {
+  yonetici: {
     bg: 'from-red-500/20 to-red-600/20',
     text: 'text-red-400',
     badge: 'bg-red-500/20 border-red-500/30 text-red-200'
   },
-  manager: {
+  'ust-mudur': {
+    bg: 'from-pink-500/20 to-pink-600/20',
+    text: 'text-pink-400',
+    badge: 'bg-pink-500/20 border-pink-500/30 text-pink-200'
+  },
+  mudur: {
     bg: 'from-purple-500/20 to-purple-600/20',
     text: 'text-purple-400',
     badge: 'bg-purple-500/20 border-purple-500/30 text-purple-200'
   },
-  project_lead: {
+  operasyon: {
     bg: 'from-blue-500/20 to-blue-600/20',
     text: 'text-blue-400',
     badge: 'bg-blue-500/20 border-blue-500/30 text-blue-200'
   },
-  staff: {
+  personel: {
     bg: 'from-green-500/20 to-green-600/20',
     text: 'text-green-400',
     badge: 'bg-green-500/20 border-green-500/30 text-green-200'
   },
-  administrative: {
+  idari: {
     bg: 'from-amber-500/20 to-amber-600/20',
     text: 'text-amber-400',
     badge: 'bg-amber-500/20 border-amber-500/30 text-amber-200'
   },
-  unassigned: {
+  bekleyen: {
     bg: 'from-gray-500/20 to-gray-600/20',
     text: 'text-gray-400',
     badge: 'bg-gray-500/20 border-gray-500/30 text-gray-200'
   }
 };
 İkonlar (Lucide-react):
-import { Shield, UserCog, UserCheck, User, Briefcase, UserPlus } from 'lucide-react';
+import { Shield, Crown, UserCog, UserCheck, User, Briefcase, UserPlus } from 'lucide-react';
 
 const roleIcons = {
-  admin: Shield,
-  manager: UserCog,
-  project_lead: UserCheck,
-  staff: User,
-  administrative: Briefcase,
-  unassigned: UserPlus
+  yonetici: Shield,
+  'ust-mudur': Crown,
+  mudur: UserCog,
+  operasyon: UserCheck,
+  personel: User,
+  idari: Briefcase,
+  bekleyen: UserPlus
 };
 Glassmorphism Kartlar:
 backdrop-blur-xl
@@ -65,13 +80,13 @@ TAB 1: AKTİF KULLANICILAR
 Özellikler:
 
 Rollere göre gruplu gösterim
-Her rol için ayrı kart (admin, manager, project_lead, staff, administrative)
+Her rol için ayrı kart (yonetici, ust-mudur, mudur, operasyon, personel, idari)
 Kullanıcı kartında:
 İsim + Email
 Oluşturulma tarihi
 Son giriş tarihi
-Butonlar (sadece admin, current user değilse):
-🔄 Rol Değiştir (tıkla → 4 rol butonu göster)
+Butonlar (sadece yonetici, current user değilse):
+🔄 Rol Değiştir (tıkla → rol butonları göster)
 🗑️ Sil
 ⏸️ Askıya Al
 "Siz" badge (current user için)
@@ -99,11 +114,13 @@ TAB 2: BEKLEYEN KULLANICILAR
 
 Turuncu gradient background
 Büyük kullanıcı kartları
-4 Rol Atama Butonu (grid-cols-3):
-Müdür (Manager) - Mor
-Proje Sorumlusu (Project Lead) - Mavi
-Personel (Staff) - Yeşil
-İdari Personel (Administrative) - Amber
+6 Rol Atama Butonu (grid-cols-3):
+Yönetici - Kırmızı
+Üst Müdür - Pembe
+Müdür - Mor
+Operasyon - Mavi
+Personel - Yeşil
+İdari Personel - Amber
 Sil Butonu - Kırmızı
 Telefon gösterimi
 Kayıt tarihi
@@ -111,12 +128,13 @@ Layout:
 
 [TURUNCU KART]
   [👤 Icon] Mehmet Yılmaz
-           mehmet@mail.com
-           📱 +90 555 111 2233
-           ⏰ Kayıt: 5 Mart 2024, 14:30
-           
-           [Müdür] [Proje Sorumlusu] [Personel]
-           [İdari] [---] [Sil]
+             mehmet@mail.com
+             📱 +90 555 111 2233
+             ⏰ Kayıt: 5 Mart 2024, 14:30
+             
+             [Yönetici] [Üst Müdür] [Müdür]
+             [Operasyon] [Personel] [İdari]
+             [---] [---] [Sil]
 TAB 3: PERSONEL LİSTESİ
 <button className="bg-gradient-to-br from-purple-500/30 to-purple-600/20 border-2 border-purple-500/50">
   <div className="flex items-center gap-3">
@@ -189,11 +207,11 @@ C) Askıya Alma:
 const handleSuspendUser = (userId: string, userEmail: string) => {
   if (!confirm(`${userEmail} kullanıcısını askıya almak istediğinizden emin misiniz?`)) return;
   
-  // Active'den pending'e taşı
+  // Active'den bekleyen'e taşı
   const user = users.find(u => u.id === userId);
   if (user) {
     setUsers(users.filter(u => u.id !== userId));
-    setPendingUsers([...pendingUsers, { ...user, role: 'unassigned' }]);
+    setPendingUsers([...pendingUsers, { ...user, role: 'bekleyen' }]);
   }
   
   setSuccessMessage(`⏸️ Kullanıcı askıya alındı: ${userEmail}`);
@@ -256,26 +274,29 @@ interface UserData {
   id: string;                    // 'user-1'
   email: string;                 // 'mehmet@aspectops.com'
   full_name: string;             // 'Mehmet Yılmaz'
-  role: UserRole;                // 'manager'
+  role: UserRole;                // 'mudur'
   created_at: string;            // '2024-01-15T10:00:00Z'
   last_sign_in: string | null;  // '2024-03-05T08:30:00Z' veya null
   phone?: string;                // '+90 555 111 2233' (opsiyonel)
 }
 
+// Güncel 7-rol sistemi (login.tsx ile senkronize)
 type UserRole = 
-  | 'admin' 
-  | 'manager' 
-  | 'project_lead' 
-  | 'staff' 
-  | 'administrative' 
-  | 'unassigned';
+  | 'yonetici'      // eski: 'admin'
+  | 'ust-mudur'     // eski: (yoktu)
+  | 'mudur'         // eski: 'manager'
+  | 'operasyon'     // eski: 'project_lead'
+  | 'personel'      // eski: 'staff'
+  | 'idari'         // eski: 'administrative'
+  | 'bekleyen';     // eski: 'unassigned'
+
 Mock Data Örneği:
 const mockActiveUsers = [
   {
     id: 'user-1',
     email: 'mehmet@aspectops.com',
     full_name: 'Mehmet Yılmaz',
-    role: 'manager',
+    role: 'mudur',
     created_at: '2024-01-15T10:00:00Z',
     last_sign_in: '2024-03-05T08:30:00Z',
     phone: '+90 555 111 2233'
@@ -284,7 +305,7 @@ const mockActiveUsers = [
     id: 'user-2',
     email: 'ayse@aspectops.com',
     full_name: 'Ayşe Demir',
-    role: 'staff',
+    role: 'personel',
     created_at: '2024-02-01T10:00:00Z',
     last_sign_in: null // Hiç giriş yapmamış
   }
@@ -295,7 +316,7 @@ const mockPendingUsers = [
     id: 'pending-1',
     email: 'zeynep@aspectops.com',
     full_name: 'Zeynep Arslan',
-    role: 'unassigned', // Bekleyen kullanıcılar unassigned
+    role: 'bekleyen', // Bekleyen kullanıcılar bekleyen rolünde
     created_at: '2024-03-03T14:00:00Z',
     last_sign_in: null,
     phone: '+90 555 333 4455'
@@ -320,7 +341,7 @@ Current user'ın kartında pembe badge: "Siz"
 Current user düzenlenemez/silinemez
 Rol Değiştirme Flow:
 
-Düzenle butonuna tıkla → 4 rol butonu göster
+Düzenle butonuna tıkla → rol butonları göster
 Rol seçince direkt güncelle
 İptal butonu (X) ile çık
 Bekleyen Kullanıcı Uyarısı:

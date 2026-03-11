@@ -94,7 +94,7 @@ export function RotationLeaveModal({
     return diffDays;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     // Validation
     if (!personnelId) {
       setShowWarning('Personel seçiniz!');
@@ -132,7 +132,6 @@ export function RotationLeaveModal({
     }
 
     if (editingLeave) {
-      // UPDATE mode - düzenleme yapılıyor
       const updatedLeave: Partial<LeaveRequest> = {
         personnelId: personnel.id,
         personnelName: personnel.name,
@@ -143,12 +142,10 @@ export function RotationLeaveModal({
         days: diffDays,
         type: leaveType,
         notes: notes.trim(),
-        status: 'pending', // Status pending'e döner (tekrar onaylanmalı)
+        status: 'pending',
       };
-
-      updateLeaveRequest(editingLeave.id, updatedLeave);
+      await updateLeaveRequest(editingLeave.id, updatedLeave);
     } else {
-      // CREATE mode - yeni izin talebi oluşturuluyor
       const newLeave: LeaveRequest = {
         id: `leave-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         personnelId: personnel.id,
@@ -163,8 +160,7 @@ export function RotationLeaveModal({
         status: 'pending',
         createdAt: new Date().toISOString(),
       };
-
-      saveLeaveRequest(newLeave);
+      await saveLeaveRequest(newLeave);
     }
 
     // Reset form

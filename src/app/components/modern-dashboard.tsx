@@ -5,7 +5,7 @@ import { NewBottomNav } from './new-bottom-nav';
 
 interface ModernDashboardProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -66,7 +66,7 @@ export function ModernDashboard({ userName, userRole, onLogout, onNavigate }: Mo
   return (
     <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
       {/* Sticky Top Bar - Only for staff */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <StaffTopBar
           userName={userName}
           userRole={userRole}
@@ -123,7 +123,7 @@ export function ModernDashboard({ userName, userRole, onLogout, onNavigate }: Mo
         <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5">
           <h3 className="font-semibold text-white mb-4">Saatlik Satış Trendi</h3>
           <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minHeight={192}>
               <LineChart data={salesData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#ffffff20" />
                 <XAxis dataKey="time" stroke="#9ca3af" style={{ fontSize: '12px' }} />
@@ -156,7 +156,7 @@ export function ModernDashboard({ userName, userRole, onLogout, onNavigate }: Mo
         <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5">
           <h3 className="font-semibold text-white mb-4">Proje Performansı</h3>
           <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minHeight={192}>
               <BarChart data={projectData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#ffffff20" />
                 <XAxis dataKey="name" stroke="#9ca3af" style={{ fontSize: '12px' }} />

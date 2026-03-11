@@ -26,7 +26,7 @@ interface Message {
 
 interface MessagingProps {
   currentUser: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -109,20 +109,9 @@ export function Messaging({ currentUser, userRole, onLogout, onNavigate }: Messa
   ];
 
   const getMessagesForChannel = (channelId: string): Message[] => {
-    // Rotasyon channel - load from localStorage
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
     if (channelId === 'rotasyon') {
-      const storedMessages = JSON.parse(localStorage.getItem('messages') || '{}');
-      const rotasyonMessages = storedMessages['rotasyon'] || [];
-      
-      return rotasyonMessages.map((msg: any) => ({
-        id: msg.id,
-        sender: msg.sender,
-        content: msg.text,
-        timestamp: msg.timestamp,
-        isOwn: false,
-        avatar: '📋',
-        isSalesLog: true,
-      }));
+      return [];
     }
     
     // DM channels - load from state or use defaults
@@ -346,7 +335,7 @@ export function Messaging({ currentUser, userRole, onLogout, onNavigate }: Messa
     return (
       <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
         {/* Sticky Top Bar */}
-        {userRole === 'staff' && (
+        {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
           <StaffTopBar
             userName={currentUser}
             userRole={userRole}
@@ -395,7 +384,7 @@ export function Messaging({ currentUser, userRole, onLogout, onNavigate }: Messa
         </div>
 
         {/* Project Channels Section - Admin Only */}
-        {userRole === 'admin' && (
+        {['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole) && (
           <div className="px-6 mb-6">
             <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
               <Hash className="w-4 h-4" />
@@ -607,7 +596,7 @@ export function Messaging({ currentUser, userRole, onLogout, onNavigate }: Messa
         )}
 
         {/* Bottom Navigation - Only for staff */}
-        {userRole === 'staff' && (
+        {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
           <NewBottomNav
             activeTab="messaging"
             onTabChange={onNavigate}
@@ -696,7 +685,7 @@ export function Messaging({ currentUser, userRole, onLogout, onNavigate }: Messa
       </div>
 
       {/* Message Input */}
-      {currentChannel?.type !== 'project' && !(currentChannel?.id === 'rotasyon' && userRole === 'staff') && (
+      {currentChannel?.type !== 'project' && !(currentChannel?.id === 'rotasyon' && ['personel', 'operasyon', 'bekleyen'].includes(userRole)) && (
         <div className="px-6 py-4 bg-gradient-to-br from-[#2a2a3a] to-[#3a3a4e] border-t border-white/10">
           <div className="flex gap-2">
             <button className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center hover:bg-accent transition-all">
@@ -725,7 +714,7 @@ export function Messaging({ currentUser, userRole, onLogout, onNavigate }: Messa
       )}
 
       {/* Read-only notice for rotasyon channel for staff */}
-      {currentChannel?.id === 'rotasyon' && userRole === 'staff' && (
+      {currentChannel?.id === 'rotasyon' && ['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <div className="px-6 py-3 bg-gradient-to-br from-[#2a2a3a] to-[#3a3a4e] border-t border-white/10">
           <div className="backdrop-blur-xl bg-[#9dd9ea]/10 border border-[#9dd9ea]/30 rounded-xl p-3 flex items-center justify-center gap-2">
             <span className="text-2xl">🔒</span>

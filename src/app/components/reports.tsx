@@ -15,12 +15,9 @@ export function Reports() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [filter, setFilter] = useState<'today' | 'week' | 'month' | 'custom'>('week');
 
-  // Load locations from Mekan Yönetimi
+  // localStorage kaldırıldı - KV store entegrasyonu yapılacak
   useEffect(() => {
-    const stored = localStorage.getItem('aspect_locations');
-    if (stored) {
-      setLocations(JSON.parse(stored));
-    }
+    // Boş başlıyoruz
   }, []);
 
   // ✅ DYNAMIC: Revenue by project from Mekan Yönetimi

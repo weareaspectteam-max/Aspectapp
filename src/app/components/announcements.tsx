@@ -34,7 +34,7 @@ interface Announcement {
 
 interface AnnouncementsProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -72,40 +72,24 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
   }, []);
 
   const loadUserRole = () => {
-    const storedUser = localStorage.getItem('aspectUser');
-    if (storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        setCurrentUserRole(user.role);
-      } catch (error) {
-        console.error('Error parsing user:', error);
-      }
-    }
+    // localStorage kaldırıldı - prop'tan alıyoruz
+    setCurrentUserRole(userRole as UserRole);
   };
 
   const loadAnnouncements = () => {
-    const stored = localStorage.getItem('aspectAnnouncements');
-    if (stored) {
-      try {
-        const data = JSON.parse(stored);
-        setAnnouncements(data);
-      } catch (error) {
-        console.error('Error loading announcements:', error);
-      }
-    }
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
+    // Boş başlıyoruz
   };
 
   const saveAnnouncements = (data: Announcement[]) => {
-    localStorage.setItem('aspectAnnouncements', JSON.stringify(data));
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
     setAnnouncements(data);
   };
 
   const cleanupAnnouncements = () => {
-    const stored = localStorage.getItem('aspectAnnouncements');
-    if (!stored) return;
-
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
     try {
-      const data: Announcement[] = JSON.parse(stored);
+      const data: Announcement[] = announcements;
       const now = new Date();
       
       const filtered = data.filter(a => {
@@ -402,10 +386,10 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] pb-20">
       {/* Header */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <StaffTopBar
           userName={userName}
-          userRole="staff"
+          userRole={userRole}
           onLogout={onLogout}
           onNavigate={onNavigate}
           onBack={() => onNavigate('home')}
@@ -414,7 +398,7 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
       )}
 
       {/* Create Button - Only shown for authorized users and staff */}
-      {canCreateAnnouncement() && userRole === 'staff' && (
+      {canCreateAnnouncement() && ['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <div className="sticky top-[73px] z-30 px-4 pt-4">
           <button
             onClick={() => handleOpenModal()}
@@ -427,7 +411,7 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
       )}
 
       {/* Tabs */}
-      <div className={`sticky ${userRole === 'staff' ? 'top-[73px]' : 'top-0'} z-20 backdrop-blur-xl bg-[#1a1a2e]/80 border-b border-white/10 px-4`}>
+      <div className={`sticky ${['personel', 'operasyon', 'bekleyen'].includes(userRole) ? 'top-[73px]' : 'top-0'} z-20 backdrop-blur-xl bg-[#1a1a2e]/80 border-b border-white/10 px-4`}>
         <div className="flex gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <button
             onClick={() => setActiveTab('announcements')}
@@ -927,11 +911,11 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
       </AnimatePresence>
 
       {/* Bottom Navigation */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <NewBottomNav
           activeTab="home"
           onTabChange={onNavigate}
-          userRole="staff"
+          userRole={userRole}
         />
       )}
     </div>

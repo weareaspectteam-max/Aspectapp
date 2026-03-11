@@ -139,40 +139,16 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
 
   // Load data from localStorage
   useEffect(() => {
-    // Load equipment
-    const storedEquipment = localStorage.getItem('aspect_malzeme');
-    if (storedEquipment) {
-      setEquipmentList(JSON.parse(storedEquipment));
-    } else {
-      setEquipmentList(mockEquipmentList);
-      localStorage.setItem('aspect_malzeme', JSON.stringify(mockEquipmentList));
-    }
-
-    // Load staff list from user management
-    const storedUsers = localStorage.getItem('aspect_users');
-    if (storedUsers) {
-      const users = JSON.parse(storedUsers);
-      const staffNames = users.map((user: any) => user.name || user.username);
-      setStaffList(staffNames);
-    } else {
-      setStaffList(['Ahmet Yılmaz', 'Ayşe Demir', 'Mehmet Kaya', 'Zeynep Öztürk', 'Can Şahin', 'Elif Arslan']);
-    }
-
-    // Load locations from mekan management
-    const storedLocations = localStorage.getItem('aspect_locations');
-    if (storedLocations) {
-      const locs = JSON.parse(storedLocations);
-      const locationNames = locs.map((loc: any) => loc.name);
-      setLocations([...locationNames, 'Ofis', 'Depo', 'Operasyonel']);
-    } else {
-      setLocations(['ZOKA Beach Club', 'Balık Hali', 'Hayal Kahvesi', 'Tekne Turu', 'Ofis', 'Depo', 'Operasyonel']);
-    }
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
+    // Boş başlıyoruz
+    setEquipmentList([]);
+    setStaffList([]);
+    setLocations(['Ofis', 'Depo', 'Operasyonel']);
   }, []);
 
-  // Save equipment to localStorage
+  // Save equipment (localStorage kaldırıldı - KV store entegrasyonu yapılacak)
   const saveEquipment = (newList: Equipment[]) => {
     setEquipmentList(newList);
-    localStorage.setItem('aspect_malzeme', JSON.stringify(newList));
   };
 
   const categories = [

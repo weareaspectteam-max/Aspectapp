@@ -1,0 +1,98 @@
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28  POST https://o22594.ingest.us.sentry.io/api/56203/envelope/?sentry_key=333f664af67c57ab0ed581c89de74387&sentry_version=7&sentry_client=sentry.javascript.react%2F8.40.0 net::ERR_CERT_COMMON_NAME_INVALID
+o @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+d @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+o @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+send @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+h @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+sendEnvelope @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:27
+sendSession @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:27
+captureSession @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:27
+E @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:121
+_ @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:121
+n1 @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+n0 @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+n3 @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+1801 @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+__webpack_require__ @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:982
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:982
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:982
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:982
+PendingScript
+(anonymous) @ (index):106Understand this error
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28  GET https://grijlpmpvrafxbzpuzvw.supabase.co/functions/v1/make-server-4da0b637/mekanlar 401 (Unauthorized)
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+(anonymous) @ cost-management.tsx:154
+(anonymous) @ cost-management.tsx:188
+TN @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+T7 @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+T8 @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+T6 @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+T4 @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+S1 @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+SQ @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+SJ @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+SZ @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+SO @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+pC @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89Understand this error
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28  GET https://grijlpmpvrafxbzpuzvw.supabase.co/functions/v1/make-server-4da0b637/maliyetler 401 (Unauthorized)
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+(anonymous) @ cost-management.tsx:153
+(anonymous) @ cost-management.tsx:188
+TN @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+T7 @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+T8 @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+T6 @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+T4 @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+S1 @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+SQ @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+SJ @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+SZ @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+SO @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+pC @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89Understand this error
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 Maliyet HTTP status: 401 
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 Maliyet raw response: {"code":401,"message":"Invalid JWT"}
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28  GET https://grijlpmpvrafxbzpuzvw.supabase.co/functions/v1/make-server-4da0b637/mekanlar 401 (Unauthorized)
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+(anonymous) @ cost-management.tsx:154
+y @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+i @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+ik @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+ij @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+iz @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+dP @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+dM @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+dG @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+dk @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+SR @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+iR @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+d$ @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+lO @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+lN @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+lv @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+i @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28Understand this error
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28  GET https://grijlpmpvrafxbzpuzvw.supabase.co/functions/v1/make-server-4da0b637/maliyetler 401 (Unauthorized)
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+(anonymous) @ cost-management.tsx:153
+y @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+i @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+ik @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+ij @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+iz @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+dP @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+dM @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+dG @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+dk @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+SR @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+iR @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+d$ @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+lO @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+lN @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+lv @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+i @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28Understand this error
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 Maliyet HTTP status: 401 
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 Maliyet raw response: {"code":401,"message":"Invalid JWT"}
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28  POST https://o22594.ingest.us.sentry.io/api/56203/envelope/?sentry_key=333f664af67c57ab0ed581c89de74387&sentry_version=7&sentry_client=sentry.javascript.react%2F8.40.0 net::ERR_CERT_COMMON_NAME_INVALID

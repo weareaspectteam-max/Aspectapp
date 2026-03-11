@@ -5,7 +5,7 @@ import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 
 interface AdminHubProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }

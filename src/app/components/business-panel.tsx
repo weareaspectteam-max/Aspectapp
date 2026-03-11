@@ -2,7 +2,7 @@ import { MapPin, Users, Briefcase, Package, BarChart3, DollarSign, FileText, Arr
 
 interface BusinessPanelProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }

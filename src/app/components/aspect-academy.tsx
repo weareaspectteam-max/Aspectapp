@@ -5,7 +5,7 @@ import { useState } from 'react';
 
 interface AspectAcademyProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -159,10 +159,10 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
   return (
     <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
       {/* Sticky Top Bar */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <StaffTopBar
           userName={userName}
-          userRole="staff"
+          userRole={userRole}
           onLogout={onLogout}
           onNavigate={onNavigate}
           onBack={() => onNavigate('profile')}
@@ -286,7 +286,7 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
       </div>
 
       {/* Bottom Navigation - Only for staff */}
-      {userRole === 'staff' && (
+      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <NewBottomNav
           activeTab="profile"
           onTabChange={onNavigate}

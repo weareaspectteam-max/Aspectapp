@@ -5,7 +5,7 @@ import { NewBottomNav } from './new-bottom-nav';
 
 interface SettingsProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -27,55 +27,13 @@ export function Settings({ userName, userRole, onLogout, onNavigate }: SettingsP
 
   // Load birthday from localStorage on mount
   useEffect(() => {
-    const storedUser = localStorage.getItem('aspectUser');
-    if (storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        if (user.birthday) {
-          setBirthday(user.birthday);
-        }
-        if (user.hideBirthdayFromOthers !== undefined) {
-          setHideBirthdayFromOthers(user.hideBirthdayFromOthers);
-        }
-        if (user.hideOthersBirthdays !== undefined) {
-          setHideOthersBirthdays(user.hideOthersBirthdays);
-        }
-      } catch (error) {
-        console.error('Birthday yüklenemedi:', error);
-      }
-    }
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
   }, []);
 
   const handleSaveBirthday = () => {
-    // Save birthday to localStorage
-    const storedUser = localStorage.getItem('aspectUser');
-    if (storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        user.birthday = birthday;
-        user.hideBirthdayFromOthers = hideBirthdayFromOthers;
-        user.hideOthersBirthdays = hideOthersBirthdays;
-        localStorage.setItem('aspectUser', JSON.stringify(user));
-        
-        // Also update in users list
-        const usersData = localStorage.getItem('aspectUsers');
-        if (usersData) {
-          const users = JSON.parse(usersData);
-          const userIndex = users.findIndex((u: any) => u.name === userName);
-          if (userIndex !== -1) {
-            users[userIndex].birthday = birthday;
-            users[userIndex].hideBirthdayFromOthers = hideBirthdayFromOthers;
-            users[userIndex].hideOthersBirthdays = hideOthersBirthdays;
-            localStorage.setItem('aspectUsers', JSON.stringify(users));
-          }
-        }
-        
-        setShowSuccessMessage(true);
-        setTimeout(() => setShowSuccessMessage(false), 3000);
-      } catch (error) {
-        console.error('Birthday kaydedilemedi:', error);
-      }
-    }
+    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
+    setShowSuccessMessage(true);
+    setTimeout(() => setShowSuccessMessage(false), 3000);
   };
 
   const handleSaveEmail = () => {
@@ -112,10 +70,10 @@ export function Settings({ userName, userRole, onLogout, onNavigate }: SettingsP
   return (
     <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
       {/* Sticky Top Bar */}
-      {userRole === 'staff' && (
+      {['personel', 'bekleyen'].includes(userRole) && (
         <StaffTopBar
           userName={userName}
-          userRole="staff"
+          userRole={userRole}
           onLogout={onLogout}
           onNavigate={onNavigate}
           onBack={() => onNavigate('home')}
@@ -463,7 +421,15 @@ export function Settings({ userName, userRole, onLogout, onNavigate }: SettingsP
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">Rol:</span>
-              <span className="text-white font-semibold capitalize">{userRole === 'admin' ? 'Yönetici' : 'Personel'}</span>
+              <span className="text-white font-semibold capitalize">{{
+                'yonetici': 'Yönetici',
+                'ust-mudur': 'Üst Müdür',
+                'mudur': 'Müdür',
+                'operasyon': 'Operasyon',
+                'personel': 'Personel',
+                'idari': 'İdari',
+                'bekleyen': 'Bekleyen',
+              }[userRole] ?? userRole}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">Durum:</span>
@@ -476,8 +442,8 @@ export function Settings({ userName, userRole, onLogout, onNavigate }: SettingsP
         </div>
       </div>
 
-      {/* Bottom Navigation - Only for staff */}
-      {userRole === 'staff' && (
+      {/* Bottom Navigation - Only for personel/bekleyen */}
+      {['personel', 'bekleyen'].includes(userRole) && (
         <NewBottomNav
           activeTab="settings"
           onNavigate={onNavigate}

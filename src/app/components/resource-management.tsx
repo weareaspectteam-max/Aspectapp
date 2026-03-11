@@ -2,7 +2,7 @@ import { ArrowLeft, MapPin, Package, Users, ArrowRight, DollarSign } from 'lucid
 
 interface ResourceManagementProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }

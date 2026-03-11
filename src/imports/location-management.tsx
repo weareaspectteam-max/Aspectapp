@@ -10,7 +10,7 @@ import { supabase } from '../../../utils/supabase/client';
 
 interface LocationManagementProps {
   userName: string;
-  userRole: 'admin' | 'staff';
+  userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -29,26 +29,10 @@ interface Location {
 }
 
 export function LocationManagement({ userName, userRole, onLogout, onNavigate }: LocationManagementProps) {
-  // Get current user role from localStorage
-  const getCurrentUserRole = () => {
-    const storedUser = localStorage.getItem('aspectUser');
-    if (storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        return user.role || 'staff';
-      } catch {
-        return 'staff';
-      }
-    }
-    return 'staff';
-  };
-
-  const currentRole = getCurrentUserRole();
-
   // Permission checks based on role
-  const canViewLocations = ['admin', 'yonetici', 'Yönetici', 'ust-mudur', 'upper_manager', 'mudur', 'manager', 'idari', 'administrative', 'operasyon'].includes(currentRole);
-  const canViewFinancials = ['admin', 'yonetici', 'Yönetici', 'ust-mudur', 'upper_manager', 'mudur', 'manager', 'idari', 'administrative'].includes(currentRole);
-  const canAddEditDelete = ['admin', 'yonetici', 'Yönetici'].includes(currentRole);
+  const canViewLocations = ['yonetici', 'ust-mudur', 'mudur', 'operasyon', 'idari'].includes(userRole);
+  const canViewFinancials = ['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole);
+  const canAddEditDelete = ['yonetici', 'ust-mudur'].includes(userRole);
 
   // Mekan Yönetimi State
   const [locations, setLocations] = useState<Location[]>([]);

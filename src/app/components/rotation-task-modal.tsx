@@ -168,7 +168,7 @@ export function RotationTaskModal({
     setShowDailyLeaveConfirm({ show: false, personnelId: '', personnelName: '' });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     // Validation
     if (selectedPersonnel.length === 0) {
       setShowWarning('En az bir personel seçmelisiniz!');
@@ -229,13 +229,13 @@ export function RotationTaskModal({
 
     if (editingTask) {
       // Update existing task
-      updateTask(editingTask.id, {
+      await updateTask(editingTask.id, {
         personnel,
         location: taskLocation,
         locationIcon: taskLocationIcon,
         startTime: taskStartTime,
         endTime: taskEndTime,
-        taskType: actualTaskType, // Yeni field güncelleniyor
+        taskType: actualTaskType,
         notes: notes.trim(),
       });
     } else {
@@ -248,12 +248,12 @@ export function RotationTaskModal({
         startTime: taskStartTime,
         endTime: taskEndTime,
         type: taskTaskType,
-        taskType: actualTaskType, // Yeni field ekleniyor
+        taskType: actualTaskType,
         notes: notes.trim(),
         status: 'draft',
         date: selectedDate,
       };
-      saveTask(newTask);
+      await saveTask(newTask);
     }
 
     onClose();
