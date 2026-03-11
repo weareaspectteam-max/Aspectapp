@@ -180,7 +180,7 @@ app.put("/make-server-4da0b637/auth/update-role", async (c) => {
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
 
     const callerRole = callerUser.user_metadata?.role;
-    if (!["yonetici", "ust-mudur"].includes(callerRole)) {
+    if (!["yonetici", "ust-mudur", "mudur"].includes(callerRole)) {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
 
@@ -190,9 +190,26 @@ app.put("/make-server-4da0b637/auth/update-role", async (c) => {
       return c.json({ error: "Geçersiz rol." }, 400);
     }
 
+    // Hiyerarşi kontrolü — kendi seviyenizi aşan işlem yapılamaz
+    const hierarchy: Record<string, number> = {
+      yonetici: 6, "ust-mudur": 5, mudur: 4, operasyon: 3, idari: 2, personel: 1, bekleyen: 0,
+    };
+
     const supabase = getAdminClient();
     const { data: targetData } = await supabase.auth.admin.getUserById(userId);
     if (!targetData?.user) return c.json({ error: "Kullanıcı bulunamadı." }, 404);
+
+    if (callerRole !== "yonetici") {
+      const callerLevel = hierarchy[callerRole] ?? 0;
+      const targetCurrentLevel = hierarchy[targetData.user.user_metadata?.role ?? "bekleyen"] ?? 0;
+      const newRoleLevel = hierarchy[role] ?? 0;
+      if (targetCurrentLevel >= callerLevel) {
+        return c.json({ error: "Kendi seviyenizde veya üzerindeki kullanıcıları düzenleyemezsiniz." }, 403);
+      }
+      if (newRoleLevel >= callerLevel) {
+        return c.json({ error: "Kendinizden yüksek veya eşit bir rol atayamazsınız." }, 403);
+      }
+    }
 
     const { data, error } = await supabase.auth.admin.updateUserById(userId, {
       user_metadata: {

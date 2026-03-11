@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Mail, Lock, Eye, EyeOff, Camera, User, UserPlus, LogIn, Phone, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase, SERVER_URL } from '../lib/supabase';
-import { AspectLogo } from './aspect-logo';
+import { buildHeaders } from '../lib/api';
 
 export type UserRole = 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
 
@@ -93,7 +93,7 @@ export function Login({ onLogin }: LoginProps) {
     try {
       const res = await fetch(`${SERVER_URL}/auth/signup`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ''}` },
+        headers: buildHeaders(), // publicAnonKey ile gateway'i geç, user token gerekmez
         body: JSON.stringify({
           email: signUpEmail.toLowerCase().trim(),
           password: signUpPassword,
@@ -203,7 +203,7 @@ export function Login({ onLogin }: LoginProps) {
             transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
           >
             <div className="absolute inset-0 blur-3xl bg-gradient-to-r from-[#9dd9ea]/50 via-transparent to-[#ffd4a3]/50 scale-150" />
-            <AspectLogo className="relative w-72 h-auto drop-shadow-2xl scale-[2.8] translate-y-12" />
+            <span className="relative text-5xl font-black tracking-[0.25em] text-white drop-shadow-2xl">ASPECT</span>
             <motion.div
               className="absolute inset-0 border-2 border-[#9dd9ea]/30 rounded-full"
               style={{ width: '120%', height: '120%', top: '-10%', left: '-10%' }}
