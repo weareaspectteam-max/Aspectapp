@@ -1,12 +1,10 @@
-import { useState, useEffect } from 'react';
-import { Shield, UserCog, Users, User, Briefcase, UserPlus, Clock, List, ChevronDown, ChevronRight, UserCheck, Trash2, Edit2, X, CheckCircle, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
 import { supabase, SERVER_URL } from '../lib/supabase';
-import { authHeaders } from '../lib/api';
+import { buildHeaders } from '../lib/api';
 
 interface UserManagementProps {
   userName: string;
   userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
+  accessToken: string;
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -33,7 +31,7 @@ type UserRole =
 type ActiveTab = 'active' | 'pending' | 'staff-list';
 type StaffListFilter = 'all' | 'only-active' | 'only-pending' | 'signed-in' | 'not-signed-in';
 
-export function UserManagement({ userRole, onNavigate }: UserManagementProps) {
+export function UserManagement({ userRole, accessToken, onNavigate }: UserManagementProps) {
   const [users, setUsers] = useState<UserData[]>([]);
   const [pendingUsers, setPendingUsers] = useState<UserData[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTab>('active');
@@ -64,7 +62,7 @@ export function UserManagement({ userRole, onNavigate }: UserManagementProps) {
     setLoading(true);
     setError('');
     try {
-      const headers = await authHeaders();
+      const headers = buildHeaders(accessToken);
       const res = await fetch(`${SERVER_URL}/users`, { headers });
 
       if (!res.ok) {
@@ -218,7 +216,7 @@ export function UserManagement({ userRole, onNavigate }: UserManagementProps) {
   // Assign role
   const handleAssignRole = async (userId: string, newRole: UserRole) => {
     try {
-      const headers = await authHeaders();
+      const headers = buildHeaders(accessToken);
       const res = await fetch(`${SERVER_URL}/auth/update-role`, {
         method: 'PUT',
         headers,

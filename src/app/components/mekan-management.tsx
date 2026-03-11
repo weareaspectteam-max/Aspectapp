@@ -148,16 +148,13 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   };
 
   useEffect(() => {
-    if (hasAccess) loadMekanlar();
-    else setLoading(false);
-  }, []);
-
-  // Form her açıldığında kağıt tiplerini yükle
-  useEffect(() => {
-    if (showAddForm || editingLocation) {
-      loadAvailablePapers();
+    if (hasAccess) {
+      loadMekanlar();
+      loadAvailablePapers(); // Sayfa açılışında yükle — mekan listesinde isim göstermek için
+    } else {
+      setLoading(false);
     }
-  }, [showAddForm, editingLocation]);
+  }, []);
 
   // ─── Kağıt tiplerini maliyet yönetiminden yükle ─────────────
   const loadAvailablePapers = async () => {

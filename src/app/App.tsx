@@ -324,7 +324,8 @@ export default function App() {
         return (
           <QuickSales 
             userName={userName} 
-            userRole={userRole} 
+            userRole={userRole}
+            accessToken={accessToken}
             onProjectSelect={handleProjectSelect}
             preSelectedProject={isStaffRole && shiftSetupCompleted ? selectedProject : undefined}
             onLogout={handleLogout}
@@ -441,6 +442,7 @@ export default function App() {
           <UserManagement 
             userName={userName}
             userRole={userRole}
+            accessToken={accessToken}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />

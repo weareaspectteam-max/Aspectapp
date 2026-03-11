@@ -11,7 +11,7 @@ import {
   stokAlanAdi, stokAlanEmoji,
   type StokSayim, type StokGunluk, type StokEkleme, type PrinterKapanis,
 } from '../services/stock-service';
-import { authHeaders } from '../lib/api';
+import { buildHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 
 const API_BASE_QS = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -45,6 +45,7 @@ interface CartItem {
 interface QuickSalesProps {
   userName: string;
   userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
+  accessToken: string;
   onProjectSelect?: (projectName: string) => void;
   preSelectedProject?: string;
   onBack?: () => void;
@@ -65,7 +66,7 @@ const albumItems = [
 ];
 
 
-export function QuickSales({ userName, userRole, onProjectSelect, preSelectedProject, onBack, onLogout, onNavigate }: QuickSalesProps) {
+export function QuickSales({ userName, userRole, accessToken, onProjectSelect, preSelectedProject, onBack, onLogout, onNavigate }: QuickSalesProps) {
   const [selectedProject, setSelectedProject] = useState<Project | null>(() => {
     if (preSelectedProject) {
       return { id: '1', name: preSelectedProject, location: 'Antalya', shift: 'Gündüz', color: 'from-[#9dd9ea] to-[#7ec8dd]', icon: '🏖️' };
@@ -215,7 +216,7 @@ export function QuickSales({ userName, userRole, onProjectSelect, preSelectedPro
 
       // Mekan'ın kağıt tipi + kapasite bilgisini yükle (canlı hesaplama için)
       try {
-        const hdr = await authHeaders();
+        const hdr = buildHeaders(accessToken);
         const mekanRes = await fetch(`${API_BASE_QS}/mekanlar`, { headers: hdr });
         if (mekanRes.ok) {
           const { mekanlar } = await mekanRes.json();
