@@ -1,3 +1,6 @@
+import React, { useState, useEffect } from 'react';
+import { Shield, UserCog, Users, User, Briefcase, UserPlus, Clock, List, ChevronDown, ChevronRight, UserCheck, Trash2, Edit2, X, CheckCircle, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { supabase, SERVER_URL } from '../lib/supabase';
 import { buildHeaders } from '../lib/api';
 
