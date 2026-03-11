@@ -42,6 +42,7 @@ import { StaffTopBar } from './staff-top-bar';
 interface RotationSystemProps {
   userName: string;
   userRole: UserRole;
+  accessToken: string;
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -67,7 +68,7 @@ const getTimeAgo = (timestamp?: string): string => {
   return `${diffDays} gün önce`;
 };
 
-export function RotationSystem({ userName, userRole, onLogout, onNavigate }: RotationSystemProps) {
+export function RotationSystem({ userName, userRole, accessToken, onLogout, onNavigate }: RotationSystemProps) {
   // ==========================================
   // STATE
   // ==========================================
@@ -114,7 +115,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
   // İzin listesi yüklenince süresi dolmuşları temizle (fire-and-forget)
   useEffect(() => {
     if (leaveRequests.length > 0) {
-      cleanupExpiredLeaveRequests();
+      cleanupExpiredLeaveRequests(accessToken);
     }
   }, [leaveRequests.length]);
 
@@ -122,11 +123,11 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
     setLoading(true);
     try {
       const [staff, locs, taskList, leaveList, dailyLeave] = await Promise.all([
-        getStaffMembers(),
-        getLocations(),
-        getTasks(),
-        getLeaveRequests(),
-        getDailyOnLeave(),
+        getStaffMembers(accessToken),
+        getLocations(accessToken),
+        getTasks(accessToken),
+        getLeaveRequests(accessToken),
+        getDailyOnLeave(accessToken),
       ]);
       setStaffMembers(staff);
       setLocations(locs);
@@ -142,13 +143,13 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
 
   // Refresh tasks when needed
   const refreshTasks = async () => {
-    const taskList = await getTasks();
+    const taskList = await getTasks(accessToken);
     setTasks(taskList);
   };
 
   // Refresh leave requests when needed
   const refreshLeaveRequests = async () => {
-    const leaveList = await getLeaveRequests();
+    const leaveList = await getLeaveRequests(accessToken);
     setLeaveRequests(leaveList);
   };
 
@@ -294,7 +295,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
       status: 'cancelled',
       cancelledAt: currentTime,
       cancelReason: cancelReason,
-    });
+    }, accessToken);
 
     const message = formatCancelMessage({ ...cancellingTask, cancelReason });
     sendMessageToRotationChannel(message);
@@ -318,7 +319,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
       cancelReason: undefined,
       revisedAt: currentTime,
       revisionCount: (task.revisionCount || 0) + 1,
-    });
+    }, accessToken);
 
     const message = formatRevisionMessage(task);
     sendMessageToRotationChannel(message);
@@ -337,7 +338,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
         status: 'revised',
         revisedAt: currentTime,
         revisionCount: (task.revisionCount || 0) + 1,
-      });
+      }, accessToken);
       refreshTasks();
     }
 
@@ -346,7 +347,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
 
   const handleRemoveTask = async (taskId: string) => {
     if (confirm('Bu görevi silmek istediğinize emin misiniz?')) {
-      await deleteTask(taskId);
+      await deleteTask(taskId, accessToken);
       refreshTasks();
 
       setNotificationMessage('Görev silindi 🗑️');
@@ -385,7 +386,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
     }).filter(Boolean) as { id: string; changes: Partial<Task> }[];
 
     if (updates.length > 0) {
-      await updateMultipleTasks(updates);
+      await updateMultipleTasks(updates, accessToken);
     }
     
     // Send messages
@@ -484,7 +485,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
       }
     }
     setDailyOnLeave(updatedOnLeave);
-    await saveDailyOnLeave(updatedOnLeave);
+    await saveDailyOnLeave(updatedOnLeave, accessToken);
   };
 
   const handleMoveOnLeaveToStandby = async (personnelIds: string[]) => {
@@ -499,7 +500,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
     }
 
     setDailyOnLeave(updatedOnLeave);
-    await saveDailyOnLeave(updatedOnLeave);
+    await saveDailyOnLeave(updatedOnLeave, accessToken);
     setSelectedOnLeave([]);
     
     setNotificationMessage(`${personnelIds.length} personel beklemeye alındı ⏳`);
@@ -566,7 +567,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
     });
     
     setDailyOnLeave(updatedOnLeave);
-    await saveDailyOnLeave(updatedOnLeave);
+    await saveDailyOnLeave(updatedOnLeave, accessToken);
     setSelectedStandby([]);
 
     setNotificationMessage('Personel izinli olarak atandı 🏖️');
@@ -2164,7 +2165,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
                             <div className="grid grid-cols-2 gap-2">
                               <button
                                 onClick={async () => {
-                                  await updateLeaveStatus(request.id, 'rejected');
+                                  await updateLeaveStatus(request.id, 'rejected', accessToken);
                                   refreshLeaveRequests();
                                 }}
                                 className="flex items-center justify-center gap-1.5 py-2.5 bg-red-500/20 border border-red-500/40 text-red-200 rounded-xl font-bold text-xs hover:bg-red-500/30 transition-all active:scale-95 group-hover:shadow-md"
@@ -2174,7 +2175,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
                               </button>
                               <button
                                 onClick={async () => {
-                                  await updateLeaveStatus(request.id, 'approved');
+                                  await updateLeaveStatus(request.id, 'approved', accessToken);
                                   refreshLeaveRequests();
                                 }}
                                 className="flex items-center justify-center gap-1.5 py-2.5 bg-green-500/20 border border-green-500/40 text-green-200 rounded-xl font-bold text-xs hover:bg-green-500/30 transition-all active:scale-95 group-hover:shadow-md"
@@ -2316,6 +2317,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
           leaveRequests={leaveRequests}
           dailyOnLeave={dailyOnLeave}
           preselectedLocation={preselectedLocation}
+          accessToken={accessToken}
           onClose={handleCloseTaskModal}
         />
       )}
@@ -2329,6 +2331,7 @@ export function RotationSystem({ userName, userRole, onLogout, onNavigate }: Rot
           currentUserId={getCurrentUserId()}
           userName={userName}
           editingLeave={editingLeaveRequest}
+          accessToken={accessToken}
           onClose={() => {
             setShowLeaveModal(false);
             setEditingLeaveRequest(null); // Reset editing state

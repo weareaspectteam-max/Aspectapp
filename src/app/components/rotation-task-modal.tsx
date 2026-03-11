@@ -22,6 +22,7 @@ interface RotationTaskModalProps {
   leaveRequests: LeaveRequest[];
   dailyOnLeave: Record<string, string[]>;
   preselectedLocation?: string;
+  accessToken: string;
   onClose: () => void;
 }
 
@@ -36,6 +37,7 @@ export function RotationTaskModal({
   leaveRequests,
   dailyOnLeave,
   preselectedLocation = '',
+  accessToken,
   onClose,
 }: RotationTaskModalProps) {
   const [selectedLocation, setSelectedLocation] = useState<string>('');
@@ -237,7 +239,7 @@ export function RotationTaskModal({
         endTime: taskEndTime,
         taskType: actualTaskType,
         notes: notes.trim(),
-      });
+      }, accessToken);
     } else {
       // Create new task
       const newTask: Task = {
@@ -253,7 +255,7 @@ export function RotationTaskModal({
         status: 'draft',
         date: selectedDate,
       };
-      await saveTask(newTask);
+      await saveTask(newTask, accessToken);
     }
 
     onClose();

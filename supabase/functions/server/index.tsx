@@ -75,13 +75,10 @@ app.get("/make-server-4da0b637/health", (c) => {
 // ──────────────────────────────────────────
 app.post("/make-server-4da0b637/auth/signup", async (c) => {
   try {
-    const { email, password, full_name, phone, birth_date } = await c.req.json();
+    const { email, password, full_name, phone } = await c.req.json();
 
     if (!email || !password || !full_name) {
       return c.json({ error: "E-posta, şifre ve ad soyad zorunludur." }, 400);
-    }
-    if (!birth_date) {
-      return c.json({ error: "Doğum tarihi zorunludur." }, 400);
     }
 
     const supabase = getAdminClient();
@@ -93,7 +90,6 @@ app.post("/make-server-4da0b637/auth/signup", async (c) => {
         full_name: full_name.trim(),
         role: "bekleyen", // Yeni kullanıcılar bekleyen olarak başlar
         phone: phone?.trim() || "",
-        birth_date: birth_date,
       },
       // E-posta sunucusu yapılandırılmadığı için otomatik onaylıyoruz
       email_confirm: true,
@@ -140,6 +136,7 @@ app.get("/make-server-4da0b637/auth/me", async (c) => {
       full_name: user.user_metadata?.full_name || "",
       role: user.user_metadata?.role || "bekleyen",
       phone: user.user_metadata?.phone || "",
+      avatar: user.user_metadata?.avatar || "",
       created_at: user.created_at,
       last_sign_in: user.last_sign_in_at,
     });
@@ -152,14 +149,14 @@ app.get("/make-server-4da0b637/auth/me", async (c) => {
 // ──────────────────────────────────────────
 // AUTH: Profil güncelle
 // PUT /make-server-4da0b637/auth/profile
-// Body: { full_name?, phone? }
+// Body: { full_name?, phone?, avatar?, email? }
 // ──────────────────────────────────────────
 app.put("/make-server-4da0b637/auth/profile", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
 
-    const { full_name, phone } = await c.req.json();
+    const { full_name, phone, avatar, email, birth_date } = await c.req.json();
     const supabase = getAdminClient();
 
     const updatedMetadata: Record<string, string> = {
@@ -167,10 +164,20 @@ app.put("/make-server-4da0b637/auth/profile", async (c) => {
     };
     if (full_name !== undefined) updatedMetadata.full_name = full_name.trim();
     if (phone !== undefined) updatedMetadata.phone = phone.trim();
+    if (avatar !== undefined) updatedMetadata.avatar = avatar;
+    if (birth_date !== undefined) updatedMetadata.birth_date = birth_date;
 
-    const { data, error } = await supabase.auth.admin.updateUserById(user.id, {
-      user_metadata: updatedMetadata,
-    });
+    // E-posta değişiyorsa updateUserById'e email de ekle
+    const updatePayload: Record<string, any> = { user_metadata: updatedMetadata };
+    if (email !== undefined && email.trim() !== '' && email.trim() !== user.email) {
+      const trimmedEmail = email.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        return c.json({ error: "Geçersiz e-posta formatı." }, 400);
+      }
+      updatePayload.email = trimmedEmail;
+    }
+
+    const { data, error } = await supabase.auth.admin.updateUserById(user.id, updatePayload);
 
     if (error) {
       console.log("Profile update error:", error.message);
@@ -183,6 +190,7 @@ app.put("/make-server-4da0b637/auth/profile", async (c) => {
       full_name: data.user.user_metadata?.full_name,
       role: data.user.user_metadata?.role,
       phone: data.user.user_metadata?.phone,
+      avatar: data.user.user_metadata?.avatar,
     });
   } catch (err) {
     console.log("Profile update unexpected error:", err);
@@ -1394,6 +1402,60 @@ app.get("/make-server-4da0b637/aktarim/bekleyen/:mekanId", async (c) => {
 });
 
 // ──────────────────────────────────────────
+// STOK: Canlı satış feed'i — bugünkü tüm mekanların satışları
+// GET /stok/canli-satis
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    // Türkiye saatiyle bugünün tarihi
+    const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" });
+
+    // Tüm mekanları çek → id→mekan map
+    const mekanlarList = await kv.getByPrefix("mekan_");
+    const mekanMap: Record<string, any> = {};
+    for (const m of (mekanlarList || [])) {
+      mekanMap[m.id] = m;
+    }
+
+    // Bugünkü tüm stok kayıtlarını çek
+    const tumKayitlar = await kv.getByPrefix("stok_gunluk_");
+    const bugunKayitlar = (tumKayitlar || []).filter((k: any) => k.tarih === today);
+
+    // Her kaydın satislar[] dizisini düzleştir, mekan bilgisiyle zenginleştir
+    const tumSatislar: any[] = [];
+    for (const kayit of bugunKayitlar) {
+      const mekan = mekanMap[kayit.mekanId] || { name: kayit.mekanId, emoji: "📍", color: "#9dd9ea" };
+      const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
+      for (const satis of satislar) {
+        tumSatislar.push({
+          ...satis,
+          mekanId: kayit.mekanId,
+          mekanAdi: mekan.name,
+          mekanEmoji: mekan.emoji,
+          mekanColor: mekan.color,
+        });
+      }
+    }
+
+    // Zamana göre azalan sırala (en yeni önce)
+    tumSatislar.sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+
+    console.log(`Canlı satış feed: ${today} — ${tumSatislar.length} satış, ${bugunKayitlar.length} mekan`);
+    return c.json({ satislar: tumSatislar, mekanlar: mekanlarList || [] });
+  } catch (err) {
+    console.log("Get canli satis error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
 // STOK: Anomali geçmişi
 // GET /stok/anomali/:mekanId
 // ──────────────────────────────────────────
@@ -1419,6 +1481,439 @@ app.get("/make-server-4da0b637/stok/anomali/:mekanId", async (c) => {
     return c.json({ anomaliler });
   } catch (err) {
     console.log("Get stok anomali error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// DUYURULAR
+// ══════════════════════════════════════════
+
+// GET /make-server-4da0b637/announcements
+app.get("/make-server-4da0b637/announcements", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const all = await kv.getByPrefix("announcement_");
+    const now = new Date();
+
+    const active = (all || []).filter((a: any) => {
+      if (a.type === "temporary" && a.endDate) {
+        return new Date(a.endDate) >= now;
+      }
+      return true;
+    });
+
+    active.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return c.json({ announcements: active });
+  } catch (err) {
+    console.log("Get announcements error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /make-server-4da0b637/announcements
+app.post("/make-server-4da0b637/announcements", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const role = user.user_metadata?.role || "personel";
+    const canCreate = ["yonetici", "ust-mudur", "mudur", "operasyon"].includes(role);
+    if (!canCreate) return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
+
+    const body = await c.req.json();
+    const { title, message, photo, type, endDate, priority } = body;
+
+    if (!title?.trim() || !message?.trim()) {
+      return c.json({ error: "Başlık ve mesaj zorunludur." }, 400);
+    }
+    if (type === "temporary" && !endDate) {
+      return c.json({ error: "Süreli duyuru için bitiş tarihi zorunludur." }, 400);
+    }
+
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const announcement = {
+      id,
+      title: title.trim(),
+      message: message.trim(),
+      photo: photo || null,
+      type: type || "temporary",
+      endDate: type === "temporary" ? endDate : null,
+      priority: priority || "medium",
+      createdAt: new Date().toISOString(),
+      createdBy: user.user_metadata?.full_name || user.email || "",
+      createdByRole: role,
+    };
+
+    await kv.set(`announcement_${id}`, announcement);
+    console.log(`Announcement created: ${id} by ${user.id}`);
+    return c.json({ announcement });
+  } catch (err) {
+    console.log("Post announcement error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// PUT /make-server-4da0b637/announcements/:id
+app.put("/make-server-4da0b637/announcements/:id", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const role = user.user_metadata?.role || "personel";
+    const canEdit = ["yonetici", "ust-mudur", "mudur", "operasyon"].includes(role);
+    if (!canEdit) return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
+
+    const id = c.req.param("id");
+    const existing = await kv.get(`announcement_${id}`);
+    if (!existing) return c.json({ error: "Duyuru bulunamadı." }, 404);
+
+    const body = await c.req.json();
+    const { title, message, photo, type, endDate, priority } = body;
+
+    const updated = {
+      ...existing,
+      title: title?.trim() ?? existing.title,
+      message: message?.trim() ?? existing.message,
+      photo: photo !== undefined ? photo : existing.photo,
+      type: type ?? existing.type,
+      endDate: (type ?? existing.type) === "temporary" ? (endDate ?? existing.endDate) : null,
+      priority: priority ?? existing.priority,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await kv.set(`announcement_${id}`, updated);
+    return c.json({ announcement: updated });
+  } catch (err) {
+    console.log("Put announcement error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// DELETE /make-server-4da0b637/announcements/:id
+app.delete("/make-server-4da0b637/announcements/:id", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const role = user.user_metadata?.role || "personel";
+    const canDelete = ["yonetici", "ust-mudur", "mudur", "operasyon"].includes(role);
+    if (!canDelete) return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
+
+    const id = c.req.param("id");
+    await kv.del(`announcement_${id}`);
+    console.log(`Announcement deleted: ${id} by ${user.id}`);
+    return c.json({ success: true });
+  } catch (err) {
+    console.log("Delete announcement error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// DOĞUM GÜNÜ: Kendi gizlilik ayarlarını getir
+// GET /make-server-4da0b637/birthday
+// Doğum tarihi user_metadata.birth_date'den okunur
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/birthday", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const privacy = await kv.get(`bday_privacy_${user.id}`);
+    return c.json({
+      birth_date: user.user_metadata?.birth_date || null,
+      hideBirthdayFromOthers: privacy?.hideBirthdayFromOthers ?? false,
+      hideOthersBirthdays: privacy?.hideOthersBirthdays ?? false,
+    });
+  } catch (err) {
+    console.log("Get birthday error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// DOĞUM GÜNÜ: Gizlilik ayarlarını güncelle
+// PUT /make-server-4da0b637/birthday
+// Body: { hideBirthdayFromOthers, hideOthersBirthdays }
+// ──────────────────────────────────────────
+app.put("/make-server-4da0b637/birthday", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const { hideBirthdayFromOthers, hideOthersBirthdays } = await c.req.json();
+
+    const privacy = {
+      userId: user.id,
+      hideBirthdayFromOthers: !!hideBirthdayFromOthers,
+      hideOthersBirthdays: !!hideOthersBirthdays,
+      updatedAt: new Date().toISOString(),
+    };
+    await kv.set(`bday_privacy_${user.id}`, privacy);
+    console.log(`Birthday privacy updated for user: ${user.id}`);
+    return c.json({ ...privacy, birth_date: user.user_metadata?.birth_date || null });
+  } catch (err) {
+    console.log("Put birthday error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// DOĞUM GÜNÜ: Tüm ekip doğum günlerini getir (gizlilik + auth profil)
+// GET /make-server-4da0b637/birthdays
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/birthdays", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const myPrivacy = await kv.get(`bday_privacy_${user.id}`);
+    const hideOthers = myPrivacy?.hideOthersBirthdays === true;
+
+    const supabase = getAdminClient();
+    const { data: { users }, error } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+    if (error) return c.json({ error: `Kullanıcılar yüklenemedi: ${error.message}` }, 400);
+
+    // Tüm gizlilik ayarlarını toplu çek, userId bazında map oluştur
+    const allPrivacy = await kv.getByPrefix("bday_privacy_");
+    const privacyMapById: Record<string, any> = {};
+    (allPrivacy || []).forEach((p: any) => {
+      if (p?.userId) privacyMapById[p.userId] = p;
+    });
+
+    const birthdays = users
+      .filter(u => {
+        const bd = u.user_metadata?.birth_date;
+        if (!bd) return false; // Profilde doğum tarihi olmayanlar gösterilmez
+        if (u.id === user.id) return true; // Kendi kaydı her zaman görünür
+        const priv = privacyMapById[u.id];
+        return !priv?.hideBirthdayFromOthers;
+      })
+      .map(u => ({
+        userId: u.id,
+        name: u.user_metadata?.full_name || u.email || "",
+        avatar: u.user_metadata?.avatar || "👤",
+        birthday: u.user_metadata?.birth_date,
+        hideBirthdayFromOthers: privacyMapById[u.id]?.hideBirthdayFromOthers ?? false,
+        hideOthersBirthdays: privacyMapById[u.id]?.hideOthersBirthdays ?? false,
+      }));
+
+    if (hideOthers) {
+      const myEntry = birthdays.find(b => b.userId === user.id);
+      return c.json({ birthdays: myEntry ? [myEntry] : [] });
+    }
+
+    return c.json({ birthdays });
+  } catch (err) {
+    console.log("Get birthdays error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// VARDIYA SATIŞLARI — stok_gunluk içine gömülü
+// ══════════════════════════════════════════
+
+// POST /stok/satis
+app.post("/make-server-4da0b637/stok/satis", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const body = await c.req.json();
+    const { mekanId, tarih, items, totalPrice, discount, paymentMethod, currency, currencyPrice } = body;
+    if (!mekanId || !tarih || !items || totalPrice === undefined || !paymentMethod) {
+      return c.json({ error: "mekanId, tarih, items, totalPrice, paymentMethod zorunludur." }, 400);
+    }
+
+    const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`) || { mekanId, tarih };
+    const satislar: any[] = existing.satislar || [];
+
+    const satisId = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const satis = {
+      id: satisId,
+      items,
+      totalPrice,
+      discount: discount || 0,
+      finalPrice: totalPrice - (discount || 0),
+      paymentMethod,
+      currency: currency || "TRY",
+      currencyPrice: currencyPrice || null,
+      timestamp: new Date().toISOString(),
+      kaydeden: user.user_metadata?.full_name || user.email || "",
+      kaydedenId: user.id,
+      iptal: false,
+      iptalNeden: null,
+      iptalZamani: null,
+    };
+    satislar.unshift(satis);
+    await kv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, satislar });
+    console.log(`Satış kaydedildi: ${satisId} | ${mekanId} | ${tarih} | ${satis.finalPrice} TRY`);
+    return c.json({ satis });
+  } catch (err) {
+    console.log("Post stok satis error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// DELETE /stok/satis/:mekanId/:tarih/:satisId — iptal (soft delete)
+app.delete("/make-server-4da0b637/stok/satis/:mekanId/:tarih/:satisId", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const mekanId = c.req.param("mekanId");
+    const tarih = c.req.param("tarih");
+    const satisId = c.req.param("satisId");
+    let neden = "";
+    try { const body = await c.req.json(); neden = body.neden || ""; } catch {}
+
+    const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
+    if (!existing) return c.json({ error: "Kayıt bulunamadı." }, 404);
+
+    const satislar = (existing.satislar || []).map((s: any) =>
+      s.id === satisId
+        ? { ...s, iptal: true, iptalNeden: neden, iptalZamani: new Date().toISOString(), iptalEden: user.user_metadata?.full_name || user.email }
+        : s
+    );
+    await kv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, satislar });
+    console.log(`Satış iptal: ${satisId} | neden: ${neden}`);
+    return c.json({ success: true });
+  } catch (err) {
+    console.log("Delete stok satis error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// VARDIYA KARE TAKİBİ — stok_gunluk içine gömülü
+// ══════════════════════════════════════════
+
+// POST /stok/kare
+app.post("/make-server-4da0b637/stok/kare", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const body = await c.req.json();
+    const { mekanId, tarih, photographerName, photographerId, frameCount } = body;
+    if (!mekanId || !tarih || !photographerId || !frameCount) {
+      return c.json({ error: "mekanId, tarih, photographerId, frameCount zorunludur." }, 400);
+    }
+    const count = parseInt(frameCount);
+    if (isNaN(count) || count <= 0) return c.json({ error: "Geçersiz kare sayısı." }, 400);
+
+    const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`) || { mekanId, tarih };
+    const kareKayitlari: any[] = existing.kareKayitlari || [];
+    const entryId = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const entry = {
+      id: entryId,
+      photographerName,
+      photographerId,
+      frameCount: count,
+      timestamp: new Date().toISOString(),
+      kaydeden: user.user_metadata?.full_name || user.email || "",
+      kaydedenId: user.id,
+    };
+    kareKayitlari.push(entry);
+    await kv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, kareKayitlari });
+    console.log(`Kare kaydedildi: ${entryId} | ${photographerName} | ${count} kare | ${mekanId}/${tarih}`);
+    return c.json({ entry });
+  } catch (err) {
+    console.log("Post stok kare error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ── ESKI STANDALONE KARE ENDPOINTS (artık kullanılmıyor, stok/kare kullanın) ──
+// Aşağıdakiler backward compat için bırakıldı ama yeni kod kullanmıyor
+
+// POST /make-server-4da0b637/kare (eski — stok/kare'ye yönlendir)
+app.post("/make-server-4da0b637/kare", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const body = await c.req.json();
+    const { photographerName, photographerId, frameCount, location, locationIcon } = body;
+
+    if (!photographerId || !frameCount || !location) {
+      return c.json({ error: "photographerId, frameCount ve location zorunludur." }, 400);
+    }
+    const count = parseInt(frameCount);
+    if (isNaN(count) || count <= 0) return c.json({ error: "Geçersiz kare sayısı." }, 400);
+
+    const today = new Date().toISOString().split("T")[0];
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const entry = {
+      id,
+      photographerName,
+      photographerId,
+      frameCount: count,
+      location,
+      locationIcon: locationIcon || "📷",
+      timestamp: new Date().toISOString(),
+      date: today,
+      enteredBy: user.user_metadata?.full_name || user.email || "",
+      enteredById: user.id,
+    };
+
+    await kv.set(`kare_${today}_${id}`, entry);
+    console.log(`Kare entry saved: ${id} | ${photographerName} | ${count} kare | ${location}`);
+    return c.json({ entry });
+  } catch (err) {
+    console.log("Post kare error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// GET /make-server-4da0b637/kare?date=YYYY-MM-DD&location=...
+app.get("/make-server-4da0b637/kare", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const dateParam = c.req.query("date") || new Date().toISOString().split("T")[0];
+    const locationParam = c.req.query("location");
+
+    const all = await kv.getByPrefix(`kare_${dateParam}_`);
+    let entries = (all || []).filter(Boolean);
+
+    if (locationParam) {
+      entries = entries.filter((e: any) => e.location === locationParam);
+    }
+    entries.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return c.json({ entries, date: dateParam });
+  } catch (err) {
+    console.log("Get kare error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// DELETE /make-server-4da0b637/kare/:date/:id
+app.delete("/make-server-4da0b637/kare/:date/:id", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const role = user.user_metadata?.role || "personel";
+    if (!["yonetici", "ust-mudur", "mudur", "operasyon"].includes(role)) {
+      return c.json({ error: "Silme yetkisi yok." }, 403);
+    }
+
+    const date = c.req.param("date");
+    const id = c.req.param("id");
+    await kv.del(`kare_${date}_${id}`);
+    return c.json({ success: true });
+  } catch (err) {
+    console.log("Delete kare error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });

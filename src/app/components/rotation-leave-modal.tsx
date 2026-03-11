@@ -15,9 +15,10 @@ interface RotationLeaveModalProps {
   isOpen: boolean;
   staffMembers: StaffMember[];
   userRole: UserRole;
-  currentUserId?: string; // Current logged-in user ID
-  userName?: string; // Current logged-in user name
+  currentUserId?: string;
+  userName?: string;
   editingLeave?: LeaveRequest | null;
+  accessToken: string;
   onClose: () => void;
 }
 
@@ -28,6 +29,7 @@ export function RotationLeaveModal({
   currentUserId = '',
   userName = '',
   editingLeave = null,
+  accessToken,
   onClose,
 }: RotationLeaveModalProps) {
   const [personnelId, setPersonnelId] = useState<string>(editingLeave?.personnelId || '');
@@ -144,7 +146,7 @@ export function RotationLeaveModal({
         notes: notes.trim(),
         status: 'pending',
       };
-      await updateLeaveRequest(editingLeave.id, updatedLeave);
+      await updateLeaveRequest(editingLeave.id, updatedLeave, accessToken);
     } else {
       const newLeave: LeaveRequest = {
         id: `leave-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -160,7 +162,7 @@ export function RotationLeaveModal({
         status: 'pending',
         createdAt: new Date().toISOString(),
       };
-      await saveLeaveRequest(newLeave);
+      await saveLeaveRequest(newLeave, accessToken);
     }
 
     // Reset form

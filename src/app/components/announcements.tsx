@@ -6,6 +6,10 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { StaffTopBar } from './staff-top-bar';
 import { NewBottomNav } from './new-bottom-nav';
+import { authHeaders } from '../lib/api';
+import { projectId } from '/utils/supabase/info';
+
+const SERVER_URL = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
 type UserRole = 
   | 'yonetici'
@@ -47,6 +51,9 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'announcements' | 'pinned' | 'info'>('announcements');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [apiError, setApiError] = useState('');
 
   // Form state
   const [formTitle, setFormTitle] = useState('');
@@ -72,40 +79,38 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
   }, []);
 
   const loadUserRole = () => {
-    // localStorage kaldırıldı - prop'tan alıyoruz
     setCurrentUserRole(userRole as UserRole);
   };
 
-  const loadAnnouncements = () => {
-    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
-    // Boş başlıyoruz
-  };
-
-  const saveAnnouncements = (data: Announcement[]) => {
-    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
-    setAnnouncements(data);
+  const loadAnnouncements = async () => {
+    setLoading(true);
+    setApiError('');
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${SERVER_URL}/announcements`, { headers });
+      const data = await res.json();
+      if (!res.ok) {
+        setApiError(data.error || 'Duyurular yüklenemedi.');
+        console.error('Load announcements error:', data.error);
+        return;
+      }
+      setAnnouncements(data.announcements || []);
+    } catch (err) {
+      console.error('Load announcements error:', err);
+      setApiError('Bağlantı hatası.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const cleanupAnnouncements = () => {
-    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
-    try {
-      const data: Announcement[] = announcements;
-      const now = new Date();
-      
-      const filtered = data.filter(a => {
-        // Remove expired temporary announcements
-        if (a.type === 'temporary' && a.endDate) {
-          return new Date(a.endDate) >= now;
-        }
-        return true;
-      });
-
-      if (filtered.length !== data.length) {
-        saveAnnouncements(filtered);
-      }
-    } catch (error) {
-      console.error('Error cleaning up announcements:', error);
-    }
+    // Server tarafında zaten süresi dolmuş olanlar filtreleniyor.
+    // Sadece client state'i temizle.
+    const now = new Date();
+    setAnnouncements(prev => prev.filter(a => {
+      if (a.type === 'temporary' && a.endDate) return new Date(a.endDate) >= now;
+      return true;
+    }));
   };
 
   const canCreateAnnouncement = (): boolean => {
@@ -164,51 +169,58 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
     setFormPriority('medium');
   };
 
-  const handleSaveAnnouncement = () => {
+  const handleSaveAnnouncement = async () => {
     if (!formTitle.trim() || !formMessage.trim()) {
       alert('Lütfen başlık ve mesaj alanlarını doldurun!');
       return;
     }
-
     if (formType === 'temporary' && !formEndDate) {
       alert('Lütfen bitiş tarihi seçin veya farklı bir duyuru tipi seçin!');
       return;
     }
 
-    if (editingAnnouncement) {
-      // Update existing
-      const updated = announcements.map(a => 
-        a.id === editingAnnouncement.id
-          ? {
-              ...a,
-              title: formTitle,
-              message: formMessage,
-              photo: formPhoto || undefined,
-              type: formType,
-              endDate: formType === 'temporary' ? formEndDate : undefined,
-              priority: formPriority,
-            }
-          : a
-      );
-      saveAnnouncements(updated);
-    } else {
-      // Create new
-      const newAnnouncement: Announcement = {
-        id: Date.now().toString(),
+    setSaving(true);
+    try {
+      const headers = await authHeaders();
+      const body = {
         title: formTitle,
         message: formMessage,
-        photo: formPhoto || undefined,
+        photo: formPhoto || null,
         type: formType,
-        endDate: formType === 'temporary' ? formEndDate : undefined,
+        endDate: formType === 'temporary' ? formEndDate : null,
         priority: formPriority,
-        createdAt: new Date().toISOString(),
-        createdBy: userName,
-        createdByRole: currentUserRole,
       };
-      saveAnnouncements([newAnnouncement, ...announcements]);
-    }
 
-    handleCloseModal();
+      let res: Response;
+      if (editingAnnouncement) {
+        res = await fetch(`${SERVER_URL}/announcements/${editingAnnouncement.id}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify(body),
+        });
+      } else {
+        res = await fetch(`${SERVER_URL}/announcements`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+      }
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Duyuru kaydedilemedi.');
+        return;
+      }
+
+      // Listeyi yenile
+      await loadAnnouncements();
+      handleCloseModal();
+    } catch (err) {
+      console.error('Save announcement error:', err);
+      alert('Bağlantı hatası. Tekrar deneyin.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDeleteClick = (id: string) => {
@@ -216,13 +228,29 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
     setShowDeleteConfirm(true);
   };
 
-  const handleConfirmDelete = () => {
-    if (deletingId) {
-      const filtered = announcements.filter(a => a.id !== deletingId);
-      saveAnnouncements(filtered);
+  const handleConfirmDelete = async () => {
+    if (!deletingId) return;
+    setSaving(true);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${SERVER_URL}/announcements/${deletingId}`, {
+        method: 'DELETE',
+        headers,
+      });
+      if (res.ok) {
+        setAnnouncements(prev => prev.filter(a => a.id !== deletingId));
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Duyuru silinemedi.');
+      }
+    } catch (err) {
+      console.error('Delete announcement error:', err);
+      alert('Bağlantı hatası.');
+    } finally {
+      setSaving(false);
+      setShowDeleteConfirm(false);
+      setDeletingId(null);
     }
-    setShowDeleteConfirm(false);
-    setDeletingId(null);
   };
 
   const handleCancelDelete = () => {
@@ -397,8 +425,8 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
         />
       )}
 
-      {/* Create Button - Only shown for authorized users and staff */}
-      {canCreateAnnouncement() && ['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
+      {/* Create Button - Yetkili tüm roller için */}
+      {canCreateAnnouncement() && (
         <div className="sticky top-[73px] z-30 px-4 pt-4">
           <button
             onClick={() => handleOpenModal()}
@@ -411,7 +439,7 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
       )}
 
       {/* Tabs */}
-      <div className={`sticky ${['personel', 'operasyon', 'bekleyen'].includes(userRole) ? 'top-[73px]' : 'top-0'} z-20 backdrop-blur-xl bg-[#1a1a2e]/80 border-b border-white/10 px-4`}>
+      <div className="sticky top-[73px] z-20 backdrop-blur-xl bg-[#1a1a2e]/80 border-b border-white/10 px-4">
         <div className="flex gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <button
             onClick={() => setActiveTab('announcements')}
@@ -492,7 +520,22 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
 
       {/* Announcements List */}
       <div className="p-4 space-y-4">
-        {sortedAnnouncements.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-16">
+            <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-4 animate-pulse">
+              <Megaphone className="w-8 h-8 text-gray-500" />
+            </div>
+            <p className="text-gray-400 text-sm">Duyurular yükleniyor...</p>
+          </div>
+        ) : apiError ? (
+          <div className="text-center py-16">
+            <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8 text-red-400" />
+            </div>
+            <p className="text-red-400 text-sm">{apiError}</p>
+            <button onClick={loadAnnouncements} className="mt-3 text-xs text-[#a8e6cf] underline">Tekrar dene</button>
+          </div>
+        ) : sortedAnnouncements.length === 0 ? (
           <div className="text-center py-16">
             <div className="w-20 h-20 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-4">
               <Bell className="w-10 h-10 text-gray-500" />
@@ -856,9 +899,12 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
                   </button>
                   <button
                     onClick={handleSaveAnnouncement}
-                    className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] text-[#0d4d2d] font-bold shadow-lg hover:shadow-[#a8e6cf]/20 transition-all active:scale-95"
+                    disabled={saving}
+                    className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] text-[#0d4d2d] font-bold shadow-lg hover:shadow-[#a8e6cf]/20 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
-                    {editingAnnouncement ? 'Güncelle' : 'Oluştur'}
+                    {saving ? (
+                      <><span className="w-4 h-4 border-2 border-[#0d4d2d]/40 border-t-[#0d4d2d] rounded-full animate-spin inline-block" /> Kaydediliyor...</>
+                    ) : editingAnnouncement ? 'Güncelle' : 'Oluştur'}
                   </button>
                 </div>
               </div>
@@ -899,9 +945,12 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
                   </button>
                   <button
                     onClick={handleConfirmDelete}
-                    className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-br from-[#ffb3ba] to-[#ff8a8f] text-white font-bold shadow-lg hover:shadow-[#ffb3ba]/20 transition-all active:scale-95"
+                    disabled={saving}
+                    className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-br from-[#ffb3ba] to-[#ff8a8f] text-white font-bold shadow-lg hover:shadow-[#ffb3ba]/20 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
-                    Sil
+                    {saving ? (
+                      <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block" /> Siliniyor...</>
+                    ) : 'Sil'}
                   </button>
                 </div>
               </div>

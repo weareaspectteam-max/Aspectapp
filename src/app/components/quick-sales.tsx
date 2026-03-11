@@ -9,7 +9,7 @@ import {
   getGunlukStok, postAcilis, postKapanis,
   bosStok, bugunTarih,
   stokAlanAdi, stokAlanEmoji,
-  type StokSayim, type StokGunluk, type StokEkleme, type PrinterKapanis,
+  type StokSayim, type StokGunluk, type StokEkleme, type PrinterKapanis, type VardiyaSatis, type KareKayit,
 } from '../services/stock-service';
 import { buildHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
@@ -25,15 +25,8 @@ interface Project {
   icon: string;
 }
 
-interface Sale {
-  id: string;
-  product: string;
-  price: number;
-  originalPrice: number;
-  discount: number;
-  time: string;
-  project: string;
-}
+// Sale artık VardiyaSatis — display helper olarak kullanılır
+type Sale = VardiyaSatis & { project?: string };
 
 interface CartItem {
   product: string;
@@ -80,13 +73,10 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
   const [discountAmount, setDiscountAmount] = useState('');
   const [showPaymentMethod, setShowPaymentMethod] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'iban' | 'card' | null>(null);
-  const [recentSales, setRecentSales] = useState<Sale[]>([
-    { id: '1', product: "2× 5'li", price: 1800, originalPrice: 2000, discount: 200, time: '2 dk önce', project: 'ZOKA Beach Club' },
-    { id: '2', product: "1× 3'lü", price: 600, originalPrice: 600, discount: 0, time: '5 dk önce', project: 'ZOKA Beach Club' },
-    { id: '3', product: "3× 7'li", price: 3600, originalPrice: 4200, discount: 600, time: '8 dk önce', project: 'ZOKA Beach Club' },
-    { id: '4', product: '1× Paspartu', price: 200, originalPrice: 200, discount: 0, time: '12 dk önce', project: 'ZOKA Beach Club' },
-    { id: '5', product: "1× 9'lu", price: 1800, originalPrice: 1800, discount: 0, time: '15 dk önce', project: 'ZOKA Beach Club' },
-  ]);
+  const [recentSales, setRecentSales] = useState<Sale[]>([]);
+  const [satisSaving, setSatisSaving] = useState(false);
+  // Gerçek mekan ID'si — preSelectedProject için '1' placeholder'ı replace edilir
+  const [resolvedMekanId, setResolvedMekanId] = useState<string>('');
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelSaleId, setCancelSaleId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
@@ -105,6 +95,8 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
   const [showManualPicker, setShowManualPicker] = useState(false);
   const [manualSearch, setManualSearch] = useState('');
   const [frameShowSuccess, setFrameShowSuccess] = useState(false);
+  const [frameSaving, setFrameSaving] = useState(false);
+  const [frameEntries, setFrameEntries] = useState<any[]>([]);
 
   // ── SHIFT START state ──
   const [stokGunluk, setStokGunluk] = useState<StokGunluk | null>(null);
@@ -169,10 +161,48 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
     load();
   }, []);
 
-  // Load rotation personnel when project changes
+  // Proje değişince: mekan ID resolve et → stok + rotasyon yükle
   useEffect(() => {
     if (!selectedProject) return;
     const load = async () => {
+      const hdr = buildHeaders(accessToken);
+      const tarih = bugunTarih();
+
+      // ── 1. Mekanlar → gerçek ID resolve et ──────────────
+      let realMekanId = selectedProject.id;
+      try {
+        const mekanRes = await fetch(`${API_BASE_QS}/mekanlar`, { headers: hdr });
+        if (mekanRes.ok) {
+          const { mekanlar } = await mekanRes.json();
+          // Önce ID ile eşleş (manager flow), bulamazsa name ile (staff flow, id='1')
+          const mekan = (mekanlar || []).find(
+            (m: any) => m.id === selectedProject.id || m.name === selectedProject.name
+          );
+          if (mekan) {
+            realMekanId = mekan.id;
+            setMekanPrintType(mekan.printType === 'tam' ? 'tam' : 'yarim');
+            const paperRes = await fetch(`${API_BASE_QS}/maliyetler`, { headers: hdr });
+            if (paperRes.ok) {
+              const { papers } = await paperRes.json();
+              const allPapers = (papers || []).filter((p: any) => p.pcsPerBox && p.setsPerBox);
+              setAvailablePapers(allPapers);
+              if (mekan.paperType) {
+                const paper = allPapers.find((p: any) => p.id === mekan.paperType)
+                           || allPapers.find((p: any) => p.name === mekan.paperType);
+                if (paper) {
+                  setMekanKapasite(Number(paper.pcsPerBox) / Number(paper.setsPerBox));
+                  setMekanCurrency(paper.currency || 'TRY');
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.log('Mekan verisi yüklenemedi:', e);
+      }
+      setResolvedMekanId(realMekanId);
+
+      // ── 2. Rotasyon personeli ────────────────────────────
       const today = new Date().toISOString().split('T')[0];
       const tasks = await getTasks();
       const todayTasks = (Array.isArray(tasks) ? tasks : []).filter(t =>
@@ -192,10 +222,9 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
       });
       setRotationPersonnel(list);
 
-      // Stok verisini yükle
+      // ── 3. Stok (gerçek ID ile) ──────────────────────────
       setStokYukleniyor(true);
-      const tarih = bugunTarih();
-      const stokData = await getGunlukStok(selectedProject.id, tarih);
+      const stokData = await getGunlukStok(realMekanId, tarih);
       setStokGunluk(stokData.bugun);
       setDunKapanis(stokData.dunKapanis);
       setStokEklemeler(stokData.eklemeler || []);
@@ -214,38 +243,10 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
       }
       setStokYukleniyor(false);
 
-      // Mekan'ın kağıt tipi + kapasite bilgisini yükle (canlı hesaplama için)
-      try {
-        const hdr = buildHeaders(accessToken);
-        const mekanRes = await fetch(`${API_BASE_QS}/mekanlar`, { headers: hdr });
-        if (mekanRes.ok) {
-          const { mekanlar } = await mekanRes.json();
-          const mekan = (mekanlar || []).find((m: any) => m.id === selectedProject.id);
-          if (mekan) {
-            setMekanPrintType(mekan.printType === 'tam' ? 'tam' : 'yarim');
-            const paperRes = await fetch(`${API_BASE_QS}/maliyetler`, { headers: hdr });
-            if (paperRes.ok) {
-              const { papers } = await paperRes.json();
-              const allPapers = (papers || []).filter((p: any) => p.pcsPerBox && p.setsPerBox);
-              setAvailablePapers(allPapers);
-              if (mekan.paperType) {
-                // Önce ID ile eşleştir (doğru format), bulamazsa eski kayıtlar için isimle dene
-                const paper = allPapers.find((p: any) => p.id === mekan.paperType)
-                           || allPapers.find((p: any) => p.name === mekan.paperType);
-                if (paper) {
-                  setMekanKapasite(Number(paper.pcsPerBox) / Number(paper.setsPerBox));
-                  setMekanCurrency(paper.currency || 'TRY');
-                  console.log(`Mekan kağıt kapasite: ${paper.name} → ${Number(paper.pcsPerBox) / Number(paper.setsPerBox)}/takım`);
-                } else {
-                  console.log(`paperType "${mekan.paperType}" eşleşmedi. Papers:`, allPapers.map((p:any) => `${p.id}:${p.name}`));
-                }
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.log('Mekan kağıt verisi yüklenemedi:', e);
-      }
+      // ── 4. Satışlar ve kare kayıtları stok kaydından gelir ──
+      const gunlukSatislar = (stokData.bugun?.satislar || []).filter((s: any) => !s.iptal);
+      setRecentSales(gunlukSatislar);
+      setFrameEntries(stokData.bugun?.kareKayitlari || []);
     };
     load();
   }, [selectedProject]);
@@ -298,52 +299,111 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
     setShowPaymentMethod(true);
   };
 
-  const handleCompleteSale = () => {
+  const handleCompleteSale = async () => {
     if (!paymentMethod || !selectedProject) return;
-    const cartSummary = cart.map(i => `${i.quantity}× ${i.product}`).join(', ');
     const discount = Number(discountAmount) || 0;
-    setRecentSales([{
-      id: Date.now().toString(),
-      product: cartSummary,
-      price: totalPrice - discount,
-      originalPrice: totalPrice,
-      discount,
-      time: 'şimdi',
-      project: selectedProject.name,
-    }, ...recentSales.slice(0, 4)]);
-    setCart([]); setDiscountAmount(''); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null);
+    const mekanId = resolvedMekanId || selectedProject.id;
+    const tarih = bugunTarih();
+
+    setSatisSaving(true);
+    try {
+      const hdr = buildHeaders(accessToken);
+      const res = await fetch(`${API_BASE_QS}/stok/satis`, {
+        method: 'POST',
+        headers: hdr,
+        body: JSON.stringify({
+          mekanId,
+          tarih,
+          items: cart.map(i => ({ product: i.product, quantity: i.quantity, unitPrice: i.unitPrice, color: i.color })),
+          totalPrice,
+          discount,
+          paymentMethod,
+          currency: selectedCurrency || 'TRY',
+          currencyPrice: selectedCurrency ? Number(calculateForeignCurrency()) : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        console.error('Satış kayıt hatası:', data.error);
+        alert(data.error || 'Satış kaydedilemedi.');
+        return;
+      }
+      // Listeye ekle (aktif satışlar, iptal edilmemiş)
+      setRecentSales(prev => [{ ...data.satis, project: selectedProject.name }, ...prev]);
+    } catch (err) {
+      console.error('handleCompleteSale error:', err);
+      alert('Bağlantı hatası. Satış kaydedilemedi.');
+      return;
+    } finally {
+      setSatisSaving(false);
+    }
+    setCart([]); setDiscountAmount(''); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null);
   };
 
   const openCancelModal = (id: string) => { setCancelSaleId(id); setShowCancelModal(true); };
   const closeCancelModal = () => { setShowCancelModal(false); setCancelSaleId(null); setCancelReason(''); };
-  const confirmCancelSale = () => {
+  const confirmCancelSale = async () => {
     if (!cancelReason.trim()) { alert('Lütfen iptal sebebini yazın'); return; }
-    if (cancelSaleId && confirm(`Bu satışı iptal etmek istediğinize emin misiniz?\n\nSebep: ${cancelReason}`)) {
-      setRecentSales(recentSales.filter(s => s.id !== cancelSaleId));
-      closeCancelModal();
+    if (!cancelSaleId || !selectedProject) return;
+    const mekanId = resolvedMekanId || selectedProject.id;
+    const tarih = bugunTarih();
+    try {
+      const hdr = buildHeaders(accessToken);
+      const res = await fetch(`${API_BASE_QS}/stok/satis/${mekanId}/${tarih}/${cancelSaleId}`, {
+        method: 'DELETE',
+        headers: hdr,
+        body: JSON.stringify({ neden: cancelReason }),
+      });
+      if (res.ok) {
+        setRecentSales(prev => prev.filter(s => s.id !== cancelSaleId));
+        closeCancelModal();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Satış iptal edilemedi.');
+      }
+    } catch (err) {
+      console.error('confirmCancelSale error:', err);
+      alert('Bağlantı hatası.');
     }
   };
 
-  // Frame tracking
-  const handleFrameSave = () => {
+  const handleFrameSave = async () => {
     if (!framePhotographer || !frameCount || !selectedProject) return;
     const count = parseInt(frameCount);
     if (isNaN(count) || count <= 0) return;
-    const entry = {
-      id: `entry-${Date.now()}`,
-      photographerName: framePhotographer.name,
-      photographerId: framePhotographer.id,
-      frameCount: count,
-      location: selectedProject.name,
-      locationIcon: selectedProject.icon,
-      timestamp: new Date().toISOString(),
-      enteredBy: userName,
-    };
-    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
-    setFramePhotographer(null);
-    setFrameCount('');
-    setFrameShowSuccess(true);
-    setTimeout(() => setFrameShowSuccess(false), 2500);
+    const mekanId = resolvedMekanId || selectedProject.id;
+    const tarih = bugunTarih();
+
+    setFrameSaving(true);
+    try {
+      const headers = buildHeaders(accessToken);
+      const res = await fetch(`${API_BASE_QS}/stok/kare`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          mekanId,
+          tarih,
+          photographerName: framePhotographer.name,
+          photographerId: framePhotographer.id,
+          frameCount: count,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Kare kaydedilemedi.');
+        return;
+      }
+      setFrameEntries(prev => [...prev, data.entry]);
+      setFramePhotographer(null);
+      setFrameCount('');
+      setFrameShowSuccess(true);
+      setTimeout(() => setFrameShowSuccess(false), 2500);
+    } catch (err) {
+      console.error('handleFrameSave error:', err);
+      alert('Bağlantı hatası. Tekrar deneyin.');
+    } finally {
+      setFrameSaving(false);
+    }
   };
 
   const filteredManualStaff = allStaff.filter(s =>
@@ -440,7 +500,8 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
     if (!selectedProject) return;
     setStokKaydediliyor(true);
     const tarih = bugunTarih();
-    const result = await postAcilis(selectedProject.id, tarih, acilisSayim, acilisNot);
+    const mekanId = resolvedMekanId || selectedProject.id;
+    const result = await postAcilis(mekanId, tarih, acilisSayim, acilisNot);
     setStokKaydediliyor(false);
     if (result) {
       setStokGunluk(result.kayit);
@@ -490,7 +551,8 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
       iadeFotograf: Number(printerIadePhotos[pr.id] || 0),
     }));
 
-    const result = await postKapanis(selectedProject.id, tarih, finalKapanisSayim, kapanisNot, printerData);
+    const mekanId = resolvedMekanId || selectedProject.id;
+    const result = await postKapanis(mekanId, tarih, finalKapanisSayim, kapanisNot, printerData);
     setStokKaydediliyor(false);
     if (result) {
       setKapanisAnomali(result.anomali || {});
@@ -1070,35 +1132,67 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
 
               {/* Recent Sales */}
               <div>
-                <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">Son Satışlar <span className="text-lg">📊</span></h3>
+                <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                  Bugünkü Satışlar <span className="text-lg">📊</span>
+                  {recentSales.length > 0 && (
+                    <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full bg-[#a8e6cf]/20 text-[#a8e6cf]">
+                      ₺{recentSales.reduce((s, sale) => s + (sale.finalPrice || sale.totalPrice - sale.discount), 0).toLocaleString('tr-TR')}
+                    </span>
+                  )}
+                </h3>
+                {satisSaving && (
+                  <div className="flex items-center gap-2 text-xs text-[#a8e6cf] mb-2">
+                    <span className="w-3 h-3 border-2 border-[#a8e6cf]/40 border-t-[#a8e6cf] rounded-full animate-spin" />
+                    Satış kaydediliyor...
+                  </div>
+                )}
                 <div className="space-y-2">
-                  {recentSales.map(sale => (
-                    <div key={sale.id} className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-xl p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] flex items-center justify-center text-[#2d3748] text-xl shadow-md">✓</div>
-                          <div>
-                            <div className="font-semibold text-white">{sale.product}</div>
-                            <div className="text-xs text-gray-400 flex items-center gap-2">
-                              <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{sale.time}</span>
-                              <span className="text-[#9dd9ea]">• {sale.project}</span>
+                  {recentSales.length === 0 ? (
+                    <div className="bg-white/5 rounded-xl p-4 border border-white/10 text-center">
+                      <div className="text-2xl mb-1">📋</div>
+                      <div className="text-xs text-gray-400">Henüz satış kaydı yok</div>
+                    </div>
+                  ) : recentSales.map(sale => {
+                    const itemSummary = sale.items?.map(i => `${i.quantity}× ${i.product}`).join(', ') || '—';
+                    const saleTime = sale.timestamp
+                      ? new Date(sale.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                      : '—';
+                    const pmIcon = sale.paymentMethod === 'cash' ? '💵' : sale.paymentMethod === 'iban' ? '🏦' : '💳';
+                    return (
+                      <div key={sale.id} className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-xl p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] flex items-center justify-center text-[#2d3748] text-lg shadow-md flex-shrink-0">✓</div>
+                            <div className="min-w-0">
+                              <div className="font-semibold text-white text-sm truncate max-w-[160px]">{itemSummary}</div>
+                              <div className="text-xs text-gray-400 flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{saleTime}</span>
+                                <span>{pmIcon} {sale.paymentMethod === 'cash' ? 'Nakit' : sale.paymentMethod === 'iban' ? 'IBAN' : 'Kart'}</span>
+                                {sale.currency !== 'TRY' && sale.currencyPrice && (
+                                  <span className="text-[#ffd4a3]">{sale.currency} {sale.currencyPrice}</span>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-right">
-                            <div className="font-bold text-white">₺{sale.price}</div>
-                            {sale.discount > 0 && <div className="text-xs text-[#ffd4a3] font-semibold flex items-center gap-1 justify-end"><Tag className="w-3 h-3" />₺{sale.discount} iskonto</div>}
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <div className="text-right">
+                              <div className="font-bold text-white text-sm">₺{(sale.finalPrice ?? sale.totalPrice - sale.discount).toLocaleString('tr-TR')}</div>
+                              {sale.discount > 0 && (
+                                <div className="text-xs text-[#ffd4a3] flex items-center gap-1 justify-end">
+                                  <Tag className="w-3 h-3" />₺{sale.discount} indirim
+                                </div>
+                              )}
+                            </div>
+                            {cart.length === 0 && (
+                              <button onClick={() => openCancelModal(sale.id)} className="w-8 h-8 rounded-lg bg-destructive/10 hover:bg-destructive/20 flex items-center justify-center transition-all active:scale-95">
+                                <XCircle className="w-4 h-4 text-destructive" />
+                              </button>
+                            )}
                           </div>
-                          {cart.length === 0 && (
-                            <button onClick={() => openCancelModal(sale.id)} className="w-9 h-9 rounded-lg bg-destructive/10 hover:bg-destructive/20 flex items-center justify-center transition-all active:scale-95">
-                              <XCircle className="w-5 h-5 text-destructive" />
-                            </button>
-                          )}
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -1191,15 +1285,48 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
                     </div>
                     <button
                       onClick={handleFrameSave}
-                      disabled={!frameCount || parseInt(frameCount) <= 0}
-                      className={`w-full py-4 rounded-2xl font-black text-base transition-all ${
-                        frameCount && parseInt(frameCount) > 0
+                      disabled={!frameCount || parseInt(frameCount) <= 0 || frameSaving}
+                      className={`w-full py-4 rounded-2xl font-black text-base transition-all flex items-center justify-center gap-2 ${
+                        frameCount && parseInt(frameCount) > 0 && !frameSaving
                           ? 'bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] shadow-xl active:scale-95'
                           : 'bg-white/10 text-gray-500 cursor-not-allowed'
                       }`}
                     >
-                      ✅ Kareyi Kaydet
+                      {frameSaving ? (
+                        <><span className="w-5 h-5 border-2 border-[#2d3748]/40 border-t-[#2d3748] rounded-full animate-spin" /> Kaydediliyor...</>
+                      ) : '✅ Kareyi Kaydet'}
                     </button>
+                  </div>
+                </div>
+              )}
+
+
+              {/* Günün Kare Kayıtları */}
+              {frameEntries.length > 0 && (
+                <div className="backdrop-blur-xl bg-gradient-to-br from-white/8 to-white/3 border border-white/15 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Film className="w-4 h-4 text-[#d4b5f7]" />
+                    <span className="font-black text-white text-sm">Bugünün Kayıtları</span>
+                    <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full bg-[#d4b5f7]/20 text-[#d4b5f7]">
+                      {frameEntries.reduce((s: number, e: any) => s + (e.frameCount || 0), 0)} kare
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {frameEntries.map((entry: any) => (
+                      <div key={entry.id} className="flex items-center gap-3 bg-white/5 rounded-xl px-3 py-2.5 border border-white/10">
+                        <div className="w-8 h-8 rounded-lg bg-[#d4b5f7]/20 flex items-center justify-center text-sm flex-shrink-0">📸</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-white text-xs truncate">{entry.photographerName}</div>
+                          <div className="text-xs text-gray-400">
+                            {new Date(entry.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="font-black text-[#9dd9ea] text-sm">{entry.frameCount}</div>
+                          <div className="text-xs text-gray-500">kare</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -2113,10 +2240,14 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
                 <button
                   type="button"
                   onClick={handleCompleteSale}
-                  disabled={!paymentMethod}
-                  className={`py-4 rounded-2xl font-bold text-base transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg ${paymentMethod ? 'bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] text-[#2d3748] hover:shadow-xl cursor-pointer' : 'bg-white/5 text-gray-600 cursor-not-allowed opacity-50 border-2 border-white/10'}`}
+                  disabled={!paymentMethod || satisSaving}
+                  className={`py-4 rounded-2xl font-bold text-base transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg ${paymentMethod && !satisSaving ? 'bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] text-[#2d3748] hover:shadow-xl cursor-pointer' : 'bg-white/5 text-gray-600 cursor-not-allowed opacity-50 border-2 border-white/10'}`}
                 >
-                  <CheckCircle className="w-5 h-5" /> Satışı Yap
+                  {satisSaving ? (
+                    <><span className="w-4 h-4 border-2 border-[#2d3748]/40 border-t-[#2d3748] rounded-full animate-spin" /> Kaydediliyor...</>
+                  ) : (
+                    <><CheckCircle className="w-5 h-5" /> Satışı Yap</>
+                  )}
                 </button>
               </div>
             </div>

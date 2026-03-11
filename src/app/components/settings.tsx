@@ -1,17 +1,28 @@
 import { useState, useEffect } from 'react';
-import { Camera, Mail, Lock, User, Save, Eye, EyeOff, Shield, Bell, CheckCircle, Cake } from 'lucide-react';
+import { Camera, Mail, Lock, User, Save, Eye, EyeOff, Shield, Bell, CheckCircle, Cake, Loader2 } from 'lucide-react';
 import { StaffTopBar } from './staff-top-bar';
 import { NewBottomNav } from './new-bottom-nav';
+import { authHeaders } from '../lib/api';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+
+const SERVER_URL = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
 interface SettingsProps {
   userName: string;
   userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
+  userAvatar: string;
+  userEmail: string;
+  userBirthDate: string;
+  accessToken: string;
+  onAvatarChange: (avatar: string) => void;
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
 
-export function Settings({ userName, userRole, onLogout, onNavigate }: SettingsProps) {
-  const [email, setEmail] = useState('ahmet.kaya@aspectops.com');
+export function Settings({ userName, userRole, userAvatar, userEmail, userBirthDate, accessToken, onAvatarChange, onLogout, onNavigate }: SettingsProps) {
+  const [email, setEmail] = useState(userEmail || '');
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [emailError, setEmailError] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -21,51 +32,152 @@ export function Settings({ userName, userRole, onLogout, onNavigate }: SettingsP
   const [notifications, setNotifications] = useState(true);
   const [emailNotifications, setEmailNotifications] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
-  const [birthday, setBirthday] = useState('');
+  const [successText, setSuccessText] = useState('Değişiklikler kaydedildi!');
   const [hideBirthdayFromOthers, setHideBirthdayFromOthers] = useState(false);
   const [hideOthersBirthdays, setHideOthersBirthdays] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
+  const [birthdaySaving, setBirthdaySaving] = useState(false);
+  const [birthdayError, setBirthdayError] = useState('');
+  const [birthdayLoading, setBirthdayLoading] = useState(true);
 
-  // Load birthday from localStorage on mount
+  const avatarOptions = [
+    '👨‍💼', '👩‍💼', '😊', '🤓', '😎', '👨‍🎨', '👩‍🎨', '🧑‍💻', '👨‍🔧', '👩‍🔧',
+    '👨‍⚖️', '👩‍⚖️', '👨‍🏫', '👩‍🏫', '👨‍⚕️', '👩‍⚕️',
+    '👨‍🎤', '👩‍🎤', '👨‍🍳', '👩‍🍳',
+    '🧑‍🚀', '👨‍🔬', '👩‍🔬', '🧙‍♂️', '🧙‍♀️',
+    '🥳', '🤩', '🥰', '😇', '🤠',
+    '🦸‍♂️', '🦸‍♀️', '🧝‍♂️', '🧝‍♀️', '🧞'
+  ];
+
+  // Mevcut avatar ile başlat
+  const [selectedAvatar, setSelectedAvatar] = useState(userAvatar || '👨‍💼');
+
+  // userAvatar prop değişince sync et
   useEffect(() => {
-    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
+    setSelectedAvatar(userAvatar || '👨‍💼');
+  }, [userAvatar]);
+
+  // userEmail prop değişince emaili sync et
+  useEffect(() => {
+    if (userEmail) setEmail(userEmail);
+  }, [userEmail]);
+
+  // Doğum günü gizlilik ayarlarını sunucudan yükle (tarih profilden geliyor)
+  useEffect(() => {
+    const loadBirthday = async () => {
+      setBirthdayLoading(true);
+      try {
+        const headers = await authHeaders();
+        const res = await fetch(`${SERVER_URL}/birthday`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          setHideBirthdayFromOthers(data.hideBirthdayFromOthers || false);
+          setHideOthersBirthdays(data.hideOthersBirthdays || false);
+        }
+      } catch (err) {
+        console.error('Birthday load error:', err);
+      } finally {
+        setBirthdayLoading(false);
+      }
+    };
+    loadBirthday();
   }, []);
 
-  const handleSaveBirthday = () => {
-    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
+  const showSuccess = (text = 'Değişiklikler kaydedildi!') => {
+    setSuccessText(text);
     setShowSuccessMessage(true);
     setTimeout(() => setShowSuccessMessage(false), 3000);
   };
 
-  const handleSaveEmail = () => {
-    setShowSuccessMessage(true);
-    setTimeout(() => setShowSuccessMessage(false), 3000);
+  const handleSaveBirthday = async () => {
+    setBirthdaySaving(true);
+    setBirthdayError('');
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${SERVER_URL}/birthday`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ hideBirthdayFromOthers, hideOthersBirthdays }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBirthdayError(data.error || 'Ayarlar kaydedilemedi.');
+        return;
+      }
+      showSuccess('Doğum günü ayarları kaydedildi! 🎂');
+    } catch (err) {
+      console.error('Birthday save error:', err);
+      setBirthdayError('Bağlantı hatası. Tekrar deneyin.');
+    } finally {
+      setBirthdaySaving(false);
+    }
+  };
+
+  const handleSaveEmail = async () => {
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed || trimmed === userEmail) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setEmailError('Geçerli bir e-posta adresi girin.');
+      return;
+    }
+    setEmailSaving(true);
+    setEmailError('');
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${SERVER_URL}/auth/profile`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ email: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEmailError(data.error || 'E-posta güncellenemedi.');
+        return;
+      }
+      showSuccess('E-posta güncellendi! ✉️');
+    } catch (err) {
+      console.error('Email save error:', err);
+      setEmailError('Bağlantı hatası. Tekrar deneyin.');
+    } finally {
+      setEmailSaving(false);
+    }
   };
 
   const handleChangePassword = () => {
     if (newPassword === confirmPassword && newPassword.length >= 6) {
-      setShowSuccessMessage(true);
+      showSuccess('Şifre güncellendi!');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      setTimeout(() => setShowSuccessMessage(false), 3000);
     }
   };
 
-  const avatarOptions = [
-    // Mevcut (10)
-    '👨‍💼', '👩‍💼', '😊', '🤓', '😎', '👨‍🎨', '👩‍🎨', '🧑‍💻', '👨‍🔧', '👩‍🔧',
-    // Profesyonel Seri (6)
-    '👨‍⚖️', '👩‍⚖️', '👨‍🏫', '👩‍🏫', '👨‍⚕️', '👩‍⚕️',
-    // Yaratıcı Seri (4)
-    '👨‍🎤', '👩‍🎤', '👨‍🍳', '👩‍🍳',
-    // Teknoloji Seri (5)
-    '🧑‍🚀', '👨‍🔬', '👩‍🔬', '🧙‍♂️', '🧙‍♀️',
-    // Eğlence Seri (5)
-    '🥳', '🤩', '🥰', '😇', '🤠',
-    // Özel Seri (5)
-    '🦸‍♂️', '🦸‍♀️', '🧝‍♂️', '🧝‍♀️', '🧞'
-  ];
-  const [selectedAvatar, setSelectedAvatar] = useState('👨‍💼');
+  const handleSaveAvatar = async () => {
+    if (selectedAvatar === userAvatar) return;
+    setSavingAvatar(true);
+    setAvatarError('');
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${SERVER_URL}/auth/profile`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ avatar: selectedAvatar }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAvatarError(data.error || 'Avatar kaydedilemedi.');
+        return;
+      }
+      onAvatarChange(selectedAvatar);
+      showSuccess('Avatar güncellendi! ✨');
+    } catch (err) {
+      console.error('Avatar save error:', err);
+      setAvatarError('Bağlantı hatası. Tekrar deneyin.');
+    } finally {
+      setSavingAvatar(false);
+    }
+  };
 
   return (
     <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
@@ -86,7 +198,7 @@ export function Settings({ userName, userRole, onLogout, onNavigate }: SettingsP
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4">
           <div className="backdrop-blur-xl bg-gradient-to-br from-[#a8e6cf]/90 to-[#8dd9b8]/90 border-2 border-white/20 rounded-2xl px-6 py-4 shadow-2xl flex items-center gap-3">
             <CheckCircle className="w-6 h-6 text-white" />
-            <span className="font-bold text-white">Değişiklikler kaydedildi!</span>
+            <span className="font-bold text-white">{successText}</span>
           </div>
         </div>
       )}
@@ -108,7 +220,7 @@ export function Settings({ userName, userRole, onLogout, onNavigate }: SettingsP
             {avatarOptions.map((avatar) => (
               <button
                 key={avatar}
-                onClick={() => setSelectedAvatar(avatar)}
+                onClick={() => { setSelectedAvatar(avatar); setAvatarError(''); }}
                 className={`aspect-square rounded-2xl flex items-center justify-center text-3xl transition-all hover:scale-110 active:scale-95 ${
                   selectedAvatar === avatar
                     ? 'bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] border-3 border-white/50 shadow-lg shadow-[#9dd9ea]/30'
@@ -120,15 +232,23 @@ export function Settings({ userName, userRole, onLogout, onNavigate }: SettingsP
             ))}
           </div>
 
-          {selectedAvatar !== '👨‍💼' && (
-            <button
-              onClick={handleSaveEmail}
-              className="mt-4 w-full py-3 bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-white font-bold rounded-xl hover:shadow-lg hover:shadow-[#9dd9ea]/30 transition-all active:scale-95 flex items-center justify-center gap-2"
-            >
-              <Save className="w-5 h-5" />
-              Avatar'ı Kaydet
-            </button>
+          {/* Error */}
+          {avatarError && (
+            <p className="mt-3 text-sm text-red-400 text-center">{avatarError}</p>
           )}
+
+          {/* Save Button - always visible, disabled if same as current */}
+          <button
+            onClick={handleSaveAvatar}
+            disabled={savingAvatar || selectedAvatar === userAvatar}
+            className="mt-4 w-full py-3 bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-white font-bold rounded-xl hover:shadow-lg hover:shadow-[#9dd9ea]/30 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {savingAvatar ? (
+              <><Loader2 className="w-5 h-5 animate-spin" /> Kaydediliyor...</>
+            ) : (
+              <><Save className="w-5 h-5" /> Avatar'ı Kaydet</>
+            )}
+          </button>
         </div>
 
         {/* Email Section */}
@@ -149,18 +269,25 @@ export function Settings({ userName, userRole, onLogout, onNavigate }: SettingsP
               <input
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => { setEmail(e.target.value); setEmailError(''); }}
                 className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-[#ffd4a3] transition-all"
                 placeholder="ornek@email.com"
               />
+              {emailError && (
+                <p className="mt-2 text-sm text-red-400">{emailError}</p>
+              )}
             </div>
 
             <button
               onClick={handleSaveEmail}
-              className="w-full py-3 bg-gradient-to-br from-[#ffd4a3] to-[#ffc78f] text-[#744210] font-bold rounded-xl hover:shadow-lg hover:shadow-[#ffd4a3]/30 transition-all active:scale-95 flex items-center justify-center gap-2"
+              disabled={emailSaving || !email.trim() || email.trim().toLowerCase() === userEmail}
+              className="w-full py-3 bg-gradient-to-br from-[#ffd4a3] to-[#ffc78f] text-[#744210] font-bold rounded-xl hover:shadow-lg hover:shadow-[#ffd4a3]/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              <Save className="w-5 h-5" />
-              E-posta Güncelle
+              {emailSaving ? (
+                <><Loader2 className="w-5 h-5 animate-spin" /> Güncelleniyor...</>
+              ) : (
+                <><Save className="w-5 h-5" /> E-posta Güncelle</>
+              )}
             </button>
           </div>
         </div>
@@ -173,25 +300,30 @@ export function Settings({ userName, userRole, onLogout, onNavigate }: SettingsP
             </div>
             <div>
               <h3 className="font-bold text-white text-lg">Doğum Günü</h3>
-              <p className="text-xs text-gray-400">Doğum gününüzü ekleyin</p>
+              <p className="text-xs text-gray-400">Gizlilik tercihlerinizi ayarlayın</p>
             </div>
           </div>
 
           <div className="space-y-4">
-            <div>
-              <label className="text-sm font-semibold text-gray-300 mb-2 block">Doğum Tarihiniz</label>
-              <input
-                type="date"
-                value={birthday}
-                onChange={(e) => setBirthday(e.target.value)}
-                className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white focus:outline-none focus:border-[#ffb3ba] transition-all"
-              />
+            {/* Profilden gelen doğum tarihi — read only */}
+            <div className="p-4 bg-white/5 rounded-xl border border-white/10 flex items-center gap-3">
+              <span className="text-2xl">🎂</span>
+              <div className="flex-1">
+                <div className="text-xs text-gray-400 mb-0.5">Profilinizdeki doğum tarihi</div>
+                {userBirthDate ? (
+                  <div className="font-semibold text-white">
+                    {new Date(userBirthDate).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500 italic">Profilde doğum tarihi yok — yöneticinize bildirin</div>
+                )}
+              </div>
             </div>
 
-            {birthday && (
+            {userBirthDate && (
               <div className="p-4 bg-gradient-to-br from-[#ffb3ba]/20 to-[#ffa3aa]/10 rounded-xl border border-[#ffb3ba]/30">
                 <p className="text-sm text-gray-300">
-                  🎂 Ekip arkadaşlarınız doğum gününüzden 1 gün önce hatırlatılacak ve özel gününüzde kutlama mesajı alacaksınız!
+                  🎉 Ekip arkadaşlarınız doğum gününüzden 1 gün önce hatırlatılacak ve özel gününüzde kutlama mesajı alacaksınız!
                 </p>
               </div>
             )}
@@ -245,12 +377,18 @@ export function Settings({ userName, userRole, onLogout, onNavigate }: SettingsP
 
             <button
               onClick={handleSaveBirthday}
-              disabled={!birthday}
+              disabled={birthdaySaving || birthdayLoading}
               className="w-full py-3 bg-gradient-to-br from-[#ffb3ba] to-[#ffa3aa] text-white font-bold rounded-xl hover:shadow-lg hover:shadow-[#ffb3ba]/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              <Save className="w-5 h-5" />
-              Doğum Günü Kaydet
+              {birthdaySaving ? (
+                <><Loader2 className="w-5 h-5 animate-spin" /> Kaydediliyor...</>
+              ) : (
+                <><Save className="w-5 h-5" /> Ayarları Kaydet</>
+              )}
             </button>
+            {birthdayError && (
+              <p className="text-sm text-red-400 text-center mt-1">{birthdayError}</p>
+            )}
           </div>
         </div>
 

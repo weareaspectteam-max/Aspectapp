@@ -25,6 +25,34 @@ export const bosStok = (): StokSayim => ({
   album11: 0, album13: 0, album15: 0, paspartu: 0, ribon: 0,
 });
 
+export interface VardiyaSatis {
+  id: string;
+  items: { product: string; quantity: number; unitPrice: number; color: string }[];
+  totalPrice: number;
+  discount: number;
+  finalPrice: number;
+  paymentMethod: 'cash' | 'iban' | 'card';
+  currency: string;
+  currencyPrice?: number | null;
+  timestamp: string;
+  kaydeden?: string;
+  kaydedenId?: string;
+  iptal: boolean;
+  iptalNeden?: string | null;
+  iptalZamani?: string | null;
+  iptalEden?: string;
+}
+
+export interface KareKayit {
+  id: string;
+  photographerName: string;
+  photographerId: string;
+  frameCount: number;
+  timestamp: string;
+  kaydeden?: string;
+  kaydedenId?: string;
+}
+
 export interface StokGunluk {
   mekanId: string;
   tarih: string;
@@ -41,6 +69,8 @@ export interface StokGunluk {
   kapanisYapanAd?: string;
   kapanisAnomali?: Partial<StokSayim>;
   kapanisBeklenen?: StokSayim;
+  satislar?: VardiyaSatis[];
+  kareKayitlari?: KareKayit[];
 }
 
 export interface StokEkleme {

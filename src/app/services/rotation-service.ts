@@ -138,11 +138,10 @@ export const getLocations = async (token?: string): Promise<Location[]> => {
 // TASKS
 // ==========================================
 
-export const getTasks = async (): Promise<Task[]> => {
+export const getTasks = async (token?: string): Promise<Task[]> => {
   try {
-    const res = await fetch(`${API_BASE}/rotasyon/gorevler`, {
-      headers: await authHeaders(),
-    });
+    const headers = token ? buildHeaders(token) : await authHeaders();
+    const res = await fetch(`${API_BASE}/rotasyon/gorevler`, { headers });
     if (!res.ok) {
       console.error('getTasks error:', res.status);
       return [];
@@ -155,11 +154,12 @@ export const getTasks = async (): Promise<Task[]> => {
   }
 };
 
-export const saveTask = async (task: Task): Promise<void> => {
+export const saveTask = async (task: Task, token?: string): Promise<void> => {
   try {
+    const headers = token ? buildHeaders(token) : await authHeaders();
     const res = await fetch(`${API_BASE}/rotasyon/gorevler`, {
       method: 'POST',
-      headers: await authHeaders(),
+      headers,
       body: JSON.stringify(task),
     });
     if (!res.ok) {
@@ -171,11 +171,12 @@ export const saveTask = async (task: Task): Promise<void> => {
   }
 };
 
-export const updateTask = async (taskId: string, updates: Partial<Task>): Promise<void> => {
+export const updateTask = async (taskId: string, updates: Partial<Task>, token?: string): Promise<void> => {
   try {
+    const headers = token ? buildHeaders(token) : await authHeaders();
     const res = await fetch(`${API_BASE}/rotasyon/gorevler/${taskId}`, {
       method: 'PUT',
-      headers: await authHeaders(),
+      headers,
       body: JSON.stringify(updates),
     });
     if (!res.ok) {
@@ -188,20 +189,22 @@ export const updateTask = async (taskId: string, updates: Partial<Task>): Promis
 };
 
 export const updateMultipleTasks = async (
-  updates: Array<{ id: string; changes: Partial<Task> }>
+  updates: Array<{ id: string; changes: Partial<Task> }>,
+  token?: string
 ): Promise<void> => {
   try {
-    await Promise.all(updates.map(({ id, changes }) => updateTask(id, changes)));
+    await Promise.all(updates.map(({ id, changes }) => updateTask(id, changes, token)));
   } catch (error) {
     console.error('Error updating multiple tasks:', error);
   }
 };
 
-export const deleteTask = async (taskId: string): Promise<void> => {
+export const deleteTask = async (taskId: string, token?: string): Promise<void> => {
   try {
+    const headers = token ? buildHeaders(token) : await authHeaders();
     const res = await fetch(`${API_BASE}/rotasyon/gorevler/${taskId}`, {
       method: 'DELETE',
-      headers: await authHeaders(),
+      headers,
     });
     if (!res.ok) {
       const err = await res.json();
@@ -216,11 +219,10 @@ export const deleteTask = async (taskId: string): Promise<void> => {
 // LEAVE REQUESTS
 // ==========================================
 
-export const getLeaveRequests = async (): Promise<LeaveRequest[]> => {
+export const getLeaveRequests = async (token?: string): Promise<LeaveRequest[]> => {
   try {
-    const res = await fetch(`${API_BASE}/rotasyon/izinler`, {
-      headers: await authHeaders(),
-    });
+    const headers = token ? buildHeaders(token) : await authHeaders();
+    const res = await fetch(`${API_BASE}/rotasyon/izinler`, { headers });
     if (!res.ok) {
       console.error('getLeaveRequests error:', res.status);
       return [];
@@ -233,11 +235,12 @@ export const getLeaveRequests = async (): Promise<LeaveRequest[]> => {
   }
 };
 
-export const saveLeaveRequest = async (leave: LeaveRequest): Promise<void> => {
+export const saveLeaveRequest = async (leave: LeaveRequest, token?: string): Promise<void> => {
   try {
+    const headers = token ? buildHeaders(token) : await authHeaders();
     const res = await fetch(`${API_BASE}/rotasyon/izinler`, {
       method: 'POST',
-      headers: await authHeaders(),
+      headers,
       body: JSON.stringify(leave),
     });
     if (!res.ok) {
@@ -251,23 +254,26 @@ export const saveLeaveRequest = async (leave: LeaveRequest): Promise<void> => {
 
 export const updateLeaveStatus = async (
   leaveId: string,
-  status: 'pending' | 'approved' | 'rejected'
+  status: 'pending' | 'approved' | 'rejected',
+  token?: string
 ): Promise<void> => {
   const updates: Partial<LeaveRequest> = { status };
   if (status === 'rejected') {
     (updates as any).rejectedAt = new Date().toISOString();
   }
-  await updateLeaveRequest(leaveId, updates);
+  await updateLeaveRequest(leaveId, updates, token);
 };
 
 export const updateLeaveRequest = async (
   leaveId: string,
-  updatedLeave: Partial<LeaveRequest>
+  updatedLeave: Partial<LeaveRequest>,
+  token?: string
 ): Promise<void> => {
   try {
+    const headers = token ? buildHeaders(token) : await authHeaders();
     const res = await fetch(`${API_BASE}/rotasyon/izinler/${leaveId}`, {
       method: 'PUT',
-      headers: await authHeaders(),
+      headers,
       body: JSON.stringify(updatedLeave),
     });
     if (!res.ok) {
@@ -279,9 +285,9 @@ export const updateLeaveRequest = async (
   }
 };
 
-export const cleanupExpiredLeaveRequests = async (): Promise<void> => {
+export const cleanupExpiredLeaveRequests = async (token?: string): Promise<void> => {
   try {
-    const leaves = await getLeaveRequests();
+    const leaves = await getLeaveRequests(token);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -299,7 +305,7 @@ export const cleanupExpiredLeaveRequests = async (): Promise<void> => {
     });
 
     if (toDelete.length > 0) {
-      const headers = await authHeaders();
+      const headers = token ? buildHeaders(token) : await authHeaders();
       await Promise.all(
         toDelete.map(leave =>
           fetch(`${API_BASE}/rotasyon/izinler/${leave.id}`, {
@@ -318,11 +324,10 @@ export const cleanupExpiredLeaveRequests = async (): Promise<void> => {
 // DAILY ON LEAVE
 // ==========================================
 
-export const getDailyOnLeave = async (): Promise<Record<string, string[]>> => {
+export const getDailyOnLeave = async (token?: string): Promise<Record<string, string[]>> => {
   try {
-    const res = await fetch(`${API_BASE}/rotasyon/gunluk-izin`, {
-      headers: await authHeaders(),
-    });
+    const headers = token ? buildHeaders(token) : await authHeaders();
+    const res = await fetch(`${API_BASE}/rotasyon/gunluk-izin`, { headers });
     if (!res.ok) {
       console.error('getDailyOnLeave error:', res.status);
       return {};
@@ -335,11 +340,12 @@ export const getDailyOnLeave = async (): Promise<Record<string, string[]>> => {
   }
 };
 
-export const saveDailyOnLeave = async (dailyOnLeave: Record<string, string[]>): Promise<void> => {
+export const saveDailyOnLeave = async (dailyOnLeave: Record<string, string[]>, token?: string): Promise<void> => {
   try {
+    const headers = token ? buildHeaders(token) : await authHeaders();
     const res = await fetch(`${API_BASE}/rotasyon/gunluk-izin`, {
       method: 'PUT',
-      headers: await authHeaders(),
+      headers,
       body: JSON.stringify({ dailyOnLeave }),
     });
     if (!res.ok) {

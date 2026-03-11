@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Cake, X, PartyPopper } from 'lucide-react';
+import { authHeaders } from '../lib/api';
+import { projectId } from '/utils/supabase/info';
+
+const SERVER_URL = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
+const DISMISSED_KEY = 'aspect_dismissed_birthday_notifs';
 
 interface BirthdayNotification {
   id: string;
@@ -11,27 +16,98 @@ interface BirthdayNotification {
 
 export function BirthdayNotifications() {
   const [notifications, setNotifications] = useState<BirthdayNotification[]>([]);
-  const [dismissedNotifications, setDismissedNotifications] = useState<string[]>([]);
 
   useEffect(() => {
-    checkBirthdays();
-    // Check every hour
+    const timer = setTimeout(checkBirthdays, 1500); // Kısa gecikme — auth oturumu kurulsun
     const interval = setInterval(checkBirthdays, 60 * 60 * 1000);
-    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
-    return () => clearInterval(interval);
+    return () => { clearTimeout(timer); clearInterval(interval); };
   }, []);
 
-  const checkBirthdays = () => {
-    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
-    // Boş başlıyoruz, doğum günü bildirimleri KV store'dan gelecek
-    setNotifications([]);
+  const getDismissed = (): string[] => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const raw = sessionStorage.getItem(DISMISSED_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed[today] || [];
+    } catch { return []; }
   };
 
-  const dismissNotification = (notifId: string) => {
-    const updated = [...dismissedNotifications, notifId];
-    setDismissedNotifications(updated);
-    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
-    setNotifications(notifications.filter(n => n.id !== notifId));
+  const saveDismissed = (id: string) => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const raw = sessionStorage.getItem(DISMISSED_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      parsed[today] = [...(parsed[today] || []), id];
+      sessionStorage.setItem(DISMISSED_KEY, JSON.stringify(parsed));
+    } catch {}
+  };
+
+  const checkBirthdays = async () => {
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${SERVER_URL}/birthdays`, { headers });
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const birthdays: any[] = data.birthdays || [];
+
+      const today = new Date();
+      const todayMonth = today.getMonth();
+      const todayDay = today.getDate();
+
+      // Yarın
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowMonth = tomorrow.getMonth();
+      const tomorrowDay = tomorrow.getDate();
+
+      const dismissed = getDismissed();
+      const newNotifs: BirthdayNotification[] = [];
+
+      birthdays.forEach((b) => {
+        if (!b.birthday) return;
+        const bday = new Date(b.birthday);
+        const bMonth = bday.getMonth();
+        const bDay = bday.getDate();
+
+        // Bugün doğum günü mü?
+        if (bMonth === todayMonth && bDay === todayDay) {
+          const id = `birthday_today_${b.userId}`;
+          if (!dismissed.includes(id)) {
+            newNotifs.push({
+              id,
+              type: 'birthday',
+              userName: b.name,
+              userAvatar: b.avatar || '🎂',
+              message: `🎉 Bugün ${b.name} adlı ekip arkadaşınızın doğum günü!`,
+            });
+          }
+        }
+
+        // Yarın doğum günü mü?
+        if (bMonth === tomorrowMonth && bDay === tomorrowDay) {
+          const id = `birthday_tomorrow_${b.userId}`;
+          if (!dismissed.includes(id)) {
+            newNotifs.push({
+              id,
+              type: 'reminder',
+              userName: b.name,
+              userAvatar: b.avatar || '🎂',
+              message: `🎂 Yarın ${b.name} adlı ekip arkadaşınızın doğum günü!`,
+            });
+          }
+        }
+      });
+
+      setNotifications(newNotifs);
+    } catch (err) {
+      console.error('[BirthdayNotifications] Hata:', err);
+    }
+  };
+
+  const dismissNotification = (id: string) => {
+    saveDismissed(id);
+    setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
   if (notifications.length === 0) return null;
@@ -54,15 +130,9 @@ export function BirthdayNotifications() {
             <div className="flex-1 min-w-0">
               <div className="font-bold text-white mb-1 flex items-center gap-2">
                 {notif.type === 'birthday' ? (
-                  <>
-                    <PartyPopper className="w-4 h-4" />
-                    Doğum Günü!
-                  </>
+                  <><PartyPopper className="w-4 h-4" />Doğum Günü!</>
                 ) : (
-                  <>
-                    <Cake className="w-4 h-4" />
-                    Hatırlatma
-                  </>
+                  <><Cake className="w-4 h-4" />Hatırlatma</>
                 )}
               </div>
               <p className="text-sm text-white/90">{notif.message}</p>

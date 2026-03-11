@@ -1,0 +1,103 @@
+(Unauthorized)
+(anonymous) @ code_components_prev…0d6c5a.min.js.br:28
+handleSaveAvatar @ app-fc6il4y2mtwqxjcv…t=1773218655437:108
+y @ code_components_prev…0d6c5a.min.js.br:77
+i @ code_components_prev…0d6c5a.min.js.br:28
+ik @ code_components_prev…0d6c5a.min.js.br:77
+ij @ code_components_prev…0d6c5a.min.js.br:77
+iz @ code_components_prev…0d6c5a.min.js.br:77
+dP @ code_components_prev…0d6c5a.min.js.br:89
+dM @ code_components_prev…0d6c5a.min.js.br:89
+dG @ code_components_prev…0d6c5a.min.js.br:89
+dk @ code_components_prev…0d6c5a.min.js.br:89
+(anonymous) @ code_components_prev…0d6c5a.min.js.br:89
+SR @ code_components_prev…0d6c5a.min.js.br:89
+iR @ code_components_prev…0d6c5a.min.js.br:77
+d$ @ code_components_prev…0d6c5a.min.js.br:89
+lO @ code_components_prev…0d6c5a.min.js.br:77
+lN @ code_components_prev…0d6c5a.min.js.br:77
+lv @ code_components_prev…0d6c5a.min.js.br:77
+i @ code_components_prev…0d6c5a.min.js.br:28Understand this error
+o22594.ingest.us.sentry.io/api/56203/envelope/?sentry_key=333f664af67c57ab0ed581c89de74387&sentry_version=7&sentry_client=sentry.javascript.react%2F8.40.0:1  Failed to load resource: net::ERR_TIMED_OUTUnderstand this error
+  PUT https://grijlpmpvrafxbzpuzvw.supabase.co/functions/v1/make-server-4da0b637/auth/profile 401 (Unauthorized)
+(anonymous) @ code_components_prev…0d6c5a.min.js.br:28
+handleSaveAvatar @ app-fc6il4y2mtwqxjcv…t=1773218655437:108
+y @ code_components_prev…0d6c5a.min.js.br:77
+i @ code_components_prev…0d6c5a.min.js.br:28
+ik @ code_components_prev…0d6c5a.min.js.br:77
+ij @ code_components_prev…0d6c5a.min.js.br:77
+iz @ code_components_prev…0d6c5a.min.js.br:77
+dP @ code_components_prev…0d6c5a.min.js.br:89
+dM @ code_components_prev…0d6c5a.min.js.br:89
+dG @ code_components_prev…0d6c5a.min.js.br:89
+dk @ code_components_prev…0d6c5a.min.js.br:89
+(anonymous) @ code_components_prev…0d6c5a.min.js.br:89
+SR @ code_components_prev…0d6c5a.min.js.br:89
+iR @ code_components_prev…0d6c5a.min.js.br:77
+d$ @ code_components_prev…0d6c5a.min.js.br:89
+lO @ code_components_prev…0d6c5a.min.js.br:77
+lN @ code_components_prev…0d6c5a.min.js.br:77
+lv @ code_components_prev…0d6c5a.min.js.br:77
+i @ code_components_prev…0d6c5a.min.js.br:28Understand this error
+o22594.ingest.us.sentry.io/api/56203/envelope/?sentry_key=333f664af67c57ab0ed581c89de74387&sentry_version=7&sentry_client=sentry.javascript.react%2F8.40.0:1  Failed to load resource: net::ERR_CERT_COMMON_NAME_INVALIDUnderstand this error
+  PUT https://grijlpmpvrafxbzpuzvw.supabase.co/functions/v1/make-server-4da0b637/auth/profile 401 (Unauthorized)
+(anonymous) @ code_components_prev…0d6c5a.min.js.br:28
+handleSaveAvatar @ app-fc6il4y2mtwqxjcv…t=1773218655437:108
+y @ code_components_prev…0d6c5a.min.js.br:77
+i @ code_components_prev…0d6c5a.min.js.br:28
+ik @ code_components_prev…0d6c5a.min.js.br:77
+ij @ code_components_prev…0d6c5a.min.js.br:77
+iz @ code_components_prev…0d6c5a.min.js.br:77
+dP @ code_components_prev…0d6c5a.min.js.br:89
+dM @ code_components_prev…0d6c5a.min.js.br:89
+dG @ code_components_prev…0d6c5a.min.js.br:89
+dk @ code_components_prev…0d6c5a.min.js.br:89
+(anonymous) @ code_components_prev…0d6c5a.min.js.br:89
+SR @ code_components_prev…0d6c5a.min.js.br:89
+iR @ code_components_prev…0d6c5a.min.js.br:77
+d$ @ code_components_prev…0d6c5a.min.js.br:89
+lO @ code_components_prev…0d6c5a.min.js.br:77
+lN @ code_components_prev…0d6c5a.min.js.br:77
+lv @ code_components_prev…0d6c5a.min.js.br:77
+i @ code_components_prev…0d6c5a.min.js.br:28Understand this error
+  PUT https://grijlpmpvrafxbzpuzvw.supabase.co/functions/v1/make-server-4da0b637/auth/profile 401 (Unauthorized)
+(anonymous) @ code_components_prev…0d6c5a.min.js.br:28
+handleSaveAvatar @ app-fc6il4y2mtwqxjcv…t=1773218655437:108
+y @ code_components_prev…0d6c5a.min.js.br:77
+i @ code_components_prev…0d6c5a.min.js.br:28
+ik @ code_components_prev…0d6c5a.min.js.br:77
+ij @ code_components_prev…0d6c5a.min.js.br:77
+iz @ code_components_prev…0d6c5a.min.js.br:77
+dP @ code_components_prev…0d6c5a.min.js.br:89
+dM @ code_components_prev…0d6c5a.min.js.br:89
+dG @ code_components_prev…0d6c5a.min.js.br:89
+dk @ code_components_prev…0d6c5a.min.js.br:89
+(anonymous) @ code_components_prev…0d6c5a.min.js.br:89
+SR @ code_components_prev…0d6c5a.min.js.br:89
+iR @ code_components_prev…0d6c5a.min.js.br:77
+d$ @ code_components_prev…0d6c5a.min.js.br:89
+lO @ code_components_prev…0d6c5a.min.js.br:77
+lN @ code_components_prev…0d6c5a.min.js.br:77
+lv @ code_components_prev…0d6c5a.min.js.br:77
+i @ code_components_prev…0d6c5a.min.js.br:28Understand this error
+  PUT https://grijlpmpvrafxbzpuzvw.supabase.co/functions/v1/make-server-4da0b637/auth/profile 401 (Unauthorized)
+(anonymous) @ code_components_prev…0d6c5a.min.js.br:28
+handleSaveAvatar @ app-fc6il4y2mtwqxjcv…t=1773218655437:108
+y @ code_components_prev…0d6c5a.min.js.br:77
+i @ code_components_prev…0d6c5a.min.js.br:28
+ik @ code_components_prev…0d6c5a.min.js.br:77
+ij @ code_components_prev…0d6c5a.min.js.br:77
+iz @ code_components_prev…0d6c5a.min.js.br:77
+dP @ code_components_prev…0d6c5a.min.js.br:89
+dM @ code_components_prev…0d6c5a.min.js.br:89
+dG @ code_components_prev…0d6c5a.min.js.br:89
+dk @ code_components_prev…0d6c5a.min.js.br:89
+(anonymous) @ code_components_prev…0d6c5a.min.js.br:89
+SR @ code_components_prev…0d6c5a.min.js.br:89
+iR @ code_components_prev…0d6c5a.min.js.br:77
+d$ @ code_components_prev…0d6c5a.min.js.br:89
+lO @ code_components_prev…0d6c5a.min.js.br:77
+lN @ code_components_prev…0d6c5a.min.js.br:77
+lv @ code_components_prev…0d6c5a.min.js.br:77
+i @ code_components_prev…0d6c5a.min.js.br:28Understand this error
+  PUT https://grijlpmpvrafxbzpuzvw.supabase.co/functions/v1/make-server-4da0b637/auth/profile 401 (Unauthorized)

@@ -50,6 +50,9 @@ export default function App() {
   const [userName, setUserName] = useState('');
   const [userId, setUserId] = useState('');
   const [accessToken, setAccessToken] = useState('');
+  const [userAvatar, setUserAvatar] = useState('👨‍💼');
+  const [userEmail, setUserEmail] = useState('');
+  const [userBirthDate, setUserBirthDate] = useState('');
   const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('');
   const [selectedProject, setSelectedProject] = useState<string>('');
@@ -95,13 +98,17 @@ export default function App() {
   const _applySession = (user: any, token: string) => {
     const role: UserRole = (user.user_metadata?.role as UserRole) || 'bekleyen';
     const name: string = user.user_metadata?.full_name || user.email || '';
+    const avatar: string = user.user_metadata?.avatar || '👨‍💼';
 
     setUserId(user.id);
     setUserRole(role);
     setUserName(name);
+    setUserEmail(user.email || '');
+    setUserBirthDate(user.user_metadata?.birth_date || '');
     setAccessToken(token);
     setIsLoggedIn(true);
     setAuthToken(token); // ← Cache'e yaz, authHeaders() için fallback
+    setUserAvatar(avatar);
 
     // Sadece ilk girişte dashboard'a yönlendir, sonraki token yenilemelerinde değil
     if (!sessionApplied.current) {
@@ -117,6 +124,9 @@ export default function App() {
     setUserName('');
     setUserId('');
     setAccessToken('');
+    setUserAvatar('👨‍💼');
+    setUserEmail('');
+    setUserBirthDate('');
     setAuthToken(''); // ← Cache'i temizle
     setActiveTab('');
     setSelectedProject('');
@@ -128,11 +138,13 @@ export default function App() {
     setShowCurrentStock(false);
   };
 
-  const handleLogin = (role: UserRole, name: string, uid: string, token: string) => {
+  const handleLogin = (role: UserRole, name: string, uid: string, token: string, avatar: string = '👨‍💼', email: string = '') => {
     setUserId(uid);
     setUserRole(role);
     setUserName(name);
     setAccessToken(token);
+    setUserAvatar(avatar);
+    setUserEmail(email);
     setIsLoggedIn(true);
     setAuthToken(token); // ← Cache'e yaz
     setActiveTab(role === 'bekleyen' ? '' : 'dashboard');
@@ -361,6 +373,7 @@ export default function App() {
           <RotationSystem 
             userName={userName}
             userRole={userRole}
+            accessToken={accessToken}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -371,6 +384,7 @@ export default function App() {
           <RotationSystem 
             userName={userName}
             userRole={userRole}
+            accessToken={accessToken}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -391,6 +405,11 @@ export default function App() {
           <Settings 
             userName={userName}
             userRole={userRole}
+            userAvatar={userAvatar}
+            userEmail={userEmail}
+            userBirthDate={userBirthDate}
+            accessToken={accessToken}
+            onAvatarChange={(avatar) => setUserAvatar(avatar)}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -630,7 +649,7 @@ export default function App() {
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#b8d4f1] to-[#9dd9ea] flex items-center justify-center text-2xl shadow-lg border-2 border-white/20">
-                    👨‍💼
+                    {userAvatar}
                   </div>
                   <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#a8e6cf] rounded-full border-2 border-[#2a2a3a]"></div>
                 </div>
