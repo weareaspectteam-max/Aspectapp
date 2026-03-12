@@ -9,6 +9,7 @@ import {
   X, Home, Zap, Activity, MapPin, RotateCcw,
   Trophy, Sparkles, MessageCircle, Bell, GraduationCap,
   Cake, User, Settings, LogOut, ChevronRight, Package,
+  BarChart2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
@@ -98,15 +99,16 @@ function getSections(
       items: [
         { icon: Zap,          label: 'Hızlı Satış',       roles: all,  action: () => go('quick-sales')     },
         { icon: Activity,     label: 'Canlı Feed',         roles: mgmt, action: () => go('live-feed')       },
-        { icon: MapPin,       label: 'Mekanlar',           roles: mgmt, action: () => go('business-panel')  },
         { icon: RotateCcw,    label: 'Rotasyon',           roles: all,  action: () => go('rotation')        },
         { icon: Package,      label: 'Malzeme Yönetimi',   roles: all,  action: () => go('equipment-page')  },
+        { icon: BarChart2,    label: 'Stok Dağılımı',      roles: all,  action: () => go('stok-dagilimi')   },
       ],
     },
     {
       title: 'YÖNETİM',
       color: '#34d399',
       items: [
+        { icon: MapPin,        label: 'İşletme Genel Yönetim Paneli', roles: mgmt, action: () => go('business-panel')     },
         { icon: Bell,          label: 'Duyurular',     roles: all,  action: () => go('announcements')      },
         { icon: GraduationCap, label: 'Akademi',       roles: all,  action: () => go('academy')            },
         { icon: Cake,          label: 'Doğum Günleri', roles: mgmt, action: () => go('birthday-calendar')  },
