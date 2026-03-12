@@ -1561,7 +1561,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
 
               const activeTasks = allSent
                 .filter(t => !isTaskPast(t))
-                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
                 .slice(0, visibleTaskCount);
 
               const pastTasks = allSent
