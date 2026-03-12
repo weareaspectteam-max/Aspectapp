@@ -2361,10 +2361,6 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         </motion.div>
       )}
 
-      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
-        <NewBottomNav activeTab="home" onTabChange={onNavigate} userRole={userRole} />
-      )}
-
       {/* ── Canlı Feed Bottom Sheet ── */}
       {showLiveFeed && selectedProject && (
         <LiveFeedSheet

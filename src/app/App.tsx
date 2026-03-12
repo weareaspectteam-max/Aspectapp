@@ -166,7 +166,8 @@ export default function App() {
   const handleProjectSelect = (projectName: string) => {
     setSelectedProject(projectName);
     // Personel için proje seçildiğinde choice ekranını göster
-    if (userRole === 'personel') {
+    // — quick-sales tabındayken bu akışı tetikleme (AppHeader/BottomNav gizlenmesin)
+    if (userRole === 'personel' && activeTab !== 'quick-sales') {
       setShowShiftChoice(true);
     }
   };
@@ -683,7 +684,7 @@ export default function App() {
         {isLoggedIn && <BirthdayNotifications />}
 
         {/* App Header — tüm roller için, vardiya akışı dışında */}
-        {!(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock) && (
+        {(activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock)) && (
           <AppHeader
             userName={userName}
             userRole={userRole}
@@ -694,12 +695,16 @@ export default function App() {
         )}
 
         {/* Main Content */}
-        <main className={!(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock) ? 'pt-[60px] pb-24' : ''}>
+        <main className={
+          (activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock))
+            ? 'pt-[60px] pb-24'
+            : ''
+        }>
           {renderContent()}
         </main>
 
         {/* Bottom Navigation */}
-        {!(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock) && (
+        {(activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock)) && (
           <NewBottomNav activeTab={activeTab} onTabChange={handleNavigate} userRole={userRole} />
         )}
 
