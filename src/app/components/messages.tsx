@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Send, Search, Clock, CheckCheck, Users, Trash2 } from 'lucide-react';
-import { StaffTopBar } from './staff-top-bar';
+
 import { NewBottomNav } from './new-bottom-nav';
 
 interface Message {
@@ -150,17 +150,6 @@ export function Messages({ currentUser, currentRole, onLogout, onNavigate }: Mes
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] relative pb-20">
-      {/* Sticky Top Bar - Only for staff */}
-      {['personel', 'operasyon', 'bekleyen'].includes(currentRole) && (
-        <StaffTopBar
-          userName={currentUser}
-          userRole={currentRole}
-          onLogout={onLogout}
-          onNavigate={onNavigate}
-          showBackButton={false}
-        />
-      )}
-
       <div className="flex flex-col min-h-[calc(100vh-140px)] pt-6">{/* Changed pt-4 to pt-6 */}
       {!selectedChat ? (
         // Conversations List

@@ -21,7 +21,7 @@ export function StaffTopBar({
   showBackButton = false 
 }: StaffTopBarProps) {
   return (
-    <div className="sticky top-0 z-50 backdrop-blur-xl bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] border-b border-white/10">
+    <div className="sticky top-0 z-[80] backdrop-blur-xl bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] border-b border-white/10">
       <div className="flex items-center justify-between px-6 py-4">
         {/* Left: User Info */}
         <div className="flex items-center gap-3">
@@ -78,7 +78,6 @@ export function StaffTopBar({
             userRole={userRole}
             onLogout={onLogout}
             onNavigate={onNavigate}
-            darkMode={true}
           />
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { TrendingUp, Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 
@@ -7,25 +7,34 @@ const SERVER_URL = `https://${projectId}.supabase.co/functions/v1/make-server-4d
 
 export function CurrencyWidget() {
   const [exchangeRates, setExchangeRates] = useState<{ USD: number; EUR: number; GBP: number } | null>(null);
+  const [trend, setTrend] = useState<{ USD: number; EUR: number; GBP: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [source, setSource] = useState<string>('');
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
   const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'EUR' | 'GBP' | null>(null);
   const [tryAmount, setTryAmount] = useState('');
 
   useEffect(() => {
     loadRates();
+    const interval = setInterval(() => loadRates(true), 10 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
 
-  const loadRates = async () => {
-    setLoading(true);
+  const loadRates = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${SERVER_URL}/maliyetler`, { headers });
+      const res = await fetch(`${SERVER_URL}/doviz/canli`, { headers });
       if (res.ok) {
         const data = await res.json();
-        const r = data.exchangeRates;
-        if (r && r.EUR && r.USD && r.GBP) {
-          setExchangeRates({ USD: Number(r.USD), EUR: Number(r.EUR), GBP: Number(r.GBP) });
+        if (data.rates) {
+          setExchangeRates({ USD: Number(data.rates.USD), EUR: Number(data.rates.EUR), GBP: Number(data.rates.GBP) });
+          setTrend(data.trend ?? null);
+          setSource(data.source || 'live');
+          setFetchedAt(data.fetchedAt || Date.now());
         }
+      } else {
+        console.error('CurrencyWidget fetch failed:', res.status);
       }
     } catch (err) {
       console.error('CurrencyWidget load error:', err);
@@ -37,9 +46,32 @@ export function CurrencyWidget() {
   const calculateForeignCurrency = () => {
     if (!selectedCurrency || !tryAmount || !exchangeRates) return '0.00';
     const amount = parseFloat(tryAmount) || 0;
-    const rate = exchangeRates[selectedCurrency];
-    return (amount / rate).toFixed(2);
+    return (amount / exchangeRates[selectedCurrency]).toFixed(2);
   };
+
+  const lastUpdateLabel = () => {
+    if (!fetchedAt) return '';
+    const diff = Math.floor((Date.now() - fetchedAt) / 60000);
+    if (diff < 1) return 'az önce';
+    if (diff < 60) return `${diff} dk önce`;
+    return `${Math.floor(diff / 60)} sa önce`;
+  };
+
+  const trendLabel = (code: 'USD' | 'EUR' | 'GBP') => {
+    if (!trend) return null;
+    const val = trend[code];
+    if (val === 0 || isNaN(val)) return null;
+    const up = val > 0;
+    const abs = Math.abs(val);
+    const text = abs < 0.01 ? '<0.01%' : `${abs.toFixed(2)}%`;
+    return { up, text };
+  };
+
+  const CURRENCIES = [
+    { code: 'USD' as const, flag: '🇺🇸', color: '#a8e6cf', ring: 'ring-[#a8e6cf]', bg: 'bg-[#a8e6cf]/10' },
+    { code: 'EUR' as const, flag: '🇪🇺', color: '#9dd9ea', ring: 'ring-[#9dd9ea]', bg: 'bg-[#9dd9ea]/10' },
+    { code: 'GBP' as const, flag: '🇬🇧', color: '#ffd4a3', ring: 'ring-[#ffd4a3]', bg: 'bg-[#ffd4a3]/10' },
+  ];
 
   return (
     <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-xl p-3 shadow-lg">
@@ -48,13 +80,20 @@ export function CurrencyWidget() {
           <span className="text-base">💱</span>
           <h3 className="text-xs font-bold text-white">Güncel Kurlar & Çevirici</h3>
         </div>
-        <div className="flex items-center gap-1 text-xs text-[#a8e6cf]">
-          <div className="w-1.5 h-1.5 bg-[#a8e6cf] rounded-full animate-pulse"></div>
-          <span className="text-[10px]">{loading ? 'Yükleniyor' : 'Canlı'}</span>
+        <div className="flex items-center gap-2">
+          {fetchedAt && (
+            <span className="text-[9px] text-white/30">{lastUpdateLabel()}</span>
+          )}
+          <button onClick={() => loadRates(false)} disabled={loading} className="w-5 h-5 flex items-center justify-center text-white/40 hover:text-white/70 transition-colors active:scale-90">
+            <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <div className="flex items-center gap-1">
+            <div className={`w-1.5 h-1.5 rounded-full ${loading ? 'bg-yellow-400 animate-pulse' : source === 'live' ? 'bg-[#a8e6cf] animate-pulse' : 'bg-[#a8e6cf]'}`} />
+            <span className="text-[10px] text-gray-400">{loading ? 'Yükleniyor' : source === 'live' ? 'Canlı' : source === 'cache' ? 'Önbellek' : 'Manuel'}</span>
+          </div>
         </div>
       </div>
 
-      {/* Currency Rates */}
       {loading ? (
         <div className="flex justify-center items-center py-4">
           <Loader2 className="w-5 h-5 text-[#a8e6cf] animate-spin" />
@@ -62,66 +101,40 @@ export function CurrencyWidget() {
       ) : exchangeRates ? (
         <>
           <div className="grid grid-cols-3 gap-2">
-            {/* Dollar */}
-            <button
-              onClick={() => setSelectedCurrency(selectedCurrency === 'USD' ? null : 'USD')}
-              className={`bg-white/5 rounded-lg p-2 text-center transition-all active:scale-95 ${
-                selectedCurrency === 'USD' ? 'ring-2 ring-[#a8e6cf] bg-[#a8e6cf]/10' : 'hover:bg-white/10'
-              }`}
-            >
-              <div className="text-[10px] text-gray-400 mb-0.5 flex items-center justify-center gap-1">
-                <span>🇺🇸</span><span>USD</span>
-              </div>
-              <div className="text-sm font-bold text-[#a8e6cf]">₺{exchangeRates.USD.toFixed(2)}</div>
-              <div className="text-[10px] text-[#a8e6cf] flex items-center justify-center gap-0.5 mt-0.5">
-                <TrendingUp className="w-2.5 h-2.5" />
-                <span>Maliyetler</span>
-              </div>
-            </button>
-
-            {/* Euro */}
-            <button
-              onClick={() => setSelectedCurrency(selectedCurrency === 'EUR' ? null : 'EUR')}
-              className={`bg-white/5 rounded-lg p-2 text-center transition-all active:scale-95 ${
-                selectedCurrency === 'EUR' ? 'ring-2 ring-[#9dd9ea] bg-[#9dd9ea]/10' : 'hover:bg-white/10'
-              }`}
-            >
-              <div className="text-[10px] text-gray-400 mb-0.5 flex items-center justify-center gap-1">
-                <span>🇪🇺</span><span>EUR</span>
-              </div>
-              <div className="text-sm font-bold text-[#9dd9ea]">₺{exchangeRates.EUR.toFixed(2)}</div>
-              <div className="text-[10px] text-[#a8e6cf] flex items-center justify-center gap-0.5 mt-0.5">
-                <TrendingUp className="w-2.5 h-2.5" />
-                <span>Maliyetler</span>
-              </div>
-            </button>
-
-            {/* Pound */}
-            <button
-              onClick={() => setSelectedCurrency(selectedCurrency === 'GBP' ? null : 'GBP')}
-              className={`bg-white/5 rounded-lg p-2 text-center transition-all active:scale-95 ${
-                selectedCurrency === 'GBP' ? 'ring-2 ring-[#ffd4a3] bg-[#ffd4a3]/10' : 'hover:bg-white/10'
-              }`}
-            >
-              <div className="text-[10px] text-gray-400 mb-0.5 flex items-center justify-center gap-1">
-                <span>🇬🇧</span><span>GBP</span>
-              </div>
-              <div className="text-sm font-bold text-[#ffd4a3]">₺{exchangeRates.GBP.toFixed(2)}</div>
-              <div className="text-[10px] text-[#a8e6cf] flex items-center justify-center gap-0.5 mt-0.5">
-                <TrendingUp className="w-2.5 h-2.5" />
-                <span>Maliyetler</span>
-              </div>
-            </button>
+            {CURRENCIES.map(c => {
+              const t = trendLabel(c.code);
+              const isSelected = selectedCurrency === c.code;
+              return (
+                <button
+                  key={c.code}
+                  onClick={() => setSelectedCurrency(isSelected ? null : c.code)}
+                  className={`bg-white/5 rounded-lg p-2 text-center transition-all active:scale-95 ${isSelected ? `ring-2 ${c.ring} ${c.bg}` : 'hover:bg-white/10'}`}
+                >
+                  <div className="text-[10px] text-gray-400 mb-0.5 flex items-center justify-center gap-1">
+                    <span>{c.flag}</span><span>{c.code}</span>
+                  </div>
+                  <div className="text-sm font-bold" style={{ color: c.color }}>
+                    ₺{exchangeRates[c.code].toFixed(2)}
+                  </div>
+                  {t ? (
+                    <div className={`text-[9px] flex items-center justify-center gap-0.5 mt-0.5 font-semibold ${t.up ? 'text-[#a8e6cf]' : 'text-[#ffb3ba]'}`}>
+                      <span>{t.up ? '↑' : '↓'}</span>
+                      <span>{t.text}</span>
+                    </div>
+                  ) : (
+                    <div className="text-[9px] text-white/20 mt-0.5">1 {c.code}</div>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
-          {/* Currency Converter */}
           {selectedCurrency && (
             <div className="space-y-2 border-t border-white/10 pt-3 mt-3 animate-in slide-in-from-top-2">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs">🔄</span>
                 <span className="text-[10px] font-semibold text-white">Para Çevirici</span>
               </div>
-
               <div className="space-y-2">
                 <div className="relative">
                   <input
@@ -145,7 +158,6 @@ export function CurrencyWidget() {
                   </div>
                 </div>
               </div>
-
               <div className="text-[10px] text-gray-500 text-center">
                 1 {selectedCurrency} = ₺{exchangeRates[selectedCurrency].toFixed(2)}
               </div>
@@ -155,7 +167,7 @@ export function CurrencyWidget() {
       ) : (
         <div className="text-center py-3">
           <p className="text-[10px] text-gray-500">Kurlar yüklenemedi</p>
-          <button onClick={loadRates} className="text-[10px] text-[#a8e6cf] underline mt-1">Tekrar dene</button>
+          <button onClick={() => loadRates(false)} className="text-[10px] text-[#a8e6cf] underline mt-1">Tekrar dene</button>
         </div>
       )}
     </div>

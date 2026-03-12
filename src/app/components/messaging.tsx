@@ -1,7 +1,12 @@
-import { useState } from 'react';
-import { Send, Hash, User, ArrowLeft, Smile, Paperclip, Trash2 } from 'lucide-react';
-import { StaffTopBar } from './staff-top-bar';
+import { useState, useRef, useEffect } from 'react';
+import {
+  Send, Hash, User, ArrowLeft, Smile, Paperclip, Trash2,
+  Bell, Menu, Users, Lock, MessageSquare, ChevronRight,
+  MapPin, X
+} from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Channel {
   id: string;
@@ -31,563 +36,439 @@ interface MessagingProps {
   onNavigate: (tab: string) => void;
 }
 
+// ─── Static Data ──────────────────────────────────────────────────────────────
+
+const CHANNELS: Channel[] = [
+  {
+    id: 'general',
+    name: 'general',
+    type: 'channel',
+    unread: 3,
+    lastMessage: 'Bugün çok iyi satış yapıyoruz!',
+    timestamp: '10:24',
+    isAdminOnly: false,
+  },
+  {
+    id: 'rotasyon',
+    name: 'rotasyon',
+    type: 'channel',
+    unread: 1,
+    lastMessage: '📋 Günlük rotasyon planı yayınlandı',
+    timestamp: '09:00',
+    isAdminOnly: true,
+  },
+  {
+    id: 'project-zoka',
+    name: 'zoka',
+    type: 'project',
+    unread: 5,
+    lastMessage: '🎯 Mehmet Kaya - 14:30 • 5\'li Albüm (1000 TL)',
+    timestamp: '14:30',
+    isAdminOnly: true,
+  },
+  {
+    id: 'project-balikhali',
+    name: 'balikhali',
+    type: 'project',
+    unread: 2,
+    lastMessage: '📸 Ayşe Demir - 13:15 • 3\'lü Albüm + Paspartu (800 TL)',
+    timestamp: '13:15',
+    isAdminOnly: true,
+  },
+  {
+    id: 'project-hayalkahvesi',
+    name: 'hayalkahvesi',
+    type: 'project',
+    unread: 0,
+    lastMessage: '🎯 Fatma Öz - 12:00 • 7\'li Albüm (1400 TL)',
+    timestamp: 'Dün',
+    isAdminOnly: true,
+  },
+  {
+    id: 'dm-ahmet',
+    name: 'Ahmet Yılmaz',
+    type: 'dm',
+    unread: 2,
+    lastMessage: 'Raporu paylaştım',
+    timestamp: '11:15',
+    avatar: '👨‍💼',
+    isAdminOnly: false,
+  },
+  {
+    id: 'dm-mehmet',
+    name: 'Mehmet Kaya',
+    type: 'dm',
+    unread: 0,
+    lastMessage: 'Tamam, teşekkürler',
+    timestamp: '08:30',
+    avatar: '👨',
+    isAdminOnly: false,
+  },
+];
+
+const DEMO_MESSAGES: Record<string, Message[]> = {
+  general: [
+    { id: '1', sender: 'Ahmet Yılmaz', content: 'Günaydın ekip! Bugün harika bir gün olacak 🌞', timestamp: '08:15', isOwn: false, avatar: '👨‍💼' },
+    { id: '2', sender: 'Mehmet Kaya', content: 'Günaydın! ZOKA lokasyonunda hazırız', timestamp: '08:18', isOwn: false, avatar: '👨' },
+    { id: '3', sender: '__self__', content: 'Harika! Balık Halinde de her şey hazır', timestamp: '08:20', isOwn: true, avatar: '👤' },
+    { id: '4', sender: 'Ayşe Demir', content: 'Yazıcı kontrollerini yaptım, sorun yok 👍', timestamp: '08:25', isOwn: false, avatar: '👩' },
+    { id: '5', sender: '__self__', content: 'Bugün çok iyi satış yapıyoruz!', timestamp: '10:24', isOwn: true, avatar: '👤' },
+  ],
+  rotasyon: [],
+  'project-zoka': [
+    { id: 'z1', sender: 'SATIŞ SİSTEMİ', content: '🎯 Mehmet Kaya - 09:30\n5\'li Albüm (1000 TL)\nToplam: 1000 TL', timestamp: '09:30', isOwn: false, avatar: '💰', isSalesLog: true },
+    { id: 'z2', sender: 'SATIŞ SİSTEMİ', content: '📸 Ayşe Demir - 10:15\n3\'lü Albüm (600 TL) + Paspartu (200 TL)\n%10 İskonto (-80 TL)\nToplam: 720 TL', timestamp: '10:15', isOwn: false, avatar: '💰', isSalesLog: true },
+    { id: 'z3', sender: 'SATIŞ SİSTEMİ', content: '🎯 Mehmet Kaya - 11:45\n7\'li Albüm (1400 TL)\nToplam: 1400 TL', timestamp: '11:45', isOwn: false, avatar: '💰', isSalesLog: true },
+    { id: 'z4', sender: 'SATIŞ SİSTEMİ', content: '📸 Fatma Öz - 13:20\n5\'li Albüm (1000 TL)\n%15 İskonto (-150 TL)\nToplam: 850 TL', timestamp: '13:20', isOwn: false, avatar: '💰', isSalesLog: true },
+    { id: 'z5', sender: 'SATIŞ SİSTEMİ', content: '🎯 Mehmet Kaya - 14:30\n5\'li Albüm (1000 TL)\nToplam: 1000 TL', timestamp: '14:30', isOwn: false, avatar: '💰', isSalesLog: true },
+  ],
+  'project-balikhali': [
+    { id: 'b1', sender: 'SATIŞ SİSTEMİ', content: '📸 Ali Veli - 09:00\n3\'lü Albüm (600 TL)\nToplam: 600 TL', timestamp: '09:00', isOwn: false, avatar: '💰', isSalesLog: true },
+    { id: 'b2', sender: 'SATIŞ SİSTEMİ', content: '🎯 Ayşe Demir - 13:15\n3\'lü Albüm (600 TL) + Paspartu (200 TL)\nToplam: 800 TL', timestamp: '13:15', isOwn: false, avatar: '💰', isSalesLog: true },
+  ],
+  'project-hayalkahvesi': [
+    { id: 'h1', sender: 'SATIŞ SİSTEMİ', content: '🎯 Fatma Öz - 12:00\n7\'li Albüm (1400 TL)\nToplam: 1400 TL', timestamp: '12:00', isOwn: false, avatar: '💰', isSalesLog: true },
+  ],
+  'dm-ahmet': [
+    { id: 'da1', sender: 'Ahmet Yılmaz', content: 'Merhaba! Bugünkü satışları nasıl buluyorsun?', timestamp: '10:30', isOwn: false, avatar: '👨‍💼' },
+    { id: 'da2', sender: '__self__', content: 'Harika gidiyor! 5 satış yaptım şimdiye kadar', timestamp: '10:32', isOwn: true, avatar: '👤' },
+    { id: 'da3', sender: 'Ahmet Yılmaz', content: 'Raporu paylaştım', timestamp: '11:15', isOwn: false, avatar: '👨‍💼' },
+  ],
+  'dm-mehmet': [
+    { id: 'dm1', sender: '__self__', content: 'Mehmet, yazıcı kağıdı bitmiş mi kontrol eder misin?', timestamp: '08:15', isOwn: true, avatar: '👤' },
+    { id: 'dm2', sender: 'Mehmet Kaya', content: 'Tamam, teşekkürler', timestamp: '08:30', isOwn: false, avatar: '👨' },
+  ],
+};
+
+const STAFF_LIST = [
+  'Ahmet Yılmaz', 'Ayşe Demir', 'Fatma Öz', 'Mehmet Kaya',
+  'Zeynep Şahin', 'Ali Veli', 'Can Yücel', 'Deniz Kara',
+  'Elif Ak', 'Hasan Çelik', 'İrem Yıldız', 'Kemal Aydın',
+];
+
+// ─── Helper: first letter avatar ─────────────────────────────────────────────
+
+function InitialAvatar({ name, size = 'md', color = 'violet' }: { name: string; size?: 'sm' | 'md' | 'lg'; color?: string }) {
+  const sizeMap = { sm: 'w-8 h-8 text-xs', md: 'w-11 h-11 text-sm', lg: 'w-12 h-12 text-base' };
+  const colorMap: Record<string, string> = {
+    violet: 'from-violet-500 to-indigo-600',
+    amber:  'from-amber-500 to-orange-500',
+    teal:   'from-teal-400 to-cyan-500',
+    rose:   'from-rose-500 to-pink-600',
+    emerald:'from-emerald-400 to-teal-500',
+  };
+  const letters = name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  return (
+    <div className={`${sizeMap[size]} rounded-2xl bg-gradient-to-br ${colorMap[color] ?? colorMap.violet} flex items-center justify-center font-bold text-white shrink-0 shadow-lg`}>
+      {letters}
+    </div>
+  );
+}
+
+// ─── Section Header ───────────────────────────────────────────────────────────
+
+function SectionHeader({ icon, label, badge }: { icon: React.ReactNode; label: string; badge?: string }) {
+  return (
+    <div className="flex items-center gap-2 px-4 pt-5 pb-2">
+      <span className="text-white/30">{icon}</span>
+      <span className="text-[11px] font-bold text-white/40 tracking-widest uppercase">{label}</span>
+      {badge && (
+        <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300">
+          {badge}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─── Channel Row ──────────────────────────────────────────────────────────────
+
+function ChannelRow({
+  channel,
+  onSelect,
+  onDelete,
+}: {
+  channel: Channel;
+  onSelect: () => void;
+  onDelete?: (e: React.MouseEvent) => void;
+}) {
+  const isProject = channel.type === 'project';
+  const isDM      = channel.type === 'dm';
+
+  return (
+    <div className="relative group">
+      <button
+        onClick={onSelect}
+        className={`w-full flex items-center gap-3 px-3 py-3 rounded-2xl border transition-all active:scale-[0.98] text-left
+          ${isProject
+            ? 'bg-amber-500/8 border-amber-500/20 hover:bg-amber-500/14 hover:border-amber-500/35'
+            : 'bg-white/5 border-white/10 hover:bg-white/9 hover:border-white/18'
+          }
+          ${onDelete ? 'pr-14' : ''}
+        `}
+      >
+        {/* Icon */}
+        {isDM ? (
+          <InitialAvatar name={channel.name} size="md" color="teal" />
+        ) : (
+          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-lg
+            ${isProject
+              ? 'bg-gradient-to-br from-amber-500 to-orange-500'
+              : 'bg-gradient-to-br from-violet-500/80 to-indigo-600/80'
+            }`}
+          >
+            <Hash className="w-5 h-5 text-white" />
+          </div>
+        )}
+
+        {/* Text */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between mb-0.5">
+            <span className={`text-sm font-semibold ${channel.unread > 0 ? 'text-white' : 'text-white/70'}`}>
+              {isDM ? channel.name : `#${channel.name}`}
+            </span>
+            <span className="text-[11px] text-white/30 shrink-0 ml-2">{channel.timestamp}</span>
+          </div>
+          <p className="text-xs text-white/40 truncate leading-relaxed">{channel.lastMessage}</p>
+        </div>
+
+        {/* Unread badge */}
+        {channel.unread > 0 && (
+          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-black shrink-0
+            ${isProject ? 'bg-amber-400 text-amber-900' : 'bg-violet-500 text-white'}`}
+          >
+            {channel.unread}
+          </div>
+        )}
+
+        <ChevronRight className="w-3.5 h-3.5 text-white/15 shrink-0" />
+      </button>
+
+      {/* Delete button */}
+      {onDelete && (
+        <button
+          onClick={onDelete}
+          className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-xl bg-red-500/80 hover:bg-red-600 flex items-center justify-center transition-all active:scale-90 shadow-lg"
+        >
+          <Trash2 className="w-3.5 h-3.5 text-white" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export function Messaging({ currentUser, userRole, onLogout, onNavigate }: MessagingProps) {
+  const isAdmin = ['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole);
+
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState('');
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
   const [teamMessage, setTeamMessage] = useState('');
-  const [dmMessages, setDmMessages] = useState<Record<string, Message[]>>({});
   const [deletedChannels, setDeletedChannels] = useState<string[]>([]);
+  const [liveMessages, setLiveMessages] = useState<Record<string, Message[]>>({});
 
-  const channels: Channel[] = [
-    {
-      id: 'general',
-      name: 'general',
-      type: 'channel',
-      unread: 3,
-      lastMessage: 'Bugün çok iyi satış yapıyoruz!',
-      timestamp: '10:24',
-      isAdminOnly: false,
-    },
-    {
-      id: 'rotasyon',
-      name: 'rotasyon',
-      type: 'channel',
-      unread: 1,
-      lastMessage: '📋 Günlük rotasyon planı yayınlandı',
-      timestamp: '09:00',
-      isAdminOnly: true,
-    },
-    {
-      id: 'project-zoka',
-      name: 'zoka',
-      type: 'project',
-      unread: 5,
-      lastMessage: '🎯 Mehmet Kaya - 14:30 • 5\'li Albüm (1000 TL)',
-      timestamp: '14:30',
-      isAdminOnly: true,
-    },
-    {
-      id: 'project-balikhali',
-      name: 'balikhali',
-      type: 'project',
-      unread: 2,
-      lastMessage: '📸 Ayşe Demir - 13:15 • 3\'lü Albüm + Paspartu (800 TL)',
-      timestamp: '13:15',
-      isAdminOnly: true,
-    },
-    {
-      id: 'project-hayalkahvesi',
-      name: 'hayalkahvesi',
-      type: 'project',
-      unread: 0,
-      lastMessage: '🎯 Fatma Öz - 12:00 • 7\'li Albüm (1400 TL)',
-      timestamp: 'Dün',
-      isAdminOnly: true,
-    },
-    {
-      id: 'dm-ahmet',
-      name: 'Ahmet Yılmaz',
-      type: 'dm',
-      unread: 2,
-      lastMessage: 'Raporu paylaştım',
-      timestamp: '11:15',
-      avatar: '👨‍💼',
-      isAdminOnly: false,
-    },
-    {
-      id: 'dm-mehmet',
-      name: 'Mehmet Kaya',
-      type: 'dm',
-      unread: 0,
-      lastMessage: 'Tamam, teşekkürler',
-      timestamp: '08:30',
-      avatar: '👨',
-      isAdminOnly: false,
-    },
-  ];
+  const bottomRef = useRef<HTMLDivElement>(null);
 
-  const getMessagesForChannel = (channelId: string): Message[] => {
-    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
-    if (channelId === 'rotasyon') {
-      return [];
-    }
-    
-    // DM channels - load from state or use defaults
-    if (channelId.startsWith('dm-')) {
-      if (dmMessages[channelId]) {
-        return dmMessages[channelId];
-      }
-      
-      // Default DM messages
-      if (channelId === 'dm-ahmet') {
-        return [
-          {
-            id: 'dm-ahmet-1',
-            sender: 'Ahmet Yılmaz',
-            content: 'Merhaba! Bugünkü satışları nasıl buluyorsun?',
-            timestamp: '10:30',
-            isOwn: false,
-            avatar: '👨‍💼',
-          },
-          {
-            id: 'dm-ahmet-2',
-            sender: currentUser,
-            content: 'Harika gidiyor! 5 satış yaptım şimdiye kadar',
-            timestamp: '10:32',
-            isOwn: true,
-            avatar: '👤',
-          },
-          {
-            id: 'dm-ahmet-3',
-            sender: 'Ahmet Yılmaz',
-            content: 'Raporu paylaştım',
-            timestamp: '11:15',
-            isOwn: false,
-            avatar: '👨‍💼',
-          },
-        ];
-      }
-      
-      if (channelId === 'dm-mehmet') {
-        return [
-          {
-            id: 'dm-mehmet-1',
-            sender: currentUser,
-            content: 'Mehmet, yazıcı kağıdı bitmiş mi kontrol eder misin?',
-            timestamp: '08:15',
-            isOwn: true,
-            avatar: '👤',
-          },
-          {
-            id: 'dm-mehmet-2',
-            sender: 'Mehmet Kaya',
-            content: 'Tamam, teşekkürler',
-            timestamp: '08:30',
-            isOwn: false,
-            avatar: '👨',
-          },
-        ];
-      }
-      
-      return [];
-    }
-    
-    // Project channel messages (Sales logs)
-    if (channelId === 'project-zoka') {
-      return [
-        {
-          id: 'z1',
-          sender: 'SATIŞ SİSTEMİ',
-          content: '🎯 Mehmet Kaya - 09:30\n5\'li Albüm (1000 TL)\nToplam: 1000 TL',
-          timestamp: '09:30',
-          isOwn: false,
-          avatar: '💰',
-          isSalesLog: true,
-        },
-        {
-          id: 'z2',
-          sender: 'SATIŞ SİSTEMİ',
-          content: '📸 Ayşe Demir - 10:15\n3\'lü Albüm (600 TL) + Paspartu (200 TL)\n%10 İskonto (-80 TL)\nToplam: 720 TL',
-          timestamp: '10:15',
-          isOwn: false,
-          avatar: '💰',
-          isSalesLog: true,
-        },
-        {
-          id: 'z3',
-          sender: 'SATIŞ SİSTEMİ',
-          content: '🎯 Mehmet Kaya - 11:45\n7\'li Albüm (1400 TL)\nToplam: 1400 TL',
-          timestamp: '11:45',
-          isOwn: false,
-          avatar: '💰',
-          isSalesLog: true,
-        },
-        {
-          id: 'z4',
-          sender: 'SATIŞ SİSTEMİ',
-          content: '📸 Fatma Öz - 13:20\n5\'li Albüm (1000 TL)\n%15 İskonto (-150 TL)\nToplam: 850 TL',
-          timestamp: '13:20',
-          isOwn: false,
-          avatar: '💰',
-          isSalesLog: true,
-        },
-        {
-          id: 'z5',
-          sender: 'SATIŞ SİSTEMİ',
-          content: '🎯 Mehmet Kaya - 14:30\n5\'li Albüm (1000 TL)\nToplam: 1000 TL',
-          timestamp: '14:30',
-          isOwn: false,
-          avatar: '💰',
-          isSalesLog: true,
-        },
-      ];
-    }
-    
-    if (channelId === 'project-balikhali') {
-      return [
-        {
-          id: 'b1',
-          sender: 'SATIŞ SİSTEMİ',
-          content: '📸 Ali Veli - 09:00\n3\'lü Albüm (600 TL)\nToplam: 600 TL',
-          timestamp: '09:00',
-          isOwn: false,
-          avatar: '💰',
-          isSalesLog: true,
-        },
-        {
-          id: 'b2',
-          sender: 'SATIŞ SİSTEMİ',
-          content: '🎯 Ayşe Demir - 13:15\n3\'lü Albüm (600 TL) + Paspartu (200 TL)\nToplam: 800 TL',
-          timestamp: '13:15',
-          isOwn: false,
-          avatar: '💰',
-          isSalesLog: true,
-        },
-      ];
-    }
-
-    if (channelId === 'project-hayalkahvesi') {
-      return [
-        {
-          id: 'h1',
-          sender: 'SATIŞ SİSTEMİ',
-          content: '🎯 Fatma Öz - 12:00\n7\'li Albüm (1400 TL)\nToplam: 1400 TL',
-          timestamp: '12:00',
-          isOwn: false,
-          avatar: '💰',
-          isSalesLog: true,
-        },
-      ];
-    }
-
-    // Default general channel messages
-    return [
-      {
-        id: '1',
-        sender: 'Ahmet Yılmaz',
-        content: 'Günaydın ekip! Bugün harika bir gün olacak 🌞',
-        timestamp: '08:15',
-        isOwn: false,
-        avatar: '👨‍💼',
-      },
-      {
-        id: '2',
-        sender: 'Mehmet Kaya',
-        content: 'Günaydın! ZOKA lokasyonunda hazırız',
-        timestamp: '08:18',
-        isOwn: false,
-        avatar: '👨',
-      },
-      {
-        id: '3',
-        sender: currentUser,
-        content: 'Harika! Balık Halinde de her şey hazır',
-        timestamp: '08:20',
-        isOwn: true,
-        avatar: '👤',
-      },
-      {
-        id: '4',
-        sender: 'Ayşe Demir',
-        content: 'Yazıcı kontrollerini yaptım, sorun yok 👍',
-        timestamp: '08:25',
-        isOwn: false,
-        avatar: '👩',
-      },
-      {
-        id: '5',
-        sender: currentUser,
-        content: 'Mükemmel! İlk satışlar gelmeye başladı',
-        timestamp: '10:24',
-        isOwn: true,
-        avatar: '👤',
-      },
-    ];
+  const getMessages = (channelId: string): Message[] => {
+    if (liveMessages[channelId]) return liveMessages[channelId];
+    const base = DEMO_MESSAGES[channelId] ?? [];
+    return base.map(m => ({ ...m, sender: m.isOwn ? currentUser : m.sender }));
   };
 
-  const handleSendMessage = () => {
-    if (!messageInput.trim()) return;
+  const handleSend = () => {
+    if (!messageInput.trim() || !selectedChannel) return;
+    const newMsg: Message = {
+      id: Date.now().toString(),
+      sender: currentUser,
+      content: messageInput.trim(),
+      timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+      isOwn: true,
+      avatar: '👤',
+    };
+    const prev = getMessages(selectedChannel);
+    setLiveMessages(s => ({ ...s, [selectedChannel]: [...prev, newMsg] }));
     setMessageInput('');
   };
 
-  const handleDeleteMessage = (messageId: string) => {
-    if (!selectedChannel || !currentChannel?.type) return;
-    
-    // Only allow deletion in DM channels
-    if (currentChannel.type === 'dm') {
-      const currentMessages = getMessagesForChannel(selectedChannel);
-      const updatedMessages = currentMessages.filter(msg => msg.id !== messageId);
-      setDmMessages({
-        ...dmMessages,
-        [selectedChannel]: updatedMessages
-      });
-    }
+  const handleDeleteMessage = (msgId: string) => {
+    if (!selectedChannel) return;
+    const prev = getMessages(selectedChannel);
+    setLiveMessages(s => ({ ...s, [selectedChannel]: prev.filter(m => m.id !== msgId) }));
   };
 
-  const handleDeleteConversation = (channelId: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent channel selection
-    setDeletedChannels([...deletedChannels, channelId]);
+  const handleDeleteConversation = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeletedChannels(d => [...d, id]);
   };
 
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [liveMessages, selectedChannel]);
+
+  const currentChannel = CHANNELS.find(c => c.id === selectedChannel);
+  const messages = selectedChannel ? getMessages(selectedChannel) : [];
+  const isReadonly = currentChannel?.type === 'project' ||
+    (currentChannel?.id === 'rotasyon' && !isAdmin);
+
+  // ── Channel List View ──────────────────────────────────────────────────────
   if (!selectedChannel) {
     return (
-      <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
-        {/* Sticky Top Bar */}
-        {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
-          <StaffTopBar
-            userName={currentUser}
-            userRole={userRole}
-            onLogout={onLogout}
-            onNavigate={onNavigate}
-            onBack={() => onNavigate('home')}
-            showBackButton={true}
-          />
-        )}
+      <div className="min-h-screen bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c] pb-24 font-sans">
 
-        {/* Channels Section */}
-        <div className="px-6 pt-6 mb-6">
-          <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-            <Hash className="w-4 h-4" />
-            Kanallar
-          </h3>
+        {/* ── HEADER ── */}
+        <div className="bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-b border-white/10 px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-900/40">
+                <MessageSquare className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-white">Mesajlar</div>
+                <div className="text-[10px] text-white/30">
+                  {isAdmin ? 'Tüm kanallar' : 'Genel kanallar'}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button className="w-8 h-8 rounded-xl bg-white/6 border border-white/10 flex items-center justify-center active:scale-90 transition-all">
+                <Bell className="w-4 h-4 text-white/40" />
+              </button>
+              <button className="w-8 h-8 rounded-xl bg-white/6 border border-white/10 flex items-center justify-center active:scale-90 transition-all">
+                <Menu className="w-4 h-4 text-white/40" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Kanallar ── */}
+        <div className="px-4">
+          <SectionHeader icon={<Hash className="w-3.5 h-3.5" />} label="Kanallar" />
           <div className="space-y-2">
-            {channels
-              .filter((c) => c.type === 'channel')
-              .map((channel) => (
-                <button
-                  key={channel.id}
-                  onClick={() => setSelectedChannel(channel.id)}
-                  className="w-full backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-4 hover:shadow-md transition-all text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center">
-                      <Hash className="w-6 h-6 text-[#2d3748]" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-semibold text-white">#{channel.name}</span>
-                        <span className="text-xs text-gray-400">{channel.timestamp}</span>
-                      </div>
-                      <p className="text-sm text-gray-400 truncate">{channel.lastMessage}</p>
-                    </div>
-                    {channel.unread > 0 && (
-                      <div className="w-6 h-6 rounded-full bg-[#9dd9ea] text-[#2d3748] text-xs font-bold flex items-center justify-center flex-shrink-0">
-                        {channel.unread}
-                      </div>
-                    )}
-                  </div>
-                </button>
+            {CHANNELS
+              .filter(c => c.type === 'channel')
+              .map(ch => (
+                <ChannelRow key={ch.id} channel={ch} onSelect={() => setSelectedChannel(ch.id)} />
               ))}
           </div>
         </div>
 
-        {/* Project Channels Section - Admin Only */}
-        {['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole) && (
-          <div className="px-6 mb-6">
-            <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-              <Hash className="w-4 h-4" />
-              Mekan Kanalları
-              <span className="ml-auto text-xs bg-[#ffd4a3]/20 text-[#ffd4a3] px-2 py-1 rounded-lg">Sadece Yönetici</span>
-            </h3>
+        {/* ── Mekan Kanalları (Admin only) ── */}
+        {isAdmin && (
+          <div className="px-4">
+            <SectionHeader icon={<MapPin className="w-3.5 h-3.5" />} label="Mekan Kanalları" badge="Sadece Yönetici" />
             <div className="space-y-2">
-              {channels
-                .filter((c) => c.type === 'project')
-                .map((channel) => (
-                  <button
-                    key={channel.id}
-                    onClick={() => setSelectedChannel(channel.id)}
-                    className="w-full backdrop-blur-xl bg-gradient-to-br from-[#ffd4a3]/10 to-[#ffc78f]/5 border border-[#ffd4a3]/30 rounded-2xl p-4 hover:shadow-md transition-all text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#ffd4a3] to-[#ffc78f] flex items-center justify-center">
-                        <Hash className="w-6 h-6 text-[#744210]" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-semibold text-white">#{channel.name}</span>
-                          <span className="text-xs text-gray-400">{channel.timestamp}</span>
-                        </div>
-                        <p className="text-xs text-gray-400 truncate">{channel.lastMessage}</p>
-                      </div>
-                      {channel.unread > 0 && (
-                        <div className="w-6 h-6 rounded-full bg-[#ffd4a3] text-[#744210] text-xs font-bold flex items-center justify-center flex-shrink-0">
-                          {channel.unread}
-                        </div>
-                      )}
-                    </div>
-                  </button>
+              {CHANNELS
+                .filter(c => c.type === 'project')
+                .map(ch => (
+                  <ChannelRow key={ch.id} channel={ch} onSelect={() => setSelectedChannel(ch.id)} />
                 ))}
             </div>
           </div>
         )}
 
-        {/* Direct Messages Section */}
-        <div className="px-6 pb-6">
-          <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-            <User className="w-4 h-4" />
-            Direkt Mesajlar
-          </h3>
+        {/* ── Direkt Mesajlar ── */}
+        <div className="px-4">
+          <SectionHeader icon={<User className="w-3.5 h-3.5" />} label="Direkt Mesajlar" />
           <div className="space-y-2">
-            {channels
-              .filter((c) => c.type === 'dm' && !deletedChannels.includes(c.id))
-              .map((channel) => (
-                <div
-                  key={channel.id}
-                  className="relative w-full backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-4 hover:shadow-md transition-all"
-                >
-                  <button
-                    onClick={() => setSelectedChannel(channel.id)}
-                    className="w-full text-left pr-12"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center text-2xl border-2 border-white shadow">
-                        {channel.avatar}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-semibold text-white">{channel.name}</span>
-                          <span className="text-xs text-gray-400">{channel.timestamp}</span>
-                        </div>
-                        <p className="text-sm text-gray-400 truncate">{channel.lastMessage}</p>
-                      </div>
-                      {channel.unread > 0 && (
-                        <div className="w-6 h-6 rounded-full bg-[#9dd9ea] text-[#2d3748] text-xs font-bold flex items-center justify-center flex-shrink-0">
-                          {channel.unread}
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                  {/* Delete conversation button - Always visible */}
-                  <button
-                    onClick={(e) => handleDeleteConversation(channel.id, e)}
-                    className="absolute top-1/2 -translate-y-1/2 right-3 w-9 h-9 rounded-xl bg-red-500/80 hover:bg-red-600 flex items-center justify-center transition-all active:scale-90"
-                    title="Konuşmayı sil"
-                  >
-                    <Trash2 className="w-4 h-4 text-white" />
-                  </button>
-                </div>
+            {CHANNELS
+              .filter(c => c.type === 'dm' && !deletedChannels.includes(c.id))
+              .map(ch => (
+                <ChannelRow
+                  key={ch.id}
+                  channel={ch}
+                  onSelect={() => setSelectedChannel(ch.id)}
+                  onDelete={(e) => handleDeleteConversation(ch.id, e)}
+                />
               ))}
           </div>
-          
-          {/* Personel Listesi Button - Both Admin and Staff */}
+
+          {/* Personel Listesi butonu */}
           <button
             onClick={() => setShowTeamModal(true)}
-            className="w-full mt-4 backdrop-blur-xl bg-gradient-to-br from-[#ffd4a3]/20 to-[#ffc78f]/10 border border-[#ffd4a3]/30 rounded-2xl p-4 hover:shadow-md transition-all"
+            className="w-full mt-4 flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-violet-500/10 border border-violet-500/25 hover:bg-violet-500/18 transition-all active:scale-[0.98]"
           >
-            <div className="flex items-center justify-center gap-2">
-              <User className="w-5 h-5 text-[#ffd4a3]" />
-              <span className="font-bold text-[#ffd4a3]">Personel Listesi</span>
-            </div>
+            <Users className="w-4 h-4 text-violet-300" />
+            <span className="text-sm font-semibold text-violet-300">Personel Listesi</span>
           </button>
         </div>
 
-        {/* Team Modal - Both Admin and Staff */}
+        {/* ── Team Modal ── */}
         {showTeamModal && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-6">
-            <div className="bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] rounded-3xl border border-white/20 shadow-2xl max-w-md w-full max-h-[75vh] flex flex-col">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end justify-center">
+            <div className="bg-[rgba(10,5,30,0.98)] border border-white/12 rounded-t-3xl w-full max-w-lg shadow-2xl max-h-[82vh] flex flex-col">
               {/* Modal Header */}
-              <div className="px-6 py-4 border-b border-white/10 flex-shrink-0">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                    <User className="w-6 h-6 text-[#9dd9ea]" />
+              <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between shrink-0">
+                <div>
+                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+                    <Users className="w-4 h-4 text-violet-400" />
                     Personel Listesi
                   </h2>
-                  <button
-                    onClick={() => {
-                      setShowTeamModal(false);
-                      setSelectedStaff([]);
-                      setTeamMessage('');
-                    }}
-                    className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all"
-                  >
-                    <span className="text-white text-xl">×</span>
-                  </button>
+                  <p className="text-xs text-white/30 mt-0.5">
+                    {selectedStaff.length > 0 ? `${selectedStaff.length} kişi seçildi` : 'Mesaj göndermek için seçin'}
+                  </p>
                 </div>
-                <p className="text-sm text-gray-400 mt-1">
-                  {selectedStaff.length > 0 ? `${selectedStaff.length} personel seçildi` : 'Mesaj göndermek için personel seçin'}
-                </p>
+                <button
+                  onClick={() => { setShowTeamModal(false); setSelectedStaff([]); setTeamMessage(''); }}
+                  className="w-8 h-8 rounded-xl bg-white/8 border border-white/10 flex items-center justify-center active:scale-90 transition-all"
+                >
+                  <X className="w-4 h-4 text-white/60" />
+                </button>
               </div>
 
               {/* Staff List */}
-              <div className="flex-1 overflow-y-auto px-6 py-3 min-h-0">
-                <div className="space-y-2">
-                  {[
-                    'Ahmet Yılmaz',
-                    'Ayşe Demir',
-                    'Fatma Öz',
-                    'Mehmet Kaya',
-                    'Zeynep Şahin',
-                    'Ali Veli',
-                    'Can Yücel',
-                    'Deniz Kara',
-                    'Elif Ak',
-                    'Hasan Çelik',
-                    'İrem Yıldız',
-                    'Kemal Aydın',
-                  ].map((staff) => {
-                    const isSelected = selectedStaff.includes(staff);
-                    return (
-                      <button
-                        key={staff}
-                        onClick={() => {
-                          if (isSelected) {
-                            setSelectedStaff(selectedStaff.filter(s => s !== staff));
-                          } else {
-                            setSelectedStaff([...selectedStaff, staff]);
-                          }
-                        }}
-                        className={`w-full backdrop-blur-xl rounded-xl p-3 transition-all border ${
-                          isSelected
-                            ? 'bg-gradient-to-br from-[#9dd9ea]/20 to-[#7ec8dd]/10 border-[#9dd9ea]/40'
-                            : 'bg-white/5 border-white/10 hover:border-white/20'
+              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5 min-h-0">
+                {STAFF_LIST.map(staff => {
+                  const selected = selectedStaff.includes(staff);
+                  return (
+                    <button
+                      key={staff}
+                      onClick={() => setSelectedStaff(s => selected ? s.filter(x => x !== staff) : [...s, staff])}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all
+                        ${selected
+                          ? 'bg-violet-500/15 border-violet-500/35'
+                          : 'bg-white/4 border-white/8 hover:border-white/16'
                         }`}
+                    >
+                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0
+                        ${selected ? 'bg-violet-500 border-violet-500' : 'border-white/25'}`}
                       >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
-                            isSelected 
-                              ? 'bg-[#9dd9ea] border-[#9dd9ea]'
-                              : 'border-white/30'
-                          }`}>
-                            {isSelected && (
-                              <svg className="w-3 h-3 text-[#2d3748]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                              </svg>
-                            )}
-                          </div>
-                          <span className={`font-semibold ${isSelected ? 'text-[#9dd9ea]' : 'text-white'}`}>
-                            {staff}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                        {selected && (
+                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </div>
+                      <InitialAvatar name={staff} size="sm" color={selected ? 'violet' : 'teal'} />
+                      <span className={`text-sm font-semibold ${selected ? 'text-violet-300' : 'text-white/80'}`}>{staff}</span>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Message Input */}
-              <div className="px-6 py-3 border-t border-white/10 flex-shrink-0">
+              <div className="px-4 py-3 border-t border-white/10 shrink-0 space-y-2">
                 <textarea
                   value={teamMessage}
-                  onChange={(e) => setTeamMessage(e.target.value)}
+                  onChange={e => setTeamMessage(e.target.value)}
                   placeholder="Mesajınızı yazın..."
-                  className="w-full px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder:text-gray-400 focus:outline-none focus:border-[#9dd9ea] transition-all resize-none mb-2"
                   rows={2}
+                  className="w-full px-4 py-3 bg-white/5 border border-white/12 rounded-xl text-sm text-white placeholder-white/25 outline-none focus:border-violet-500/50 resize-none transition-colors"
                 />
                 <button
                   onClick={() => {
                     if (selectedStaff.length > 0 && teamMessage.trim()) {
-                      alert(`Mesaj ${selectedStaff.length} personele gönderildi!`);
                       setShowTeamModal(false);
                       setSelectedStaff([]);
                       setTeamMessage('');
                     }
                   }}
                   disabled={selectedStaff.length === 0 || !teamMessage.trim()}
-                  className="w-full py-3 bg-gradient-to-r from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] rounded-xl font-bold hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 flex items-center justify-center gap-2"
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all shadow-lg shadow-violet-900/40"
                 >
-                  <Send className="w-5 h-5" />
+                  <Send className="w-4 h-4" />
                   Mesaj Gönder
                 </button>
               </div>
@@ -595,140 +476,142 @@ export function Messaging({ currentUser, userRole, onLogout, onNavigate }: Messa
           </div>
         )}
 
-        {/* Bottom Navigation - Only for staff */}
-        {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
-          <NewBottomNav
-            activeTab="messaging"
-            onTabChange={onNavigate}
-            userRole={userRole}
-          />
-        )}
+        <NewBottomNav activeTab="messaging" onTabChange={onNavigate} userRole={userRole} />
       </div>
     );
   }
 
-  const currentChannel = channels.find((c) => c.id === selectedChannel);
-  const messages = getMessagesForChannel(selectedChannel || '');
+  // ── Chat View ──────────────────────────────────────────────────────────────
+
+  const isProjectCh = currentChannel?.type === 'project';
+  const isDMCh      = currentChannel?.type === 'dm';
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col h-screen bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c] font-sans">
+
       {/* Chat Header */}
-      <div className="px-6 py-4 backdrop-blur-xl bg-white/10 border-b border-white/20">
+      <div className="bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-b border-white/10 px-4 py-3 shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSelectedChannel(null)}
-            className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center hover:bg-white/20 transition-all"
+            className="w-9 h-9 rounded-xl bg-white/6 border border-white/10 flex items-center justify-center hover:bg-white/12 transition-all active:scale-90"
           >
-            <ArrowLeft className="w-5 h-5 text-white" />
+            <ArrowLeft className="w-4 h-4 text-white/70" />
           </button>
-          <div className="flex-1">
-            {currentChannel?.type === 'channel' || currentChannel?.type === 'project' ? (
-              <>
-                <div className="font-semibold text-white flex items-center gap-2">
-                  <Hash className="w-4 h-4" />#{currentChannel.name}
-                </div>
-                <div className="text-xs text-gray-400">
-                  {currentChannel.type === 'project' ? 'Mekan Satış Logları' : 'Ekip kanalı'}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="font-semibold text-white">{currentChannel?.name}</div>
-                <div className="text-xs text-[#a8e6cf] flex items-center gap-1">
-                  <div className="w-2 h-2 rounded-full bg-[#a8e6cf]"></div>
-                  Çevrimiçi
-                </div>
-              </>
-            )}
+
+          {isDMCh ? (
+            <InitialAvatar name={currentChannel?.name ?? ''} size="md" color="teal" />
+          ) : (
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0
+              ${isProjectCh ? 'bg-gradient-to-br from-amber-500 to-orange-500' : 'bg-gradient-to-br from-violet-500 to-indigo-600'}`}
+            >
+              <Hash className="w-4 h-4 text-white" />
+            </div>
+          )}
+
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-white truncate">
+              {isDMCh ? currentChannel?.name : `#${currentChannel?.name}`}
+            </div>
+            <div className={`text-[11px] flex items-center gap-1 ${isReadonly ? 'text-amber-400/70' : 'text-white/35'}`}>
+              {isReadonly
+                ? <><Lock className="w-3 h-3" /> Salt okunur</>
+                : isDMCh
+                  ? <><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" /> Çevrimiçi</>
+                  : 'Ekip kanalı'
+              }
+            </div>
           </div>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439]">
-        {messages.map((message) => (
-          <div key={message.id} className={`group flex gap-3 ${message.isOwn ? 'flex-row-reverse' : ''}`}>
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center text-xl flex-shrink-0 border-2 border-white shadow">
-              {message.avatar}
-            </div>
-            <div className={`flex-1 max-w-[75%] ${message.isOwn ? 'flex flex-col items-end' : ''}`}>
-              {!message.isOwn && !message.isSalesLog && (
-                <div className="text-xs font-semibold text-white mb-1">{message.sender}</div>
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-white/20">
+            <MessageSquare className="w-10 h-10 mb-3" />
+            <p className="text-sm">Henüz mesaj yok</p>
+          </div>
+        )}
+
+        {messages.map(msg => (
+          <div key={msg.id} className={`group flex items-end gap-2.5 ${msg.isOwn ? 'flex-row-reverse' : ''}`}>
+            {/* Avatar */}
+            {!msg.isOwn && (
+              msg.isSalesLog
+                ? <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-lg shrink-0">💰</div>
+                : <InitialAvatar name={msg.sender} size="sm" color="teal" />
+            )}
+
+            <div className={`max-w-[76%] ${msg.isOwn ? 'items-end flex flex-col' : ''}`}>
+              {!msg.isOwn && !msg.isSalesLog && (
+                <span className="text-[11px] text-white/40 font-semibold ml-1 mb-1 block">{msg.sender}</span>
               )}
+
               <div className="relative">
-                <div
-                  className={`rounded-2xl px-4 py-3 ${
-                    message.isSalesLog
-                      ? 'bg-gradient-to-br from-[#ffd4a3]/20 to-[#ffc78f]/10 border border-[#ffd4a3]/30 text-white'
-                      : message.isOwn
-                      ? 'bg-gradient-to-r from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748]'
-                      : 'bg-white/10 backdrop-blur-sm border border-white/20 text-white'
+                <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-line
+                  ${msg.isSalesLog
+                    ? 'bg-amber-500/10 border border-amber-500/25 text-white/90 rounded-bl-sm'
+                    : msg.isOwn
+                      ? 'bg-gradient-to-br from-violet-600 to-indigo-700 text-white rounded-br-sm shadow-lg shadow-violet-900/30'
+                      : 'bg-white/8 border border-white/12 text-white/90 rounded-bl-sm backdrop-blur-sm'
                   }`}
                 >
-                  <p className="text-sm whitespace-pre-line">{message.content}</p>
+                  {msg.content}
                 </div>
-                {/* Delete button - Only show for DM messages */}
-                {currentChannel?.type === 'dm' && (
+
+                {/* Delete (DM only) */}
+                {isDMCh && (
                   <button
-                    onClick={() => handleDeleteMessage(message.id)}
-                    className={`absolute top-1 ${message.isOwn ? 'left-1' : 'right-1'} opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-lg bg-red-500/80 hover:bg-red-600 flex items-center justify-center`}
-                    title="Mesajı sil"
+                    onClick={() => handleDeleteMessage(msg.id)}
+                    className={`absolute top-1 ${msg.isOwn ? '-left-8' : '-right-8'} opacity-0 group-hover:opacity-100 w-6 h-6 rounded-lg bg-red-500/80 hover:bg-red-600 flex items-center justify-center transition-all`}
                   >
                     <Trash2 className="w-3 h-3 text-white" />
                   </button>
                 )}
               </div>
-              <div className="text-xs text-gray-400 mt-1">{message.timestamp}</div>
+
+              <span className="text-[10px] text-white/20 mt-1 px-1">{msg.timestamp}</span>
             </div>
           </div>
         ))}
+        <div ref={bottomRef} />
       </div>
 
-      {/* Message Input */}
-      {currentChannel?.type !== 'project' && !(currentChannel?.id === 'rotasyon' && ['personel', 'operasyon', 'bekleyen'].includes(userRole)) && (
-        <div className="px-6 py-4 bg-gradient-to-br from-[#2a2a3a] to-[#3a3a4e] border-t border-white/10">
-          <div className="flex gap-2">
-            <button className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center hover:bg-accent transition-all">
-              <Paperclip className="w-5 h-5 text-muted-foreground" />
+      {/* Input / Readonly notice */}
+      {isReadonly ? (
+        <div className="px-4 pb-6 pt-3 bg-[rgba(10,5,30,0.92)] border-t border-white/8 shrink-0">
+          <div className="flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-white/5 border border-white/10">
+            <Lock className="w-4 h-4 text-amber-400/70" />
+            <span className="text-xs text-white/40">
+              {isProjectCh ? 'Satış log kanalı — salt okunur' : 'Bu kanal yöneticiler tarafından yönetilir'}
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="px-4 pb-6 pt-3 bg-[rgba(10,5,30,0.92)] border-t border-white/8 shrink-0">
+          <div className="flex items-center gap-2 bg-white/5 border border-white/12 rounded-2xl px-3 py-2 focus-within:border-violet-500/40 transition-colors">
+            <button className="w-8 h-8 rounded-xl bg-white/6 flex items-center justify-center shrink-0 active:scale-90 transition-all">
+              <Paperclip className="w-3.5 h-3.5 text-white/35" />
             </button>
             <input
               type="text"
               value={messageInput}
-              onChange={(e) => setMessageInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+              onChange={e => setMessageInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
               placeholder="Mesaj yaz..."
-              className="flex-1 px-4 py-3 bg-muted border-2 border-transparent rounded-2xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:bg-white transition-all"
+              className="flex-1 bg-transparent text-sm text-white placeholder-white/25 outline-none"
             />
-            <button className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center hover:bg-accent transition-all">
-              <Smile className="w-5 h-5 text-muted-foreground" />
+            <button className="w-8 h-8 rounded-xl bg-white/6 flex items-center justify-center shrink-0 active:scale-90 transition-all">
+              <Smile className="w-3.5 h-3.5 text-white/35" />
             </button>
             <button
-              onClick={handleSendMessage}
+              onClick={handleSend}
               disabled={!messageInput.trim()}
-              className="px-6 py-3 bg-gradient-to-r from-primary to-[#a7c7e7] text-primary-foreground rounded-2xl font-semibold hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
+              className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-700 flex items-center justify-center shrink-0 active:scale-90 disabled:opacity-40 transition-all shadow-lg shadow-violet-900/30"
             >
-              <Send className="w-5 h-5" />
+              <Send className="w-3.5 h-3.5 text-white" />
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* Read-only notice for rotasyon channel for staff */}
-      {currentChannel?.id === 'rotasyon' && ['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
-        <div className="px-6 py-3 bg-gradient-to-br from-[#2a2a3a] to-[#3a3a4e] border-t border-white/10">
-          <div className="backdrop-blur-xl bg-[#9dd9ea]/10 border border-[#9dd9ea]/30 rounded-xl p-3 flex items-center justify-center gap-2">
-            <span className="text-2xl">🔒</span>
-            <span className="text-sm text-gray-300">Bu kanal sadece yöneticiler tarafından yönetilir - salt okunur</span>
-          </div>
-        </div>
-      )}
-
-      {/* Read-only notice for project channels */}
-      {currentChannel?.type === 'project' && (
-        <div className="px-6 py-3 bg-gradient-to-br from-[#2a2a3a] to-[#3a3a4e] border-t border-white/10">
-          <div className="backdrop-blur-xl bg-[#ffd4a3]/10 border border-[#ffd4a3]/30 rounded-xl p-3 flex items-center justify-center gap-2">
-            <span className="text-2xl">📋</span>
-            <span className="text-sm text-gray-300">Bu kanal sadece satış loglarını gösterir - salt okunur</span>
           </div>
         </div>
       )}

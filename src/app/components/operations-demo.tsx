@@ -5,7 +5,7 @@ import { ShiftSetup, ShiftSetupData } from './shift-setup';
 import { CurrentStock } from './current-stock';
 import { ShiftEnd } from './shift-end';
 import { QuickSales } from './quick-sales';
-import { StaffTopBar } from './staff-top-bar';
+
 
 interface Project {
   id: string;
@@ -74,14 +74,6 @@ export function OperationsDemo({ userName, userRole, onLogout, onNavigate }: Ope
   if (currentView === 'project-select') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439]">
-        <StaffTopBar
-          userName={userName}
-          userRole={userRole}
-          onBack={undefined}
-          onLogout={onLogout}
-          onNavigate={onNavigate}
-          showBackButton={false}
-        />
         <div className="pb-20 pt-4">
           <ProjectSelector 
             onProjectSelect={handleProjectSelect}

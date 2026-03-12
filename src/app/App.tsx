@@ -1,11 +1,11 @@
+import HeaderBarDemo from './components/header-bar-demo';
 import { useState, useEffect, useRef } from 'react';
-import { Bell, ArrowLeft } from 'lucide-react';
+import { AppHeader } from './components/app-header';
 import { AspectLogo } from './components/aspect-logo';
 import { supabase } from './lib/supabase';
 import { setAuthToken } from './lib/api';
 import { Login } from './components/login';
 import { NewBottomNav } from './components/new-bottom-nav';
-import { HamburgerMenu } from './components/hamburger-menu';
 import { AdminDashboard } from './components/admin-dashboard';
 import { ManagerDashboard } from './components/manager-dashboard';
 import { OperationsDashboard } from './components/operations-dashboard';
@@ -20,7 +20,7 @@ import { RotationSystem } from './components/rotation-system';
 import { StaffProfile } from './components/staff-profile';
 import { Settings } from './components/settings';
 import { AspectAcademy } from './components/aspect-academy';
-import { AIAssistant } from './components/ai-assistant';
+import { AspectAIPage } from './components/aspect-ai-page';
 import { BusinessPanel } from './components/business-panel';
 import { MekanManagement } from './components/mekan-management';
 import { UserManagement } from './components/user-management';
@@ -33,10 +33,8 @@ import { LocationVisits } from './components/location-visits';
 import { ManagerReports } from './components/manager-reports';
 import { BirthdayCalendar } from './components/birthday-calendar';
 import { BirthdayNotifications } from './components/birthday-notifications';
-import { BirthdayTestHelper } from './components/birthday-test-helper';
 import { Announcements } from './components/announcements';
 import { OperationsDemo } from './components/operations-demo';
-import { FrameTracking } from './components/frame-tracking';
 import { ShiftSetup } from './components/shift-setup';
 import { ShiftChoice } from './components/shift-choice';
 import { ShiftEnd } from './components/shift-end';
@@ -427,7 +425,17 @@ export default function App() {
       
       case 'aspect-ai':
         return (
-          <AIAssistant 
+          <AspectAIPage 
+            userRole={userRole}
+            userName={userName}
+            onLogout={handleLogout}
+            onNavigate={handleNavigate}
+          />
+        );
+      
+      case 'aspect-ai-page':
+        return (
+          <AspectAIPage 
             userRole={userRole}
             userName={userName}
             onLogout={handleLogout}
@@ -571,16 +579,8 @@ export default function App() {
           />
         );
       
-      case 'frame-tracking':
-        return (
-          <FrameTracking
-            userName={userName}
-            userRole={userRole}
-            accessToken={accessToken}
-            onLogout={handleLogout}
-            onNavigate={handleNavigate}
-          />
-        );
+      case 'header-demo':
+        return <HeaderBarDemo onNavigate={handleNavigate} />;
       
       default:
         return renderDashboard();
@@ -635,63 +635,25 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439]">
+    <div className="min-h-screen" style={{ background: 'linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%)' }}>
       {/* Mobile Container */}
       <div className="max-w-[480px] mx-auto min-h-screen relative">
         {/* Birthday Notifications */}
         {isLoggedIn && <BirthdayNotifications />}
 
-        {/* Header Bar - Sadece yönetici rolleri için göster, personel için gizle */}
-        {!isStaffRole && !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock) && (
-          <div className="fixed top-0 left-0 right-0 backdrop-blur-xl bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] border-b border-white/10 z-10 max-w-[480px] mx-auto">
-            <div className="flex items-center justify-between px-6 py-4">
-              {/* Left: Profile Avatar */}
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#b8d4f1] to-[#9dd9ea] flex items-center justify-center text-2xl shadow-lg border-2 border-white/20">
-                    {userAvatar}
-                  </div>
-                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#a8e6cf] rounded-full border-2 border-[#2a2a3a]"></div>
-                </div>
-                <div>
-                  <h3 className="font-bold text-white text-sm leading-tight">{userName}</h3>
-                  <p className="text-xs text-gray-400">{getRoleTitle(userRole)}</p>
-                </div>
-              </div>
-
-              {/* Center: Logo */}
-              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                <span className="text-white font-black text-xl tracking-[0.2em] uppercase">ASPECT</span>
-              </div>
-
-              {/* Right: Notifications & Menu */}
-              <div className="flex items-center gap-3">
-                {activeTab !== 'dashboard' && (
-                  <button
-                    onClick={() => setActiveTab('dashboard')}
-                    className="flex items-center justify-center w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-all active:scale-95"
-                  >
-                    <ArrowLeft className="w-5 h-5 text-white" />
-                  </button>
-                )}
-
-                <button className="relative flex items-center justify-center w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-all active:scale-95">
-                  <Bell className="w-5 h-5 text-white" />
-                  <div className="absolute top-1 right-1 w-2 h-2 bg-[#ffd4a3] rounded-full border border-[#2a2a3a]"></div>
-                </button>
-                <HamburgerMenu
-                  userName={userName}
-                  userRole={userRole}
-                  onLogout={handleLogout}
-                  onNavigate={handleNavigate}
-                />
-              </div>
-            </div>
-          </div>
+        {/* App Header — tüm roller için, vardiya akışı dışında */}
+        {!(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock) && (
+          <AppHeader
+            userName={userName}
+            userRole={userRole}
+            activeTab={activeTab}
+            onNavigate={handleNavigate}
+            onLogout={handleLogout}
+          />
         )}
 
         {/* Main Content */}
-        <main className={!isStaffRole && !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock) ? 'pt-20 pb-20' : isStaffRole && !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock) ? 'pb-20' : ''}>
+        <main className={!(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock) ? 'pt-[60px] pb-24' : ''}>
           {renderContent()}
         </main>
 
@@ -699,9 +661,6 @@ export default function App() {
         {!(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock) && (
           <NewBottomNav activeTab={activeTab} onTabChange={handleNavigate} userRole={userRole} />
         )}
-
-        {/* Birthday Test Helper - Development only */}
-        <BirthdayTestHelper />
 
       </div>
     </div>

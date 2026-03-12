@@ -37,7 +37,7 @@ import {
 } from '../services/rotation-service';
 import { RotationTaskModal } from './rotation-task-modal';
 import { RotationLeaveModal } from './rotation-leave-modal';
-import { StaffTopBar } from './staff-top-bar';
+
 
 interface RotationSystemProps {
   userName: string;
@@ -143,8 +143,14 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
 
   // Refresh tasks when needed
   const refreshTasks = async () => {
-    const taskList = await getTasks(accessToken);
-    setTasks(taskList);
+    try {
+      const taskList = await getTasks(accessToken);
+      console.log('[refreshTasks] fetched:', taskList.length, 'tasks');
+      setTasks(taskList);
+    } catch (err) {
+      console.error('[refreshTasks] error:', err);
+      // Sessizce başarısız ol — optimistik güncelleme zaten çalıştı
+    }
   };
 
   // Refresh leave requests when needed
@@ -162,15 +168,8 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
     return currentUserId;
   };
 
-  // 📋 GÖREV PLANLA SEKMESI: Sadece bugün ve gelecek görevleri göster
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  const todayTasks = tasks.filter(t => {
-    const taskDate = new Date(t.date);
-    taskDate.setHours(0, 0, 0, 0);
-    return t.date === selectedDate && taskDate >= today;
-  });
+  // 📋 GÖREV PLANLA SEKMESİ: Seçili tarihe ait tüm görevleri göster
+  const todayTasks = tasks.filter(t => t.date === selectedDate);
   
   const getLocationTasks = () => {
     return todayTasks.filter(t => 
@@ -277,7 +276,21 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
     setShowTaskModal(false);
     setEditingTask(null);
     setPreselectedLocation('');
+    // Sunucudan senkronize et (arka planda)
     refreshTasks();
+  };
+
+  // Optimistik güncelleme: task modal'dan kaydedilir kaydedilmez local state'e ekle/güncelle
+  const handleTaskSaved = (savedTask: Task) => {
+    console.log('[handleTaskSaved] optimistic update:', savedTask.id, savedTask.date, savedTask.type);
+    setTasks(prev => {
+      const exists = prev.some(t => t.id === savedTask.id);
+      if (exists) {
+        return prev.map(t => t.id === savedTask.id ? savedTask : t);
+      } else {
+        return [...prev, savedTask];
+      }
+    });
   };
 
   const handleOpenCancelModal = (task: Task) => {
@@ -710,104 +723,44 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
   // ==========================================
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] pb-20">
-      {/* Staff Top Bar - Only for personel role */}
-      {userRole === 'personel' && (
-        <StaffTopBar
-          userName={userName}
-          userRole={userRole}
-          onLogout={onLogout}
-          onNavigate={onNavigate}
-        />
-      )}
-
-      {/* Header - Only show for non-staff roles */}
-      {userRole !== 'personel' && (
-        <div className="sticky top-0 z-[5] backdrop-blur-xl bg-white/10 border-b border-white/20">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              {/* Logo */}
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center shadow-lg">
-                <Users className="w-6 h-6 text-[#2d3748]" />
-              </div>
-              <div>
-                <h1 className="text-xl font-black text-white">Rotasyon Yönetimi</h1>
-                <p className="text-xs text-gray-400">
-                  {activeTab === 'plan' ? 'Günlük görev planlama' : 
-                   activeTab === 'assigned' ? 'Gönderilen rotasyonlar' : 
-                   'İzin talepleri'}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Tab Butonları */}
-          <div className="flex gap-2 bg-white/10 p-1.5 rounded-xl border border-white/20">
-            {userRole !== 'personel' && (
-              <button
-                onClick={() => setActiveTab('plan')}
-                className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${
-                  activeTab === 'plan'
-                    ? 'bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] shadow-lg'
-                    : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                📋 Görev Planla
-              </button>
-            )}
+    <div className="min-h-screen bg-gradient-to-br from-[#0a051e] via-[#120830] to-[#1a0a3c] pb-20">
+      {/* Tab Buttons — tüm roller için, global header altında sticky */}
+      <div className="sticky top-[64px] z-[4] backdrop-blur-xl bg-[rgba(10,5,30,0.85)] border-b border-white/15 px-6 py-4">
+        <div className="flex gap-2 bg-white/5 p-1.5 rounded-xl border border-white/10">
+          {userRole !== 'personel' && (
             <button
-              onClick={() => setActiveTab('assigned')}
+              onClick={() => setActiveTab('plan')}
               className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${
-                activeTab === 'assigned'
-                  ? 'bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] shadow-lg'
-                  : 'text-gray-400 hover:text-white'
+                activeTab === 'plan'
+                  ? 'bg-white/12 border border-white/20 text-white shadow-sm'
+                  : 'text-white/40 hover:text-white/70'
               }`}
             >
-              📨 Rotasyonlar
+              📋 Görev Planla
             </button>
+          )}
+          <button
+            onClick={() => setActiveTab('assigned')}
+            className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${
+              activeTab === 'assigned'
+                ? 'bg-white/12 border border-white/20 text-white shadow-sm'
+                : 'text-white/40 hover:text-white/70'
+            }`}
+          >
+            📨 Rotasyonlar
+          </button>
             <button
               onClick={() => setActiveTab('leaves')}
               className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${
                 activeTab === 'leaves'
-                  ? 'bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] shadow-lg'
-                  : 'text-gray-400 hover:text-white'
+                  ? 'bg-white/12 border border-white/20 text-white shadow-sm'
+                  : 'text-white/40 hover:text-white/70'
               }`}
             >
               🏖️ İzinler
             </button>
-          </div>
         </div>
-        </div>
-      )}
-
-      {/* Tab Buttons for Staff - Below StaffTopBar */}
-      {userRole === 'personel' && (
-        <div className="sticky top-[72px] z-[4] backdrop-blur-xl bg-white/10 border-b border-white/20 px-6 py-4">
-          <div className="flex gap-2 bg-white/10 p-1.5 rounded-xl border border-white/20">
-            <button
-              onClick={() => setActiveTab('assigned')}
-              className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${
-                activeTab === 'assigned'
-                  ? 'bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] shadow-lg'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              📨 Rotasyonlar
-            </button>
-            <button
-              onClick={() => setActiveTab('leaves')}
-              className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all ${
-                activeTab === 'leaves'
-                  ? 'bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] shadow-lg'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              🏖️ İzinler
-            </button>
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* Tab Content */}
       <AnimatePresence mode="wait">
@@ -825,27 +778,27 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
               <div className="flex items-center gap-2 mb-3">
                 <button
                   onClick={() => changeDate(-1)}
-                  className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-xl border border-white/20 text-white text-xs font-semibold transition-all active:scale-95"
+                  className="px-3 py-2 bg-white/8 hover:bg-white/15 rounded-xl border border-white/15 text-white/80 text-xs font-semibold transition-all active:scale-95"
                 >
                   ◀ Dün
                 </button>
                 <button
                   onClick={goToToday}
-                  className="flex-1 px-4 py-2 bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] hover:from-[#8dd9ea] hover:to-[#6ec8dd] rounded-xl text-[#2d3748] text-xs font-bold transition-all active:scale-95"
+                  className="flex-1 px-4 py-2 bg-white/8 hover:bg-white/14 rounded-xl text-white/80 text-xs font-bold transition-all active:scale-95 border border-white/12"
                 >
                   Bugün
                 </button>
                 <button
                   onClick={() => changeDate(1)}
-                  className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-xl border border-white/20 text-white text-xs font-semibold transition-all active:scale-95"
+                  className="px-3 py-2 bg-white/8 hover:bg-white/15 rounded-xl border border-white/15 text-white/80 text-xs font-semibold transition-all active:scale-95"
                 >
                   Yarın ▶
                 </button>
               </div>
 
               {/* Tarih Input */}
-              <div className="flex items-center gap-2 bg-white/10 rounded-xl p-3 border border-white/20">
-                <Calendar className="w-5 h-5 text-[#9dd9ea]" />
+              <div className="flex items-center gap-2 bg-white/5 rounded-xl p-3 border border-white/10">
+                <Calendar className="w-5 h-5 text-violet-400" />
                 <input
                   type="date"
                   value={selectedDate}
@@ -1087,7 +1040,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                           ) : (
                             <button
                               onClick={() => handleOpenTaskModal('regular_location', undefined, location.name)}
-                              className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] text-[#2d3748] px-4 py-2.5 rounded-xl font-bold text-xs shadow-lg hover:shadow-xl transition-all active:scale-95"
+                              className="flex-1 flex items-center justify-center gap-2 bg-white/8 border border-white/15 text-white px-4 py-2.5 rounded-xl font-bold text-xs hover:bg-white/14 transition-all active:scale-95"
                             >
                               <Plus className="w-4 h-4" />
                               Görev Oluştur
@@ -1112,7 +1065,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                       setSelectedTasks(sendableTasks.map(t => t.id));
                     }
                   }}
-                  className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-all active:scale-95"
+                  className="w-full flex items-center justify-center gap-2 bg-white/8 hover:bg-white/15 border border-white/15 text-white/80 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all active:scale-95"
                 >
                   {selectedTasks.length === sendableTasks.length ? (
                     <>
@@ -1131,7 +1084,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                   {totalSelections > 0 && (
                     <button
                       onClick={handleClearAllSelections}
-                      className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-all active:scale-95"
+                      className="w-full flex items-center justify-center gap-2 bg-white/8 hover:bg-white/15 border border-white/15 text-white/80 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all active:scale-95"
                     >
                       <Square className="w-4 h-4" />
                       Seçimi Temizle
@@ -1142,7 +1095,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                     <button
                       onClick={() => handleSendTasks(false)}
                       disabled={totalSelections === 0}
-                      className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] px-4 py-3 rounded-xl font-bold text-sm shadow-lg hover:shadow-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 flex items-center justify-center gap-2 bg-white/8 border border-white/15 text-white px-4 py-3 rounded-xl font-bold text-sm hover:bg-white/14 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <Send className="w-4 h-4" />
                       Seçili ({totalSelections})
@@ -1150,7 +1103,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                     
                     <button
                       onClick={() => handleSendTasks(true)}
-                      className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] text-[#2d3748] px-4 py-3 rounded-xl font-bold text-sm shadow-lg hover:shadow-xl transition-all active:scale-95"
+                      className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-br from-emerald-500 to-teal-600 text-white px-4 py-3 rounded-xl font-bold text-sm shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all active:scale-95"
                     >
                       <Send className="w-4 h-4" />
                       Tümü ({totalSendable})
@@ -1352,7 +1305,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
               
               <button
                 onClick={() => handleOpenTaskModal('extra_special')}
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] text-[#2d3748] px-4 py-2.5 rounded-xl font-bold text-sm shadow-lg hover:shadow-xl transition-all active:scale-95"
+                className="w-full flex items-center justify-center gap-2 bg-gradient-to-br from-pink-500/80 to-fuchsia-600/80 hover:from-pink-500 hover:to-fuchsia-600 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-pink-500/20 hover:shadow-pink-500/30 transition-all active:scale-95"
               >
                 <Plus className="w-4 h-4" />
                 Ekstra Görev Ekle
@@ -1367,7 +1320,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                 </h2>
               </div>
 
-              <div className="backdrop-blur-xl bg-white/10 rounded-2xl border-2 border-white/20 p-4 min-h-[80px]">
+              <div className="backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10 p-4 min-h-[80px]">
                 {/* BUTONLAR - ALT ALTA */}
                 <div className="flex flex-col gap-2 mb-4">
                   <button
@@ -1379,8 +1332,8 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                     disabled={selectedOnLeave.length === 0}
                     className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium text-xs transition-all active:scale-95 ${
                       selectedOnLeave.length > 0
-                        ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/30 hover:bg-cyan-600'
-                        : 'bg-cyan-500/30 text-cyan-300 cursor-not-allowed opacity-50'
+                        ? 'bg-white/10 border border-white/20 text-white hover:bg-white/15'
+                        : 'bg-white/4 border border-white/8 text-white/25 cursor-not-allowed'
                     }`}
                   >
                     <RefreshCw className="w-3.5 h-3.5 flex-shrink-0" />
@@ -1389,7 +1342,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
 
                   <button
                     onClick={handleMoveAllOnLeaveToStandby}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium text-xs transition-all border-2 border-cyan-500 text-cyan-400 hover:bg-cyan-500/10 active:scale-95"
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium text-xs transition-all border border-white/15 text-white/60 hover:bg-white/8 active:scale-95"
                   >
                     <RefreshCw className="w-3.5 h-3.5 flex-shrink-0" />
                     <span>Tümünü Beklemeye Al</span>
@@ -1414,7 +1367,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                               setSelectedOnLeave(selectableOnLeave.map(p => p.id));
                             }
                           }}
-                          className="text-xs text-[#9dd9ea] hover:text-white transition-all whitespace-nowrap px-2 py-1 rounded"
+                          className="text-xs text-white/50 hover:text-white/80 transition-all whitespace-nowrap px-2 py-1 rounded bg-white/6 hover:bg-white/12 border border-white/12"
                         >
                           {selectedOnLeave.length === onLeavePersonnel.filter(p => p.status !== 'on_leave').length ? 'Temizle' : 'Tümünü Seç'}
                         </button>
@@ -1485,7 +1438,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                 </h2>
               </div>
 
-              <div className="backdrop-blur-xl bg-white/10 rounded-2xl border-2 border-white/20 p-4 min-h-[80px]">
+              <div className="backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10 p-4 min-h-[80px]">
                 {/* BUTONLAR - EN ÜSTTE YAN YANA */}
                 <div className="flex flex-col gap-2 mb-4">
                   <button
@@ -1497,8 +1450,8 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                     disabled={selectedStandby.length === 0}
                     className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium text-xs transition-all active:scale-95 ${
                       selectedStandby.length > 0
-                        ? 'bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/30 hover:shadow-xl'
-                        : 'bg-orange-500/30 text-orange-300 cursor-not-allowed opacity-50'
+                        ? 'bg-white/10 border border-white/20 text-white hover:bg-white/15'
+                        : 'bg-white/4 border border-white/8 text-white/25 cursor-not-allowed'
                     }`}
                   >
                     <Plus className="w-3.5 h-3.5 flex-shrink-0" />
@@ -1507,7 +1460,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
 
                   <button
                     onClick={handleMoveAllStandbyToOnLeave}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium text-xs transition-all border-2 border-cyan-500 text-cyan-400 hover:bg-cyan-500/10 active:scale-95"
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium text-xs transition-all border border-white/15 text-white/60 hover:bg-white/8 active:scale-95"
                   >
                     <Plus className="w-3.5 h-3.5 flex-shrink-0" />
                     <span>Tümünü İzinli Ata</span>
@@ -1517,12 +1470,11 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                 {/* PERSONEL LİSTESİ */}
                 {standbyPersonnel.length > 0 ? (
                   <>
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="text-xs font-semibold text-gray-400">
-                        👥 Göreve atanmamış personel:
-                      </div>
-                      
-                      <div className="flex items-center gap-2">
+                    <div className="flex flex-col gap-2 mb-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs font-semibold text-white/40">
+                          👥 Göreve atanmamış personel:
+                        </div>
                         <button
                           onClick={() => {
                             if (selectedStandby.length === standbyPersonnel.length) {
@@ -1531,33 +1483,32 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                               setSelectedStandby(standbyPersonnel.map(p => p.id));
                             }
                           }}
-                          className="text-xs text-[#9dd9ea] hover:text-white transition-all whitespace-nowrap px-2 py-1 rounded"
+                          className="text-xs text-white/50 hover:text-white/80 transition-all whitespace-nowrap px-2 py-1 rounded bg-white/6 hover:bg-white/12 border border-white/12"
                         >
                           {selectedStandby.length === standbyPersonnel.length ? 'Temizle' : 'Tümünü Seç'}
                         </button>
                       </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      {standbyPersonnel.map((person) => (
-                        <button
-                          key={person.id}
-                          onClick={() => handleToggleStandbySelection(person.id)}
-                          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                            selectedStandby.includes(person.id)
-                              ? 'bg-amber-500/30 border-2 border-amber-400 text-white'
-                              : 'bg-white/10 border border-white/20 text-gray-300'
-                          }`}
-                        >
-                          {selectedStandby.includes(person.id) ? (
-                            <CheckSquare className="w-4 h-4" />
-                          ) : (
-                            <Square className="w-4 h-4" />
-                          )}
-                          <span>{person.avatar}</span>
-                          <span>{person.name}</span>
-                        </button>
-                      ))}
+                      <div className="flex flex-wrap gap-2">
+                        {standbyPersonnel.map((person) => (
+                          <button
+                            key={person.id}
+                            onClick={() => handleToggleStandbySelection(person.id)}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                              selectedStandby.includes(person.id)
+                                ? 'bg-amber-500/20 border border-amber-400/50 text-amber-200'
+                                : 'bg-white/6 border border-white/12 text-white/60 hover:border-white/20'
+                            }`}
+                          >
+                            {selectedStandby.includes(person.id) ? (
+                              <CheckSquare className="w-4 h-4" />
+                            ) : (
+                              <Square className="w-4 h-4" />
+                            )}
+                            <span>{person.avatar}</span>
+                            <span>{person.name}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -1585,304 +1536,251 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
               </h2>
             </div>
 
-            {/* Group tasks by date */}
+            {/* Aktif rotasyonlar üstte — İzinli+Beklemede sonra — Geçmiş Rotasyonlar en altta */}
             {(() => {
-              // 🔄 ROTASYONLAR SEKMESI: Dün, bugün ve gelecek görevleri göster (2+ gün öncesini gösterme)
+              const todayStr = new Date().toISOString().split('T')[0];
+              const now = new Date();
+              const currentTime = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+
               const yesterday = new Date();
               yesterday.setDate(yesterday.getDate() - 1);
               yesterday.setHours(0, 0, 0, 0);
-              
-              const sentTasks = tasks
-                .filter(t => {
-                  if (!(t.status === 'sent' || t.status === 'revised' || t.status === 'cancelled')) return false;
-                  
-                  const taskDate = new Date(t.date);
-                  taskDate.setHours(0, 0, 0, 0);
-                  
-                  return taskDate >= yesterday; // Dün (T-1) ve sonrası
-                })
+
+              const isTaskPast = (task: Task): boolean => {
+                const td = new Date(task.date); td.setHours(0,0,0,0);
+                const tod = new Date(); tod.setHours(0,0,0,0);
+                if (td < tod) return true;
+                if (task.date === todayStr && task.endTime && task.endTime < currentTime) return true;
+                return false;
+              };
+
+              const allSent = tasks.filter(t =>
+                (t.status === 'sent' || t.status === 'revised' || t.status === 'cancelled') &&
+                (() => { const d = new Date(t.date); d.setHours(0,0,0,0); return d >= yesterday; })()
+              );
+
+              const activeTasks = allSent
+                .filter(t => !isTaskPast(t))
                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                 .slice(0, visibleTaskCount);
 
-              const groupedByDate: Record<string, Task[]> = {};
-              sentTasks.forEach(task => {
-                if (!groupedByDate[task.date]) {
-                  groupedByDate[task.date] = [];
-                }
-                groupedByDate[task.date].push(task);
-              });
-              
-              // Add on-leave and standby personnel cards for today
-              const today = new Date().toISOString().split('T')[0];
+              const pastTasks = allSent
+                .filter(t => isTaskPast(t))
+                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
               const todayOnLeave = getOnLeavePersonnel();
               const todayStandby = getStandbyPersonnel();
 
-              return Object.entries(groupedByDate).map(([date, dateTasks]) => {
-                const d = new Date(date);
-                const formattedDate = `${d.getDate()} ${d.toLocaleDateString('tr-TR', { month: 'long' })} ${d.toLocaleDateString('tr-TR', { weekday: 'long' })}`;
-
-                return (
-                  <div key={date} className="mb-6 overflow-visible">
-                    {/* Tarih Başlığı */}
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="h-px flex-1 bg-white/20" />
-                      <div className="text-sm font-bold text-white px-3 py-1.5 bg-white/10 rounded-lg border border-white/20">
-                        {formattedDate}
-                      </div>
-                      <div className="h-px flex-1 bg-white/20" />
-                    </div>
-
-                    {/* Görev Kartları */}
-                    <div className="space-y-3 overflow-visible">
-                      {dateTasks.map((task) => (
-                        <motion.div
-                          key={task.id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className={`backdrop-blur-xl rounded-2xl border-2 overflow-visible border-l-4 relative ${getStatusColors(task)} ${getBorderColor(task)}`}
-                        >
-                          {/* 🗓️ TARİH BADGE - KARTTIN DIŞINDA ÜST SOL */}
-                          <div className="absolute -top-3 -left-3 z-20">
-                            <div className="flex items-center justify-center px-3 py-1.5 bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] border-2 border-white/30 rounded-xl shadow-lg">
-                              <span className="text-[10px] text-[#2d3748] font-bold">
-                                {new Date(task.date).getDate()} {new Date(task.date).toLocaleDateString('tr-TR', { month: 'long' })} {new Date(task.date).toLocaleDateString('tr-TR', { weekday: 'long' })}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* 🎨 WATERMARK İKON - SAĞ ÜST (GÖREV TİPİNE GÖRE) */}
-                          <div className="absolute right-4 top-4 pointer-events-none z-0">
-                            {task.taskType === 'regular' && <Repeat className="w-20 h-20 text-green-500/10" />}
-                            {task.taskType === 'extra' && <Zap className="w-20 h-20 text-pink-500/10" />}
-                            {task.taskType === 'special' && <Star className="w-20 h-20 text-purple-500/10" />}
-                          </div>
-
-                          {/* REVİZE BADGE - SAĞ ÜST */}
-                          {task.revisionCount && task.revisionCount > 0 && (
-                            <div className="absolute -top-3 -right-3 flex flex-col items-center gap-1.5 z-10">
-                              <div className="flex flex-col items-center justify-center px-4 py-2.5 bg-amber-600/90 border-2 border-amber-500 rounded-3xl shadow-lg min-w-[64px]">
-                                <span className="text-xs text-white font-medium leading-tight">Revize</span>
-                                <span className="text-xl text-white font-bold leading-tight">{task.revisionCount}x</span>
-                              </div>
-                              {task.revisedAt && (
-                                <span className="text-[9px] text-white/70 font-medium">{getTimeAgo(task.revisedAt)}</span>
-                              )}
-                            </div>
-                          )}
-                          
-                          <div className="p-4 pt-3 relative z-10">
-                            <div className="flex items-start gap-3">
-                              {/* DURUM İKONU */}
-                              {task.status === 'sent' && <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-1" />}
-                              {task.status === 'revised' && <RefreshCw className="w-5 h-5 text-orange-400 flex-shrink-0 mt-1" />}
-                              {task.status === 'cancelled' && <XCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-1" />}
-                              
-                              <div className="flex-1">
-                                {/* SATIR 1: Zaman + Mekan + Saat */}
-                                <div className="flex items-center gap-1.5 flex-wrap text-xs">
-                                  <span className="text-base">{getTimePeriodIcon(task.startTime)}</span>
-                                  <span className="text-gray-600 mx-1">|</span>
-                                  <span className="text-base">{task.locationIcon}</span>
-                                  <span className="font-bold text-white">{task.location}</span>
-                                  <span className="text-gray-400 mx-1">•</span>
-                                  <span className="text-base">🕐</span>
-                                  <span className="text-green-400 font-semibold">{task.startTime}-{task.endTime}</span>
-                                </div>
-
-                                {/* SATIR 2: Görev Tipi */}
-                                <div className="flex items-center gap-1.5 text-xs ml-8 mb-2">
-                                  <span>{task.taskType === 'special' ? '⭐' : task.taskType === 'extra' ? '📍' : '📌'}</span>
-                                  <span className="text-gray-300">{task.taskType === 'special' ? 'Özel Görev' : task.taskType === 'extra' ? 'Ekstra İş' : 'Sabit Görev'}</span>
-                                  <span className="text-gray-400 mx-1">|</span>
-                                  <span className="text-gray-300">
-                                    Gönderim Saati: {task.status === 'sent' ? task.sentAt : task.status === 'revised' ? task.revisedAt : task.cancelledAt}
-                                  </span>
-                                </div>
-
-                                {/* PERSONEL LİSTESİ */}
-                                <div className="bg-white/10 rounded-xl p-2.5 mb-3">
-                                  <div className="text-xs font-semibold text-gray-400 mb-2">👥 Personel ({task.personnel.length}):</div>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {task.personnel.map((person) => (
-                                      <div key={person.id} className="flex items-center gap-1 bg-white/10 rounded-lg px-2 py-1 text-xs text-white relative group">
-                                        <span>{person.avatar}</span>
-                                        <span className="flex-1 truncate">{person.name}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                {/* NOTLAR */}
-                                {task.notes && (
-                                  <div className="text-xs mt-2 bg-white/10 rounded-lg px-2 py-1 text-gray-300">
-                                    📝 {task.notes}
-                                  </div>
-                                )}
-                                
-                                {/* İPTAL SEBEBİ */}
-                                {task.status === 'cancelled' && task.cancelReason && (
-                                  <div className="text-xs mt-2 bg-red-500/10 border border-red-500/30 rounded-lg px-2 py-1 text-red-300">
-                                    ❌ İptal Sebebi: {task.cancelReason}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </motion.div>
-                      ))}
-
-                      {/* İzinli Personel Kartı (sadece bugün için) */}
-                      {date === today && (
-                        <motion.div
-                          key="on-leave-card"
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="backdrop-blur-xl rounded-2xl border-2 overflow-visible border-l-4 border-l-cyan-400 relative bg-cyan-500/10 border-cyan-500/40"
-                        >
-                          {/* 🗓️ TARİH BADGE - KARTTIN DIŞINDA ÜST SOL */}
-                          <div className="absolute -top-3 -left-3 z-20">
-                            <div className="flex items-center justify-center px-3 py-1.5 bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] border-2 border-white/30 rounded-xl shadow-lg">
-                              <span className="text-[10px] text-[#2d3748] font-bold">
-                                {new Date(date).getDate()} {new Date(date).toLocaleDateString('tr-TR', { month: 'long' })} {new Date(date).toLocaleDateString('tr-TR', { weekday: 'long' })}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* 🎨 WATERMARK İKON - SAĞ ÜST */}
-                          <div className="absolute right-4 top-4 pointer-events-none z-0">
-                            <CalendarX className="w-24 h-24 text-cyan-400/10" />
-                          </div>
-                          
-                          <div className="p-4 pt-10 relative z-10">
-                            <div className="flex items-start gap-3">
-                              <AlertCircle className="w-5 h-5 text-cyan-400 flex-shrink-0 mt-1" />
-                              
-                              <div className="flex-1">
-                                <div className="flex items-center gap-1.5 flex-wrap text-xs">
-                                  <span className="text-base">🏖️</span>
-                                  <span className="text-gray-600 mx-1">|</span>
-                                  <span className="font-bold text-white">Bugün İzinli Personel</span>
-                                  <span className="text-gray-400 mx-1">•</span>
-                                  <span className="text-base">🕐</span>
-                                  <span className="text-green-400 font-semibold">00:00-23:59</span>
-                                </div>
-
-                                <div className="flex items-center gap-1.5 text-xs ml-8 mb-2">
-                                  <span>📋</span>
-                                  <span className="text-gray-300">İzinli Listesi</span>
-                                  <span className="text-gray-400 mx-1">|</span>
-                                  <span className="px-2 py-0.5 bg-orange-500/30 text-orange-200 text-[10px] font-bold rounded">Dinamik Güncelleme</span>
-                                </div>
-
-                                <div className="bg-white/10 rounded-xl p-2.5">
-                                  <div className="text-xs font-semibold text-gray-400 mb-2">👥 Personel ({todayOnLeave.length}):</div>
-                                  {todayOnLeave.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {todayOnLeave.map((person) => (
-                                        <div key={person.id} className="flex items-center gap-1 bg-white/10 rounded-lg px-2 py-1 text-xs text-white">
-                                          <span>{person.avatar}</span>
-                                          <span>{person.name}</span>
-                                          {person.status === 'on_leave' && (
-                                            <span className="text-[9px] bg-orange-500/30 text-orange-200 px-1 py-0.5 rounded font-bold">İZİN</span>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <div className="text-xs text-gray-400 text-center py-2">
-                                      Bugün izinli personel yok
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-
-                      {/* Beklemede Personel Kartı (sadece bugün için) */}
-                      {date === today && (
-                        <motion.div
-                          key="standby-card"
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="backdrop-blur-xl rounded-2xl border-2 overflow-visible border-l-4 border-l-yellow-400 relative bg-yellow-500/10 border-yellow-500/40"
-                        >
-                          {/* 🗓️ TARİH BADGE - KARTTIN DIŞINDA ÜST SOL */}
-                          <div className="absolute -top-3 -left-3 z-20">
-                            <div className="flex items-center justify-center px-3 py-1.5 bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] border-2 border-white/30 rounded-xl shadow-lg">
-                              <span className="text-[10px] text-[#2d3748] font-bold">
-                                {new Date(date).getDate()} {new Date(date).toLocaleDateString('tr-TR', { month: 'long' })} {new Date(date).toLocaleDateString('tr-TR', { weekday: 'long' })}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* 🎨 WATERMARK İKON - SAĞ ÜST */}
-                          <div className="absolute right-4 top-4 pointer-events-none z-0">
-                            <Clock className="w-24 h-24 text-yellow-400/10" />
-                          </div>
-                          
-                          <div className="p-4 pt-10 relative z-10">
-                            <div className="flex items-start gap-3">
-                              <Clock className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-1" />
-                              
-                              <div className="flex-1">
-                                <div className="flex items-center gap-1.5 flex-wrap text-xs">
-                                  <span className="text-base">⏳</span>
-                                  <span className="text-gray-600 mx-1">|</span>
-                                  <span className="font-bold text-white">Rotasyona Atanabilirsiniz Lütfen Haber Bekleyin</span>
-                                  <span className="text-gray-400 mx-1">•</span>
-                                  <span className="text-base">🕐</span>
-                                  <span className="text-green-400 font-semibold">00:00-23:59</span>
-                                </div>
-
-                                <div className="flex items-center gap-1.5 text-xs ml-8 mb-2">
-                                  <span>⏳</span>
-                                  <span className="text-gray-300">Bekleme Listesi</span>
-                                  <span className="text-gray-400 mx-1">|</span>
-                                  <span className="px-2 py-0.5 bg-yellow-500/30 text-yellow-200 text-[10px] font-bold rounded">Dinamik Güncelleme</span>
-                                </div>
-
-                                <div className="bg-white/10 rounded-xl p-2.5">
-                                  <div className="text-xs font-semibold text-gray-400 mb-2">👥 Personel ({todayStandby.length}):</div>
-                                  {todayStandby.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {todayStandby.map((person) => (
-                                        <div key={person.id} className="flex items-center gap-1 bg-white/10 rounded-lg px-2 py-1 text-xs text-white">
-                                          <span>{person.avatar}</span>
-                                          <span>{person.name}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <div className="text-xs text-gray-400 text-center py-2">
-                                      Beklemedeki personel yok
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
+              const renderTaskCard = (task: Task) => (
+                <motion.div
+                  key={task.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`backdrop-blur-xl rounded-2xl border-2 overflow-visible border-l-4 relative ${getStatusColors(task)} ${getBorderColor(task)}`}
+                >
+                  <div className="absolute -top-3 -left-3 z-20">
+                    <div className="flex items-center justify-center px-3 py-1.5 bg-[rgba(10,5,30,0.85)] border border-white/15 rounded-xl backdrop-blur-sm">
+                      <span className="text-[10px] text-white/80 font-bold">
+                        {new Date(task.date).getDate()} {new Date(task.date).toLocaleDateString('tr-TR', { month: 'long' })} {new Date(task.date).toLocaleDateString('tr-TR', { weekday: 'long' })}
+                      </span>
                     </div>
                   </div>
-                );
-              });
-            })()}
+                  <div className="absolute right-4 top-4 pointer-events-none z-0">
+                    {task.taskType === 'regular' && <Repeat className="w-20 h-20 text-green-500/10" />}
+                    {task.taskType === 'extra' && <Zap className="w-20 h-20 text-pink-500/10" />}
+                    {task.taskType === 'special' && <Star className="w-20 h-20 text-purple-500/10" />}
+                  </div>
+                  {task.revisionCount && task.revisionCount > 0 && (
+                    <div className="absolute -top-3 -right-3 flex flex-col items-center gap-1.5 z-10">
+                      <div className="flex flex-col items-center justify-center px-4 py-2.5 bg-amber-600/90 border-2 border-amber-500 rounded-3xl shadow-lg min-w-[64px]">
+                        <span className="text-xs text-white font-medium leading-tight">Revize</span>
+                        <span className="text-xl text-white font-bold leading-tight">{task.revisionCount}x</span>
+                      </div>
+                      {task.revisedAt && (
+                        <span className="text-[9px] text-white/70 font-medium">{getTimeAgo(task.revisedAt)}</span>
+                      )}
+                    </div>
+                  )}
+                  <div className="p-4 pt-3 relative z-10">
+                    <div className="flex items-start gap-3">
+                      {task.status === 'sent' && <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-1" />}
+                      {task.status === 'revised' && <RefreshCw className="w-5 h-5 text-orange-400 flex-shrink-0 mt-1" />}
+                      {task.status === 'cancelled' && <XCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-1" />}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                          <span className="text-base">{getTimePeriodIcon(task.startTime)}</span>
+                          <span className="text-gray-600 mx-1">|</span>
+                          <span className="text-base">{task.locationIcon}</span>
+                          <span className="font-bold text-white">{task.location}</span>
+                          <span className="text-gray-400 mx-1">•</span>
+                          <span className="text-base">🕐</span>
+                          <span className="text-green-400 font-semibold">{task.startTime}-{task.endTime}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs ml-8 mb-2">
+                          <span>{task.taskType === 'special' ? '⭐' : task.taskType === 'extra' ? '📍' : '📌'}</span>
+                          <span className="text-gray-300">{task.taskType === 'special' ? 'Özel Görev' : task.taskType === 'extra' ? 'Ekstra İş' : 'Sabit Görev'}</span>
+                          <span className="text-gray-400 mx-1">|</span>
+                          <span className="text-gray-300">
+                            Gönderim: {task.status === 'sent' ? task.sentAt : task.status === 'revised' ? task.revisedAt : task.cancelledAt}
+                          </span>
+                        </div>
+                        <div className="bg-white/10 rounded-xl p-2.5 mb-3">
+                          <div className="text-xs font-semibold text-gray-400 mb-2">👥 Personel ({task.personnel.length}):</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {task.personnel.map((person) => (
+                              <div key={person.id} className="flex items-center gap-1 bg-white/10 rounded-lg px-2 py-1 text-xs text-white">
+                                <span>{person.avatar}</span>
+                                <span className="flex-1 truncate">{person.name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        {task.notes && (
+                          <div className="text-xs mt-2 bg-white/10 rounded-lg px-2 py-1 text-gray-300">
+                            📝 {task.notes}
+                          </div>
+                        )}
+                        {task.status === 'cancelled' && task.cancelReason && (
+                          <div className="text-xs mt-2 bg-red-500/10 border border-red-500/30 rounded-lg px-2 py-1 text-red-300">
+                            ❌ İptal Sebebi: {task.cancelReason}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              );
 
-            {/* Daha Fazla Göster */}
-            {tasks.filter(t => t.status === 'sent' || t.status === 'revised' || t.status === 'cancelled').length > visibleTaskCount && (
-              <div className="flex justify-center mt-6">
-                <button
-                  onClick={() => setVisibleTaskCount(prev => prev + 10)}
-                  className="flex items-center gap-2 bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] px-6 py-3 rounded-xl font-bold text-sm shadow-lg hover:shadow-xl transition-all active:scale-95"
-                >
-                  <Plus className="w-4 h-4" />
-                  Daha Fazla +10
-                </button>
-              </div>
-            )}
+              return (
+                <>
+                  {/* ── AKTİF ROTASYONLAR ── */}
+                  <div className="space-y-4 overflow-visible mb-4">
+                    {activeTasks.map(task => renderTaskCard(task))}
+                  </div>
+
+                  {activeTasks.length === 0 && pastTasks.length === 0 && (
+                    <div className="text-center py-12 text-white/30 text-sm">
+                      Henüz gönderilen rotasyon yok
+                    </div>
+                  )}
+
+                  {/* ── İZİNLİ PERSONEL KARTI ── */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="backdrop-blur-xl rounded-2xl border-2 overflow-visible border-l-4 border-l-cyan-400 relative bg-cyan-500/10 border-cyan-500/40 mb-4"
+                  >
+                    <div className="absolute right-4 top-4 pointer-events-none z-0">
+                      <CalendarX className="w-24 h-24 text-cyan-400/10" />
+                    </div>
+                    <div className="p-4 relative z-10">
+                      <div className="flex items-start gap-3">
+                        <AlertCircle className="w-5 h-5 text-cyan-400 flex-shrink-0 mt-1" />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap text-xs mb-2">
+                            <span className="text-base">🏖️</span>
+                            <span className="font-bold text-white">Bugün İzinli Personel</span>
+                            <span className="px-2 py-0.5 bg-orange-500/30 text-orange-200 text-[10px] font-bold rounded ml-1">Dinamik</span>
+                          </div>
+                          <div className="bg-white/10 rounded-xl p-2.5">
+                            <div className="text-xs font-semibold text-gray-400 mb-2">👥 Personel ({todayOnLeave.length}):</div>
+                            {todayOnLeave.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5">
+                                {todayOnLeave.map((person) => (
+                                  <div key={person.id} className="flex items-center gap-1 bg-white/10 rounded-lg px-2 py-1 text-xs text-white">
+                                    <span>{person.avatar}</span>
+                                    <span>{person.name}</span>
+                                    {person.status === 'on_leave' && (
+                                      <span className="text-[9px] bg-orange-500/30 text-orange-200 px-1 py-0.5 rounded font-bold">İZİN</span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-400 text-center py-2">Bugün izinli personel yok</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  {/* ── BEKLEMEDE PERSONEL KARTI ── */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="backdrop-blur-xl rounded-2xl border-2 overflow-visible border-l-4 border-l-yellow-400 relative bg-yellow-500/10 border-yellow-500/40 mb-6"
+                  >
+                    <div className="absolute right-4 top-4 pointer-events-none z-0">
+                      <Clock className="w-24 h-24 text-yellow-400/10" />
+                    </div>
+                    <div className="p-4 relative z-10">
+                      <div className="flex items-start gap-3">
+                        <Clock className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-1" />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap text-xs mb-2">
+                            <span className="text-base">⏳</span>
+                            <span className="font-bold text-white">Rotasyona Atanabilirsiniz — Haber Bekleyin</span>
+                            <span className="px-2 py-0.5 bg-yellow-500/30 text-yellow-200 text-[10px] font-bold rounded ml-1">Dinamik</span>
+                          </div>
+                          <div className="bg-white/10 rounded-xl p-2.5">
+                            <div className="text-xs font-semibold text-gray-400 mb-2">👥 Personel ({todayStandby.length}):</div>
+                            {todayStandby.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5">
+                                {todayStandby.map((person) => (
+                                  <div key={person.id} className="flex items-center gap-1 bg-white/10 rounded-lg px-2 py-1 text-xs text-white">
+                                    <span>{person.avatar}</span>
+                                    <span>{person.name}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-400 text-center py-2">Beklemedeki personel yok</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  {/* ── GEÇMİŞ ROTASYONLAR ── */}
+                  {pastTasks.length > 0 && (
+                    <>
+                      <div className="flex items-center gap-3 my-2 mb-5">
+                        <div className="h-px flex-1 bg-white/6" />
+                        <div className="flex items-center gap-2.5 px-5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/6">
+                          <FileText className="w-4 h-4 text-white/20 flex-shrink-0" />
+                          <span className="text-sm font-black tracking-[0.2em] text-white/20 uppercase">
+                            Geçmiş Rotasyonlar
+                          </span>
+                          <span className="text-[11px] font-bold text-white/15 bg-white/5 px-2 py-0.5 rounded-full">
+                            {pastTasks.length}
+                          </span>
+                        </div>
+                        <div className="h-px flex-1 bg-white/6" />
+                      </div>
+
+                      <div className="space-y-4 overflow-visible">
+                        {pastTasks.map(task => renderTaskCard(task))}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Daha Fazla Göster */}
+                  {allSent.filter(t => !isTaskPast(t)).length > visibleTaskCount && (
+                    <div className="flex justify-center mt-6">
+                      <button
+                        onClick={() => setVisibleTaskCount(prev => prev + 10)}
+                        className="flex items-center gap-2 bg-white/8 border border-white/15 text-white/80 px-6 py-3 rounded-xl font-bold text-sm hover:bg-white/14 transition-all active:scale-95"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Daha Fazla +10
+                      </button>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </motion.div>
         )}
 
@@ -1895,32 +1793,42 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
             exit={{ opacity: 0, x: 20 }}
             className="px-6 py-6 relative z-0"
           >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                🏖️ İzin Talepleri
-                <span className="text-xs bg-white/20 px-2 py-1 rounded-lg">{leaveRequests.length}</span>
-              </h2>
-              
-              <div className="flex items-center gap-2">
-                {/* Geçmişim Butonu */}
+            {/* ── İZİN TALEPLERI HEADER ── */}
+            <div className="mb-5">
+              {/* Başlık + Sayaç */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-white/6 border border-white/10 flex items-center justify-center flex-shrink-0">
+                    <span className="text-xl">🏖️</span>
+                  </div>
+                  <div>
+                    <h2 className="text-base font-black text-white leading-tight">İzin Talepleri</h2>
+                    <p className="text-[11px] text-white/35 leading-tight">Vardiya izin yönetimi</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-center min-w-[36px] h-9 px-3 rounded-xl bg-white/6 border border-white/10">
+                  <span className="text-sm font-black text-white/70">{leaveRequests.length}</span>
+                </div>
+              </div>
+
+              {/* Aksiyon Butonları */}
+              <div className="flex gap-2">
                 <button
                   onClick={() => setShowPersonalHistory(!showPersonalHistory)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs shadow-lg hover:shadow-xl transition-all active:scale-95 ${
-                    showPersonalHistory 
-                      ? 'bg-gradient-to-br from-[#ffd89b] to-[#ffb347] text-[#2d3748]' 
-                      : 'bg-white/10 text-white border-2 border-white/20'
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs transition-all active:scale-95 ${
+                    showPersonalHistory
+                      ? 'bg-amber-500/20 border border-amber-400/40 text-amber-200'
+                      : 'bg-white/6 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white/80'
                   }`}
                 >
-                  <Calendar className="w-4 h-4" />
-                  📊 Geçmişim
+                  <Calendar className="w-3.5 h-3.5" />
+                  Geçmişim
                 </button>
-                
-                {/* İzin Ekle Butonu */}
                 <button
                   onClick={() => setShowLeaveModal(true)}
-                  className="flex items-center gap-1.5 bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] text-[#2d3748] px-3 py-2 rounded-xl font-bold text-xs shadow-lg hover:shadow-xl transition-all active:scale-95"
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs bg-white/6 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white/80 transition-all active:scale-95"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5" />
                   İzin Ekle
                 </button>
               </div>
@@ -1950,8 +1858,8 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                           onClick={() => setHistoryFilter('week')}
                           className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
                             historyFilter === 'week'
-                              ? 'bg-[#9dd9ea] text-[#2d3748]'
-                              : 'bg-white/10 text-gray-400 hover:bg-white/20'
+                              ? 'bg-white/12 border border-white/18 text-white'
+                              : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'
                           }`}
                         >
                           Bu Hafta
@@ -1960,8 +1868,8 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                           onClick={() => setHistoryFilter('month')}
                           className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
                             historyFilter === 'month'
-                              ? 'bg-[#9dd9ea] text-[#2d3748]'
-                              : 'bg-white/10 text-gray-400 hover:bg-white/20'
+                              ? 'bg-white/12 border border-white/18 text-white'
+                              : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'
                           }`}
                         >
                           Bu Ay
@@ -1970,8 +1878,8 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                           onClick={() => setHistoryFilter('2months')}
                           className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
                             historyFilter === '2months'
-                              ? 'bg-[#9dd9ea] text-[#2d3748]'
-                              : 'bg-white/10 text-gray-400 hover:bg-white/20'
+                              ? 'bg-white/12 border border-white/18 text-white'
+                              : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'
                           }`}
                         >
                           Son 2 Ay
@@ -2242,7 +2150,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[90]"
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[90]"
             onClick={() => setShowCancelModal(false)}
           >
             <motion.div
@@ -2250,7 +2158,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-gradient-to-br from-gray-800 to-gray-900 border-2 border-white/20 rounded-2xl p-6 max-w-md w-full"
+              className="bg-gradient-to-br from-[#0f0825] to-[#1a0a3c] border-2 border-white/15 rounded-2xl p-6 max-w-md w-full"
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl font-bold text-white">Görevi İptal Et</h3>
@@ -2287,7 +2195,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowCancelModal(false)}
-                  className="flex-1 py-3 px-4 bg-gray-600/50 border-2 border-gray-500/30 text-gray-200 rounded-xl font-semibold hover:bg-gray-600/70 transition-all active:scale-95"
+                  className="flex-1 py-3 px-4 bg-white/8 border border-white/15 text-white/80 rounded-xl font-semibold hover:bg-white/15 transition-all active:scale-95"
                 >
                   Vazgeç
                 </button>
@@ -2319,6 +2227,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
           preselectedLocation={preselectedLocation}
           accessToken={accessToken}
           onClose={handleCloseTaskModal}
+          onTaskSaved={handleTaskSaved}
         />
       )}
 

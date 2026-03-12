@@ -123,7 +123,7 @@ export function ModernDashboard({ userName, userRole, onLogout, onNavigate }: Mo
         <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5">
           <h3 className="font-semibold text-white mb-4">Saatlik Satış Trendi</h3>
           <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%" minHeight={192}>
+            <ResponsiveContainer width="100%" height={192} minWidth={0}>
               <LineChart data={salesData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#ffffff20" />
                 <XAxis dataKey="time" stroke="#9ca3af" style={{ fontSize: '12px' }} />
@@ -156,7 +156,7 @@ export function ModernDashboard({ userName, userRole, onLogout, onNavigate }: Mo
         <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5">
           <h3 className="font-semibold text-white mb-4">Proje Performansı</h3>
           <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%" minHeight={192}>
+            <ResponsiveContainer width="100%" height={192} minWidth={0}>
               <BarChart data={projectData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#ffffff20" />
                 <XAxis dataKey="name" stroke="#9ca3af" style={{ fontSize: '12px' }} />

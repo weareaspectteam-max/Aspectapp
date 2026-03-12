@@ -155,36 +155,32 @@ export const getTasks = async (token?: string): Promise<Task[]> => {
 };
 
 export const saveTask = async (task: Task, token?: string): Promise<void> => {
-  try {
-    const headers = token ? buildHeaders(token) : await authHeaders();
-    const res = await fetch(`${API_BASE}/rotasyon/gorevler`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(task),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      console.error('saveTask error:', err);
-    }
-  } catch (error) {
-    console.error('Error saving task:', error);
+  const headers = token ? buildHeaders(token) : await authHeaders();
+  const res = await fetch(`${API_BASE}/rotasyon/gorevler`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(task),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    const message = err?.error || `HTTP ${res.status}`;
+    console.error('saveTask error:', message);
+    throw new Error(message);
   }
 };
 
 export const updateTask = async (taskId: string, updates: Partial<Task>, token?: string): Promise<void> => {
-  try {
-    const headers = token ? buildHeaders(token) : await authHeaders();
-    const res = await fetch(`${API_BASE}/rotasyon/gorevler/${taskId}`, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify(updates),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      console.error('updateTask error:', err);
-    }
-  } catch (error) {
-    console.error('Error updating task:', error);
+  const headers = token ? buildHeaders(token) : await authHeaders();
+  const res = await fetch(`${API_BASE}/rotasyon/gorevler/${taskId}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    const message = err?.error || `HTTP ${res.status}`;
+    console.error('updateTask error:', message);
+    throw new Error(message);
   }
 };
 

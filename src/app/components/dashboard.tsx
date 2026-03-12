@@ -111,7 +111,7 @@ export function Dashboard({ userName }: DashboardProps) {
             <p className="text-xs text-muted-foreground">Günlük satış trendi</p>
           </div>
           <div className="h-[180px]">
-            <ResponsiveContainer width="100%" height="100%" minHeight={180}>
+            <ResponsiveContainer width="100%" height={180} minWidth={0}>
               <LineChart data={revenueData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
                 <XAxis 
@@ -157,7 +157,7 @@ export function Dashboard({ userName }: DashboardProps) {
             <p className="text-xs text-muted-foreground">Net kâr trendi</p>
           </div>
           <div className="h-[180px]">
-            <ResponsiveContainer width="100%" height="100%" minHeight={180}>
+            <ResponsiveContainer width="100%" height={180} minWidth={0}>
               <LineChart data={profitData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
                 <XAxis 

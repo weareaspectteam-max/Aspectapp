@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Send, Clock, ShoppingCart, X, Plus, Trash2, Tag, XCircle, CheckCircle, ArrowLeft, AlertCircle, Camera, ChevronRight, UserPlus, Package, Printer, Grid3x3, Film, AlertTriangle, TrendingDown, TrendingUp } from 'lucide-react';
+import { Send, Clock, ShoppingCart, X, Plus, Trash2, Tag, XCircle, CheckCircle, ArrowLeft, AlertCircle, Camera, ChevronRight, UserPlus, Package, Printer, Grid3x3, Film, AlertTriangle, TrendingDown, TrendingUp, Maximize2, Minimize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ProjectSelector } from './project-selector';
-import { StaffTopBar } from './staff-top-bar';
+import { LiveFeedSheet } from './live-feed-sheet';
+
 import { NewBottomNav } from './new-bottom-nav';
 import { getTasks, getStaffMembers, type StaffMember } from '../services/rotation-service';
 import {
@@ -83,9 +84,16 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
   const [showShiftEndSuccess, setShowShiftEndSuccess] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'EUR' | 'GBP' | null>(null);
   const [exchangeRates, setExchangeRates] = useState({ USD: 34.52, EUR: 37.89, GBP: 43.26 });
+  const [ratesLoading, setRatesLoading] = useState(false);
 
   // Mode tabs: shift-start | sales | frames | shift-end
   const [activeMode, setActiveMode] = useState<'shift-start' | 'sales' | 'frames' | 'shift-end'>('shift-start');
+
+  // Canlı feed bottom sheet
+  const [showLiveFeed, setShowLiveFeed] = useState(false);
+
+  // Operasyon paneli tam ekran
+  const [operasyonFullscreen, setOperasyonFullscreen] = useState(false);
 
   // Frame tracking state
   const [framePhotographer, setFramePhotographer] = useState<StaffMember | null>(null);
@@ -154,7 +162,23 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
 
   useEffect(() => {
     const load = async () => {
-      setExchangeRates({ USD: 34.52, EUR: 37.89, GBP: 43.26 });
+      // Canlı kur çek
+      try {
+        setRatesLoading(true);
+        const { authHeaders } = await import('../lib/api');
+        const headers = await authHeaders();
+        const res = await fetch(`${API_BASE_QS}/doviz/canli`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.rates) {
+            setExchangeRates({ USD: Number(data.rates.USD), EUR: Number(data.rates.EUR), GBP: Number(data.rates.GBP) });
+          }
+        }
+      } catch (err) {
+        console.error('QuickSales exchange rate fetch error:', err);
+      } finally {
+        setRatesLoading(false);
+      }
       const staff = await getStaffMembers();
       setAllStaff(Array.isArray(staff) ? staff : []);
     };
@@ -567,9 +591,13 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
   };
 
   return (
-    <div className="pb-32 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
-      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
-        <StaffTopBar userName={userName} userRole={userRole} onBack={() => onNavigate('home')} onLogout={onLogout} onNavigate={onNavigate} showBackButton={true} />
+    <div className={operasyonFullscreen
+      ? 'fixed inset-0 z-[70] bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c] overflow-y-auto overscroll-contain flex flex-col'
+      : 'pb-32 bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c] min-h-screen'
+    }>
+      {/* Tam ekran modunda status bar boşluğu */}
+      {operasyonFullscreen && (
+        <div className="flex-shrink-0 h-safe-top" style={{ height: 'env(safe-area-inset-top, 44px)' }} />
       )}
 
       {(['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole) || !preSelectedProject) && (
@@ -579,6 +607,13 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
             if (onProjectSelect) onProjectSelect(project.name);
           }}
           selectedProject={selectedProject}
+          onBack={onBack}
+          userRole={userRole}
+          onLiveFeed={
+            ['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole) && selectedProject
+              ? () => setShowLiveFeed(true)
+              : undefined
+          }
         />
       )}
 
@@ -590,26 +625,10 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
         </div>
       ) : (
         <>
-          {!(['personel', 'operasyon', 'bekleyen'].includes(userRole) && preSelectedProject) && (
-            <div className="px-6 pb-4 pt-6">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  {onBack && (
-                    <button onClick={onBack} className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 flex items-center justify-center transition-all mr-2">
-                      <ArrowLeft className="w-5 h-5 text-white" />
-                    </button>
-                  )}
-                  <h1 className="text-2xl font-bold text-white">Operasyon</h1>
-                  <span className="text-2xl">⚡</span>
-                </div>
-              </div>
-              <p className="text-sm text-gray-400">{selectedProject.name} • Tüm vardiya işlemleri</p>
-            </div>
-          )}
 
           {/* ── 4 MODE TABS ── */}
           <div className="px-4 pb-3">
-            <div className="flex gap-1 bg-white/5 rounded-2xl p-1 border border-white/10">
+            <div className="flex gap-1 items-stretch bg-white/5 rounded-2xl p-1 border border-white/10">
               <button
                 onClick={() => setActiveMode('shift-start')}
                 className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all flex flex-col items-center gap-0.5 ${
@@ -653,6 +672,22 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
               >
                 <span className="text-base">{shiftEndDone ? '✅' : '🏁'}</span>
                 <span>Kapanış</span>
+              </button>
+
+              {/* Tam ekran butonu */}
+              <button
+                onClick={() => setOperasyonFullscreen(v => !v)}
+                className={`w-9 self-stretch rounded-xl flex items-center justify-center transition-all active:scale-90 flex-shrink-0 ${
+                  operasyonFullscreen
+                    ? 'bg-white/20 text-white'
+                    : 'text-gray-500 hover:text-white hover:bg-white/10'
+                }`}
+                title={operasyonFullscreen ? 'Küçült' : 'Tam Ekran'}
+              >
+                {operasyonFullscreen
+                  ? <Minimize2 className="w-3.5 h-3.5" />
+                  : <Maximize2 className="w-3.5 h-3.5" />
+                }
               </button>
             </div>
           </div>
@@ -970,7 +1005,7 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
             <div className="px-6 space-y-4 pb-8">
               {/* Product Grid */}
               <div>
-                <label className="text-sm font-semibold text-white mb-3 block flex items-center gap-2">
+                <label className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
                   <span>Albüm Seç</span>
                   <span className="text-lg">📚</span>
                 </label>
@@ -979,11 +1014,11 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
                     <button
                       key={product.name}
                       onClick={() => addToCart(product.name, product.price)}
-                      className={`relative p-2.5 rounded-xl bg-gradient-to-br ${product.color} text-[#2d3748] transition-all active:scale-95 shadow-lg hover:shadow-xl group`}
+                      className={`relative aspect-square p-2 rounded-xl bg-gradient-to-br ${product.color} text-[#2d3748] transition-all active:scale-95 shadow-lg hover:shadow-xl group flex flex-col items-center justify-center`}
                     >
-                      <div className="text-lg mb-1">{product.icon}</div>
-                      <div className="text-xs font-bold mb-0.5 leading-tight">{product.name}</div>
-                      <div className="text-xs opacity-90 font-semibold">₺{product.price}</div>
+                      <div className="text-lg mb-0.5">{product.icon}</div>
+                      <div className="text-[10px] font-bold leading-tight text-center">{product.name}</div>
+                      <div className="text-[10px] opacity-90 font-semibold mt-0.5">₺{product.price}</div>
                       <div className="absolute top-1 right-1 w-5 h-5 bg-white/20 backdrop-blur rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <Plus className="w-3 h-3 text-[#2d3748]" />
                       </div>
@@ -1085,20 +1120,23 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
               <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-xl p-4 shadow-lg">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2"><span className="text-lg">💱</span><h3 className="text-sm font-bold text-white">Güncel Kurlar & Çevirici</h3></div>
-                  <div className="text-xs text-gray-400">Canlı</div>
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-1.5 h-1.5 rounded-full ${ratesLoading ? 'bg-yellow-400 animate-pulse' : 'bg-[#a8e6cf] animate-pulse'}`} />
+                    <span className="text-[10px] text-gray-400">{ratesLoading ? 'Yükleniyor' : 'Canlı'}</span>
+                  </div>
                 </div>
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   {[
-                    { code: 'USD' as const, flag: '🇺🇸', rate: exchangeRates.USD, color: '[#a8e6cf]', trend: '↑ 0.12%', up: true },
-                    { code: 'EUR' as const, flag: '🇪🇺', rate: exchangeRates.EUR, color: '[#9dd9ea]', trend: '↑ 0.08%', up: true },
-                    { code: 'GBP' as const, flag: '🇬🇧', rate: exchangeRates.GBP, color: '[#ffd4a3]', trend: '↓ 0.05%', up: false },
+                    { code: 'USD' as const, flag: '🇺🇸', rate: exchangeRates.USD, color: '[#a8e6cf]' },
+                    { code: 'EUR' as const, flag: '🇪🇺', rate: exchangeRates.EUR, color: '[#9dd9ea]' },
+                    { code: 'GBP' as const, flag: '🇬🇧', rate: exchangeRates.GBP, color: '[#ffd4a3]' },
                   ].map(c => (
                     <button key={c.code} onClick={() => setSelectedCurrency(c.code)}
                       className={`bg-white/5 rounded-lg p-3 text-center transition-all active:scale-95 ${selectedCurrency === c.code ? `ring-2 ring-${c.color} bg-${c.color}/10` : 'hover:bg-white/10'}`}
                     >
                       <div className="text-xs text-gray-400 mb-1 flex items-center justify-center gap-1"><span>{c.flag}</span><span>{c.code}</span></div>
                       <div className={`text-base font-bold text-${c.color}`}>₺{c.rate.toFixed(2)}</div>
-                      <div className={`text-xs flex items-center justify-center gap-1 mt-1 ${c.up ? `text-${c.color}` : 'text-[#ffb3ba]'}`}>{c.trend}</div>
+                      <div className="text-[10px] text-white/30 mt-0.5">1 {c.code}</div>
                     </button>
                   ))}
                 </div>
@@ -2322,6 +2360,17 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
 
       {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <NewBottomNav activeTab="home" onTabChange={onNavigate} userRole={userRole} />
+      )}
+
+      {/* ── Canlı Feed Bottom Sheet ── */}
+      {showLiveFeed && selectedProject && (
+        <LiveFeedSheet
+          mekanId={resolvedMekanId || selectedProject.id}
+          mekanName={selectedProject.name}
+          mekanIcon={selectedProject.icon}
+          mekanColor={selectedProject.color}
+          onClose={() => setShowLiveFeed(false)}
+        />
       )}
     </div>
   );

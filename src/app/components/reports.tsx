@@ -150,7 +150,7 @@ export function Reports() {
         <div className="bg-card rounded-2xl p-5 border border-border">
           <h3 className="font-semibold text-foreground mb-4">Günlük Performans</h3>
           <div className="h-[220px]">
-            <ResponsiveContainer width="100%" height="100%" minHeight={220}>
+            <ResponsiveContainer width="100%" height={220} minWidth={0}>
               <BarChart data={dailyRevenue}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
                 <XAxis 
@@ -195,7 +195,7 @@ export function Reports() {
         <div className="bg-card rounded-2xl p-5 border border-border">
           <h3 className="font-semibold text-foreground mb-4">Projelere Göre Ciro</h3>
           <div className="h-[180px] mb-4">
-            <ResponsiveContainer width="100%" height="100%" minHeight={180}>
+            <ResponsiveContainer width="100%" height={180} minWidth={0}>
               <PieChart>
                 <Pie
                   data={revenueByProject}

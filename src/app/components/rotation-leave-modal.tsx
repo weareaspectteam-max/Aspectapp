@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Calendar, User, FileText, AlertCircle } from 'lucide-react';
+import { X, Calendar, User, FileText, AlertCircle, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   saveLeaveRequest,
@@ -43,141 +43,77 @@ export function RotationLeaveModal({
   const [notes, setNotes] = useState<string>(editingLeave?.notes || '');
   const [showWarning, setShowWarning] = useState<string>('');
 
-  // Permission checks
   const showStaffSelector = shouldShowStaffSelector(userRole);
   const availableStaff = getAvailableStaffForLeave(userRole, staffMembers);
 
-  // Auto-select current user for personel/idari roles
   useEffect(() => {
     if (!showStaffSelector && !editingLeave) {
       if (currentUserId) {
-        // 1️⃣ Önce doğrudan ID eşleşmesi dene
         const foundById = staffMembers.find(s => s.id === currentUserId);
-        if (foundById) {
-          setPersonnelId(currentUserId);
-          return;
-        }
-        
-        // 2️⃣ ID eşleşmedi - isim bazlı ara
+        if (foundById) { setPersonnelId(currentUserId); return; }
         if (userName) {
           const foundByName = staffMembers.find(s => s.name === userName);
-          if (foundByName) {
-            setPersonnelId(foundByName.id);
-            return;
-          }
+          if (foundByName) { setPersonnelId(foundByName.id); return; }
         }
-        
-        // 3️⃣ İsim de eşleşmedi - rol bazlı ilk kullanıcıyı seç
         const foundByRole = staffMembers.find(s => s.role === userRole);
-        if (foundByRole) {
-          setPersonnelId(foundByRole.id);
-          return;
-        }
+        if (foundByRole) { setPersonnelId(foundByRole.id); return; }
       } else if (staffMembers.length > 0) {
-        // currentUserId yoksa rol bazlı bul
         const currentUser = staffMembers.find(s => s.role === userRole);
-        if (currentUser) {
-          setPersonnelId(currentUser.id);
-        }
+        if (currentUser) setPersonnelId(currentUser.id);
       }
     }
   }, [showStaffSelector, editingLeave, currentUserId, staffMembers, userRole, userName]);
 
-  // Gün sayısını hesapla
   const calculateDays = () => {
     if (!startDate) return 0;
-    
     const start = new Date(startDate);
     const end = durationType === 'single' ? start : (endDate ? new Date(endDate) : start);
-    
     const diffTime = Math.abs(end.getTime() - start.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    
-    return diffDays;
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
   };
 
   const handleSave = async () => {
-    // Validation
-    if (!personnelId) {
-      setShowWarning('Personel seçiniz!');
-      return;
-    }
-
-    if (!startDate) {
-      setShowWarning('Tarih seçiniz!');
-      return;
-    }
-
-    if (durationType === 'multiple' && !endDate) {
-      setShowWarning('Bitiş tarihi giriniz!');
-      return;
-    }
+    if (!personnelId) { setShowWarning('Personel seçiniz!'); return; }
+    if (!startDate) { setShowWarning('Tarih seçiniz!'); return; }
+    if (durationType === 'multiple' && !endDate) { setShowWarning('Bitiş tarihi giriniz!'); return; }
 
     const start = new Date(startDate);
     const end = durationType === 'single' ? start : new Date(endDate);
+    if (end < start) { setShowWarning('Bitiş tarihi başlangıç tarihinden önce olamaz!'); return; }
 
-    if (end < start) {
-      setShowWarning('Bitiş tarihi başlangıç tarihinden önce olamaz!');
-      return;
-    }
-
-    // Calculate days
     const diffTime = Math.abs(end.getTime() - start.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both days
-
-    // Get personnel info
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
     const personnel = staffMembers.find(s => s.id === personnelId);
-    
-    if (!personnel) {
-      setShowWarning('Personel bulunamadı!');
-      return;
-    }
+    if (!personnel) { setShowWarning('Personel bulunamadı!'); return; }
 
     if (editingLeave) {
-      const updatedLeave: Partial<LeaveRequest> = {
-        personnelId: personnel.id,
-        personnelName: personnel.name,
-        personnelAvatar: personnel.avatar,
-        personnelRole: personnel.role,
-        startDate,
-        endDate: durationType === 'single' ? startDate : endDate,
-        days: diffDays,
-        type: leaveType,
-        notes: notes.trim(),
-        status: 'pending',
-      };
-      await updateLeaveRequest(editingLeave.id, updatedLeave, accessToken);
+      await updateLeaveRequest(editingLeave.id, {
+        personnelId: personnel.id, personnelName: personnel.name,
+        personnelAvatar: personnel.avatar, personnelRole: personnel.role,
+        startDate, endDate: durationType === 'single' ? startDate : endDate,
+        days: diffDays, type: leaveType, notes: notes.trim(), status: 'pending',
+      }, accessToken);
     } else {
-      const newLeave: LeaveRequest = {
+      await saveLeaveRequest({
         id: `leave-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        personnelId: personnel.id,
-        personnelName: personnel.name,
-        personnelAvatar: personnel.avatar,
-        personnelRole: personnel.role,
-        startDate,
-        endDate: durationType === 'single' ? startDate : endDate,
-        days: diffDays,
-        type: leaveType,
-        notes: notes.trim(),
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      };
-      await saveLeaveRequest(newLeave, accessToken);
+        personnelId: personnel.id, personnelName: personnel.name,
+        personnelAvatar: personnel.avatar, personnelRole: personnel.role,
+        startDate, endDate: durationType === 'single' ? startDate : endDate,
+        days: diffDays, type: leaveType, notes: notes.trim(),
+        status: 'pending', createdAt: new Date().toISOString(),
+      }, accessToken);
     }
 
-    // Reset form
-    setPersonnelId('');
-    setDurationType('single');
-    setStartDate('');
-    setEndDate('');
-    setLeaveType('personal');
-    setNotes('');
-    setShowWarning('');
-
+    setPersonnelId(''); setDurationType('single'); setStartDate('');
+    setEndDate(''); setLeaveType('personal'); setNotes(''); setShowWarning('');
     onClose();
   };
 
   if (!isOpen) return null;
+
+  // Ortak input sınıfı
+  const inputCls = 'w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-white/25 focus:bg-white/8 transition-all placeholder-white/25';
+  const labelCls = 'flex items-center gap-1.5 text-[11px] font-semibold text-white/45 uppercase tracking-wide mb-1.5';
 
   return (
     <AnimatePresence>
@@ -185,79 +121,89 @@ export function RotationLeaveModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[120]"
+        className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 z-[120]"
         onClick={onClose}
       >
         <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.9, opacity: 0 }}
-          onClick={(e) => e.stopPropagation()}
-          className="bg-gradient-to-br from-gray-800 to-gray-900 border-2 border-white/20 rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto"
+          initial={{ y: 60, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 60, opacity: 0 }}
+          transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+          onClick={e => e.stopPropagation()}
+          className="w-full sm:max-w-sm bg-[rgba(10,5,30,0.96)] border border-white/12 rounded-t-3xl sm:rounded-2xl max-h-[92vh] overflow-y-auto"
+          style={{ backdropFilter: 'blur(24px)' }}
         >
+          {/* Üstte çekme çubuğu (sadece mobil) */}
+          <div className="flex justify-center pt-3 pb-0 sm:hidden">
+            <div className="w-10 h-1 bg-white/15 rounded-full" />
+          </div>
+
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-white">
-              {editingLeave ? '✏️ İzin Talebini Düzenle' : '🏖️ İzin Talebi Oluştur'}
-            </h2>
+          <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-white/8">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-white/8 border border-white/12 flex items-center justify-center">
+                <span className="text-lg">{editingLeave ? '✏️' : '🏖️'}</span>
+              </div>
+              <div>
+                <h2 className="text-sm font-black text-white leading-tight">
+                  {editingLeave ? 'İzin Talebini Düzenle' : 'İzin Talebi Oluştur'}
+                </h2>
+                <p className="text-[10px] text-white/35 leading-tight">Vardiya yönetimi</p>
+              </div>
+            </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-white transition-colors"
+              className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/5 border border-white/8 text-white/40 hover:text-white/70 hover:bg-white/10 transition-all"
             >
-              <X className="w-6 h-6" />
+              <X className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Warning Message */}
-          <AnimatePresence>
-            {showWarning && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="mb-4 p-3 bg-red-500/20 border-2 border-red-500/40 rounded-xl flex items-center gap-2"
-              >
-                <AlertCircle className="w-5 h-5 text-red-400" />
-                <span className="text-sm font-semibold text-red-300">{showWarning}</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          <div className="px-5 py-4 space-y-4">
+            {/* Uyarı */}
+            <AnimatePresence>
+              {showWarning && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="flex items-center gap-2 px-3 py-2.5 bg-red-500/12 border border-red-500/25 rounded-xl"
+                >
+                  <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                  <span className="text-xs font-semibold text-red-300">{showWarning}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-          {/* Form */}
-          <div className="space-y-5">
-            {/* Personnel Selection - Only for authorized roles */}
+            {/* Personel Seçimi */}
             {showStaffSelector ? (
               <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2">
-                  <User className="w-4 h-4" />
-                  Personel Seçimi *
+                <label className={labelCls}>
+                  <User className="w-3 h-3" /> Personel Seçimi *
                 </label>
                 <select
                   value={personnelId}
-                  onChange={(e) => setPersonnelId(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white focus:outline-none focus:border-[#9dd9ea] appearance-none"
+                  onChange={e => setPersonnelId(e.target.value)}
+                  className={inputCls + ' appearance-none'}
+                  style={{ colorScheme: 'dark' }}
                 >
-                  <option value="" className="bg-gray-800">Personel Seçiniz</option>
-                  {availableStaff.map((staff) => (
-                    <option key={staff.id} value={staff.id} className="bg-gray-800">
+                  <option value="" style={{ background: '#0a051e' }}>Personel Seçiniz</option>
+                  {availableStaff.map(staff => (
+                    <option key={staff.id} value={staff.id} style={{ background: '#0a051e' }}>
                       {staff.avatar} {staff.name}
                     </option>
                   ))}
                 </select>
               </div>
             ) : (
-              // Hidden field for personel/idari - shows selected user
               <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2">
-                  <User className="w-4 h-4" />
-                  İzin Talebi
+                <label className={labelCls}>
+                  <User className="w-3 h-3" /> Personel Seçimi
                 </label>
-                <div className="px-4 py-3 bg-white/5 border-2 border-white/10 rounded-xl text-gray-400">
+                <div className="px-3 py-2.5 bg-white/4 border border-white/8 rounded-xl text-sm text-white/50">
                   {personnelId ? (
-                    <>
-                      {staffMembers.find(s => s.id === personnelId)?.avatar}{' '}
-                      {staffMembers.find(s => s.id === personnelId)?.name || userName}
-                    </>
+                    <>{staffMembers.find(s => s.id === personnelId)?.avatar}{' '}
+                    {staffMembers.find(s => s.id === personnelId)?.name || userName}</>
                   ) : (
                     <>👤 {userName || 'Kendim için'}</>
                   )}
@@ -265,32 +211,28 @@ export function RotationLeaveModal({
               </div>
             )}
 
-            {/* Duration Type Selection */}
+            {/* İzin Süresi */}
             <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2">
-                <Calendar className="w-4 h-4" />
-                İzin Süresi *
+              <label className={labelCls}>
+                <Calendar className="w-3 h-3" /> İzin Süresi *
               </label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => {
-                    setDurationType('single');
-                    setEndDate('');
-                  }}
-                  className={`py-2 px-3 rounded-xl font-semibold text-sm transition-all active:scale-95 ${
+                  onClick={() => { setDurationType('single'); setEndDate(''); }}
+                  className={`py-2.5 px-2 rounded-xl font-semibold text-xs transition-all active:scale-95 border ${
                     durationType === 'single'
-                      ? 'bg-[#9dd9ea] text-[#2d3748]'
-                      : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                      ? 'bg-white/15 border-white/25 text-white'
+                      : 'bg-white/4 border-white/8 text-white/45 hover:bg-white/8 hover:text-white/70'
                   }`}
                 >
                   📅 1 Günlük
                 </button>
                 <button
                   onClick={() => setDurationType('multiple')}
-                  className={`py-2 px-3 rounded-xl font-semibold text-sm transition-all active:scale-95 ${
+                  className={`py-2.5 px-2 rounded-xl font-semibold text-xs transition-all active:scale-95 border ${
                     durationType === 'multiple'
-                      ? 'bg-[#9dd9ea] text-[#2d3748]'
-                      : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                      ? 'bg-white/15 border-white/25 text-white'
+                      : 'bg-white/4 border-white/8 text-white/45 hover:bg-white/8 hover:text-white/70'
                   }`}
                 >
                   📅📅 Birden Fazla Gün
@@ -298,123 +240,113 @@ export function RotationLeaveModal({
               </div>
             </div>
 
-            {/* Date Selection - Single or Range */}
+            {/* Tarih Seçimi */}
             {durationType === 'single' ? (
               <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2">
-                  <Calendar className="w-4 h-4" />
-                  İzin Tarihi *
+                <label className={labelCls}>
+                  <Calendar className="w-3 h-3" /> İzin Tarihi *
                 </label>
                 <input
                   type="date"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white focus:outline-none focus:border-[#9dd9ea]"
+                  onChange={e => setStartDate(e.target.value)}
+                  className={inputCls}
+                  style={{ colorScheme: 'dark' }}
                 />
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
-                    Başlangıç *
+                  <label className={labelCls}>
+                    <Calendar className="w-3 h-3" /> Başlangıç *
                   </label>
                   <input
                     type="date"
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white focus:outline-none focus:border-[#9dd9ea]"
+                    onChange={e => setStartDate(e.target.value)}
+                    className="w-full px-2 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-white/25 transition-all"
+                    style={{ colorScheme: 'dark' }}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
-                    Bitiş *
+                  <label className={labelCls}>
+                    <Calendar className="w-3 h-3" /> Bitiş *
                   </label>
                   <input
                     type="date"
                     value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white focus:outline-none focus:border-[#9dd9ea]"
+                    onChange={e => setEndDate(e.target.value)}
+                    className="w-full px-2 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-white/25 transition-all"
+                    style={{ colorScheme: 'dark' }}
                   />
                 </div>
               </div>
             )}
 
-            {/* Days Count Display */}
+            {/* Gün Sayısı */}
             {startDate && (
-              <div className="text-center py-2 px-4 bg-[#9dd9ea]/20 border-2 border-[#9dd9ea]/40 rounded-xl">
-                <span className="text-[#9dd9ea] font-bold text-lg">
-                  📅 {calculateDays()} günlük izin
+              <motion.div
+                initial={{ opacity: 0, scale: 0.96 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex items-center justify-center gap-2 py-2 px-4 bg-white/5 border border-white/10 rounded-xl"
+              >
+                <CheckCircle className="w-3.5 h-3.5 text-white/40" />
+                <span className="text-sm font-bold text-white/70">
+                  {calculateDays()} günlük izin
                 </span>
-              </div>
+              </motion.div>
             )}
 
-            {/* Leave Type */}
+            {/* İzin Tipi */}
             <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2">
-                <FileText className="w-4 h-4" />
-                İzin Tipi *
+              <label className={labelCls}>
+                <FileText className="w-3 h-3" /> İzin Tipi *
               </label>
               <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => setLeaveType('annual')}
-                  className={`py-2 px-3 rounded-xl font-semibold text-sm transition-all active:scale-95 ${
-                    leaveType === 'annual'
-                      ? 'bg-[#9dd9ea] text-[#2d3748]'
-                      : 'bg-white/10 text-gray-300 hover:bg-white/20'
-                  }`}
-                >
-                  Yıllık
-                </button>
-                <button
-                  onClick={() => setLeaveType('sick')}
-                  className={`py-2 px-3 rounded-xl font-semibold text-sm transition-all active:scale-95 ${
-                    leaveType === 'sick'
-                      ? 'bg-[#9dd9ea] text-[#2d3748]'
-                      : 'bg-white/10 text-gray-300 hover:bg-white/20'
-                  }`}
-                >
-                  Hastalık
-                </button>
-                <button
-                  onClick={() => setLeaveType('personal')}
-                  className={`py-2 px-3 rounded-xl font-semibold text-sm transition-all active:scale-95 ${
-                    leaveType === 'personal'
-                      ? 'bg-[#9dd9ea] text-[#2d3748]'
-                      : 'bg-white/10 text-gray-300 hover:bg-white/20'
-                  }`}
-                >
-                  Kişisel
-                </button>
+                {(['annual', 'sick', 'personal'] as const).map(type => {
+                  const labels = { annual: '🏖️ Yıllık', sick: '🤒 Hastalık', personal: '🎯 Kişisel' };
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => setLeaveType(type)}
+                      className={`py-2.5 rounded-xl font-semibold text-xs transition-all active:scale-95 border ${
+                        leaveType === type
+                          ? 'bg-white/15 border-white/25 text-white'
+                          : 'bg-white/4 border-white/8 text-white/45 hover:bg-white/8 hover:text-white/70'
+                      }`}
+                    >
+                      {labels[type]}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Notes */}
+            {/* Notlar */}
             <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2">
+              <label className={labelCls}>
                 Notlar (Opsiyonel)
               </label>
               <textarea
                 value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                onChange={e => setNotes(e.target.value)}
                 placeholder="İzin talebi ile ilgili notlar..."
-                className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-[#9dd9ea] resize-none"
+                className={inputCls + ' resize-none'}
                 rows={3}
               />
             </div>
 
-            {/* Actions */}
-            <div className="flex gap-3 pt-2">
+            {/* Aksiyon Butonları */}
+            <div className="flex gap-2 pt-1 pb-2">
               <button
                 onClick={onClose}
-                className="flex-1 py-3 px-4 bg-gray-600/50 border-2 border-gray-500/30 text-gray-200 rounded-xl font-semibold hover:bg-gray-600/70 transition-all active:scale-95"
+                className="flex-1 py-3 bg-white/5 border border-white/10 text-white/55 rounded-xl font-semibold text-sm hover:bg-white/10 hover:text-white/75 transition-all active:scale-95"
               >
                 İptal
               </button>
               <button
                 onClick={handleSave}
-                className="flex-1 py-3 px-4 bg-gradient-to-r from-[#a8e6cf] to-[#8dd9b8] text-[#2d3748] rounded-xl font-bold hover:shadow-lg transition-all active:scale-95"
+                className="flex-1 py-3 bg-white/12 border border-white/20 text-white font-bold text-sm rounded-xl hover:bg-white/18 transition-all active:scale-95"
               >
                 İlet
               </button>

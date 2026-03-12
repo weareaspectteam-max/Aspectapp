@@ -1,5 +1,4 @@
 import { TrendingUp, Zap, Target, Award, DollarSign, Percent } from 'lucide-react';
-import { StaffTopBar } from './staff-top-bar';
 import { CurrencyWidget } from './currency-widget';
 
 interface StaffPersonalDashboardProps {
@@ -34,16 +33,8 @@ export function StaffPersonalDashboard({ userName, onLogout = () => {}, onNaviga
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] pb-32">
-      {/* Staff Top Bar */}
-      <StaffTopBar
-        userName={userName}
-        userRole="personel"
-        onLogout={onLogout}
-        onNavigate={onNavigate}
-      />
-      
       {/* Header with Greeting */}
-      <div className="px-6 pt-24 pb-6">
+      <div className="px-6 pt-6 pb-6">
         <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-3xl p-6 shadow-2xl">
           <div className="flex items-center gap-4 mb-4">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center text-3xl shadow-lg border-2 border-white/20">

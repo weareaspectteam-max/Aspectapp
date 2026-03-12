@@ -4,7 +4,7 @@ import {
   Edit2, Trash2, Pin, Bell, AlertCircle, CheckCircle, ChevronLeft, Zap, Info 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { StaffTopBar } from './staff-top-bar';
+
 import { NewBottomNav } from './new-bottom-nav';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
@@ -413,21 +413,9 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] pb-20">
-      {/* Header */}
-      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
-        <StaffTopBar
-          userName={userName}
-          userRole={userRole}
-          onLogout={onLogout}
-          onNavigate={onNavigate}
-          onBack={() => onNavigate('home')}
-          showBackButton={true}
-        />
-      )}
-
       {/* Create Button - Yetkili tüm roller için */}
       {canCreateAnnouncement() && (
-        <div className="sticky top-[73px] z-30 px-4 pt-4">
+        <div className="sticky top-[64px] z-30 px-4 pt-4">
           <button
             onClick={() => handleOpenModal()}
             className="w-full px-4 py-3 rounded-xl bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] text-[#0d4d2d] font-bold text-sm flex items-center justify-center gap-2 shadow-lg hover:shadow-[#a8e6cf]/20 transition-all active:scale-95"

@@ -1,6 +1,6 @@
 import { Package, TrendingUp, Tag, Calendar, Trophy, Target, GraduationCap, LogOut } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { StaffTopBar } from './staff-top-bar';
+
 import { NewBottomNav } from './new-bottom-nav';
 
 interface StaffProfileProps {
@@ -44,18 +44,6 @@ export function StaffProfile({ userName, userRole, onLogout, onNavigate }: Staff
 
   return (
     <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
-      {/* Sticky Top Bar */}
-      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
-        <StaffTopBar
-          userName={userName}
-          userRole={userRole}
-          onLogout={onLogout}
-          onNavigate={onNavigate}
-          onBack={() => onNavigate('home')}
-          showBackButton={true}
-        />
-      )}
-
       {/* Profile Card */}
       <div className="px-6 mb-6">{/* Removed pt-6 for staff role */}
         <div className="bg-gradient-to-br from-[#ffd4a3] via-[#ffe5b4] to-[#9dd9ea] rounded-3xl p-6 text-[#2d3748] shadow-2xl border-2 border-white/20">
@@ -130,7 +118,7 @@ export function StaffProfile({ userName, userRole, onLogout, onNavigate }: Staff
             Haftalık Performans
           </h3>
           <div className="h-48">
-            <ResponsiveContainer width="100%" height={192}>
+            <ResponsiveContainer width="100%" height={192} minWidth={0}>
               <AreaChart data={weeklyData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#ffffff20" />
                 <XAxis dataKey="day" stroke="#9ca3af" style={{ fontSize: '12px' }} />

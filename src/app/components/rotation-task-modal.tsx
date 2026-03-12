@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, MapPin, Clock, Users, Check, AlertCircle, Zap, Sparkles } from 'lucide-react';
+import { X, MapPin, Clock, Users, Check, AlertCircle, Zap, Sparkles, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   saveTask,
@@ -24,6 +24,7 @@ interface RotationTaskModalProps {
   preselectedLocation?: string;
   accessToken: string;
   onClose: () => void;
+  onTaskSaved?: (task: Task) => void; // optimistik güncelleme için
 }
 
 export function RotationTaskModal({
@@ -39,6 +40,7 @@ export function RotationTaskModal({
   preselectedLocation = '',
   accessToken,
   onClose,
+  onTaskSaved,
 }: RotationTaskModalProps) {
   const [selectedLocation, setSelectedLocation] = useState<string>('');
   const [customLocation, setCustomLocation] = useState<string>('');
@@ -49,6 +51,7 @@ export function RotationTaskModal({
   const [notes, setNotes] = useState<string>('');
   const [showWarning, setShowWarning] = useState<string>('');
   const [taskType, setTaskType] = useState<'extra' | 'special'>('special');
+  const [isSaving, setIsSaving] = useState(false);
   const [showDailyLeaveConfirm, setShowDailyLeaveConfirm] = useState<{
     show: boolean;
     personnelId: string;
@@ -61,17 +64,14 @@ export function RotationTaskModal({
 
   useEffect(() => {
     if (editingTask) {
-      // Populate form with editing task data
       if (modalType === 'regular_location') {
         setSelectedLocation(editingTask.location);
       } else {
         setCustomLocation(editingTask.location);
         setLocationIcon(editingTask.locationIcon);
-        // ✅ Set taskType from existing task (extra veya special)
         if (editingTask.taskType === 'extra' || editingTask.taskType === 'special') {
           setTaskType(editingTask.taskType);
         } else {
-          // Fallback: ikon'a göre belirle
           setTaskType(editingTask.locationIcon === '⚡' ? 'special' : 'extra');
         }
       }
@@ -80,9 +80,8 @@ export function RotationTaskModal({
       setSelectedPersonnel(editingTask.personnel.map(p => p.id));
       setNotes(editingTask.notes || '');
     } else {
-      // Reset form for new task
       if (preselectedLocation && modalType === 'regular_location') {
-        setSelectedLocation(preselectedLocation); // ✅ Auto-select location
+        setSelectedLocation(preselectedLocation);
       } else {
         setSelectedLocation('');
       }
@@ -92,9 +91,10 @@ export function RotationTaskModal({
       setEndTime('17:00');
       setSelectedPersonnel([]);
       setNotes('');
-      setTaskType('special'); // Default to 'special'
+      setTaskType('special');
     }
     setShowWarning('');
+    setIsSaving(false);
   }, [editingTask, modalType, isOpen, preselectedLocation]);
 
   // Auto-set working hours when location is selected
@@ -113,10 +113,7 @@ export function RotationTaskModal({
   // ==========================================
 
   const isPersonnelFixedOnLeave = (staff: StaffMember): boolean => {
-    // PROTECTION 1: Fixed on-leave status
     if (staff.status === 'on_leave') return true;
-
-    // PROTECTION 2: Approved leave requests (treated as fixed leave)
     const approvedLeave = leaveRequests.find(
       leave =>
         leave.personnelId === staff.id &&
@@ -124,12 +121,10 @@ export function RotationTaskModal({
         new Date(selectedDate) >= new Date(leave.startDate) &&
         new Date(selectedDate) <= new Date(leave.endDate)
     );
-    
     return !!approvedLeave;
   };
 
   const isPersonnelDailyOnLeave = (staff: StaffMember): boolean => {
-    // Daily on-leave (can be called if needed, but with warning)
     const dailyOnLeaveList = dailyOnLeave[selectedDate] || [];
     return dailyOnLeaveList.includes(staff.id);
   };
@@ -142,7 +137,6 @@ export function RotationTaskModal({
     const staff = staffMembers.find(s => s.id === personnelId);
     if (!staff) return;
 
-    // If daily leave, show confirmation dialog
     if (isDailyLeave && !selectedPersonnel.includes(personnelId)) {
       setShowDailyLeaveConfirm({
         show: true,
@@ -152,7 +146,6 @@ export function RotationTaskModal({
       return;
     }
 
-    // Toggle selection
     setSelectedPersonnel(prev =>
       prev.includes(personnelId)
         ? prev.filter(id => id !== personnelId)
@@ -171,13 +164,13 @@ export function RotationTaskModal({
   };
 
   const handleSave = async () => {
-    // Validation
+    setShowWarning('');
+
+    // ── Validation ──────────────────────────────────────────────
     if (selectedPersonnel.length === 0) {
       setShowWarning('En az bir personel seçmelisiniz!');
       return;
     }
-
-    // For regular_location modal, validate selectedLocation instead
     if (modalType === 'regular_location') {
       if (!selectedLocation.trim()) {
         setShowWarning('Mekan seçiniz!');
@@ -190,75 +183,90 @@ export function RotationTaskModal({
       }
     }
 
-    // Prepare personnel data
-    const personnel: Personnel[] = selectedPersonnel.map(id => {
-      const staff = staffMembers.find(s => s.id === id)!;
-      return {
-        id: staff.id,
-        name: staff.name,
-        avatar: staff.avatar,
-        role: staff.role,
-      };
-    });
+    // ── Prepare data ────────────────────────────────────────────
+    let personnel: Personnel[];
+    try {
+      personnel = selectedPersonnel.map(id => {
+        const staff = staffMembers.find(s => s.id === id);
+        if (!staff) throw new Error(`Personel bulunamadı: ${id}`);
+        return { id: staff.id, name: staff.name, avatar: staff.avatar, role: staff.role };
+      });
+    } catch (err: any) {
+      setShowWarning(err.message || 'Personel verisi hatası.');
+      return;
+    }
 
-    // Determine location, icon, and type based on modalType
     let taskLocation: string;
     let taskLocationIcon: string;
     let taskTaskType: 'regular' | 'special';
-    let actualTaskType: 'regular' | 'extra' | 'special'; // Yeni field: Gerçek görev tipi
+    let actualTaskType: 'regular' | 'extra' | 'special';
     let taskStartTime: string;
     let taskEndTime: string;
 
     if (modalType === 'regular_location') {
-      // Regular location from Mekan Management
       const location = locations.find(loc => loc.name === selectedLocation);
       taskLocation = selectedLocation;
       taskLocationIcon = location?.icon || '📍';
       taskTaskType = 'regular';
-      actualTaskType = 'regular'; // Sabit görev
-      // ✅ Get working hours from location
-      taskStartTime = location?.workingHours?.start || '09:00';
-      taskEndTime = location?.workingHours?.end || '17:00';
+      actualTaskType = 'regular';
+      taskStartTime = location?.workingHours?.start || startTime;
+      taskEndTime = location?.workingHours?.end || endTime;
     } else {
-      // Extra/Special task
       taskLocation = customLocation.trim();
       taskLocationIcon = taskType === 'extra' ? '📍' : '⚡';
-      taskTaskType = 'special'; // Both extra and special are saved as 'special' type
-      actualTaskType = taskType; // 'extra' veya 'special'
+      taskTaskType = 'special';
+      actualTaskType = taskType;
       taskStartTime = startTime;
       taskEndTime = endTime;
     }
 
-    if (editingTask) {
-      // Update existing task
-      await updateTask(editingTask.id, {
-        personnel,
-        location: taskLocation,
-        locationIcon: taskLocationIcon,
-        startTime: taskStartTime,
-        endTime: taskEndTime,
-        taskType: actualTaskType,
-        notes: notes.trim(),
-      }, accessToken);
-    } else {
-      // Create new task
-      const newTask: Task = {
-        id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        personnel,
-        location: taskLocation,
-        locationIcon: taskLocationIcon,
-        startTime: taskStartTime,
-        endTime: taskEndTime,
-        type: taskTaskType,
-        taskType: actualTaskType,
-        notes: notes.trim(),
-        status: 'draft',
-        date: selectedDate,
-      };
-      await saveTask(newTask, accessToken);
+    // ── Save ─────────────────────────────────────────────────────
+    setIsSaving(true);
+    try {
+      if (editingTask) {
+        const updates = {
+          personnel,
+          location: taskLocation,
+          locationIcon: taskLocationIcon,
+          startTime: taskStartTime,
+          endTime: taskEndTime,
+          taskType: actualTaskType,
+          notes: notes.trim(),
+        };
+        console.log('[TaskModal] updateTask:', editingTask.id, updates);
+        await updateTask(editingTask.id, updates, accessToken);
+        // Optimistik güncelleme: parent'a güncellenmiş task'ı ilet
+        if (onTaskSaved) {
+          onTaskSaved({ ...editingTask, ...updates });
+        }
+      } else {
+        const newTask: Task = {
+          id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          personnel,
+          location: taskLocation,
+          locationIcon: taskLocationIcon,
+          startTime: taskStartTime,
+          endTime: taskEndTime,
+          type: taskTaskType,
+          taskType: actualTaskType,
+          notes: notes.trim(),
+          status: 'draft',
+          date: selectedDate,
+        };
+        console.log('[TaskModal] saveTask:', newTask);
+        await saveTask(newTask, accessToken);
+        // Optimistik güncelleme: parent'a yeni task'ı ilet
+        if (onTaskSaved) {
+          onTaskSaved(newTask);
+        }
+      }
+      onClose();
+    } catch (err: any) {
+      console.error('[TaskModal] save error:', err);
+      const msg = err?.message || 'Sunucu hatası oluştu.';
+      setShowWarning(`Kayıt hatası: ${msg}`);
+      setIsSaving(false);
     }
-
-    onClose();
   };
 
   if (!isOpen) return null;
@@ -290,7 +298,8 @@ export function RotationTaskModal({
             </h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-white transition-colors"
+              disabled={isSaving}
+              className="text-gray-400 hover:text-white transition-colors disabled:opacity-50"
             >
               <X className="w-6 h-6" />
             </button>
@@ -305,7 +314,7 @@ export function RotationTaskModal({
                 exit={{ opacity: 0, y: -10 }}
                 className="mx-4 mt-3 p-2.5 bg-red-500/20 border-2 border-red-500/40 rounded-xl flex items-center gap-2"
               >
-                <AlertCircle className="w-5 h-5 text-red-400" />
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
                 <span className="text-sm font-semibold text-red-300">{showWarning}</span>
               </motion.div>
             )}
@@ -321,9 +330,7 @@ export function RotationTaskModal({
                     <Sparkles className="w-4 h-4" />
                     Görev Tipi *
                   </label>
-                  
                   <div className="grid grid-cols-2 gap-3">
-                    {/* Extra Task */}
                     <button
                       onClick={() => setTaskType('extra')}
                       className={`flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-semibold text-sm transition-all active:scale-95 ${
@@ -335,8 +342,6 @@ export function RotationTaskModal({
                       <MapPin className="w-4 h-4" />
                       Ekstra İş
                     </button>
-
-                    {/* Special Task */}
                     <button
                       onClick={() => setTaskType('special')}
                       className={`flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-semibold text-sm transition-all active:scale-95 ${
@@ -358,21 +363,19 @@ export function RotationTaskModal({
                   <Users className="w-4 h-4" />
                   Personel Seçimi * ({selectedPersonnel.length} seçildi)
                 </label>
-                
                 <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto p-2 bg-white/5 rounded-xl border-2 border-white/10">
                   {staffMembers.map((staff) => {
                     const isSelected = selectedPersonnel.includes(staff.id);
                     const isFixedOnLeave = isPersonnelFixedOnLeave(staff);
                     const isDailyOnLeave = isPersonnelDailyOnLeave(staff);
-                    
                     return (
                       <button
                         key={staff.id}
                         onClick={() => {
-                          if (isFixedOnLeave) return; // Sabit izinli - tıklanamaz
+                          if (isFixedOnLeave) return;
                           handleTogglePersonnel(staff.id, isDailyOnLeave);
                         }}
-                        disabled={isFixedOnLeave}
+                        disabled={isFixedOnLeave || isSaving}
                         className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all ${
                           isFixedOnLeave
                             ? 'bg-red-500/40 text-gray-300 cursor-not-allowed opacity-70'
@@ -385,11 +388,8 @@ export function RotationTaskModal({
                                 : 'bg-white/10 text-gray-300 hover:bg-white/20 active:scale-95'
                         }`}
                       >
-                        {/* Check icon - only when selected */}
-                        {isSelected && !isFixedOnLeave && <Check className="w-4 h-4" />}
-                        
-                        {/* Name */}
-                        <span className="text-sm truncate flex-1">{staff.name}</span>
+                        {isSelected && !isFixedOnLeave && <Check className="w-4 h-4 flex-shrink-0" />}
+                        <span className="text-sm truncate flex-1 text-left">{staff.name}</span>
                       </button>
                     );
                   })}
@@ -403,7 +403,6 @@ export function RotationTaskModal({
                     <MapPin className="w-4 h-4" />
                     Mekan *
                   </label>
-                  
                   <input
                     type="text"
                     value={customLocation}
@@ -462,15 +461,24 @@ export function RotationTaskModal({
               <div className="flex gap-3 pt-2 pb-1">
                 <button
                   onClick={onClose}
-                  className="flex-1 py-3 px-4 bg-gray-600/50 border-2 border-gray-500/30 text-gray-200 rounded-xl font-semibold hover:bg-gray-600/70 transition-all active:scale-95"
+                  disabled={isSaving}
+                  className="flex-1 py-3 px-4 bg-gray-600/50 border-2 border-gray-500/30 text-gray-200 rounded-xl font-semibold hover:bg-gray-600/70 transition-all active:scale-95 disabled:opacity-50"
                 >
                   İptal
                 </button>
                 <button
                   onClick={handleSave}
-                  className="flex-1 py-3 px-4 bg-gradient-to-r from-[#a8e6cf] to-[#8dd9b8] text-[#2d3748] rounded-xl font-bold hover:shadow-lg transition-all active:scale-95"
+                  disabled={isSaving}
+                  className="flex-1 py-3 px-4 bg-gradient-to-r from-[#a8e6cf] to-[#8dd9b8] text-[#2d3748] rounded-xl font-bold hover:shadow-lg transition-all active:scale-95 disabled:opacity-70 flex items-center justify-center gap-2"
                 >
-                  {editingTask ? 'Güncelle' : 'Listeye Ekle'}
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Kaydediliyor...
+                    </>
+                  ) : (
+                    editingTask ? 'Güncelle' : 'Listeye Ekle'
+                  )}
                 </button>
               </div>
             </div>
@@ -507,7 +515,6 @@ export function RotationTaskModal({
                       Yine de göreve eklemek istiyor musunuz?
                     </p>
                   </div>
-
                   <div className="flex gap-3">
                     <button
                       onClick={handleCancelDailyLeave}

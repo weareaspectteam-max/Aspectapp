@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Wifi, Camera, ShoppingBag, MapPin, ChevronDown, ChevronUp, TrendingUp, Clock, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { RefreshCw, Wifi, Camera, ShoppingBag, MapPin, ChevronDown, ChevronUp, TrendingUp, Clock, AlertCircle, Maximize2, Minimize2 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
@@ -46,7 +46,7 @@ interface LiveSalesFeedProps {
 }
 
 const BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
-const REFRESH_INTERVAL = 30_000;
+const REFRESH_INTERVAL = 15_000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -208,7 +208,7 @@ function MekanPanel({ mekan, items, defaultOpen = true }: MekanPanelProps) {
     : null;
 
   return (
-    <div className="rounded-2xl border overflow-hidden" style={{ borderColor: `${mekan.color}35`, backgroundColor: '#1e1e2e' }}>
+    <div className="rounded-2xl border overflow-hidden" style={{ borderColor: `${mekan.color}35`, backgroundColor: 'rgba(255,255,255,0.04)' }}>
       <button
         className="w-full flex items-center gap-3 px-4 py-3 transition-all active:scale-[0.99]"
         style={{ backgroundColor: `${mekan.color}12` }}
@@ -284,6 +284,11 @@ export function LiveSalesFeed({
   const [tick, setTick] = useState(0);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [countdown, setCountdown] = useState(30);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [pullDelta, setPullDelta] = useState(0);
+  const touchStartY = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const PULL_THRESHOLD = 80;
 
   const AUTO_INTERVAL = 30; // saniye
 
@@ -380,9 +385,60 @@ export function LiveSalesFeed({
   );
 
   return (
-    <div className="min-h-screen bg-[#12121c] pb-24 font-sans">
-      {/* ── STICKY STATUS BAR ── */}
-      <div className="sticky top-0 z-30 bg-[#12121c] border-b border-white/8">
+    <div
+      ref={scrollRef}
+      className={isFullscreen
+        ? 'fixed inset-0 z-[90] bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c] overflow-y-auto flex flex-col font-sans'
+        : 'min-h-screen bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c] pb-24 font-sans'
+      }
+      style={isFullscreen && pullDelta > 0 ? {
+        transform: `translateY(${Math.min(pullDelta * 0.45, 60)}px)`,
+        borderRadius: `${Math.min(pullDelta * 0.3, 24)}px`,
+        transition: pullDelta === 0 ? 'transform 0.3s ease, border-radius 0.3s ease' : 'none',
+      } : undefined}
+      onTouchStart={isFullscreen ? (e) => {
+        touchStartY.current = e.touches[0].clientY;
+      } : undefined}
+      onTouchMove={isFullscreen ? (e) => {
+        const scrollTop = scrollRef.current?.scrollTop ?? 0;
+        const delta = e.touches[0].clientY - touchStartY.current;
+        if (scrollTop === 0 && delta > 0) {
+          e.preventDefault();
+          setPullDelta(delta);
+        }
+      } : undefined}
+      onTouchEnd={isFullscreen ? () => {
+        if (pullDelta >= PULL_THRESHOLD) {
+          setIsFullscreen(false);
+        }
+        setPullDelta(0);
+      } : undefined}
+    >
+      {/* ── PULL-TO-DISMISS INDICATOR (fullscreen only) ── */}
+      {isFullscreen && (
+        <div
+          className="flex flex-col items-center pt-2 pb-1 shrink-0 transition-all"
+          style={{ opacity: Math.min(pullDelta / PULL_THRESHOLD, 1) }}
+        >
+          <div
+            className="w-10 h-1 rounded-full transition-all"
+            style={{
+              backgroundColor: pullDelta >= PULL_THRESHOLD ? '#4ade80' : '#ffffff40',
+              width: `${Math.min(40 + pullDelta * 0.3, 64)}px`,
+            }}
+          />
+          {pullDelta > 20 && (
+            <span className="text-[10px] mt-1.5 font-semibold tracking-wide" style={{
+              color: pullDelta >= PULL_THRESHOLD ? '#4ade80' : '#ffffff50',
+            }}>
+              {pullDelta >= PULL_THRESHOLD ? '↑ Bırak — Çık' : '↓ Tam Ekrandan Çık'}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── STATUS BAR ── */}
+      <div className="border-b border-white/8 bg-[rgba(10,5,30,0.92)] backdrop-blur-xl">
         <div className="flex items-center justify-between px-4 py-2.5">
           <div className="flex items-center gap-2">
             <PulseDot color={error ? '#f87171' : '#4ade80'} />
@@ -395,6 +451,22 @@ export function LiveSalesFeed({
           </div>
           <div className="flex items-center gap-2">
             <Wifi className="w-3.5 h-3.5 text-emerald-400/70" />
+
+            {/* ── FULLSCREEN TOGGLE ── */}
+            <button
+              onClick={() => setIsFullscreen(f => !f)}
+              title={isFullscreen ? 'Normal görünüme dön' : 'Tam ekran'}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg border transition-all active:scale-90 ${
+                isFullscreen
+                  ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
+                  : 'bg-white/8 border-white/15 text-white/50 hover:bg-white/15 hover:text-white/80'
+              }`}
+            >
+              {isFullscreen
+                ? <Minimize2 className="w-3.5 h-3.5" />
+                : <Maximize2 className="w-3.5 h-3.5" />
+              }
+            </button>
 
             {/* ── AUTO-REFRESH TOGGLE ── */}
             <button
@@ -564,7 +636,7 @@ export function LiveSalesFeed({
               <div className="text-center py-12 text-sm text-white/30">Kayıt bulunamadı</div>
             )
           ) : (
-            <div className="rounded-2xl border border-white/10 bg-[#1e1e2e] px-3 pt-3 pb-1">
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-3 pt-3 pb-1">
               {timeSorted.length === 0 ? (
                 <div className="text-center py-10 text-xs text-white/30">Kayıt bulunamadı</div>
               ) : (
@@ -579,7 +651,9 @@ export function LiveSalesFeed({
         </div>
       </div>
 
-      <NewBottomNav activeTab="live-feed" onTabChange={onNavigate} userRole={userRole} />
+      {!isFullscreen && (
+        <NewBottomNav activeTab="live-feed" onTabChange={onNavigate} userRole={userRole} />
+      )}
     </div>
   );
 }

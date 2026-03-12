@@ -529,6 +529,78 @@ app.get("/make-server-4da0b637/maliyetler", async (c) => {
 });
 
 // ──────────────────────────────────────────
+// DÖVİZ: Canlı kurları çek (open.er-api.com, ücretsiz)
+// GET /make-server-4da0b637/doviz/canli
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/doviz/canli", async (c) => {
+  try {
+    // Önce KV cache'e bak (10 dk TTL)
+    const cached = await kv.get("live_rates_cache");
+    if (cached && cached.fetchedAt && (Date.now() - cached.fetchedAt) < 10 * 60 * 1000) {
+      return c.json({ rates: cached.rates, source: "cache", fetchedAt: cached.fetchedAt });
+    }
+
+    // Canlı çek: USD baz alarak TRY, EUR, GBP
+    const res = await fetch("https://open.er-api.com/v6/latest/USD");
+    if (!res.ok) throw new Error(`Exchange API HTTP ${res.status}`);
+    const data = await res.json();
+
+    if (data.result !== "success" || !data.rates) {
+      throw new Error(`Exchange API error: ${JSON.stringify(data)}`);
+    }
+
+    const r = data.rates;
+    // 1 USD = r.TRY ₺ → 1 EUR = (r.TRY / r.EUR) ₺, vb.
+    const rates = {
+      USD: parseFloat(r.TRY.toFixed(4)),
+      EUR: parseFloat((r.TRY / r.EUR).toFixed(4)),
+      GBP: parseFloat((r.TRY / r.GBP).toFixed(4)),
+    };
+
+    // Trend hesapla: önceki cache ile karşılaştır
+    let trend: { USD: number; EUR: number; GBP: number } | null = null;
+    if (cached?.rates) {
+      trend = {
+        USD: parseFloat(((rates.USD - cached.rates.USD) / cached.rates.USD * 100).toFixed(3)),
+        EUR: parseFloat(((rates.EUR - cached.rates.EUR) / cached.rates.EUR * 100).toFixed(3)),
+        GBP: parseFloat(((rates.GBP - cached.rates.GBP) / cached.rates.GBP * 100).toFixed(3)),
+      };
+    } else {
+      const prev = await kv.get("live_rates_prev_day");
+      if (prev?.rates) {
+        trend = {
+          USD: parseFloat(((rates.USD - prev.rates.USD) / prev.rates.USD * 100).toFixed(3)),
+          EUR: parseFloat(((rates.EUR - prev.rates.EUR) / prev.rates.EUR * 100).toFixed(3)),
+          GBP: parseFloat(((rates.GBP - prev.rates.GBP) / prev.rates.GBP * 100).toFixed(3)),
+        };
+      }
+    }
+
+    const fetchedAt = Date.now();
+    await kv.set("live_rates_cache", { rates, trend, fetchedAt });
+
+    // Her 24 saatte bir "önceki gün" kuru güncelle
+    const prevDay = await kv.get("live_rates_prev_day");
+    if (!prevDay || (Date.now() - (prevDay.savedAt || 0)) > 24 * 60 * 60 * 1000) {
+      await kv.set("live_rates_prev_day", { rates, savedAt: fetchedAt });
+    }
+
+    return c.json({ rates, trend, source: "live", fetchedAt });
+  } catch (err) {
+    console.log("Doviz canli error:", err);
+    const stale = await kv.get("live_rates_cache");
+    if (stale?.rates) {
+      return c.json({ rates: stale.rates, trend: stale.trend || null, source: "stale", fetchedAt: stale.fetchedAt });
+    }
+    const manual = await kv.get("cost_exchange_rates");
+    if (manual) {
+      return c.json({ rates: { USD: Number(manual.USD), EUR: Number(manual.EUR), GBP: Number(manual.GBP) }, trend: null, source: "manual" });
+    }
+    return c.json({ error: `Kur alınamadı: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
 // MALİYET: Döviz kurlarını güncelle
 // PUT /make-server-4da0b637/maliyetler/doviz
 // ──────────────────────────────────────────

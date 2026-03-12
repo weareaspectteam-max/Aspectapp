@@ -1,5 +1,5 @@
 import { Trophy, TrendingUp, Target, Award, Medal, Tag } from 'lucide-react';
-import { StaffTopBar } from './staff-top-bar';
+
 import { NewBottomNav } from './new-bottom-nav';
 
 interface StaffMember {
@@ -115,18 +115,6 @@ export function Leaderboard({ userName, userRole, onLogout, onNavigate }: Leader
 
   return (
     <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
-      {/* Sticky Top Bar */}
-      {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
-        <StaffTopBar
-          userName={userName}
-          userRole={userRole}
-          onLogout={onLogout}
-          onNavigate={onNavigate}
-          onBack={() => onNavigate('home')}
-          showBackButton={true}
-        />
-      )}
-
       {/* Podium - Top 3 with summer vibes */}
       <div className="px-6 pt-6 mb-6">{/* Added pt-6 for spacing */}
         <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-3xl p-6 shadow-2xl">
