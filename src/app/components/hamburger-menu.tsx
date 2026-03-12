@@ -6,9 +6,9 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X, Home, Zap, Activity, MapPin, RotateCcw, Camera,
+  X, Home, Zap, Activity, MapPin, RotateCcw,
   Trophy, Sparkles, MessageCircle, Bell, GraduationCap,
-  Cake, User, Settings, LogOut, ChevronRight,
+  Cake, User, Settings, LogOut, ChevronRight, Package,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
@@ -96,11 +96,11 @@ function getSections(
       title: 'OPERASYON',
       color: '#fb923c',
       items: [
-        { icon: Zap,          label: 'Hızlı Satış',   roles: ops,  action: () => go('quick-sales')     },
-        { icon: Activity,     label: 'Canlı Feed',    roles: mgmt, action: () => go('live-feed')       },
-        { icon: MapPin,       label: 'Mekanlar',      roles: mgmt, action: () => go('business-panel')  },
-        { icon: RotateCcw,    label: 'Rotasyon',      roles: all,  action: () => go('rotation')        },
-        { icon: Camera,       label: 'Kare Takibi',   roles: all,  action: () => go('frame-tracking')  },
+        { icon: Zap,          label: 'Hızlı Satış',       roles: ops,  action: () => go('quick-sales')     },
+        { icon: Activity,     label: 'Canlı Feed',         roles: mgmt, action: () => go('live-feed')       },
+        { icon: MapPin,       label: 'Mekanlar',           roles: mgmt, action: () => go('business-panel')  },
+        { icon: RotateCcw,    label: 'Rotasyon',           roles: all,  action: () => go('rotation')        },
+        { icon: Package,      label: 'Malzeme Yönetimi',   roles: all,  action: () => go('equipment-page')  },
       ],
     },
     {
