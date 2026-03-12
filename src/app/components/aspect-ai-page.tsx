@@ -672,15 +672,16 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const loadOzet = useCallback(() => {
     if (!isAdmin) return;
     setOzetLoading(true);
-    const headers = authHeaders();
-    fetch(`${API_BASE}/ai/ozet`, { headers })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data?.ozet) setOzet(data.ozet);
-        setIsOnline(true);
-      })
-      .catch(() => setIsOnline(false))
-      .finally(() => setOzetLoading(false));
+    authHeaders().then(headers =>
+      fetch(`${API_BASE}/ai/ozet`, { headers })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.ozet) setOzet(data.ozet);
+          setIsOnline(true);
+        })
+        .catch(() => setIsOnline(false))
+        .finally(() => setOzetLoading(false))
+    ).catch(() => setOzetLoading(false));
   }, [isAdmin]);
 
   // Load AI özet (admin only)
