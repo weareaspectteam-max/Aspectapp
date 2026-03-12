@@ -40,6 +40,7 @@ interface QuickSalesProps {
   userName: string;
   userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   accessToken: string;
+  userId?: string;
   onProjectSelect?: (projectName: string) => void;
   preSelectedProject?: string;
   onBack?: () => void;
@@ -60,7 +61,7 @@ const albumItems = [
 ];
 
 
-export function QuickSales({ userName, userRole, accessToken, onProjectSelect, preSelectedProject, onBack, onLogout, onNavigate }: QuickSalesProps) {
+export function QuickSales({ userName, userRole, accessToken, userId, onProjectSelect, preSelectedProject, onBack, onLogout, onNavigate }: QuickSalesProps) {
   const [selectedProject, setSelectedProject] = useState<Project | null>(() => {
     if (preSelectedProject) {
       return { id: '1', name: preSelectedProject, location: 'Antalya', shift: 'Gündüz', color: 'from-[#9dd9ea] to-[#7ec8dd]', icon: '🏖️' };
@@ -609,6 +610,8 @@ export function QuickSales({ userName, userRole, accessToken, onProjectSelect, p
           selectedProject={selectedProject}
           onBack={onBack}
           userRole={userRole}
+          userId={userId}
+          userName={userName}
           onLiveFeed={
             ['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole) && selectedProject
               ? () => setShowLiveFeed(true)

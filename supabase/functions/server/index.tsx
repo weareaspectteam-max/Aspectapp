@@ -2561,6 +2561,290 @@ app.get("/make-server-4da0b637/isletme/satis-raporu", async (c) => {
 });
 
 // ──────────────────────────────────────────
+// PERSONEL: İndirim İstatistikleri
+// GET /make-server-4da0b637/personel/indirim-istatistik
+// Query: ?mekanId=optional
+// Yalnızca yonetici / ust-mudur / mudur erişebilir
+// Uzun dönem = tüm zamanlar | Kısa dönem = son 365 gün
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/personel/indirim-istatistik", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur", "mudur"].includes(callerRole)) {
+      return c.json({ error: "Bu modülü yalnızca yöneticiler görebilir." }, 403);
+    }
+
+    const mekanIdQ = c.req.query("mekanId") || "";
+
+    // Kısa dönem eşiği: bugünden tam 365 gün önce
+    const now = new Date();
+    const kisaBaslangic = new Date(now);
+    kisaBaslangic.setFullYear(kisaBaslangic.getFullYear() - 1);
+    const kisaEsik = kisaBaslangic.toISOString().split("T")[0];
+
+    // Mekan haritası
+    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanById: Record<string, any> = {};
+    for (const m of mekanlarList) mekanById[m.id] = m;
+
+    // Tüm günlük kayıtları çek, isteğe bağlı mekan filtresi
+    const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+    const filtrelenmis = mekanIdQ
+      ? tumKayitlar.filter((k: any) => k.mekanId === mekanIdQ)
+      : tumKayitlar;
+
+    // Kova veri yapısı
+    interface Kova {
+      toplamSatis: number;
+      indirimliSatis: number;
+      toplamIndirimTL: number;
+      toplamBrutoCiro: number;
+    }
+    interface SatirRow {
+      userId: string;
+      ad: string;
+      uzun: Kova;
+      kisa: Kova;
+    }
+
+    const personelMap: Record<string, SatirRow> = {};
+
+    const getRow = (id: string, ad: string): SatirRow => {
+      if (!personelMap[id]) {
+        const bos = (): Kova => ({ toplamSatis: 0, indirimliSatis: 0, toplamIndirimTL: 0, toplamBrutoCiro: 0 });
+        personelMap[id] = { userId: id, ad, uzun: bos(), kisa: bos() };
+      }
+      return personelMap[id];
+    };
+
+    for (const kayit of filtrelenmis) {
+      const tarih: string = kayit.tarih || "";
+      const satislar: any[] = (kayit.satislar || []).filter((s: any) => !s.iptal);
+
+      for (const s of satislar) {
+        const finalPrice = Number(s.finalPrice) || 0;
+        const discount   = Number(s.discount)   || 0;
+        const bruto      = finalPrice + discount;
+        const indirimlimi = discount > 0;
+
+        const kid = s.kaydedenId || s.kaydeden || "bilinmiyor";
+        const kad = s.kaydeden   || "Bilinmiyor";
+        const row = getRow(kid, kad);
+
+        row.uzun.toplamSatis++;
+        row.uzun.toplamBrutoCiro  += bruto;
+        row.uzun.toplamIndirimTL  += discount;
+        if (indirimlimi) row.uzun.indirimliSatis++;
+
+        if (tarih >= kisaEsik) {
+          row.kisa.toplamSatis++;
+          row.kisa.toplamBrutoCiro  += bruto;
+          row.kisa.toplamIndirimTL  += discount;
+          if (indirimlimi) row.kisa.indirimliSatis++;
+        }
+      }
+    }
+
+    const r1 = (n: number) => Math.round(n * 10) / 10;
+    const r0 = (n: number) => Math.round(n);
+
+    const hesapla = (k: Kova) => ({
+      toplamSatis:          k.toplamSatis,
+      indirimliSatis:       k.indirimliSatis,
+      toplamIndirimTL:      r0(k.toplamIndirimTL),
+      toplamBrutoCiro:      r0(k.toplamBrutoCiro),
+      // Ortalama indirim oranı = toplam indirim ₺ / toplam brüto ciro × 100
+      ortalamaIndirimOrani: k.toplamBrutoCiro > 0 ? r1((k.toplamIndirimTL / k.toplamBrutoCiro) * 100) : 0,
+      // İndirimli satış oranı = indirimli satış adedi / toplam satış × 100
+      indirimliSatisOrani:  k.toplamSatis > 0 ? r1((k.indirimliSatis / k.toplamSatis) * 100) : 0,
+    });
+
+    const personeller = Object.values(personelMap)
+      .filter((p) => p.uzun.toplamSatis > 0)
+      .map((p) => ({
+        userId: p.userId,
+        ad:     p.ad,
+        avatar: "👤",
+        uzun:   hesapla(p.uzun),
+        kisa:   hesapla(p.kisa),
+      }))
+      .sort((a, b) => b.uzun.ortalamaIndirimOrani - a.uzun.ortalamaIndirimOrani);
+
+    const mekanListesi = mekanlarList.map((m: any) => ({ id: m.id, name: m.name, emoji: m.emoji || "📍" }));
+
+    const ozet = {
+      uzun: {
+        toplamSatis:     personeller.reduce((s, p) => s + p.uzun.toplamSatis, 0),
+        toplamIndirimTL: personeller.reduce((s, p) => s + p.uzun.toplamIndirimTL, 0),
+      },
+      kisa: {
+        toplamSatis:     personeller.reduce((s, p) => s + p.kisa.toplamSatis, 0),
+        toplamIndirimTL: personeller.reduce((s, p) => s + p.kisa.toplamIndirimTL, 0),
+      },
+      kisaDonemBaslangic: kisaEsik,
+    };
+
+    console.log(`İndirim istatistik: ${personeller.length} personel — uzun=${ozet.uzun.toplamSatis} satış, kisa=${ozet.kisa.toplamSatis} satış`);
+    return c.json({ personeller, mekanlar: mekanListesi, ozet });
+  } catch (err) {
+    console.log("Personel indirim-istatistik error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// PERSONEL: Anomali Puanları
+// GET /make-server-4da0b637/personel/anomali-puanlar
+// Query: ?baslangic=YYYY-MM-DD&bitis=YYYY-MM-DD&mekanId=&userId=
+// Yalnızca yonetici / ust-mudur / mudur erişebilir
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/personel/anomali-puanlar", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur", "mudur"].includes(callerRole)) {
+      return c.json({ error: "Bu modülü yalnızca yöneticiler görebilir." }, 403);
+    }
+
+    const baslangic = c.req.query("baslangic") || "";
+    const bitis     = c.req.query("bitis")     || "";
+    const mekanIdQ  = c.req.query("mekanId")   || "";
+    const userIdQ   = c.req.query("userId")    || "";
+
+    // ── 1. Mekan haritaları ──
+    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanById:   Record<string, any> = {};
+    for (const m of mekanlarList) {
+      mekanById[m.id] = m;
+    }
+
+    // ── 2. Rotation task haritası: { "YYYY-MM-DD__mekanAdi" → Personnel[] } ──
+    const allTasks: any[] = await kv.getByPrefix("rotation_task_") || [];
+    const taskMap: Record<string, any[]> = {};
+    for (const t of allTasks) {
+      if (!t.date || !t.location || t.status === "cancelled") continue;
+      const key = `${t.date}__${t.location}`;
+      if (!taskMap[key]) taskMap[key] = [];
+      const personnel: any[] = t.personnel || [];
+      for (const p of personnel) {
+        if (!taskMap[key].find((x: any) => x.id === p.id)) {
+          taskMap[key].push(p);
+        }
+      }
+    }
+
+    // ── 3. Stok kayıtları — anomali olanları filtrele ──
+    const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+    const anomaliKayitlar = tumKayitlar.filter((k: any) => {
+      if (!k.tarih) return false;
+      if (baslangic && k.tarih < baslangic) return false;
+      if (bitis     && k.tarih > bitis)     return false;
+      if (mekanIdQ  && k.mekanId !== mekanIdQ) return false;
+      const acilisVar  = k.acilisAnomali  && Object.keys(k.acilisAnomali).length  > 0;
+      const kapanisVar = k.kapanisAnomali && Object.keys(k.kapanisAnomali).length > 0;
+      return acilisVar || kapanisVar;
+    });
+
+    // ── 4. Yardımcı: bir önceki gün ──
+    const prevDay = (tarih: string): string => {
+      const d = new Date(tarih + "T00:00:00Z");
+      d.setUTCDate(d.getUTCDate() - 1);
+      return d.toISOString().split("T")[0];
+    };
+
+    // ── 5. Puan toplama ──
+    const puanMap: Record<string, any> = {};
+
+    const addPuan = (
+      personList: any[],
+      tarih: string,
+      mekanId: string,
+      tip: "acilis" | "kapanis",
+      farklar: Record<string, number>
+    ) => {
+      const mekan = mekanById[mekanId] || { name: mekanId, emoji: "📍" };
+      for (const p of personList) {
+        if (!p?.id) continue;
+        if (!puanMap[p.id]) {
+          puanMap[p.id] = {
+            userId:     p.id,
+            ad:         p.name   || "Bilinmiyor",
+            avatar:     p.avatar || "👤",
+            toplamPuan: 0,
+            detaylar:   [],
+          };
+        }
+        puanMap[p.id].toplamPuan += 1;
+        puanMap[p.id].detaylar.push({
+          tarih,
+          mekanId,
+          mekanAdi:   mekan.name,
+          mekanEmoji: mekan.emoji || "📍",
+          tip,
+          farklar,
+        });
+      }
+    };
+
+    for (const kayit of anomaliKayitlar) {
+      const mekan    = mekanById[kayit.mekanId] || {};
+      const mekanAdi = mekan.name || "";
+
+      // Açılış anomalisi → önceki günün personeli
+      if (kayit.acilisAnomali && Object.keys(kayit.acilisAnomali).length > 0) {
+        const taskKey    = `${prevDay(kayit.tarih)}__${mekanAdi}`;
+        const personList = taskMap[taskKey] || [];
+        addPuan(personList, kayit.tarih, kayit.mekanId, "acilis", kayit.acilisAnomali);
+      }
+
+      // Kapanış anomalisi → aynı günün personeli
+      if (kayit.kapanisAnomali && Object.keys(kayit.kapanisAnomali).length > 0) {
+        const taskKey    = `${kayit.tarih}__${mekanAdi}`;
+        const personList = taskMap[taskKey] || [];
+        addPuan(personList, kayit.tarih, kayit.mekanId, "kapanis", kayit.kapanisAnomali);
+      }
+    }
+
+    // ── 6. Filtrele ve sırala ──
+    let puanListesi = Object.values(puanMap);
+    if (userIdQ) {
+      puanListesi = puanListesi.filter((p: any) => p.userId === userIdQ);
+    }
+
+    const toplamAnomaliOlayi = anomaliKayitlar.reduce((sum: number, k: any) => {
+      if (k.acilisAnomali  && Object.keys(k.acilisAnomali).length  > 0) sum++;
+      if (k.kapanisAnomali && Object.keys(k.kapanisAnomali).length > 0) sum++;
+      return sum;
+    }, 0);
+
+    for (const p of puanListesi) {
+      p.detaylar.sort((a: any, b: any) => b.tarih.localeCompare(a.tarih));
+    }
+    puanListesi.sort((a: any, b: any) => b.toplamPuan - a.toplamPuan);
+
+    const mekanListesiFiltre = mekanlarList.map((m: any) => ({
+      id:    m.id,
+      name:  m.name,
+      emoji: m.emoji || "📍",
+    }));
+
+    console.log(`Anomali puanları: ${anomaliKayitlar.length} kayıt, ${puanListesi.length} personel etkilendi`);
+    return c.json({
+      puanlar:                 puanListesi,
+      mekanlar:                mekanListesiFiltre,
+      toplamAnomaliOlayi,
+      etkilenenPersonelSayisi: puanListesi.length,
+    });
+  } catch (err) {
+    console.log("Personel anomali-puanlar error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
 // DOĞUM GÜNÜ: Kendi gizlilik ayarlarını getir
 // GET /make-server-4da0b637/birthday
 // Doğum tarihi user_metadata.birth_date'den okunur

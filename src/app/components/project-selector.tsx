@@ -1,6 +1,6 @@
 import { getTasks, getLocations } from '../services/rotation-service';
 import { useState, useEffect } from 'react';
-import { MapPin, Clock, CheckCircle2, Navigation, AlertTriangle, Zap, ArrowLeft } from 'lucide-react';
+import { MapPin, Clock, CheckCircle2, Navigation, AlertTriangle, Zap, ArrowLeft, Lock, Loader2 } from 'lucide-react';
 
 interface Project {
   id: string;
@@ -30,14 +30,18 @@ interface ProjectSelectorProps {
   onBack?: () => void;
   userRole?: string;
   onLiveFeed?: () => void;
+  userId?: string;
+  userName?: string;
 }
 
-export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, onBack, userRole, onLiveFeed }: ProjectSelectorProps) {
+export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, onBack, userRole, onLiveFeed, userId, userName }: ProjectSelectorProps) {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [showSelector, setShowSelector] = useState(!selectedProject);
   const [locations, setLocations] = useState<Location[]>([]);
   const [myRotationVenues, setMyRotationVenues] = useState<Set<string>>(new Set());
   const [pendingProject, setPendingProject] = useState<Project | null>(null);
+  const [rotasyonYukleniyor, setRotasyonYukleniyor] = useState(true);
+  const [rotasyonDurumu, setRotasyonDurumu] = useState<'yukleniyor' | 'tanimlanmamis' | 'atanmamis' | 'hata' | 'tamam'>('yukleniyor');
 
   // Mevcut kullanıcı rolünü al
   const getCurrentUserRole = (): string => {
@@ -61,9 +65,49 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
 
   // Bugünkü rotasyonda hangi mekanlar var → mevcut kullanıcı için
   useEffect(() => {
-    // localStorage kaldırıldı - KV store entegrasyonu yapılacak
-    setMyRotationVenues(new Set());
-  }, []);
+    const loadRotation = async () => {
+      setRotasyonYukleniyor(true);
+      setRotasyonDurumu('yukleniyor');
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const tasks = await getTasks();
+
+        // Bugüne ait ve aktif (sent / revised) görevler
+        const todaysTasks = tasks.filter(
+          (t) => t.date === today && (t.status === 'sent' || t.status === 'revised')
+        );
+
+        if (todaysTasks.length === 0) {
+          // Bugün için hiç rotasyon tanımlanmamış
+          setMyRotationVenues(new Set());
+          setRotasyonDurumu('tanimlanmamis');
+          setRotasyonYukleniyor(false);
+          return;
+        }
+
+        // Kullanıcının dahil olduğu görevlerdeki mekanları topla
+        const venues = new Set<string>();
+        for (const task of todaysTasks) {
+          const benimGörevim = task.personnel.some(
+            (p) =>
+              (userId && p.id === userId) ||
+              (userName && p.name === userName)
+          );
+          if (benimGörevim) venues.add(task.location);
+        }
+
+        setMyRotationVenues(venues);
+        setRotasyonDurumu(venues.size > 0 ? 'tamam' : 'atanmamis');
+      } catch (err) {
+        console.error('Rotasyon yüklenemedi:', err);
+        setMyRotationVenues(new Set());
+        setRotasyonDurumu('hata');
+      } finally {
+        setRotasyonYukleniyor(false);
+      }
+    };
+    loadRotation();
+  }, [userId, userName]);
 
   // ✅ DYNAMIC: Convert Mekan Yönetimi locations to projects
   const projects: Project[] = locations.map((location) => {
@@ -247,88 +291,149 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
         <p className="text-sm text-gray-400">Hangi projede çalışıyorsunuz?</p>
       </div>
 
-      <div className="space-y-3">
-        {projects.length === 0 ? (
-          <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 rounded-2xl p-8 border-2 border-white/20 text-center">
-            <div className="text-6xl mb-4">🏖️</div>
-            <h3 className="text-xl font-bold text-white mb-2">Henüz Mekan Eklenmemiş</h3>
-            <p className="text-sm text-gray-400 mb-4">
-              Lütfen önce "Mekan Yönetimi"nden en az bir mekan ekleyin.
-            </p>
-            {onNavigate && (
-              <button
-                onClick={() => onNavigate('mekan-management')}
-                className="bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-white px-6 py-3 rounded-xl font-semibold hover:shadow-lg transition-all active:scale-95"
-              >
-                📍 Mekan Yönetimine Git
-              </button>
-            )}
+      {/* Personel: rotasyon yükleniyorsa beklet */}
+      {isPersonel && rotasyonYukleniyor ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-4">
+          <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
+          <p className="text-gray-400 text-sm">Rotasyon bilgisi kontrol ediliyor...</p>
+        </div>
+      ) : isPersonel && rotasyonDurumu !== 'tamam' ? (
+        /* Personel kilitli ekran */
+        <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 rounded-2xl p-8 border-2 border-red-500/30 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-red-500/20 border-2 border-red-500/30 flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-8 h-8 text-red-400" />
           </div>
-        ) : (
-          projects.map((project) => {
-            const isMyVenue = myRotationVenues.has(project.name);
-            const hasRotationData = myRotationVenues.size > 0;
-            return (
-              <button
-                key={project.id}
-                onClick={() => handleProjectSelect(project)}
-                className="w-full rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-all active:scale-[0.98] text-left relative overflow-hidden"
-                style={{ backgroundColor: project.color }}
-              >
-                {/* Rotasyon etiketi */}
-                {hasRotationData && (
-                  <div className={`absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold ${
-                    isMyVenue
-                      ? 'bg-green-500/30 border border-green-400/50 text-green-100'
-                      : 'bg-black/30 border border-white/20 text-white/70'
-                  }`}>
-                    {isMyVenue ? (
-                      <>
-                        <CheckCircle2 className="w-3 h-3" />
-                        Rotasyonumda
-                      </>
-                    ) : (
-                      <>
-                        <AlertTriangle className="w-3 h-3" />
-                        Rotasyonumda Değil
-                      </>
-                    )}
-                  </div>
-                )}
-                <div className="flex items-center gap-4">
-                  <div
-                    className="w-14 h-14 rounded-xl flex items-center justify-center text-3xl"
-                    style={{ backgroundColor: 'rgba(255,255,255,0.25)' }}
-                  >
-                    {project.icon}
-                  </div>
-                  <div className="flex-1 pr-24">
-                    <div className="font-bold text-lg mb-1">{project.name}</div>
-                    <div className="flex items-center gap-3 text-sm opacity-90">
-                      <span className="flex items-center gap-1">
-                        <MapPin className="w-3 h-3" />
-                        {project.location}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {project.shift}
-                      </span>
-                    </div>
-                  </div>
-                  {userLocation && (
-                    <div className="text-center">
-                      <Navigation className="w-5 h-5 mx-auto mb-1 opacity-80" />
-                      <div className="text-xs opacity-80">Yakın</div>
+          {rotasyonDurumu === 'tanimlanmamis' && (
+            <>
+              <h3 className="text-lg font-bold text-white mb-2">Rotasyon Tanımlanmamış</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Bugün için henüz bir rotasyon oluşturulmamış.<br />
+                Yöneticinizle iletişime geçin.
+              </p>
+            </>
+          )}
+          {rotasyonDurumu === 'atanmamis' && (
+            <>
+              <h3 className="text-lg font-bold text-white mb-2">Rotasyona Atanmadınız</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Bugünkü rotasyonda size atanmış bir mekan bulunmuyor.<br />
+                Yöneticinizle iletişime geçin.
+              </p>
+            </>
+          )}
+          {rotasyonDurumu === 'hata' && (
+            <>
+              <h3 className="text-lg font-bold text-white mb-2">Bağlantı Hatası</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Rotasyon bilgisi alınamadı.<br />
+                Bağlantınızı kontrol edin veya yöneticinizle iletişime geçin.
+              </p>
+            </>
+          )}
+          <div className="mt-5 px-4 py-3 rounded-xl bg-white/5 border border-white/10">
+            <p className="text-xs text-gray-500">
+              🔒 Güvenlik nedeniyle rotasyon dışı mekanlara erişim engellendi
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {projects.length === 0 ? (
+            <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 rounded-2xl p-8 border-2 border-white/20 text-center">
+              <div className="text-6xl mb-4">🏖️</div>
+              <h3 className="text-xl font-bold text-white mb-2">Henüz Mekan Eklenmemiş</h3>
+              <p className="text-sm text-gray-400 mb-4">
+                Lütfen önce "Mekan Yönetimi"nden en az bir mekan ekleyin.
+              </p>
+              {onNavigate && (
+                <button
+                  onClick={() => onNavigate('mekan-management')}
+                  className="bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-white px-6 py-3 rounded-xl font-semibold hover:shadow-lg transition-all active:scale-95"
+                >
+                  📍 Mekan Yönetimine Git
+                </button>
+              )}
+            </div>
+          ) : (
+            projects.map((project) => {
+              const isMyVenue = myRotationVenues.has(project.name);
+              const hasRotationData = myRotationVenues.size > 0;
+              // Personel için rotasyonunda olmayan mekanları kilitle
+              const locked = isPersonel && hasRotationData && !isMyVenue;
+              return (
+                <button
+                  key={project.id}
+                  onClick={() => !locked && handleProjectSelect(project)}
+                  disabled={locked}
+                  className={`w-full rounded-2xl p-5 text-white shadow-lg transition-all text-left relative overflow-hidden ${
+                    locked
+                      ? 'opacity-35 cursor-not-allowed'
+                      : 'hover:shadow-xl active:scale-[0.98]'
+                  }`}
+                  style={{ backgroundColor: project.color }}
+                >
+                  {/* Kilit ikonu — rotasyon dışı personel için */}
+                  {locked && (
+                    <div className="absolute inset-0 flex items-center justify-end pr-5 pointer-events-none">
+                      <Lock className="w-6 h-6 text-white/60" />
                     </div>
                   )}
-                </div>
-              </button>
-            );
-          })
-        )}
-      </div>
 
-      {userLocation && (
+                  {/* Rotasyon etiketi */}
+                  {hasRotationData && (
+                    <div className={`absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold ${
+                      isMyVenue
+                        ? 'bg-green-500/30 border border-green-400/50 text-green-100'
+                        : 'bg-black/30 border border-white/20 text-white/70'
+                    }`}>
+                      {isMyVenue ? (
+                        <>
+                          <CheckCircle2 className="w-3 h-3" />
+                          Rotasyonumda
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-3 h-3" />
+                          Kilitli
+                        </>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-4">
+                    <div
+                      className="w-14 h-14 rounded-xl flex items-center justify-center text-3xl"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.25)' }}
+                    >
+                      {project.icon}
+                    </div>
+                    <div className="flex-1 pr-24">
+                      <div className="font-bold text-lg mb-1">{project.name}</div>
+                      <div className="flex items-center gap-3 text-sm opacity-90">
+                        <span className="flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {project.location}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {project.shift}
+                        </span>
+                      </div>
+                    </div>
+                    {userLocation && !locked && (
+                      <div className="text-center">
+                        <Navigation className="w-5 h-5 mx-auto mb-1 opacity-80" />
+                        <div className="text-xs opacity-80">Yakın</div>
+                      </div>
+                    )}
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {userLocation && !(isPersonel && rotasyonDurumu !== 'tamam') && (
         <div className="mt-4 bg-[#a8e6cf]/20 rounded-xl p-3 border border-[#a8e6cf]/30">
           <div className="flex items-center gap-2 text-sm text-[#a8e6cf] font-semibold">
             <Navigation className="w-4 h-4" />

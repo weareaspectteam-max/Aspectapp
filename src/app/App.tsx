@@ -32,6 +32,8 @@ import { CostManagement } from './components/cost-management';
 import { LocationVisits } from './components/location-visits';
 import { SatisRaporu } from './components/satis-raporu';
 import { ManagerReports } from './components/manager-reports';
+import { AnomaliPanosu } from './components/anomali-panosu';
+import { IndirimIstatistik } from './components/indirim-istatistik';
 import { BirthdayCalendar } from './components/birthday-calendar';
 import { BirthdayNotifications } from './components/birthday-notifications';
 import { Announcements } from './components/announcements';
@@ -337,6 +339,7 @@ export default function App() {
             userName={userName} 
             userRole={userRole}
             accessToken={accessToken}
+            userId={userId}
             onProjectSelect={handleProjectSelect}
             preSelectedProject={isStaffRole && shiftSetupCompleted ? selectedProject : undefined}
             onLogout={handleLogout}
@@ -559,6 +562,28 @@ export default function App() {
             onLogout={handleLogout}
             onNavigate={handleNavigate}
             onBack={() => handleNavigate('business-panel')}
+          />
+        );
+      
+      case 'anomali-panosu':
+        return (
+          <AnomaliPanosu 
+            userName={userName}
+            userRole={userRole}
+            accessToken={accessToken}
+            onLogout={handleLogout}
+            onNavigate={handleNavigate}
+          />
+        );
+      
+      case 'indirim-istatistik':
+        return (
+          <IndirimIstatistik 
+            userName={userName}
+            userRole={userRole}
+            accessToken={accessToken}
+            onLogout={handleLogout}
+            onNavigate={handleNavigate}
           />
         );
       
