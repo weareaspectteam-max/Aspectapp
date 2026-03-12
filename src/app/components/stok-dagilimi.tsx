@@ -3,6 +3,7 @@ import {
   ArrowLeft, RefreshCw, Loader2, WifiOff, Package,
   Printer, Plus, Minus, X, ChevronDown, ChevronRight,
   ArrowDownToLine, ArrowUpFromLine, Clock,
+  Edit3, Trash2, AlertTriangle, Check,
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { UserRole } from './login';
@@ -226,7 +227,14 @@ function RibonCard({ mekanlar, depo }: { mekanlar: MekanOzet[]; depo: DepoOzet }
 }
 
 // ─── Mekan Albüm Accordion ────────────────────────────────────────────────────
-function MekanAlbumCard({ mekan }: { mekan: MekanOzet }) {
+function MekanAlbumCard({
+  mekan, isYonetici, onGuncelle, onSifirla,
+}: {
+  mekan: MekanOzet;
+  isYonetici: boolean;
+  onGuncelle: (m: MekanOzet) => void;
+  onSifirla: (m: MekanOzet) => void;
+}) {
   const [acik, setAcik] = useState(false);
   const albumToplam = SADECE_ALBUMLER.reduce((s, a) => s + (mekan.albumSayilari[a] || 0), 0);
   return (
@@ -271,6 +279,28 @@ function MekanAlbumCard({ mekan }: { mekan: MekanOzet }) {
               );
             })
           )}
+          {/* Ribon satırı */}
+          {(mekan.albumSayilari['ribon'] || 0) > 0 && (
+            <div className="flex items-center gap-2 pt-1 border-t border-white/6">
+              <div className="w-14 text-xs text-pink-300/70">Ribon</div>
+              <div className="flex-1 text-[10px] text-white/25">{ribonMetni(mekan.albumSayilari['ribon'] || 0)}</div>
+              <div className="w-8 text-right text-xs font-bold text-pink-300">{mekan.albumSayilari['ribon'] || 0}</div>
+              <div className="w-9" />
+            </div>
+          )}
+          {/* Yönetici butonları */}
+          {isYonetici && (
+            <div className="flex gap-2 pt-3 border-t border-white/8 mt-1">
+              <button onClick={() => onGuncelle(mekan)}
+                className="flex-1 h-9 rounded-xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center gap-1.5 text-xs font-semibold text-violet-300 active:scale-95 transition-transform">
+                <Edit3 className="w-3.5 h-3.5" /> Stok Güncelle
+              </button>
+              <button onClick={() => onSifirla(mekan)}
+                className="flex-1 h-9 rounded-xl bg-red-500/12 border border-red-500/25 flex items-center justify-center gap-1.5 text-xs font-semibold text-red-400 active:scale-95 transition-transform">
+                <Trash2 className="w-3.5 h-3.5" /> Stok Sıfırla
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -278,7 +308,14 @@ function MekanAlbumCard({ mekan }: { mekan: MekanOzet }) {
 }
 
 // ─── Depo Albüm Accordion ─────────────────────────────────────────────────────
-function DepoAlbumCard({ depo }: { depo: DepoOzet }) {
+function DepoAlbumCard({
+  depo, isYonetici, onGuncelle, onSifirla,
+}: {
+  depo: DepoOzet;
+  isYonetici: boolean;
+  onGuncelle: () => void;
+  onSifirla: () => void;
+}) {
   const [acik, setAcik] = useState(false);
   const toplam = SADECE_ALBUMLER.reduce((s, a) => s + (depo.albumSayilari[a] || 0), 0);
   return (
@@ -322,8 +359,179 @@ function DepoAlbumCard({ depo }: { depo: DepoOzet }) {
             <div className="w-8 text-right text-xs font-bold text-pink-300">{depo.ribonTakim}</div>
             <div className="w-9" />
           </div>
+          {/* Yönetici butonları */}
+          {isYonetici && (
+            <div className="flex gap-2 pt-3 border-t border-white/8 mt-1">
+              <button onClick={onGuncelle}
+                className="flex-1 h-9 rounded-xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center gap-1.5 text-xs font-semibold text-violet-300 active:scale-95 transition-transform">
+                <Edit3 className="w-3.5 h-3.5" /> Stok Güncelle
+              </button>
+              <button onClick={onSifirla}
+                className="flex-1 h-9 rounded-xl bg-red-500/12 border border-red-500/25 flex items-center justify-center gap-1.5 text-xs font-semibold text-red-400 active:scale-95 transition-transform">
+                <Trash2 className="w-3.5 h-3.5" /> Stok Sıfırla
+              </button>
+            </div>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Stok Güncelle Modalı (sadece yönetici) ───────────────────────────────────
+function StokGuncelleModal({
+  mekanId, mekanAdi, mekanEmoji, mevcutAlbumSayilari, mevcutRibonTakim, onClose, onSuccess,
+}: {
+  mekanId: string; mekanAdi: string; mekanEmoji: string;
+  mevcutAlbumSayilari: Record<string, number>; mevcutRibonTakim: number;
+  onClose: () => void; onSuccess: () => void;
+}) {
+  const [albumDegerleri, setAlbumDegerleri] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    SADECE_ALBUMLER.forEach(a => { init[a] = String(mevcutAlbumSayilari[a] || 0); });
+    return init;
+  });
+  const [ribonTakim, setRibonTakim] = useState(String(mevcutRibonTakim || 0));
+  const [yukleniyor, setYukleniyor] = useState(false);
+  const [hata, setHata] = useState('');
+
+  const kaydet = async () => {
+    setYukleniyor(true); setHata('');
+    try {
+      const headers = await authHeaders();
+      const albumSayilari: Record<string, number> = {};
+      SADECE_ALBUMLER.forEach(a => { albumSayilari[a] = Math.max(0, parseInt(albumDegerleri[a] || '0') || 0); });
+      const res = await fetch(`${API_BASE}/stok/mekan/guncelle`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ mekanId, albumSayilari, ribonTakim: Math.max(0, parseInt(ribonTakim || '0') || 0) }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+      onSuccess();
+    } catch (err: any) { setHata(err.message || 'Güncelleme başarısız.'); }
+    finally { setYukleniyor(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/65 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-md rounded-t-3xl overflow-hidden"
+        style={{ background: '#0e0826', border: '1px solid rgba(255,255,255,0.12)', maxHeight: '92vh' }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/10">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">{mekanEmoji}</span>
+            <div>
+              <h2 className="text-sm font-bold text-white">{mekanAdi} — Stok Güncelle</h2>
+              <p className="text-[10px] text-white/30">Albüm ve ribon değerlerini düzenle</p>
+            </div>
+          </div>
+          <button onClick={onClose}
+            className="w-8 h-8 rounded-full bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-transform">
+            <X className="w-4 h-4 text-white/60" />
+          </button>
+        </div>
+        {/* Form */}
+        <div className="overflow-y-auto px-5 py-4 space-y-3" style={{ maxHeight: 'calc(92vh - 140px)' }}>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mb-1">Albümler (adet)</p>
+          <div className="grid grid-cols-2 gap-2">
+            {SADECE_ALBUMLER.map(alan => (
+              <div key={alan} className="rounded-xl border border-white/10 bg-white/4 px-3 py-2.5 flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ALAN_RENK[alan] }} />
+                <span className="text-xs text-white/55 flex-1">{ALAN_ETIKET[alan]}</span>
+                <input type="number" min={0} value={albumDegerleri[alan]}
+                  onChange={e => setAlbumDegerleri(v => ({ ...v, [alan]: e.target.value }))}
+                  className="w-16 text-right text-sm font-bold text-white bg-transparent outline-none" />
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mt-3 mb-1">Ribon (takım)</p>
+          <div className="rounded-xl border border-pink-500/25 bg-pink-500/6 px-3 py-2.5 flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-pink-400 flex-shrink-0" />
+            <span className="text-xs text-pink-300/70 flex-1">Ribon Takımı</span>
+            <input type="number" min={0} value={ribonTakim}
+              onChange={e => setRibonTakim(e.target.value)}
+              className="w-16 text-right text-sm font-bold text-pink-300 bg-transparent outline-none" />
+          </div>
+          {parseInt(ribonTakim || '0') > 0 && (
+            <p className="text-[10px] text-pink-400/50 text-right">
+              = {(parseInt(ribonTakim) * RIBON_PER_TAKIM).toLocaleString('tr-TR')} baskı kapasitesi
+            </p>
+          )}
+          {hata && <div className="rounded-xl bg-red-500/12 border border-red-500/20 px-4 py-3 text-xs text-red-300">{hata}</div>}
+        </div>
+        {/* Footer */}
+        <div className="px-5 pb-6 pt-3 flex gap-3 border-t border-white/8">
+          <button onClick={onClose}
+            className="flex-1 h-11 rounded-xl bg-white/6 border border-white/12 text-sm font-semibold text-white/50 active:scale-95 transition-transform">
+            İptal
+          </button>
+          <button onClick={kaydet} disabled={yukleniyor}
+            className="flex-1 h-11 rounded-xl bg-gradient-to-r from-violet-600/80 to-purple-600/80 border border-violet-400/30 text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-40">
+            {yukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            Kaydet
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Stok Sıfırla Onay Modalı (sadece yönetici) ───────────────────────────────
+function StokSifirlaOnay({
+  mekanId, mekanAdi, mekanEmoji, onClose, onSuccess,
+}: {
+  mekanId: string; mekanAdi: string; mekanEmoji: string;
+  onClose: () => void; onSuccess: () => void;
+}) {
+  const [yukleniyor, setYukleniyor] = useState(false);
+  const [hata, setHata] = useState('');
+
+  const sifirla = async () => {
+    setYukleniyor(true); setHata('');
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${API_BASE}/stok/mekan/sifirla`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ mekanId }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+      onSuccess();
+    } catch (err: any) { setHata(err.message || 'Sıfırlama başarısız.'); }
+    finally { setYukleniyor(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm px-6"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-sm rounded-3xl p-6"
+        style={{ background: '#0e0826', border: '1px solid rgba(239,68,68,0.25)' }}>
+        <div className="flex flex-col items-center text-center gap-3 mb-5">
+          <div className="w-14 h-14 rounded-2xl bg-red-500/15 border border-red-500/25 flex items-center justify-center">
+            <AlertTriangle className="w-7 h-7 text-red-400" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-white">Stoğu Sıfırla</h2>
+            <p className="text-xs text-white/40 mt-1">
+              <span className="text-white/70">{mekanEmoji} {mekanAdi}</span> için tüm albüm ve ribon değerleri{' '}
+              <span className="text-red-400 font-semibold">0</span>'a çekilecek. Bu işlem geri alınamaz.
+            </p>
+          </div>
+        </div>
+        {hata && <div className="rounded-xl bg-red-500/12 border border-red-500/20 px-4 py-3 text-xs text-red-300 mb-4">{hata}</div>}
+        <div className="flex gap-3">
+          <button onClick={onClose}
+            className="flex-1 h-11 rounded-xl bg-white/6 border border-white/12 text-sm font-semibold text-white/50 active:scale-95 transition-transform">
+            Vazgeç
+          </button>
+          <button onClick={sifirla} disabled={yukleniyor}
+            className="flex-1 h-11 rounded-xl bg-gradient-to-r from-red-600/80 to-rose-600/80 border border-red-400/30 text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-40">
+            {yukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            Evet, Sıfırla
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -578,6 +786,13 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
   const [sonGuncelleme, setSonGuncelleme] = useState<Date | null>(null);
   const [depoModalAcik, setDepoModalAcik] = useState(false);
 
+  // Yönetici stok güncelle / sıfırla modalları
+  type GuncelleHedef = { mekanId: string; mekanAdi: string; mekanEmoji: string; albumSayilari: Record<string,number>; ribonTakim: number } | null;
+  type SifirlaHedef = { mekanId: string; mekanAdi: string; mekanEmoji: string } | null;
+  const [guncelleHedef, setGuncelleHedef] = useState<GuncelleHedef>(null);
+  const [sifirlaHedef, setSifirlaHedef] = useState<SifirlaHedef>(null);
+
+  const isYonetici = userRole === 'yonetici';
   const canEditDepo = ['admin', 'yonetici'].includes(userRole);
 
   const yukle = useCallback(async () => {
@@ -688,8 +903,27 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
               <span className="text-sm font-bold text-white">Mekan Bazlı Albüm Dağılımı</span>
             </div>
             <div className="p-3 space-y-2">
-              {veri.mekanlar.map(m => <MekanAlbumCard key={m.id} mekan={m} />)}
-              <DepoAlbumCard depo={veri.depo} />
+              {veri.mekanlar.map(m => (
+                <MekanAlbumCard
+                  key={m.id}
+                  mekan={m}
+                  isYonetici={isYonetici}
+                  onGuncelle={mekan => setGuncelleHedef({
+                    mekanId: mekan.id, mekanAdi: mekan.name, mekanEmoji: mekan.emoji,
+                    albumSayilari: mekan.albumSayilari, ribonTakim: mekan.albumSayilari['ribon'] || 0,
+                  })}
+                  onSifirla={mekan => setSifirlaHedef({ mekanId: mekan.id, mekanAdi: mekan.name, mekanEmoji: mekan.emoji })}
+                />
+              ))}
+              <DepoAlbumCard
+                depo={veri.depo}
+                isYonetici={isYonetici}
+                onGuncelle={() => setGuncelleHedef({
+                  mekanId: 'depo', mekanAdi: 'Depo', mekanEmoji: '🏪',
+                  albumSayilari: veri.depo.albumSayilari, ribonTakim: veri.depo.ribonTakim,
+                })}
+                onSifirla={() => setSifirlaHedef({ mekanId: 'depo', mekanAdi: 'Depo', mekanEmoji: '🏪' })}
+              />
             </div>
           </div>
         </div>
@@ -701,6 +935,30 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
           mekanlar={veri.mekanlar}
           onClose={() => setDepoModalAcik(false)}
           onSuccess={() => { setDepoModalAcik(false); yukle(); }}
+        />
+      )}
+
+      {/* Stok Güncelle Modalı */}
+      {guncelleHedef && (
+        <StokGuncelleModal
+          mekanId={guncelleHedef.mekanId}
+          mekanAdi={guncelleHedef.mekanAdi}
+          mekanEmoji={guncelleHedef.mekanEmoji}
+          mevcutAlbumSayilari={guncelleHedef.albumSayilari}
+          mevcutRibonTakim={guncelleHedef.ribonTakim}
+          onClose={() => setGuncelleHedef(null)}
+          onSuccess={() => { setGuncelleHedef(null); yukle(); }}
+        />
+      )}
+
+      {/* Stok Sıfırla Onay Modalı */}
+      {sifirlaHedef && (
+        <StokSifirlaOnay
+          mekanId={sifirlaHedef.mekanId}
+          mekanAdi={sifirlaHedef.mekanAdi}
+          mekanEmoji={sifirlaHedef.mekanEmoji}
+          onClose={() => setSifirlaHedef(null)}
+          onSuccess={() => { setSifirlaHedef(null); yukle(); }}
         />
       )}
 

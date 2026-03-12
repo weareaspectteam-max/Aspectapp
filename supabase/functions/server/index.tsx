@@ -2208,6 +2208,96 @@ app.get("/make-server-4da0b637/depo/hareketler", async (c) => {
 });
 
 // ──────────────────────────────────────────
+// STOK: Mekan / Depo stok güncelle (yönetici)
+// POST /make-server-4da0b637/stok/mekan/guncelle
+// Body: { mekanId: string, albumSayilari: Record<string,number>, ribonTakim: number }
+// mekanId = "depo" ise depo_stok güncellenir, yoksa bugünün stok_gunluk kaydının acilis alanı
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role;
+    if (role !== "yonetici") return c.json({ error: "Yalnızca yönetici stok güncelleyebilir." }, 403);
+
+    const { mekanId, albumSayilari, ribonTakim } = await c.req.json();
+    if (!mekanId) return c.json({ error: "mekanId zorunludur." }, 400);
+
+    const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15"];
+    const stokObj: Record<string, number> = {};
+    for (const alan of albumAlanlari) stokObj[alan] = Number(albumSayilari?.[alan]) || 0;
+    stokObj.ribon = Number(ribonTakim) || 0;
+
+    if (mekanId === "depo") {
+      const depoStok: any = await kv.get("depo_stok") || {};
+      for (const alan of albumAlanlari) depoStok[alan] = stokObj[alan];
+      depoStok.ribon = stokObj.ribon;
+      depoStok.guncellenmeTarihi = new Date().toISOString();
+      await kv.set("depo_stok", depoStok);
+      console.log(`Depo stok güncellendi: ${user.user_metadata?.full_name}`);
+      return c.json({ basarili: true });
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+    const kvKey = `stok_gunluk_${mekanId}_${today}`;
+    const kayit: any = await kv.get(kvKey) || { mekanId, tarih: today };
+    kayit.acilis = { ...(kayit.acilis || {}), ...stokObj };
+    kayit.acilisYapildi = true;
+    kayit.yoneticiGuncelleme = new Date().toISOString();
+    await kv.set(kvKey, kayit);
+
+    console.log(`Mekan stok güncellendi: mekan=${mekanId}, kullanıcı=${user.user_metadata?.full_name}`);
+    return c.json({ basarili: true });
+  } catch (err) {
+    console.log("Stok mekan güncelle error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// STOK: Mekan / Depo stok sıfırla (yönetici)
+// POST /make-server-4da0b637/stok/mekan/sifirla
+// Body: { mekanId: string }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/stok/mekan/sifirla", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role;
+    if (role !== "yonetici") return c.json({ error: "Yalnızca yönetici stok sıfırlayabilir." }, 403);
+
+    const { mekanId } = await c.req.json();
+    if (!mekanId) return c.json({ error: "mekanId zorunludur." }, 400);
+
+    const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15"];
+    const sifirStok: Record<string, number> = {};
+    for (const alan of albumAlanlari) sifirStok[alan] = 0;
+    sifirStok.ribon = 0;
+
+    if (mekanId === "depo") {
+      const depoStok: any = { ...sifirStok, guncellenmeTarihi: new Date().toISOString() };
+      await kv.set("depo_stok", depoStok);
+      console.log(`Depo stok sıfırlandı: ${user.user_metadata?.full_name}`);
+      return c.json({ basarili: true });
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+    const kvKey = `stok_gunluk_${mekanId}_${today}`;
+    const kayit: any = await kv.get(kvKey) || { mekanId, tarih: today };
+    kayit.acilis = { ...(kayit.acilis || {}), ...sifirStok };
+    kayit.acilisYapildi = true;
+    kayit.yoneticiSifirlama = new Date().toISOString();
+    await kv.set(kvKey, kayit);
+
+    console.log(`Mekan stok sıfırlandı: mekan=${mekanId}, kullanıcı=${user.user_metadata?.full_name}`);
+    return c.json({ basarili: true });
+  } catch (err) {
+    console.log("Stok mekan sıfırla error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
 // ASPECT AI: Günlük özet veri
 // GET /make-server-4da0b637/ai/ozet
 // Tüm mekanların bugünkü satış, stok ve anomali verilerini toplar

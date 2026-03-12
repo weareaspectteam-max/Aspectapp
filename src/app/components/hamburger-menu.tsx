@@ -101,7 +101,7 @@ function getSections(
         { icon: Activity,     label: 'Canlı Feed',         roles: mgmt, action: () => go('live-feed')       },
         { icon: RotateCcw,    label: 'Rotasyon',           roles: all,  action: () => go('rotation')        },
         { icon: Package,      label: 'Malzeme Yönetimi',   roles: all,  action: () => go('equipment-page')  },
-        { icon: BarChart2,    label: 'Stok Dağılımı',      roles: all,  action: () => go('stok-dagilimi')   },
+        { icon: BarChart2,    label: 'Stok Dağılımı',      roles: all,  action: () => go('stock-distribution')   },
       ],
     },
     {
