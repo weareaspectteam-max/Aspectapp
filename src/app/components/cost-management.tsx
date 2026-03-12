@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Edit2, Trash2, Save, ChevronRight, Plus, RefreshCw, Loader2 } from 'lucide-react';
+import { ArrowLeft, Edit2, Trash2, Save, ChevronRight, Plus, RefreshCw, Loader2, Users, ChevronDown, Check } from 'lucide-react';
 import { projectId } from '/utils/supabase/info';
 import { getToken, buildHeaders } from '../lib/api';
 
@@ -49,10 +49,19 @@ interface RecurringCost {
 interface Salary {
   id: string;
   name: string;
+  userId?: string;
+  userRole?: string;
   amount: number;
   currency: Currency;
   frequency: Frequency;
   extraCostPercentage: number;
+}
+
+interface SystemUser {
+  id: string;
+  ad: string;
+  rol: string;
+  email: string;
 }
 
 interface Location {
@@ -73,6 +82,11 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+
+  // System users for salary picker
+  const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
+  const [showUserPicker, setShowUserPicker] = useState(false);
+  const userPickerRef = useRef<HTMLDivElement>(null);
   
   // Exchange rates
   const [isAutoExchange, setIsAutoExchange] = useState(false);
@@ -131,6 +145,8 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
   // Form states for salary
   const [salaryForm, setSalaryForm] = useState({
     name: '',
+    userId: '',
+    userRole: '',
     amount: '',
     currency: 'TRY' as Currency,
     frequency: 'monthly' as Frequency,
@@ -139,6 +155,17 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
 
   const albumDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exchangeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Picker dışına tıklayınca kapat
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (userPickerRef.current && !userPickerRef.current.contains(e.target as Node)) {
+        setShowUserPicker(false);
+      }
+    };
+    if (showUserPicker) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showUserPicker]);
 
   // ─── Token helper ───────────────────────────────────────
   // getToken ve buildHeaders artık ../lib/api'den geliyor
@@ -150,9 +177,10 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
     try {
       const token = await getToken();
       const freshHeaders = buildHeaders(token);
-      const [costRes, mekanRes] = await Promise.all([
+      const [costRes, mekanRes, usersRes] = await Promise.all([
         fetch(`${API_BASE}/maliyetler`, { headers: freshHeaders }),
         fetch(`${API_BASE}/mekanlar`, { headers: freshHeaders }),
+        fetch(`${API_BASE}/auth/kullanicilar`, { headers: freshHeaders }),
       ]);
 
       if (!costRes.ok) {
@@ -177,6 +205,11 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
       if (mekanRes.ok) {
         const mekanData = await mekanRes.json();
         setLocations(mekanData.mekanlar || []);
+      }
+
+      if (usersRes.ok) {
+        const usersData = await usersRes.json();
+        setSystemUsers(usersData.kullanicilar || []);
       }
     } catch (err) {
       console.log('[CostMgmt] fetch error:', err);
@@ -501,7 +534,7 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
   // Salary form handlers
   const handleAddSalary = async () => {
     if (!salaryForm.name.trim() || !salaryForm.amount) {
-      alert('Lütfen tüm alanları doldurun!');
+      alert('Lütfen personel seçin ve maaş tutarı girin!');
       return;
     }
     setIsSaving(true);
@@ -512,6 +545,8 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
         headers: buildHeaders(token),
         body: JSON.stringify({
           name: salaryForm.name.trim(),
+          userId: salaryForm.userId || null,
+          userRole: salaryForm.userRole || null,
           amount: parseFloat(salaryForm.amount),
           currency: salaryForm.currency,
           frequency: salaryForm.frequency,
@@ -532,7 +567,7 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
 
   const handleUpdateSalary = async () => {
     if (!editingSalary || !salaryForm.name.trim() || !salaryForm.amount) {
-      alert('Lütfen tüm alanları doldurun!');
+      alert('Lütfen personel seçin ve maaş tutarı girin!');
       return;
     }
     setIsSaving(true);
@@ -543,6 +578,8 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
         headers: buildHeaders(token),
         body: JSON.stringify({
           name: salaryForm.name.trim(),
+          userId: salaryForm.userId || null,
+          userRole: salaryForm.userRole || null,
           amount: parseFloat(salaryForm.amount),
           currency: salaryForm.currency,
           frequency: salaryForm.frequency,
@@ -576,6 +613,8 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
     setEditingSalary(salary);
     setSalaryForm({
       name: salary.name,
+      userId: salary.userId || '',
+      userRole: salary.userRole || '',
       amount: salary.amount.toString(),
       currency: salary.currency,
       frequency: salary.frequency,
@@ -587,8 +626,11 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
   const resetSalaryForm = () => {
     setShowSalaryForm(false);
     setEditingSalary(null);
+    setShowUserPicker(false);
     setSalaryForm({
       name: '',
+      userId: '',
+      userRole: '',
       amount: '',
       currency: 'TRY',
       frequency: 'monthly',
@@ -1253,6 +1295,24 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
     );
   };
 
+  // ─── Rol yardımcıları ─────────────────────
+  const roleAvatars: Record<string, string> = {
+    'yonetici': '👨‍💼', 'ust-mudur': '👩‍💼', 'mudur': '🧑‍💼',
+    'operasyon': '👨‍🔧', 'personel': '👤', 'idari': '👩‍💻',
+  };
+  const roleLabels: Record<string, string> = {
+    'yonetici': 'Yönetici', 'ust-mudur': 'Üst Müdür', 'mudur': 'Müdür',
+    'operasyon': 'Operasyon', 'personel': 'Personel', 'idari': 'İdari',
+  };
+  const roleColors: Record<string, string> = {
+    'yonetici': 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+    'ust-mudur': 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+    'mudur': 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+    'operasyon': 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+    'personel': 'bg-green-500/20 text-green-300 border-green-500/30',
+    'idari': 'bg-pink-500/20 text-pink-300 border-pink-500/30',
+  };
+
   // SALARIES VIEW
   const renderSalariesView = () => {
     const totalMonthly = salaries.reduce((sum, salary) => {
@@ -1265,20 +1325,32 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
     return (
       <div className="px-6 space-y-4">
         {/* Header */}
-        <div className="backdrop-blur-xl bg-gradient-to-br from-[#a8e6cf]/20 to-[#8fd4b8]/10 border border-[#a8e6cf]/30 rounded-2xl p-5 text-center">
-          <p className="text-sm text-gray-300 mb-2">Toplam Aylık</p>
+        <div className="backdrop-blur-xl bg-gradient-to-br from-[#a8e6cf]/20 to-[#8fd4b8]/10 border border-[#a8e6cf]/30 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-[#a8e6cf]" />
+              <span className="text-sm font-semibold text-[#a8e6cf]">{salaries.length} Personel</span>
+            </div>
+            <div className="text-right">
+              <div className="text-xs text-gray-400">Yıllık</div>
+              <div className="text-sm font-bold text-[#a8e6cf]">₺{formatCurrency(totalMonthly * 12)}</div>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mb-1">Toplam Aylık Maliyet</p>
           <p className="text-3xl font-bold text-white">₺{formatCurrency(totalMonthly)}</p>
         </div>
 
         {salaries.length === 0 && !showSalaryForm && (
           <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-8 text-center">
-            <p className="text-gray-400 mb-4">Henüz personel eklenmemiş</p>
+            <div className="text-4xl mb-3">👥</div>
+            <p className="text-white font-semibold mb-1">Henüz maaş kaydı yok</p>
+            <p className="text-gray-400 text-sm mb-4">Sistemdeki personeli seçerek maaş ve ek gider bilgilerini ekleyin</p>
             <button
               onClick={() => setShowSalaryForm(true)}
               className="px-6 py-3 bg-gradient-to-r from-[#a8e6cf] to-[#8fd4b8] rounded-xl text-white font-bold hover:scale-105 transition-all active:scale-95 inline-flex items-center gap-2"
             >
               <Plus className="w-5 h-5" />
-              İlk Personeli Ekle
+              Personel Ekle
             </button>
           </div>
         )}
@@ -1294,14 +1366,25 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
               return (
                 <div key={salary.id} className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-4">
                   <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h4 className="font-bold text-white flex items-center gap-2">
-                        <span>👤</span>
-                        {salary.name}
-                      </h4>
-                      <p className="text-sm text-gray-400">Maaş: {salary.amount} {salary.currency} / {salary.frequency === 'daily' ? 'Gün' : salary.frequency === 'weekly' ? 'Hafta' : salary.frequency === 'monthly' ? 'Ay' : 'Yıl'}</p>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-xl shrink-0">
+                        {salary.userRole ? roleAvatars[salary.userRole] || '👤' : '👤'}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-white truncate">{salary.name}</h4>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {salary.userRole && (
+                            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${roleColors[salary.userRole] || 'bg-white/10 text-gray-300 border-white/20'}`}>
+                              {roleLabels[salary.userRole] || salary.userRole}
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-400">
+                            {salary.amount} {salary.currency} / {salary.frequency === 'daily' ? 'Gün' : salary.frequency === 'weekly' ? 'Hafta' : salary.frequency === 'monthly' ? 'Ay' : 'Yıl'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 shrink-0">
                       <button
                         onClick={() => startEditSalary(salary)}
                         className="p-2 bg-blue-600/60 border border-blue-500/50 rounded-lg text-white hover:scale-110 transition-all active:scale-95"
@@ -1317,10 +1400,18 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
                     </div>
                   </div>
                   <div className="p-3 bg-[#a8e6cf]/10 border border-[#a8e6cf]/30 rounded-xl">
-                    <div className="text-sm font-bold text-white mb-1">Toplam Maliyet (Ek Gider %{salary.extraCostPercentage}):</div>
-                    <div className="text-lg font-bold text-white">₺{formatCurrency(monthlyTRY)}/ay</div>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs text-gray-400 mb-0.5">Aylık Toplam Maliyet (+%{salary.extraCostPercentage} ek)</div>
+                        <div className="text-lg font-bold text-white">₺{formatCurrency(monthlyTRY)}/ay</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-gray-400 mb-0.5">Yıllık</div>
+                        <div className="text-sm font-semibold text-[#a8e6cf]">₺{formatCurrency(monthlyTRY * 12)}</div>
+                      </div>
+                    </div>
                     {salary.currency !== 'TRY' && (
-                      <div className="text-xs text-gray-400 mt-1">
+                      <div className="text-xs text-gray-400 mt-2 border-t border-white/10 pt-2">
                         {salary.amount} {salary.currency} × {formatDecimal(exchangeRates[salary.currency])} = ₺{formatCurrency(salaryTRY)} + %{salary.extraCostPercentage}
                       </div>
                     )}
@@ -1342,15 +1433,115 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
         {/* Salary Form */}
         {showSalaryForm && (
           <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5 space-y-4">
+            <div className="flex items-center gap-2 pb-2 border-b border-white/10">
+              <div className="w-8 h-8 rounded-xl bg-[#a8e6cf]/20 border border-[#a8e6cf]/30 flex items-center justify-center">
+                <Users className="w-4 h-4 text-[#a8e6cf]" />
+              </div>
+              <h3 className="font-bold text-white">{editingSalary ? 'Maaş Düzenle' : 'Yeni Maaş Kaydı'}</h3>
+            </div>
+            {/* Personel Seçici */}
             <div>
-              <label className="text-sm font-semibold text-gray-300 mb-2 block">Personel Adı:</label>
-              <input
-                type="text"
-                value={salaryForm.name}
-                onChange={(e) => setSalaryForm({ ...salaryForm, name: e.target.value })}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-[#a8e6cf] transition-all"
-                placeholder="Örn: Ahmet Yılmaz"
-              />
+              <label className="text-sm font-semibold text-gray-300 mb-2 block flex items-center gap-2">
+                <Users className="w-4 h-4 text-[#a8e6cf]" />
+                Personel Seç:
+              </label>
+              <div className="relative" ref={userPickerRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowUserPicker(prev => !prev)}
+                  className={`w-full px-4 py-3 bg-white/10 border rounded-xl text-left flex items-center justify-between transition-all ${
+                    showUserPicker ? 'border-[#a8e6cf] ring-1 ring-[#a8e6cf]/30' : 'border-white/20 hover:border-white/40'
+                  }`}
+                >
+                  {salaryForm.name ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{salaryForm.userRole ? roleAvatars[salaryForm.userRole] || '👤' : '👤'}</span>
+                      <div>
+                        <div className="text-white font-semibold text-sm">{salaryForm.name}</div>
+                        {salaryForm.userRole && (
+                          <div className="text-xs text-gray-400">{roleLabels[salaryForm.userRole] || salaryForm.userRole}</div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-gray-400 text-sm">Sistemden personel seçin...</span>
+                  )}
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showUserPicker ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showUserPicker && (
+                  <div className="absolute top-full left-0 right-0 mt-2 backdrop-blur-2xl bg-[#0a051e]/95 border border-white/20 rounded-2xl shadow-2xl z-50 overflow-hidden">
+                    {/* Arama */}
+                    <div className="p-3 border-b border-white/10">
+                      <input
+                        type="text"
+                        placeholder="İsim ara..."
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-xl text-white text-sm placeholder-gray-500 focus:outline-none focus:border-[#a8e6cf]"
+                        onChange={(e) => {
+                          const q = e.target.value.toLowerCase();
+                          // filter handled inline below via local state
+                          (e.target as any)._filterQuery = q;
+                          e.target.closest('.relative')?.querySelectorAll('[data-user-item]').forEach((el: any) => {
+                            const name = el.dataset.userName?.toLowerCase() || '';
+                            el.style.display = name.includes(q) ? '' : 'none';
+                          });
+                        }}
+                      />
+                    </div>
+                    <div className="max-h-60 overflow-y-auto py-2">
+                      {systemUsers.length === 0 ? (
+                        <div className="px-4 py-6 text-center text-gray-400 text-sm">Kullanıcı bulunamadı</div>
+                      ) : (
+                        systemUsers.map((user) => {
+                          const isSelected = salaryForm.userId === user.id;
+                          const hasExistingSalary = salaries.some(s => s.userId === user.id && (!editingSalary || s.id !== editingSalary.id));
+                          return (
+                            <button
+                              key={user.id}
+                              type="button"
+                              data-user-item
+                              data-user-name={user.ad}
+                              onClick={() => {
+                                setSalaryForm(prev => ({
+                                  ...prev,
+                                  name: user.ad,
+                                  userId: user.id,
+                                  userRole: user.rol,
+                                }));
+                                setShowUserPicker(false);
+                              }}
+                              className={`w-full px-4 py-3 flex items-center gap-3 hover:bg-white/10 transition-all text-left ${
+                                isSelected ? 'bg-[#a8e6cf]/10' : ''
+                              }`}
+                            >
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 ${
+                                isSelected ? 'bg-[#a8e6cf]/20 border border-[#a8e6cf]/40' : 'bg-white/10 border border-white/15'
+                              }`}>
+                                {roleAvatars[user.rol] || '👤'}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-white text-sm font-semibold truncate">{user.ad}</span>
+                                  {hasExistingSalary && (
+                                    <span className="text-xs px-1.5 py-0.5 bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 rounded-full shrink-0">Maaş var</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className={`text-xs px-1.5 py-0.5 rounded-full border ${roleColors[user.rol] || 'bg-white/10 text-gray-400 border-white/20'}`}>
+                                    {roleLabels[user.rol] || user.rol}
+                                  </span>
+                                  <span className="text-xs text-gray-500 truncate">{user.email}</span>
+                                </div>
+                              </div>
+                              {isSelected && <Check className="w-4 h-4 text-[#a8e6cf] shrink-0" />}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -1434,10 +1625,11 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
             <div className="flex gap-2">
               <button
                 onClick={editingSalary ? handleUpdateSalary : handleAddSalary}
-                className="flex-1 py-3 bg-gradient-to-r from-[#a8e6cf] to-[#8fd4b8] rounded-xl text-white font-bold hover:scale-105 transition-all active:scale-95 flex items-center justify-center gap-2"
+                disabled={isSaving}
+                className="flex-1 py-3 bg-gradient-to-r from-[#a8e6cf] to-[#8fd4b8] rounded-xl text-white font-bold hover:scale-105 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-60 disabled:scale-100"
               >
-                <Save className="w-5 h-5" />
-                Kaydet
+                {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                {isSaving ? 'Kaydediliyor...' : 'Kaydet'}
               </button>
               <button
                 onClick={resetSalaryForm}

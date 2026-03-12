@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Plus,
@@ -11,9 +11,14 @@ import {
   Clock,
   X,
   Star,
-  Edit2
+  Edit2,
+  Loader2
 } from 'lucide-react';
 import { UserRole } from './login';
+import { getToken, buildHeaders } from '../lib/api';
+import { projectId } from '/utils/supabase/info';
+
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
 interface Report {
   id: string;
@@ -32,6 +37,7 @@ interface WeeklyMonthlyReportsProps {
   onBack: () => void;
   userName?: string;
   userRole?: UserRole;
+  accessToken?: string;
 }
 
 const MOCK_REPORTS: Report[] = [
@@ -160,17 +166,41 @@ const MOCK_REPORTS: Report[] = [
   }
 ];
 
-export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur' }: WeeklyMonthlyReportsProps) {
+export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur', accessToken = '' }: WeeklyMonthlyReportsProps) {
   const [selectedTab, setSelectedTab] = useState<'weekly' | 'monthly'>('weekly');
   const [showNewReportForm, setShowNewReportForm] = useState(false);
-  const [reports, setReports] = useState<Report[]>(MOCK_REPORTS);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [editingReport, setEditingReport] = useState<Report | null>(null);
+  const [mekanlar, setMekanlar] = useState<{ id: string; name: string; type: string }[]>([]);
+
+  const getAuthHeaders = async () => buildHeaders(await getToken());
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        const h = await getAuthHeaders();
+        const [raporRes, mekanRes] = await Promise.all([
+          fetch(`${API_BASE}/mudur-raporlar`, { headers: h }),
+          fetch(`${API_BASE}/mekanlar`, { headers: h }),
+        ]);
+        if (raporRes.ok) { const d = await raporRes.json(); setReports(d.raporlar || []); }
+        else { const e = await raporRes.json().catch(() => ({})); setApiError(e.error || `HTTP ${raporRes.status}`); }
+        if (mekanRes.ok) { const d = await mekanRes.json(); setMekanlar(d.mekanlar || []); }
+      } catch (err) { console.log('fetchData mudur-raporlar error:', err); setApiError('Sunucuya bağlanılamadı.'); }
+      finally { setIsLoading(false); }
+    };
+    fetchData();
+  }, []);
+
   const [newReport, setNewReport] = useState({
-    managerName: '',
     type: 'weekly' as Report['type'],
     startDate: '',
     endDate: '',
-    locations: [''],
+    locations: [] as string[],
     highlights: [''],
     challenges: [] as string[],
     status: 'draft' as Report['status'],
@@ -212,7 +242,6 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
   const handleEditReport = (report: Report) => {
     setEditingReport(report);
     setNewReport({
-      managerName: report.managerName,
       type: report.type,
       startDate: report.startDate,
       endDate: report.endDate,
@@ -286,67 +315,55 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
     setNewReport({ ...newReport, challenges: updated });
   };
 
+  // Lokasyon toggle (mekanlar listesinden)
+  const handleToggleLocation = (mekanName: string) => {
+    const current = newReport.locations;
+    if (current.includes(mekanName)) {
+      setNewReport({ ...newReport, locations: current.filter(l => l !== mekanName) });
+    } else {
+      setNewReport({ ...newReport, locations: [...current, mekanName] });
+    }
+  };
+
   const canSave = 
-    newReport.managerName.trim() !== '' &&
     newReport.startDate.trim() !== '' &&
     newReport.endDate.trim() !== '' &&
-    newReport.locations.some(loc => loc.trim() !== '') &&
+    newReport.locations.length > 0 &&
     newReport.highlights.some(h => h.trim() !== '');
 
-  const handleSaveReport = () => {
+  const handleSaveReport = async () => {
     if (!canSave) return;
-    
-    if (editingReport) {
-      // Düzenleme modu - mevcut raporu güncelle
-      const updatedReports = reports.map(r => 
-        r.id === editingReport.id 
-          ? {
-              ...r,
-              managerName: newReport.managerName.trim(),
-              type: newReport.type,
-              startDate: newReport.startDate.trim(),
-              endDate: newReport.endDate.trim(),
-              locations: newReport.locations.filter(loc => loc.trim() !== ''),
-              highlights: newReport.highlights.filter(h => h.trim() !== ''),
-              challenges: newReport.challenges.filter(c => c.trim() !== ''),
-              status: newReport.status,
-              notes: newReport.notes.trim()
-            }
-          : r
-      );
-      setReports(updatedReports);
-    } else {
-      // Yeni rapor ekleme
-      const newReportData: Report = {
-        id: Date.now().toString(),
-        managerName: newReport.managerName.trim(),
-        type: newReport.type,
-        startDate: newReport.startDate.trim(),
-        endDate: newReport.endDate.trim(),
-        locations: newReport.locations.filter(loc => loc.trim() !== ''),
-        highlights: newReport.highlights.filter(h => h.trim() !== ''),
-        challenges: newReport.challenges.filter(c => c.trim() !== ''),
-        status: newReport.status,
-        notes: newReport.notes.trim()
-      };
-      
-      setReports([newReportData, ...reports]);
-    }
-    
-    // Close form and reset
+
+    const payload = {
+      managerName: userName,
+      type: newReport.type,
+      startDate: newReport.startDate.trim(),
+      endDate: newReport.endDate.trim(),
+      locations: newReport.locations,
+      highlights: newReport.highlights.filter(h => h.trim() !== ''),
+      challenges: newReport.challenges.filter(c => c.trim() !== ''),
+      status: newReport.status,
+      notes: newReport.notes.trim(),
+    };
+
+    setIsSaving(true);
+    try {
+      const h = await getAuthHeaders();
+      let res: Response;
+      if (editingReport) {
+        res = await fetch(`${API_BASE}/mudur-raporlar/${editingReport.id}`, { method: 'PUT', headers: h, body: JSON.stringify(payload) });
+        if (res.ok) { const d = await res.json(); setReports(prev => prev.map(r => r.id === editingReport.id ? d.rapor : r)); }
+      } else {
+        res = await fetch(`${API_BASE}/mudur-raporlar`, { method: 'POST', headers: h, body: JSON.stringify(payload) });
+        if (res.ok) { const d = await res.json(); setReports(prev => [d.rapor, ...prev]); }
+      }
+      if (res && !res.ok) { const e = await res.json().catch(() => ({})); alert(e.error || 'Kayıt başarısız.'); return; }
+    } catch (err) { console.log('handleSaveReport error:', err); alert('Sunucu hatası!'); }
+    finally { setIsSaving(false); }
+
     setShowNewReportForm(false);
     setEditingReport(null);
-    setNewReport({
-      managerName: '',
-      type: 'weekly',
-      startDate: '',
-      endDate: '',
-      locations: [''],
-      highlights: [''],
-      challenges: [],
-      status: 'draft',
-      notes: ''
-    });
+    setNewReport({ type: 'weekly', startDate: '', endDate: '', locations: [], highlights: [''], challenges: [], status: 'draft', notes: '' });
   };
 
   // NEW REPORT FORM VIEW
@@ -362,17 +379,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
               <button
                 onClick={() => {
                   setShowNewReportForm(false);
-                  setNewReport({
-                    managerName: '',
-                    type: 'weekly',
-                    startDate: '',
-                    endDate: '',
-                    locations: [''],
-                    highlights: [''],
-                    challenges: [],
-                    status: 'draft',
-                    notes: ''
-                  });
+                  setNewReport({ type: 'weekly', startDate: '', endDate: '', locations: [], highlights: [''], challenges: [], status: 'draft', notes: '' });
                 }}
                 className="w-10 h-10 rounded-xl backdrop-blur-xl bg-white/10 border border-white/20 flex items-center justify-center active:scale-95 transition-all"
               >
@@ -390,39 +397,34 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
                 </p>
               </div>
             </div>
+
+            {/* Raporu yapan - sadece gösterim */}
+            <div className="mb-3 px-3 py-2 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2">
+              <span className="text-lg">👤</span>
+              <div>
+                <p className="text-xs text-gray-400">Raporu hazırlayan</p>
+                <p className="text-sm font-semibold text-white">{userName}</p>
+              </div>
+            </div>
             
             {/* Save Button */}
             <button
               onClick={handleSaveReport}
-              disabled={!canSave}
-              className={`w-full py-3 rounded-xl font-bold text-white transition-all ${
-                canSave
+              disabled={!canSave || isSaving}
+              className={`w-full py-3 rounded-xl font-bold text-white transition-all flex items-center justify-center gap-2 ${
+                canSave && !isSaving
                   ? 'bg-gradient-to-r from-green-500 to-green-600 hover:scale-[1.02] active:scale-95'
                   : 'bg-gray-600 opacity-50 cursor-not-allowed'
               }`}
             >
-              {canSave ? '✅ Raporu Kaydet' : '⚠️ Gerekli Alanları Doldurun'}
+              {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Kaydediliyor...</> : canSave ? '✅ Raporu Kaydet' : '⚠️ Gerekli Alanları Doldurun'}
             </button>
           </div>
         </div>
 
         {/* Form Fields */}
         <div className="px-6 mt-4 space-y-4 pb-6">
-          {/* 1. Yetkili Adı */}
-          <div className="backdrop-blur-xl bg-gradient-to-br from-white/5 to-white/5 border border-white/10 rounded-2xl p-5">
-            <label className="block text-sm font-semibold text-white mb-2">
-              👤 Yetkili Adı *
-            </label>
-            <input
-              type="text"
-              value={newReport.managerName}
-              onChange={(e) => setNewReport({ ...newReport, managerName: e.target.value })}
-              placeholder="Raporu hazırlayan yetkili"
-              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
-            />
-          </div>
-
-          {/* 2. Rapor Tipi */}
+          {/* 1. Rapor Tipi */}
           <div className="backdrop-blur-xl bg-gradient-to-br from-white/5 to-white/5 border border-white/10 rounded-2xl p-5">
             <label className="block text-sm font-semibold text-white mb-2">
               <FileText className="w-4 h-4 inline mr-2 text-purple-400" />
@@ -439,7 +441,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
             </select>
           </div>
 
-          {/* 3. Tarih Aralığı */}
+          {/* 2. Tarih Aralığı */}
           <div className="grid grid-cols-2 gap-3">
             {/* Başlangıç Tarihi */}
             <div className="backdrop-blur-xl bg-gradient-to-br from-white/5 to-white/5 border border-white/10 rounded-2xl p-5">
@@ -472,42 +474,65 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
             </div>
           </div>
 
-          {/* 4. Lokasyonlar */}
+          {/* 3. Lokasyonlar — mekan listesinden çoklu seçim */}
           <div className="backdrop-blur-xl bg-gradient-to-br from-blue-500/10 to-blue-600/10 border border-blue-500/20 rounded-2xl p-5">
             <label className="block text-sm font-semibold text-blue-400 mb-3">
               <MapPin className="w-4 h-4 inline mr-2" />
-              Lokasyonlar *
+              Lokasyonlar * <span className="text-xs text-gray-400 font-normal ml-1">(birden fazla seçilebilir)</span>
             </label>
-            
-            {newReport.locations.map((location, index) => (
-              <div key={index} className="flex gap-2 mb-2">
-                <input
-                  type="text"
-                  value={location}
-                  onChange={(e) => handleLocationChange(index, e.target.value)}
-                  placeholder="Beach Club Antalya, Marina, vb."
-                  className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/50"
-                />
-                {newReport.locations.length > 1 && (
-                  <button
-                    onClick={() => handleRemoveLocation(index)}
-                    className="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center hover:bg-red-500/30 transition-all"
-                  >
-                    <X className="w-4 h-4 text-red-400" />
-                  </button>
-                )}
+
+            {mekanlar.length === 0 ? (
+              <div className="flex items-center justify-center py-4 gap-2 text-gray-400 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                Mekanlar yükleniyor...
               </div>
-            ))}
-            
-            <button
-              onClick={handleAddLocation}
-              className="w-full py-2 mt-2 rounded-xl bg-blue-500/20 border border-blue-500/30 text-blue-300 text-sm font-semibold hover:bg-blue-500/30 transition-all"
-            >
-              + Lokasyon Ekle
-            </button>
+            ) : (
+              <div className="space-y-2">
+                {mekanlar.map((mekan) => {
+                  const isSelected = newReport.locations.includes(mekan.name);
+                  return (
+                    <button
+                      key={mekan.id}
+                      onClick={() => handleToggleLocation(mekan.name)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all active:scale-[0.98] text-left ${
+                        isSelected
+                          ? 'bg-blue-500/20 border-blue-400/50 shadow-lg shadow-blue-500/10'
+                          : 'bg-white/5 border-white/10 hover:bg-white/10'
+                      }`}
+                    >
+                      <MapPin className={`w-4 h-4 flex-shrink-0 ${isSelected ? 'text-blue-400' : 'text-gray-500'}`} />
+                      <div className="flex-1">
+                        <p className={`font-medium text-sm ${isSelected ? 'text-blue-200' : 'text-white'}`}>{mekan.name}</p>
+                        {mekan.type && <p className="text-xs text-gray-500 capitalize">{mekan.type}</p>}
+                      </div>
+                      <div className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 transition-all ${
+                        isSelected ? 'bg-blue-500 border-blue-400' : 'border-white/20 bg-white/5'
+                      }`}>
+                        {isSelected && (
+                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {newReport.locations.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2 pt-3 border-t border-blue-400/20">
+                {newReport.locations.map(loc => (
+                  <span key={loc} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                    <MapPin className="w-3 h-3" />
+                    {loc}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* 5. Öne Çıkanlar */}
+          {/* 4. Öne Çıkanlar */}
           <div className="backdrop-blur-xl bg-gradient-to-br from-green-500/10 to-green-600/10 border border-green-500/20 rounded-2xl p-5">
             <label className="block text-sm font-semibold text-green-400 mb-3">
               <CheckSquare className="w-4 h-4 inline mr-2" />
@@ -542,7 +567,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
             </button>
           </div>
 
-          {/* 6. Zorluklar */}
+          {/* 5. Zorluklar */}
           <div className="backdrop-blur-xl bg-gradient-to-br from-orange-500/10 to-orange-600/10 border border-orange-500/20 rounded-2xl p-5">
             <label className="block text-sm font-semibold text-orange-400 mb-3">
               <AlertTriangle className="w-4 h-4 inline mr-2" />
@@ -575,7 +600,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
             </button>
           </div>
 
-          {/* 7. Durum */}
+          {/* 6. Durum */}
           <div className="backdrop-blur-xl bg-gradient-to-br from-white/5 to-white/5 border border-white/10 rounded-2xl p-5">
             <label className="block text-sm font-semibold text-white mb-2">
               <Star className="w-4 h-4 inline mr-2 text-yellow-400" />
@@ -592,7 +617,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
             </select>
           </div>
 
-          {/* 8. Ek Notlar */}
+          {/* 7. Ek Notlar */}
           <div className="backdrop-blur-xl bg-gradient-to-br from-white/5 to-white/5 border border-white/10 rounded-2xl p-5">
             <label className="block text-sm font-semibold text-white mb-2">
               📝 Ek Notlar <span className="text-xs text-gray-500">(Opsiyonel)</span>

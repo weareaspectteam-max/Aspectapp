@@ -1,29 +1,63 @@
-import { useState, useEffect } from 'react';
-import { 
-  ArrowLeft, 
-  TrendingUp, 
-  TrendingDown, 
-  Banknote, 
-  Plus, 
-  Edit2, 
-  Trash2, 
-  Search, 
-  Filter, 
-  Download, 
-  FileText, 
-  Printer 
+import { useState, useEffect, useRef } from 'react';
+import {
+  ArrowLeft, TrendingUp, TrendingDown, Banknote, Plus, Edit2, Trash2,
+  Search, Filter, Download, FileText, Printer, Users, ChevronDown, Check,
+  Loader2, Save, X, Sparkles
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { projectId } from '/utils/supabase/info';
+import { getToken, buildHeaders } from '../lib/api';
 
+// ─── Types ────────────────────────────────
 interface Expense {
   id: string;
   category: 'personel' | 'malzeme' | 'ekipman' | 'operasyonel' | 'ulasim' | 'diger';
   amount: number;
+  currency: string;
   description: string;
-  date: string; // 'YYYY-MM-DD'
+  date: string;
   created_at: string;
-  created_by: string; // Kullanıcı adı
+  created_by: string;
+  // Personel ödemesine özgü alanlar
+  personelId?: string;
+  personelAdi?: string;
+  personelRol?: string;
+  odemeTipi?: 'maas' | 'prim' | 'ikramiye' | 'avans' | 'diger';
+  donem?: string; // YYYY-MM
+}
+
+interface SalaryDef {
+  id: string;
+  name: string;
+  userId?: string;
+  userRole?: string;
+  amount: number;
+  currency: string;
+  frequency: string;
+  extraCostPercentage: number;
+}
+
+interface MekanKira {
+  id: string;
+  name: string;
+  emoji: string;
+  yearlyRent: number;
+}
+
+interface RecurringCostItem {
+  id: string;
+  name: string;
+  amount: number;
+  currency: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+}
+
+interface SystemUser {
+  id: string;
+  ad: string;
+  rol: string;
+  email: string;
 }
 
 type DateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'last3months' | 'last6months' | 'last1year' | 'custom';
@@ -31,305 +65,386 @@ type DateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'last3month
 interface IsletmeGenelDurumProps {
   userName: string;
   userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
+  accessToken: string;
   onNavigate: (tab: string) => void;
 }
 
-export function IsletmeGenelDurum({ userName, userRole, onNavigate }: IsletmeGenelDurumProps) {
-  // Get current user role from localStorage
-  const getCurrentUserRole = () => {
-    // localStorage kaldırıldı - prop'tan alıyoruz
-    return userRole || 'personel';
-  };
+// ─── Constants ────────────────────────────
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
-  const currentRole = getCurrentUserRole();
+const categoryLabels = {
+  personel: '💼 Personel',
+  malzeme: '📦 Malzeme',
+  ekipman: '🖨️ Ekipman & Bakım',
+  operasyonel: '🏢 Operasyonel',
+  ulasim: '🚗 Ulaşım',
+  diger: '📋 Diğer'
+};
 
-  // Permission checks
+const categoryColors = {
+  personel: { bg: 'from-purple-500/20 to-purple-600/20', text: 'text-purple-400', border: 'border-purple-500/30', progress: 'from-purple-500 to-purple-600' },
+  malzeme: { bg: 'from-blue-500/20 to-blue-600/20', text: 'text-blue-400', border: 'border-blue-500/30', progress: 'from-blue-500 to-blue-600' },
+  ekipman: { bg: 'from-green-500/20 to-green-600/20', text: 'text-green-400', border: 'border-green-500/30', progress: 'from-green-500 to-green-600' },
+  operasyonel: { bg: 'from-orange-500/20 to-orange-600/20', text: 'text-orange-400', border: 'border-orange-500/30', progress: 'from-orange-500 to-orange-600' },
+  ulasim: { bg: 'from-cyan-500/20 to-cyan-600/20', text: 'text-cyan-400', border: 'border-cyan-500/30', progress: 'from-cyan-500 to-cyan-600' },
+  diger: { bg: 'from-gray-500/20 to-gray-600/20', text: 'text-gray-400', border: 'border-gray-500/30', progress: 'from-gray-500 to-gray-600' }
+};
+
+const roleAvatars: Record<string, string> = {
+  'yonetici': '👨‍💼', 'ust-mudur': '👩‍💼', 'mudur': '🧑‍💼',
+  'operasyon': '👨‍🔧', 'personel': '👤', 'idari': '👩‍💻',
+};
+const roleLabels: Record<string, string> = {
+  'yonetici': 'Yönetici', 'ust-mudur': 'Üst Müdür', 'mudur': 'Müdür',
+  'operasyon': 'Operasyon', 'personel': 'Personel', 'idari': 'İdari',
+};
+const roleColors: Record<string, string> = {
+  'yonetici': 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+  'ust-mudur': 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  'mudur': 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+  'operasyon': 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+  'personel': 'bg-green-500/20 text-green-300 border-green-500/30',
+  'idari': 'bg-pink-500/20 text-pink-300 border-pink-500/30',
+};
+
+const odemeTipiLabels: Record<string, string> = {
+  maas: '💰 Maaş', prim: '🏆 Prim', ikramiye: '🎁 İkramiye', avans: '💳 Avans', diger: '📦 Diğer'
+};
+const odemeTipiColors: Record<string, string> = {
+  maas: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+  prim: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+  ikramiye: 'bg-pink-500/20 text-pink-300 border-pink-500/30',
+  avans: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  diger: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+};
+
+const MONTHS_TR = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+
+function formatDonem(donem?: string) {
+  if (!donem) return '';
+  const [y, m] = donem.split('-');
+  return `${MONTHS_TR[parseInt(m) - 1]} ${y}`;
+}
+
+// ─── Component ────────────────────────────
+export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate }: IsletmeGenelDurumProps) {
+  const currentRole = userRole || 'personel';
   const canAddExpense = ['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(currentRole);
   const canDeleteExpense = ['yonetici', 'idari'].includes(currentRole);
 
-  // Category labels and colors
-  const categoryLabels = {
-    personel: '💼 Personel',
-    malzeme: '📦 Malzeme',
-    ekipman: '🖨️ Ekipman & Bakım',
-    operasyonel: '🏢 Operasyonel',
-    ulasim: '🚗 Ulaşım',
-    diger: '📋 Diğer'
-  };
+  // ─── State ──────────────────────────────
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
-  const categoryDescriptions = {
-    personel: 'Maaşlar, SGK, Prim, Ulaşım',
-    malzeme: 'Fotoğraf Kağıdı, Mürekkep, Albüm',
-    ekipman: 'Yazıcı bakım, Kamera bakım, Aksesuar',
-    operasyonel: 'Kira, Elektrik, İnternet, Telefon',
-    ulasim: 'Benzin, Araç kiralama, Park',
-    diger: 'Kırtasiye, Temizlik, Küçük harcamalar'
-  };
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
+  const [salaryDefs, setSalaryDefs] = useState<SalaryDef[]>([]);
 
-  const categoryColors = {
-    personel: { 
-      bg: 'from-purple-500/20 to-purple-600/20', 
-      text: 'text-purple-400', 
-      border: 'border-purple-500/30',
-      progress: 'from-purple-500 to-purple-600'
-    },
-    malzeme: { 
-      bg: 'from-blue-500/20 to-blue-600/20', 
-      text: 'text-blue-400', 
-      border: 'border-blue-500/30',
-      progress: 'from-blue-500 to-blue-600'
-    },
-    ekipman: { 
-      bg: 'from-green-500/20 to-green-600/20', 
-      text: 'text-green-400', 
-      border: 'border-green-500/30',
-      progress: 'from-green-500 to-green-600'
-    },
-    operasyonel: { 
-      bg: 'from-orange-500/20 to-orange-600/20', 
-      text: 'text-orange-400', 
-      border: 'border-orange-500/30',
-      progress: 'from-orange-500 to-orange-600'
-    },
-    ulasim: { 
-      bg: 'from-cyan-500/20 to-cyan-600/20', 
-      text: 'text-cyan-400', 
-      border: 'border-cyan-500/30',
-      progress: 'from-cyan-500 to-cyan-600'
-    },
-    diger: { 
-      bg: 'from-gray-500/20 to-gray-600/20', 
-      text: 'text-gray-400', 
-      border: 'border-gray-500/30',
-      progress: 'from-gray-500 to-gray-600'
-    }
-  };
+  // Otomatik gider kaynakları
+  const [mekanKiralar, setMekanKiralar] = useState<MekanKira[]>([]);
+  const [recurringCosts, setRecurringCosts] = useState<RecurringCostItem[]>([]);
+  const [allSalaries, setAllSalaries] = useState<SalaryDef[]>([]);
+  const [exchangeRates, setExchangeRates] = useState<{ EUR: number; USD: number; GBP: number }>({ EUR: 35.50, USD: 32.80, GBP: 41.20 });
 
-  // Mock expenses data (30 items)
-  const mockExpenses: Expense[] = [
-    { id: 'exp-1', category: 'personel', amount: 45000, description: 'Mart ayı maaş ödemeleri', date: '2026-03-01', created_at: '2026-03-01T10:00:00Z', created_by: 'Ahmet Yılmaz' },
-    { id: 'exp-2', category: 'malzeme', amount: 3500, description: 'Fotoğraf kağıdı ve mürekkep alımı', date: '2026-03-02', created_at: '2026-03-02T14:20:00Z', created_by: 'Zeynep Kaya' },
-    { id: 'exp-3', category: 'ekipman', amount: 2000, description: 'Yazıcı bakımı ve temizliği', date: '2026-03-03', created_at: '2026-03-03T11:15:00Z', created_by: 'Mehmet Demir' },
-    { id: 'exp-4', category: 'operasyonel', amount: 5000, description: 'Aylık kira ödemesi', date: '2026-03-01', created_at: '2026-03-01T09:00:00Z', created_by: 'Ayşe Şahin' },
-    { id: 'exp-5', category: 'ulasim', amount: 800, description: 'Benzin ve araç bakımı', date: '2026-03-04', created_at: '2026-03-04T16:30:00Z', created_by: 'Can Öztürk' },
-    { id: 'exp-6', category: 'malzeme', amount: 2200, description: 'Albüm stok alımı', date: '2026-02-28', created_at: '2026-02-28T13:00:00Z', created_by: 'Elif Arslan' },
-    { id: 'exp-7', category: 'personel', amount: 3000, description: 'Ek mesai ödemeleri', date: '2026-02-27', created_at: '2026-02-27T17:00:00Z', created_by: 'Ahmet Yılmaz' },
-    { id: 'exp-8', category: 'diger', amount: 450, description: 'Ofis kırtasiye malzemeleri', date: '2026-02-26', created_at: '2026-02-26T10:30:00Z', created_by: 'Fatma Yıldız' },
-    { id: 'exp-9', category: 'operasyonel', amount: 1200, description: 'Elektrik faturası', date: '2026-02-25', created_at: '2026-02-25T14:00:00Z', created_by: 'Ayşe Şahin' },
-    { id: 'exp-10', category: 'ekipman', amount: 1500, description: 'Kamera lens temizliği', date: '2026-02-24', created_at: '2026-02-24T11:00:00Z', created_by: 'Mehmet Demir' },
-    { id: 'exp-11', category: 'ulasim', amount: 600, description: 'Park ve köprü geçiş ücreti', date: '2026-02-23', created_at: '2026-02-23T15:45:00Z', created_by: 'Can Öztürk' },
-    { id: 'exp-12', category: 'malzeme', amount: 4000, description: 'Yeni mürekkep kartuşları', date: '2026-02-22', created_at: '2026-02-22T09:30:00Z', created_by: 'Zeynep Kaya' },
-    { id: 'exp-13', category: 'personel', amount: 2500, description: 'SGK primleri', date: '2026-02-21', created_at: '2026-02-21T10:00:00Z', created_by: 'Ahmet Yılmaz' },
-    { id: 'exp-14', category: 'diger', amount: 300, description: 'Temizlik malzemeleri', date: '2026-02-20', created_at: '2026-02-20T13:20:00Z', created_by: 'Fatma Yıldız' },
-    { id: 'exp-15', category: 'operasyonel', amount: 800, description: 'İnternet ve telefon faturası', date: '2026-02-19', created_at: '2026-02-19T14:30:00Z', created_by: 'Ayşe Şahin' },
-    { id: 'exp-16', category: 'ekipman', amount: 3500, description: 'Yazıcı yedek parça değişimi', date: '2026-02-18', created_at: '2026-02-18T11:45:00Z', created_by: 'Mehmet Demir' },
-    { id: 'exp-17', category: 'ulasim', amount: 900, description: 'Araç kiralama (haftalık)', date: '2026-02-17', created_at: '2026-02-17T08:00:00Z', created_by: 'Can Öztürk' },
-    { id: 'exp-18', category: 'malzeme', amount: 1800, description: 'Fotoğraf kağıdı (10x15)', date: '2026-02-16', created_at: '2026-02-16T10:15:00Z', created_by: 'Elif Arslan' },
-    { id: 'exp-19', category: 'personel', amount: 1200, description: 'Ulaşım yardımı', date: '2026-02-15', created_at: '2026-02-15T09:00:00Z', created_by: 'Ahmet Yılmaz' },
-    { id: 'exp-20', category: 'diger', amount: 250, description: 'Çay, kahve, su alımı', date: '2026-02-14', created_at: '2026-02-14T16:00:00Z', created_by: 'Fatma Yıldız' },
-    { id: 'exp-21', category: 'operasyonel', amount: 600, description: 'Sigorta ödemesi', date: '2026-02-13', created_at: '2026-02-13T11:30:00Z', created_by: 'Ayşe Şahin' },
-    { id: 'exp-22', category: 'ekipman', amount: 2800, description: 'Kamera aksesuar alımı', date: '2026-02-12', created_at: '2026-02-12T14:00:00Z', created_by: 'Mehmet Demir' },
-    { id: 'exp-23', category: 'ulasim', amount: 750, description: 'Yakıt alımı', date: '2026-02-11', created_at: '2026-02-11T12:30:00Z', created_by: 'Can Öztürk' },
-    { id: 'exp-24', category: 'malzeme', amount: 2900, description: 'Albüm ve çerçeve malzemeleri', date: '2026-02-10', created_at: '2026-02-10T10:00:00Z', created_by: 'Elif Arslan' },
-    { id: 'exp-25', category: 'personel', amount: 4000, description: 'Performans primleri', date: '2026-02-09', created_at: '2026-02-09T15:00:00Z', created_by: 'Ahmet Yılmaz' },
-    { id: 'exp-26', category: 'diger', amount: 400, description: 'Küçük onarım giderleri', date: '2026-02-08', created_at: '2026-02-08T13:00:00Z', created_by: 'Fatma Yıldız' },
-    { id: 'exp-27', category: 'operasyonel', amount: 1500, description: 'Su ve doğalgaz faturası', date: '2026-02-07', created_at: '2026-02-07T09:30:00Z', created_by: 'Ayşe Şahin' },
-    { id: 'exp-28', category: 'ekipman', amount: 1800, description: 'Yazıcı bakım sözleşmesi', date: '2026-02-06', created_at: '2026-02-06T11:00:00Z', created_by: 'Mehmet Demir' },
-    { id: 'exp-29', category: 'ulasim', amount: 550, description: 'Otopark aboneliği', date: '2026-02-05', created_at: '2026-02-05T10:30:00Z', created_by: 'Can Öztürk' },
-    { id: 'exp-30', category: 'malzeme', amount: 3200, description: 'Özel albüm kağıdı alımı', date: '2026-02-04', created_at: '2026-02-04T14:45:00Z', created_by: 'Zeynep Kaya' }
-  ];
+  // Ciro (satış geliri)
+  const [ciroData, setCiroData] = useState<{
+    toplamCiro: number; toplamSatisAdet: number; toplamIskonto: number;
+    mekanlar: Array<{ id: string; name: string; emoji: string; color: string; ciro: number; satisAdet: number; }>;
+  }>({ toplamCiro: 0, toplamSatisAdet: 0, toplamIskonto: 0, mekanlar: [] });
+  const [isCiroLoading, setIsCiroLoading] = useState(false);
 
-  // States
-  const [expenses, setExpenses] = useState<Expense[]>(mockExpenses);
-  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
+  const [dateFilter, setDateFilter] = useState<DateFilter>('month');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [displayLimit, setDisplayLimit] = useState(15);
+
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [showUserPicker, setShowUserPicker] = useState(false);
+  const [userPickerSearch, setUserPickerSearch] = useState('');
+  const userPickerRef = useRef<HTMLDivElement>(null);
+
+  const now = new Date();
+  const defaultDonem = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
   const [formData, setFormData] = useState({
     category: 'personel' as Expense['category'],
     amount: '',
+    currency: 'TRY',
     description: '',
-    date: new Date().toISOString().split('T')[0]
+    date: now.toISOString().split('T')[0],
+    personelId: '',
+    personelAdi: '',
+    personelRol: '',
+    odemeTipi: 'maas' as 'maas' | 'prim' | 'ikramiye' | 'avans' | 'diger',
+    donem: defaultDonem,
   });
 
-  // Reset pagination when filters change
+  // ─── Auth ───────────────────────────────
+  const getAuthHeaders = async () => {
+    const token = await getToken();
+    return buildHeaders(token);
+  };
+
+  // ─── Fetch ──────────────────────────────
+  useEffect(() => { fetchData(); }, []);
+  // fetchCiro, dateFilter değişince — fonksiyon tanımlandıktan sonra çağrılır (hoisting safe)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!isLoading) fetchCiro(); }, [dateFilter, customStartDate, customEndDate]);
+
+  useEffect(() => { setDisplayLimit(15); }, [dateFilter, categoryFilter, searchQuery]);
+
   useEffect(() => {
-    setDisplayLimit(15);
-  }, [dateFilter, categoryFilter, searchQuery]);
-
-  // Get total revenue (mock for now, will be connected to sales data later)
-  const getTotalRevenue = () => {
-    // TODO: Quick Sales localStorage entegrasyonu sonrası:
-    // const sales = JSON.parse(localStorage.getItem('aspect_sales') || '[]');
-    // return sales.reduce((sum, sale) => sum + sale.price, 0);
-    
-    return 125450; // Mock değer
-  };
-
-  // Filter expenses by date
-  const getFilteredExpenses = () => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    // "Bu Hafta" → Pazartesiden bugüne
-    const startOfWeek = new Date(today);
-    const dayOfWeek = startOfWeek.getDay(); // 0 = Pazar, 1 = Pazartesi
-    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    startOfWeek.setDate(startOfWeek.getDate() - daysToMonday);
-    
-    // "Bu Ay" → Ayın 1'inden bugüne
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    // "Son 3 Ay" → 3 ay öncenin 1'inden bugüne
-    const startOfLast3Months = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-    
-    // "Son 6 Ay"
-    const startOfLast6Months = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-    
-    // "Son 1 Yıl"
-    const startOfLast1Year = new Date(now.getFullYear() - 1, now.getMonth(), 1);
-    
-    return expenses.filter(expense => {
-      const expenseDate = new Date(expense.date);
-      
-      // Date filter
-      let dateMatch = true;
-      switch (dateFilter) {
-        case 'today':
-          dateMatch = expenseDate >= today;
-          break;
-        case 'yesterday':
-          dateMatch = expenseDate >= yesterday && expenseDate < today;
-          break;
-        case 'week':
-          dateMatch = expenseDate >= startOfWeek;
-          break;
-        case 'month':
-          dateMatch = expenseDate >= startOfMonth;
-          break;
-        case 'last3months':
-          dateMatch = expenseDate >= startOfLast3Months;
-          break;
-        case 'last6months':
-          dateMatch = expenseDate >= startOfLast6Months;
-          break;
-        case 'last1year':
-          dateMatch = expenseDate >= startOfLast1Year;
-          break;
-        case 'custom':
-          if (customStartDate && customEndDate) {
-            const start = new Date(customStartDate);
-            const end = new Date(customEndDate);
-            dateMatch = expenseDate >= start && expenseDate <= end;
-          } else {
-            dateMatch = false;
-          }
-          break;
-        default: // 'all'
-          dateMatch = true;
+    const handle = (e: MouseEvent) => {
+      if (userPickerRef.current && !userPickerRef.current.contains(e.target as Node)) {
+        setShowUserPicker(false);
       }
-      
-      // Role-based category filter
-      let roleBasedCategoryMatch = true;
-      if (currentRole === 'operasyon') {
-        // Operasyon rolü sadece ekipman ve ulaşım görebilir
-        roleBasedCategoryMatch = expense.category === 'ekipman' || expense.category === 'ulasim';
-      } else if (currentRole === 'personel' || currentRole === 'mudur') {
-        // Personel ve Müdür rolleri operasyonel ve personel kategorilerini göremez
-        roleBasedCategoryMatch = expense.category !== 'operasyonel' && expense.category !== 'personel';
-      }
-      
-      // Category filter
-      const categoryMatch = categoryFilter === 'all' || expense.category === categoryFilter;
-      
-      // Search filter
-      const searchLower = searchQuery.toLowerCase().trim();
-      const searchMatch = searchLower === '' || 
-        expense.description?.toLowerCase().includes(searchLower) ||
-        categoryLabels[expense.category].toLowerCase().includes(searchLower);
-      
-      return dateMatch && categoryMatch && searchMatch && roleBasedCategoryMatch;
-    });
-  };
-
-  const filteredExpenses = getFilteredExpenses();
-  const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-  const totalRevenue = getTotalRevenue();
-  const netProfit = totalRevenue - totalExpenses;
-  const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
-
-  // Category summary
-  const categorySummary = Object.keys(categoryLabels).map(cat => {
-    const categoryExpenses = filteredExpenses.filter(exp => exp.category === cat);
-    const total = categoryExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-    const percentage = totalExpenses > 0 ? (total / totalExpenses) * 100 : 0;
-    
-    return {
-      category: cat as Expense['category'],
-      total,
-      percentage,
-      count: categoryExpenses.length
     };
-  }).filter(item => item.total > 0);
+    if (showUserPicker) document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [showUserPicker]);
 
-  // CRUD Functions
-  const handleAddExpense = () => {
+  const fetchData = async () => {
+    setIsLoading(true);
+    setApiError(null);
+    try {
+      const h = await getAuthHeaders();
+      const [giderRes, usersRes, maliyetRes, mekanRes] = await Promise.all([
+        fetch(`${API_BASE}/isletme/giderler`, { headers: h }),
+        fetch(`${API_BASE}/auth/kullanicilar`, { headers: h }),
+        fetch(`${API_BASE}/maliyetler`, { headers: h }),
+        fetch(`${API_BASE}/mekanlar`, { headers: h }),
+      ]);
+      if (giderRes.ok) {
+        const d = await giderRes.json();
+        setExpenses(d.giderler || []);
+      } else {
+        const e = await giderRes.json().catch(() => ({}));
+        setApiError(e.error || `HTTP ${giderRes.status}`);
+      }
+      if (usersRes.ok) {
+        const d = await usersRes.json();
+        setSystemUsers(d.kullanicilar || []);
+      }
+      if (maliyetRes.ok) {
+        const d = await maliyetRes.json();
+        setSalaryDefs(d.salaries || []);
+        setAllSalaries(d.salaries || []);
+        setRecurringCosts(d.recurring || []);
+        if (d.exchangeRates) setExchangeRates(d.exchangeRates);
+      }
+      if (mekanRes.ok) {
+        const d = await mekanRes.json();
+        setMekanKiralar(
+          (d.mekanlar || [])
+            .filter((m: any) => m.yearlyRent && m.yearlyRent > 0)
+            .map((m: any) => ({ id: m.id, name: m.name, emoji: m.emoji || '📍', yearlyRent: m.yearlyRent }))
+        );
+      }
+    } catch (err) {
+      console.log('isletme fetchData error:', err);
+      setApiError('Sunucuya bağlanılamadı.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // fetchData tamamlandıktan sonra ciro çek
+  useEffect(() => { if (!isLoading) fetchCiro(); }, [isLoading]); // eslint-disable-line
+
+  // ─── Tarih Aralığı Hesaplama ─────────────
+  const getDateRangeForFilter = () => {
+    const todayStr = now.toISOString().split('T')[0];
+    const yesterdayD = new Date(now); yesterdayD.setDate(yesterdayD.getDate() - 1);
+    const yesterdayStr = yesterdayD.toISOString().split('T')[0];
+    const startOfWeekD = new Date(now);
+    const dow = startOfWeekD.getDay();
+    startOfWeekD.setDate(startOfWeekD.getDate() - (dow === 0 ? 6 : dow - 1));
+    const computeDays = (s: string, e: string) =>
+      Math.max(1, Math.round((new Date(e).getTime() - new Date(s).getTime()) / 86400000) + 1);
+
+    switch (dateFilter) {
+      case 'today':       return { baslangic: todayStr, bitis: todayStr, days: 1 };
+      case 'yesterday':   return { baslangic: yesterdayStr, bitis: yesterdayStr, days: 1 };
+      case 'week': {
+        const s = startOfWeekD.toISOString().split('T')[0];
+        return { baslangic: s, bitis: todayStr, days: computeDays(s, todayStr) };
+      }
+      case 'month': {
+        const s = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        return { baslangic: s, bitis: todayStr, days: computeDays(s, todayStr) };
+      }
+      case 'last3months': {
+        const s = new Date(now.getFullYear(), now.getMonth() - 2, 1).toISOString().split('T')[0];
+        return { baslangic: s, bitis: todayStr, days: computeDays(s, todayStr) };
+      }
+      case 'last6months': {
+        const s = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString().split('T')[0];
+        return { baslangic: s, bitis: todayStr, days: computeDays(s, todayStr) };
+      }
+      case 'last1year': {
+        const s = new Date(now.getFullYear() - 1, now.getMonth(), 1).toISOString().split('T')[0];
+        return { baslangic: s, bitis: todayStr, days: computeDays(s, todayStr) };
+      }
+      case 'custom':
+        if (customStartDate && customEndDate)
+          return { baslangic: customStartDate, bitis: customEndDate, days: computeDays(customStartDate, customEndDate) };
+        return { baslangic: '', bitis: '', days: 0 };
+      default: return { baslangic: '', bitis: '', days: 0 };
+    }
+  };
+
+  const computeAutoGider = (days: number): number => {
+    if (days <= 0) return 0;
+    const toTRY = (amount: number, cur: string) => {
+      if (cur === 'EUR') return amount * exchangeRates.EUR;
+      if (cur === 'USD') return amount * exchangeRates.USD;
+      if (cur === 'GBP') return amount * exchangeRates.GBP;
+      return amount;
+    };
+    let total = 0;
+    for (const m of mekanKiralar) total += (m.yearlyRent / 365) * days;
+    for (const r of recurringCosts) {
+      const tryAmt = toTRY(r.amount, r.currency);
+      if (r.frequency === 'daily') total += tryAmt * days;
+      else if (r.frequency === 'weekly') total += (tryAmt / 7) * days;
+      else if (r.frequency === 'monthly') total += (tryAmt / 30) * days;
+      else if (r.frequency === 'yearly') total += (tryAmt / 365) * days;
+    }
+    for (const s of allSalaries) {
+      const tryAmt = toTRY(s.amount, s.currency);
+      const withExtra = tryAmt * (1 + (s.extraCostPercentage || 0) / 100);
+      total += (withExtra / 30) * days;
+    }
+    return Math.round(total);
+  };
+
+  // ─── Ciro Fetch ─────────────────────────
+  const fetchCiro = async (overrideDateFilter?: DateFilter, overrideStart?: string, overrideEnd?: string) => {
+    const ef = overrideDateFilter || dateFilter;
+    const eStart = overrideStart || customStartDate;
+    const eEnd = overrideEnd || customEndDate;
+
+    const todayStr = now.toISOString().split('T')[0];
+    const computeDays = (s: string, e: string) =>
+      Math.max(1, Math.round((new Date(e).getTime() - new Date(s).getTime()) / 86400000) + 1);
+    const getRange = () => {
+      const yesterdayD = new Date(now); yesterdayD.setDate(yesterdayD.getDate() - 1);
+      const yesterdayStr = yesterdayD.toISOString().split('T')[0];
+      const sowD = new Date(now); const d = sowD.getDay();
+      sowD.setDate(sowD.getDate() - (d === 0 ? 6 : d - 1));
+      switch (ef) {
+        case 'today':       return { baslangic: todayStr, bitis: todayStr };
+        case 'yesterday':   return { baslangic: yesterdayStr, bitis: yesterdayStr };
+        case 'week': {      const s = sowD.toISOString().split('T')[0]; return { baslangic: s, bitis: todayStr }; }
+        case 'month': {     const s = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]; return { baslangic: s, bitis: todayStr }; }
+        case 'last3months': { const s = new Date(now.getFullYear(), now.getMonth() - 2, 1).toISOString().split('T')[0]; return { baslangic: s, bitis: todayStr }; }
+        case 'last6months': { const s = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString().split('T')[0]; return { baslangic: s, bitis: todayStr }; }
+        case 'last1year':   { const s = new Date(now.getFullYear() - 1, now.getMonth(), 1).toISOString().split('T')[0]; return { baslangic: s, bitis: todayStr }; }
+        case 'custom':      return eStart && eEnd ? { baslangic: eStart, bitis: eEnd } : { baslangic: '', bitis: '' };
+        default:            return { baslangic: '', bitis: '' };
+      }
+    };
+
+    setIsCiroLoading(true);
+    try {
+      const h = await getAuthHeaders();
+      const { baslangic, bitis } = getRange();
+      const url = baslangic && bitis
+        ? `${API_BASE}/isletme/ciro?baslangic=${baslangic}&bitis=${bitis}`
+        : `${API_BASE}/isletme/ciro`;
+      const res = await fetch(url, { headers: h });
+      if (res.ok) {
+        const d = await res.json();
+        setCiroData({ toplamCiro: d.toplamCiro || 0, toplamSatisAdet: d.toplamSatisAdet || 0, toplamIskonto: d.toplamIskonto || 0, mekanlar: d.mekanlar || [] });
+      } else {
+        console.log('Ciro fetch hatası:', res.status);
+      }
+    } catch (err) {
+      console.log('fetchCiro error:', err);
+    } finally {
+      setIsCiroLoading(false);
+    }
+  };
+
+  // ─── CRUD ───────────────────────────────
+  const handleSave = async () => {
     if (!formData.amount || parseFloat(formData.amount) <= 0) {
-      alert('Lütfen geçerli bir tutar girin');
+      alert('Lütfen geçerli bir tutar girin.');
       return;
     }
-    
-    // localStorage kaldırıldı - prop'tan alıyoruz
-    const currentUserName = userName || 'Bilinmeyen Kullanıcı';
-    
-    const newExpense: Expense = {
-      id: `expense-${Date.now()}`,
-      category: formData.category,
-      amount: parseFloat(formData.amount),
-      description: formData.description,
-      date: formData.date,
-      created_at: new Date().toISOString(),
-      created_by: currentUserName
-    };
-    
-    setExpenses([newExpense, ...expenses]);
-    setShowAddForm(false);
-    setFormData({
-      category: 'personel',
-      amount: '',
-      description: '',
-      date: new Date().toISOString().split('T')[0]
-    });
+    if (formData.category === 'personel' && !formData.personelAdi) {
+      alert('Lütfen personel seçin.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const h = await getAuthHeaders();
+      const payload: any = {
+        category: formData.category,
+        amount: parseFloat(formData.amount),
+        currency: formData.currency,
+        description: formData.description,
+        date: formData.date,
+      };
+      if (formData.category === 'personel') {
+        payload.personelId = formData.personelId || null;
+        payload.personelAdi = formData.personelAdi;
+        payload.personelRol = formData.personelRol || null;
+        payload.odemeTipi = formData.odemeTipi;
+        payload.donem = formData.donem;
+        // description otomatik oluştur
+        if (!formData.description) {
+          payload.description = `${odemeTipiLabels[formData.odemeTipi].replace(/[^\w\s]/g, '').trim()} — ${formData.personelAdi} (${formatDonem(formData.donem)})`;
+        }
+      }
+      const isEdit = !!editingExpense;
+      const url = isEdit ? `${API_BASE}/isletme/giderler/${editingExpense!.id}` : `${API_BASE}/isletme/giderler`;
+      const res = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: h,
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        alert(e.error || 'Kayıt başarısız.');
+        return;
+      }
+      const { gider } = await res.json();
+      if (isEdit) {
+        setExpenses(prev => prev.map(e => e.id === gider.id ? gider : e));
+      } else {
+        setExpenses(prev => [gider, ...prev]);
+      }
+      cancelEdit();
+    } catch (err) {
+      console.log('handleSave error:', err);
+      alert('Sunucu hatası!');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleUpdateExpense = () => {
-    if (!editingExpense) return;
-    
-    setExpenses(expenses.map(exp =>
-      exp.id === editingExpense.id
-        ? {
-            ...exp,
-            category: formData.category,
-            amount: parseFloat(formData.amount),
-            description: formData.description,
-            date: formData.date
-          }
-        : exp
-    ));
-    
-    cancelEdit();
-  };
-
-  const handleDeleteExpense = (expenseId: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Bu gideri silmek istediğinizden emin misiniz?')) return;
-    
-    setExpenses(expenses.filter(exp => exp.id !== expenseId));
+    try {
+      const h = await getAuthHeaders();
+      const res = await fetch(`${API_BASE}/isletme/giderler/${id}`, {
+        method: 'DELETE',
+        headers: h,
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        alert(e.error || 'Silinemedi.');
+        return;
+      }
+      setExpenses(prev => prev.filter(e => e.id !== id));
+    } catch (err) {
+      alert('Sunucu hatası!');
+    }
   };
 
   const startEdit = (expense: Expense) => {
@@ -337,622 +452,950 @@ export function IsletmeGenelDurum({ userName, userRole, onNavigate }: IsletmeGen
     setFormData({
       category: expense.category,
       amount: expense.amount.toString(),
-      description: expense.description,
-      date: expense.date
+      currency: expense.currency || 'TRY',
+      description: expense.description || '',
+      date: expense.date,
+      personelId: expense.personelId || '',
+      personelAdi: expense.personelAdi || '',
+      personelRol: expense.personelRol || '',
+      odemeTipi: (expense.odemeTipi as any) || 'maas',
+      donem: expense.donem || defaultDonem,
     });
     setShowAddForm(true);
+    setShowUserPicker(false);
   };
 
   const cancelEdit = () => {
     setEditingExpense(null);
     setShowAddForm(false);
+    setShowUserPicker(false);
+    setUserPickerSearch('');
     setFormData({
       category: 'personel',
       amount: '',
+      currency: 'TRY',
       description: '',
-      date: new Date().toISOString().split('T')[0]
+      date: now.toISOString().split('T')[0],
+      personelId: '',
+      personelAdi: '',
+      personelRol: '',
+      odemeTipi: 'maas',
+      donem: defaultDonem,
     });
   };
 
-  // Export to PDF
+  // Maaş tanımından hızlı yükleme
+  const loadFromSalaryDef = (def: SalaryDef) => {
+    setFormData(prev => ({
+      ...prev,
+      amount: def.amount.toString(),
+      currency: def.currency || 'TRY',
+      odemeTipi: 'maas',
+    }));
+  };
+
+  // Personel seçince maaş tanımı varsa otomatik doldur
+  const selectPersonel = (user: SystemUser) => {
+    const def = salaryDefs.find(s => s.userId === user.id);
+    setFormData(prev => ({
+      ...prev,
+      personelId: user.id,
+      personelAdi: user.ad,
+      personelRol: user.rol,
+      // Maaş seçiliyse ve tanım varsa otomatik yükle
+      ...(prev.odemeTipi === 'maas' && def ? {
+        amount: def.amount.toString(),
+        currency: def.currency || 'TRY',
+      } : {}),
+    }));
+    setShowUserPicker(false);
+    setUserPickerSearch('');
+  };
+
+  // ─── Filters ────────────────────────────
+  const getFilteredExpenses = () => {
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+    const startOfWeek = new Date(today);
+    const dow = startOfWeek.getDay();
+    startOfWeek.setDate(startOfWeek.getDate() - (dow === 0 ? 6 : dow - 1));
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOf3M = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const startOf6M = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const startOf1Y = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+
+    return expenses.filter(exp => {
+      const d = new Date(exp.date);
+      let dateMatch = true;
+      switch (dateFilter) {
+        case 'today': dateMatch = d >= today; break;
+        case 'yesterday': dateMatch = d >= yesterday && d < today; break;
+        case 'week': dateMatch = d >= startOfWeek; break;
+        case 'month': dateMatch = d >= startOfMonth; break;
+        case 'last3months': dateMatch = d >= startOf3M; break;
+        case 'last6months': dateMatch = d >= startOf6M; break;
+        case 'last1year': dateMatch = d >= startOf1Y; break;
+        case 'custom':
+          if (customStartDate && customEndDate) {
+            dateMatch = d >= new Date(customStartDate) && d <= new Date(customEndDate);
+          } else { dateMatch = false; }
+          break;
+        default: dateMatch = true;
+      }
+
+      let roleCatMatch = true;
+      if (currentRole === 'operasyon') roleCatMatch = exp.category === 'ekipman' || exp.category === 'ulasim';
+      else if (currentRole === 'personel' || currentRole === 'mudur') roleCatMatch = exp.category !== 'operasyonel' && exp.category !== 'personel';
+
+      const catMatch = categoryFilter === 'all' || exp.category === categoryFilter;
+      const q = searchQuery.toLowerCase().trim();
+      const searchMatch = !q || exp.description?.toLowerCase().includes(q) || exp.personelAdi?.toLowerCase().includes(q) || categoryLabels[exp.category].toLowerCase().includes(q);
+      return dateMatch && roleCatMatch && catMatch && searchMatch;
+    });
+  };
+
+  const filteredExpenses = getFilteredExpenses();
+  const manualGiderToplam = filteredExpenses.reduce((s, e) => s + e.amount, 0);
+  const { days: filterDays } = getDateRangeForFilter();
+  const autoGiderToplam = dateFilter !== 'all' ? computeAutoGider(filterDays) : 0;
+  const totalExpenses = manualGiderToplam + autoGiderToplam;
+  const totalRevenue = ciroData.toplamCiro;
+  const netProfit = totalRevenue - totalExpenses;
+  const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+
+  const categorySummary = Object.keys(categoryLabels).map(cat => {
+    const items = filteredExpenses.filter(e => e.category === cat);
+    const total = items.reduce((s, e) => s + e.amount, 0);
+    return { category: cat as Expense['category'], total, count: items.length, percentage: totalExpenses > 0 ? (total / totalExpenses) * 100 : 0 };
+  }).filter(i => i.total > 0).sort((a, b) => b.total - a.total);
+
+  // ─── Export ─────────────────────────────
   const exportToPDF = () => {
     const doc = new jsPDF();
-    
-    // Başlık
-    doc.setFontSize(16);
-    doc.text('Gider Raporu', 14, 20);
-    
-    // Özet Bilgiler
+    doc.setFontSize(16); doc.text('Gider Raporu', 14, 20);
     doc.setFontSize(12);
-    doc.text(`Toplam Gelir: ${totalRevenue.toLocaleString('tr-TR')} TL`, 14, 30);
-    doc.text(`Toplam Gider: ${totalExpenses.toLocaleString('tr-TR')} TL`, 14, 40);
-    doc.text(`Net Kar/Zarar: ${netProfit >= 0 ? '+' : ''}${netProfit.toLocaleString('tr-TR')} TL`, 14, 50);
-    doc.text(`Kar Marji: ${profitMargin.toFixed(1)}%`, 14, 60);
-    
-    // Kategori Özet Tablosu
+    doc.text(`Toplam Gider: ${totalExpenses.toLocaleString('tr-TR')} TL`, 14, 30);
     if (categorySummary.length > 0) {
-      doc.setFontSize(14);
-      doc.text('Kategori Bazli Ozet', 14, 80);
       autoTable(doc, {
-        head: [['Kategori', 'Toplam', 'Yuzde', 'Kayit Sayisi']],
-        body: categorySummary.map(item => [
-          categoryLabels[item.category].replace(/[^\x00-\x7F]/g, ''), // Remove emojis
-          `${item.total.toLocaleString('tr-TR')} TL`,
-          `${item.percentage.toFixed(1)}%`,
-          item.count
+        head: [['Kategori', 'Toplam', 'Yüzde', 'Kayıt']],
+        body: categorySummary.map(i => [
+          categoryLabels[i.category].replace(/[^\x00-\x7F]/g, ''),
+          `${i.total.toLocaleString('tr-TR')} TL`,
+          `${i.percentage.toFixed(1)}%`,
+          i.count,
         ]),
-        startY: 90,
-        theme: 'grid'
+        startY: 40,
       });
     }
-    
-    // Gider Listesi (Yeni Sayfa)
     doc.addPage();
-    doc.setFontSize(14);
-    doc.text('Son Giderler', 14, 20);
     autoTable(doc, {
-      head: [['Kategori', 'Tutar', 'Tarih', 'Ekleyen', 'Saat', 'Aciklama']],
-      body: filteredExpenses.slice(0, 50).map(expense => [
-        categoryLabels[expense.category].replace(/[^\x00-\x7F]/g, ''),
-        `${expense.amount.toLocaleString('tr-TR')} TL`,
-        new Date(expense.date).toLocaleDateString('tr-TR'),
-        expense.created_by,
-        new Date(expense.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-        expense.description || 'N/A'
+      head: [['Tarih', 'Kategori', 'Personel', 'Tip', 'Tutar', 'Açıklama']],
+      body: filteredExpenses.slice(0, 100).map(e => [
+        new Date(e.date).toLocaleDateString('tr-TR'),
+        categoryLabels[e.category].replace(/[^\x00-\x7F]/g, ''),
+        e.personelAdi || '-',
+        e.odemeTipi ? odemeTipiLabels[e.odemeTipi].replace(/[^\x00-\x7F]/g, '').trim() : '-',
+        `${e.amount.toLocaleString('tr-TR')} ${e.currency || 'TRY'}`,
+        e.description || '',
       ]),
-      startY: 30,
-      theme: 'grid'
+      startY: 20,
     });
-    
     doc.save('gider_raporu.pdf');
   };
 
-  // Export to CSV
   const exportToCSV = () => {
-    const csvContent = "data:text/csv;charset=utf-8," + [
-      "Kategori,Tutar,Tarih,Ekleyen,Saat,Aciklama",
-      ...filteredExpenses.map(expense => [
-        categoryLabels[expense.category].replace(/[^\x00-\x7F]/g, ''),
-        expense.amount.toLocaleString('tr-TR'),
-        new Date(expense.date).toLocaleDateString('tr-TR'),
-        expense.created_by,
-        new Date(expense.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-        expense.description || 'N/A'
-      ].join(","))
-    ].join("\n");
-    
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "giderler.csv");
+    const rows = [
+      'Tarih,Kategori,Personel,Rol,Ödeme Tipi,Dönem,Tutar,Para Birimi,Ekleyen,Açıklama',
+      ...filteredExpenses.map(e => [
+        e.date,
+        categoryLabels[e.category].replace(/[^\x00-\x7F]/g, ''),
+        e.personelAdi || '',
+        e.personelRol || '',
+        e.odemeTipi || '',
+        e.donem || '',
+        e.amount,
+        e.currency || 'TRY',
+        e.created_by,
+        e.description || '',
+      ].join(','))
+    ].join('\n');
+    const link = document.createElement('a');
+    link.href = 'data:text/csv;charset=utf-8,' + encodeURI(rows);
+    link.download = 'giderler.csv';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
+  // ─── Derived helpers ────────────────────
+  const selectedPersonelSalaryDef = formData.personelId
+    ? salaryDefs.find(s => s.userId === formData.personelId)
+    : null;
+  const filteredSystemUsers = userPickerSearch
+    ? systemUsers.filter(u => u.ad.toLowerCase().includes(userPickerSearch.toLowerCase()) || u.email.toLowerCase().includes(userPickerSearch.toLowerCase()))
+    : systemUsers;
+
+  // ─── Render ─────────────────────────────
   return (
-    <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
+    <div className="pb-24 min-h-screen bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c]">
       {/* Header */}
-      <div className="px-6 pt-6 pb-4">
-        <button
-          onClick={() => onNavigate('business-panel')}
-          className="flex items-center gap-2 text-gray-400 hover:text-white mb-4 transition-colors"
-        >
+      <div className="px-5 pt-6 pb-4">
+        <button onClick={() => onNavigate('business-panel')} className="flex items-center gap-2 text-gray-400 hover:text-white mb-4 transition-colors">
           <ArrowLeft className="w-5 h-5" />
           <span className="text-sm">Geri Dön</span>
         </button>
-
-        <div className="flex items-center gap-2 mb-2">
-          <h1 className="text-3xl font-bold text-white">İşletme Genel Durum</h1>
-          <span className="text-3xl">💼</span>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-2xl font-black text-white">İşletme Genel Durum</h1>
+              <span className="text-2xl">💼</span>
+            </div>
+            <p className="text-sm text-gray-400">Gelir, gider ve ödeme takibi</p>
+          </div>
+          <button onClick={fetchData} disabled={isLoading} className="p-2 bg-white/10 border border-white/20 rounded-xl text-white hover:bg-white/20 transition-all">
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span className="text-sm">↻</span>}
+          </button>
         </div>
-        <p className="text-sm text-gray-400">Gelir, gider ve kar/zarar takibi</p>
       </div>
 
-      <div className="px-6 space-y-4">
-        {/* Summary Cards - Role-based visibility */}
-        {currentRole !== 'operasyon' && (
-          <div className="grid grid-cols-2 gap-3">
-            {/* Toplam Gelir - Hidden for mudur */}
-            {currentRole !== 'mudur' && (
-              <div className="backdrop-blur-xl bg-gradient-to-br from-green-500/20 to-green-600/20 border-2 border-green-500/30 rounded-2xl p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Banknote className="w-5 h-5 text-green-400" />
-                  <span className="text-xs text-gray-300">Toplam Gelir</span>
-                </div>
-                <div className="text-2xl font-bold text-white">₺{totalRevenue.toLocaleString('tr-TR')}</div>
-                <div className="flex items-center gap-1 text-xs text-green-400">
-                  <TrendingUp className="w-3 h-3" />
-                  <span>Satışlardan</span>
-                </div>
-              </div>
-            )}
-
-            {/* Toplam Gider */}
-            <div className="backdrop-blur-xl bg-gradient-to-br from-red-500/20 to-red-600/20 border-2 border-red-500/30 rounded-2xl p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Banknote className="w-5 h-5 text-red-400" />
-                <span className="text-xs text-gray-300">Toplam Gider</span>
-              </div>
-              <div className="text-2xl font-bold text-white">₺{totalExpenses.toLocaleString('tr-TR')}</div>
-              <div className="flex items-center gap-1 text-xs text-red-400">
-                <TrendingDown className="w-3 h-3" />
-                <span>{filteredExpenses.length} kayıt</span>
-              </div>
-            </div>
-
-            {/* Net Kar/Zarar - Hidden for mudur */}
-            {currentRole !== 'mudur' && (
-              <div className={`backdrop-blur-xl bg-gradient-to-br ${
-                netProfit >= 0 
-                  ? 'from-blue-500/20 to-blue-600/20 border-blue-500/30' 
-                  : 'from-orange-500/20 to-orange-600/20 border-orange-500/30'
-              } border-2 rounded-2xl p-4`}>
-                <div className="flex items-center gap-2 mb-2">
-                  {netProfit >= 0 ? 
-                    <TrendingUp className="w-5 h-5 text-blue-400" /> : 
-                    <TrendingDown className="w-5 h-5 text-orange-400" />
-                  }
-                  <span className="text-xs text-gray-300">Net Kar/Zarar</span>
-                </div>
-                <div className={`text-2xl font-bold ${netProfit >= 0 ? 'text-blue-400' : 'text-orange-400'}`}>
-                  {netProfit >= 0 ? '+' : ''}₺{netProfit.toLocaleString('tr-TR')}
-                </div>
-                <div className="text-xs text-gray-400">Gelir - Gider</div>
-              </div>
-            )}
-
-            {/* Kar Marjı - Hidden for mudur */}
-            {currentRole !== 'mudur' && (
-              <div className="backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border-2 border-purple-500/30 rounded-2xl p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <TrendingUp className="w-5 h-5 text-purple-400" />
-                  <span className="text-xs text-gray-300">Kar Marjı</span>
-                </div>
-                <div className="text-2xl font-bold text-white">{profitMargin.toFixed(1)}%</div>
-                <div className="text-xs text-gray-400">
-                  {profitMargin >= 0 ? 'Pozitif' : 'Negatif'}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Date Filters - Row 1 */}
-        <div className="grid grid-cols-4 gap-2">
-          {[
-            { key: 'today' as DateFilter, label: '📅 Bugün' },
-            { key: 'yesterday' as DateFilter, label: 'Dün' },
-            { key: 'week' as DateFilter, label: 'Bu Hafta' },
-            { key: 'month' as DateFilter, label: 'Bu Ay' }
-          ].map(filter => (
-            <button
-              key={filter.key}
-              onClick={() => setDateFilter(filter.key)}
-              className={`px-3 py-2.5 rounded-lg font-semibold text-xs transition-all ${
-                dateFilter === filter.key
-                  ? 'bg-[#9dd9ea]/20 text-[#9dd9ea] border border-[#9dd9ea]/30'
-                  : 'bg-white/5 text-gray-400 border border-white/10'
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-[#9dd9ea]" />
         </div>
-
-        {/* Date Filters - Row 2 */}
-        <div className="grid grid-cols-5 gap-2">
-          {[
-            { key: 'last3months' as DateFilter, label: 'Son 3 Ay' },
-            { key: 'last6months' as DateFilter, label: 'Son 6 Ay' },
-            { key: 'last1year' as DateFilter, label: 'Son 1 Yıl' },
-            { key: 'all' as DateFilter, label: '📊 Tümü' },
-            { key: 'custom' as DateFilter, label: '📆 Özel' }
-          ].map(filter => (
-            <button
-              key={filter.key}
-              onClick={() => setDateFilter(filter.key)}
-              className={`px-3 py-2.5 rounded-lg font-semibold text-xs transition-all ${
-                dateFilter === filter.key
-                  ? 'bg-[#9dd9ea]/20 text-[#9dd9ea] border border-[#9dd9ea]/30'
-                  : 'bg-white/5 text-gray-400 border border-white/10'
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
+      ) : apiError ? (
+        <div className="mx-5 p-6 bg-red-500/10 border border-red-500/30 rounded-2xl text-center">
+          <p className="text-red-300 mb-3">{apiError}</p>
+          <button onClick={fetchData} className="px-4 py-2 bg-red-500/20 border border-red-500/30 rounded-xl text-red-300 text-sm">Tekrar Dene</button>
         </div>
+      ) : (
+        <div className="px-5 space-y-4">
 
-        {/* Custom Date Range */}
-        {dateFilter === 'custom' && (
-          <div className="backdrop-blur-xl bg-gradient-to-br from-[#9dd9ea]/10 border border-[#9dd9ea]/30 rounded-2xl p-4">
-            <h4 className="text-sm font-semibold text-[#9dd9ea] mb-3">📆 Tarih Aralığı Seçin</h4>
-            
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-300 mb-2">Başlangıç Tarihi</label>
-                <input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-xs text-gray-300 mb-2">Bitiş Tarihi</label>
-                <input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
-                />
-              </div>
-            </div>
-            
-            {customStartDate && customEndDate && (
-              <div className="mt-3 text-xs text-gray-400 bg-black/40 rounded-lg px-3 py-2">
-                📊 Seçili Aralık: <span className="text-[#9dd9ea] font-semibold">
-                  {new Date(customStartDate).toLocaleDateString('tr-TR')} 
-                  {' - '}
-                  {new Date(customEndDate).toLocaleDateString('tr-TR')}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Add Expense Button */}
-        {canAddExpense && (
-          <button
-            onClick={() => {
-              setShowAddForm(!showAddForm);
-              if (showAddForm) cancelEdit();
-            }}
-            className="w-full bg-gradient-to-r from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 hover:shadow-lg transition-all"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Yeni Gider Ekle</span>
-          </button>
-        )}
-
-        {/* Add/Edit Form */}
-        {showAddForm && (
-          <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 border border-white/20 rounded-2xl p-5">
-            <h3 className="font-bold text-white mb-4">
-              {editingExpense ? 'Gider Düzenle' : 'Yeni Gider'}
-            </h3>
-            
+          {/* ── Özet Kartlar ── */}
+          {currentRole !== 'operasyon' && (
             <div className="space-y-3">
-              {/* Category */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Toplam Gelir */}
+                {currentRole !== 'mudur' && (
+                  <div className="backdrop-blur-xl bg-gradient-to-br from-green-500/20 to-green-600/20 border border-green-500/30 rounded-2xl p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Banknote className="w-4 h-4 text-green-400" />
+                      <span className="text-xs text-gray-300">Toplam Gelir</span>
+                      {isCiroLoading && <Loader2 className="w-3 h-3 animate-spin text-green-400 ml-auto" />}
+                    </div>
+                    <div className="text-xl font-bold text-white">₺{totalRevenue.toLocaleString('tr-TR')}</div>
+                    <div className="text-xs text-gray-500 mt-1">{ciroData.toplamSatisAdet} satış</div>
+                    {ciroData.mekanlar.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {ciroData.mekanlar.slice(0, 3).map(m => (
+                          <div key={m.id} className="flex items-center justify-between">
+                            <span className="text-xs text-gray-400 truncate">{m.emoji} {m.name}</span>
+                            <span className="text-xs font-semibold text-green-300 shrink-0 ml-1">₺{m.ciro.toLocaleString('tr-TR')}</span>
+                          </div>
+                        ))}
+                        {ciroData.mekanlar.length > 3 && (
+                          <div className="text-xs text-gray-600">+{ciroData.mekanlar.length - 3} mekan daha</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Toplam Gider */}
+                <div className="backdrop-blur-xl bg-gradient-to-br from-red-500/20 to-red-600/20 border border-red-500/30 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <TrendingDown className="w-4 h-4 text-red-400" />
+                    <span className="text-xs text-gray-300">Toplam Gider</span>
+                  </div>
+                  <div className="text-xl font-bold text-white">₺{totalExpenses.toLocaleString('tr-TR')}</div>
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-400">📋 Manuel kayıtlar</span>
+                      <span className="text-xs font-semibold text-red-300">₺{manualGiderToplam.toLocaleString('tr-TR')}</span>
+                    </div>
+                    {autoGiderToplam > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-400">⚙️ Sabit giderler</span>
+                        <span className="text-xs font-semibold text-orange-300">₺{autoGiderToplam.toLocaleString('tr-TR')}</span>
+                      </div>
+                    )}
+                    {dateFilter === 'all' && (
+                      <div className="text-xs text-gray-600 italic">Sabit giderler: tarih seçin</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Net Kar / Kar Marjı */}
+              {currentRole !== 'mudur' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className={`backdrop-blur-xl bg-gradient-to-br border rounded-2xl p-4 ${netProfit >= 0 ? 'from-blue-500/20 to-blue-600/20 border-blue-500/30' : 'from-orange-500/20 to-orange-600/20 border-orange-500/30'}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <TrendingUp className={`w-4 h-4 ${netProfit >= 0 ? 'text-blue-400' : 'text-orange-400'}`} />
+                      <span className="text-xs text-gray-300">Net Kar/Zarar</span>
+                    </div>
+                    <div className={`text-xl font-bold ${netProfit >= 0 ? 'text-blue-400' : 'text-orange-400'}`}>
+                      {netProfit >= 0 ? '+' : ''}₺{netProfit.toLocaleString('tr-TR')}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">Gelir - Gider</div>
+                  </div>
+                  <div className="backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-500/30 rounded-2xl p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <TrendingUp className="w-4 h-4 text-purple-400" />
+                      <span className="text-xs text-gray-300">Kar Marjı</span>
+                    </div>
+                    <div className="text-xl font-bold text-white">{profitMargin.toFixed(1)}%</div>
+                    <div className="text-xs text-gray-500 mt-1">{profitMargin >= 0 ? 'Pozitif' : 'Negatif'}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Tarih Filtreleri ── */}
+          <div className="grid grid-cols-4 gap-2">
+            {([
+              { key: 'today', label: '📅 Bugün' },
+              { key: 'yesterday', label: 'Dün' },
+              { key: 'week', label: 'Bu Hafta' },
+              { key: 'month', label: 'Bu Ay' },
+            ] as const).map(f => (
+              <button key={f.key} onClick={() => setDateFilter(f.key)}
+                className={`px-2 py-2.5 rounded-xl font-semibold text-xs transition-all ${dateFilter === f.key ? 'bg-[#9dd9ea]/20 text-[#9dd9ea] border border-[#9dd9ea]/30' : 'bg-white/5 text-gray-400 border border-white/10'}`}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-5 gap-2">
+            {([
+              { key: 'last3months', label: 'Son 3 Ay' },
+              { key: 'last6months', label: 'Son 6 Ay' },
+              { key: 'last1year', label: 'Son 1 Yıl' },
+              { key: 'all', label: '📊 Tümü' },
+              { key: 'custom', label: '📆 Özel' },
+            ] as const).map(f => (
+              <button key={f.key} onClick={() => setDateFilter(f.key)}
+                className={`px-2 py-2.5 rounded-xl font-semibold text-xs transition-all ${dateFilter === f.key ? 'bg-[#9dd9ea]/20 text-[#9dd9ea] border border-[#9dd9ea]/30' : 'bg-white/5 text-gray-400 border border-white/10'}`}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {dateFilter === 'custom' && (
+            <div className="backdrop-blur-xl bg-white/5 border border-white/15 rounded-2xl p-4">
+              <h4 className="text-sm font-semibold text-[#9dd9ea] mb-3">📆 Tarih Aralığı</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-400 mb-1 block">Başlangıç</label>
+                  <input type="date" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} className="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-[#9dd9ea]" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 mb-1 block">Bitiş</label>
+                  <input type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} className="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-[#9dd9ea]" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Yeni Gider Butonu ── */}
+          {canAddExpense && (
+            <button
+              onClick={() => { setShowAddForm(!showAddForm); if (showAddForm) cancelEdit(); }}
+              className="w-full bg-gradient-to-r from-[#9dd9ea] to-[#7ec8dd] text-[#0a051e] font-bold py-3 px-4 rounded-2xl flex items-center justify-center gap-2 hover:opacity-90 transition-all active:scale-95 shadow-lg"
+            >
+              {showAddForm ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+              {showAddForm ? 'Formu Kapat' : 'Yeni Gider Ekle'}
+            </button>
+          )}
+
+          {/* ══════════════════════════════════
+              GIDER EKLEME / DÜZENLEME FORMU
+          ══════════════════════════════════ */}
+          {showAddForm && (
+            <div className="backdrop-blur-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5 space-y-4">
+              {/* Form başlığı */}
+              <div className="flex items-center gap-3 pb-3 border-b border-white/10">
+                <div className="w-9 h-9 rounded-xl bg-[#9dd9ea]/20 border border-[#9dd9ea]/30 flex items-center justify-center">
+                  {editingExpense ? <Edit2 className="w-4 h-4 text-[#9dd9ea]" /> : <Plus className="w-4 h-4 text-[#9dd9ea]" />}
+                </div>
+                <h3 className="font-bold text-white">{editingExpense ? 'Gider Düzenle' : 'Yeni Gider'}</h3>
+              </div>
+
+              {/* ── Kategori Seçimi ── */}
               <div>
-                <label className="block text-sm text-gray-300 mb-2">Kategori</label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value as Expense['category'] })}
-                  className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white"
-                >
-                  {Object.entries(categoryLabels).map(([key, label]) => (
-                    <option key={key} value={key}>{label}</option>
+                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 block">Kategori</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(Object.entries(categoryLabels) as [Expense['category'], string][]).map(([key, label]) => (
+                    <button
+                      key={key}
+                      onClick={() => setFormData(prev => ({ ...prev, category: key }))}
+                      className={`py-2.5 px-2 rounded-xl text-xs font-semibold transition-all active:scale-95 ${
+                        formData.category === key
+                          ? `bg-gradient-to-br ${categoryColors[key].bg} border ${categoryColors[key].border} ${categoryColors[key].text}`
+                          : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10'
+                      }`}
+                    >
+                      {label}
+                    </button>
                   ))}
-                </select>
+                </div>
               </div>
-              
-              {/* Amount */}
-              <div>
-                <label className="block text-sm text-gray-300 mb-2">Tutar (₺)</label>
-                <input
-                  type="number"
-                  value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                  placeholder="0.00"
-                  className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white"
-                />
+
+              {/* ══ PERSONEL ÖZEL FORMU ══ */}
+              {formData.category === 'personel' && (
+                <div className="space-y-4 p-4 bg-purple-500/10 border border-purple-500/20 rounded-2xl">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-purple-400" />
+                    <span className="text-sm font-bold text-purple-300">Personel Ödeme Detayı</span>
+                  </div>
+
+                  {/* Personel Seçici */}
+                  <div>
+                    <label className="text-xs text-gray-400 mb-1.5 block">Personel</label>
+                    <div className="relative" ref={userPickerRef}>
+                      <button
+                        type="button"
+                        onClick={() => setShowUserPicker(p => !p)}
+                        className={`w-full px-4 py-3 bg-white/10 border rounded-xl text-left flex items-center justify-between transition-all ${showUserPicker ? 'border-purple-400 ring-1 ring-purple-400/30' : 'border-white/20 hover:border-white/40'}`}
+                      >
+                        {formData.personelAdi ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{roleAvatars[formData.personelRol] || '👤'}</span>
+                            <div>
+                              <div className="text-white font-semibold text-sm">{formData.personelAdi}</div>
+                              {formData.personelRol && <div className="text-xs text-gray-400">{roleLabels[formData.personelRol] || formData.personelRol}</div>}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 text-sm">Personel seçin...</span>
+                        )}
+                        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showUserPicker ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {showUserPicker && (
+                        <div className="absolute top-full left-0 right-0 mt-2 backdrop-blur-2xl bg-[#0a051e]/95 border border-white/20 rounded-2xl shadow-2xl z-50 overflow-hidden">
+                          <div className="p-3 border-b border-white/10">
+                            <input
+                              autoFocus
+                              type="text"
+                              placeholder="İsim ara..."
+                              value={userPickerSearch}
+                              onChange={e => setUserPickerSearch(e.target.value)}
+                              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-xl text-white text-sm placeholder-gray-500 focus:outline-none focus:border-purple-400"
+                            />
+                          </div>
+                          <div className="max-h-56 overflow-y-auto py-2">
+                            {filteredSystemUsers.length === 0 ? (
+                              <div className="px-4 py-5 text-center text-gray-400 text-sm">Personel bulunamadı</div>
+                            ) : filteredSystemUsers.map(user => {
+                              const isSelected = formData.personelId === user.id;
+                              const hasSalaryDef = salaryDefs.some(s => s.userId === user.id);
+                              return (
+                                <button
+                                  key={user.id}
+                                  type="button"
+                                  onClick={() => selectPersonel(user)}
+                                  className={`w-full px-4 py-3 flex items-center gap-3 hover:bg-white/10 transition-all text-left ${isSelected ? 'bg-purple-500/10' : ''}`}
+                                >
+                                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 ${isSelected ? 'bg-purple-500/20 border border-purple-500/40' : 'bg-white/10 border border-white/15'}`}>
+                                    {roleAvatars[user.rol] || '👤'}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-white text-sm font-semibold truncate">{user.ad}</span>
+                                      {hasSalaryDef && <span className="text-xs px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full shrink-0">Maaş tanımlı</span>}
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <span className={`text-xs px-1.5 py-0.5 rounded-full border ${roleColors[user.rol] || 'bg-white/10 text-gray-400 border-white/20'}`}>
+                                        {roleLabels[user.rol] || user.rol}
+                                      </span>
+                                      <span className="text-xs text-gray-500 truncate">{user.email}</span>
+                                    </div>
+                                  </div>
+                                  {isSelected && <Check className="w-4 h-4 text-purple-400 shrink-0" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Maaş Tanımı Kartı — otomatik yükleme */}
+                  {selectedPersonelSalaryDef && (
+                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-xs text-emerald-400 font-semibold mb-0.5 flex items-center gap-1">
+                            <Sparkles className="w-3 h-3" /> Maaş Yönetimi'nden Tanımlı
+                          </div>
+                          <div className="text-white text-sm font-bold">
+                            {selectedPersonelSalaryDef.amount.toLocaleString('tr-TR')} {selectedPersonelSalaryDef.currency}
+                            <span className="text-gray-400 font-normal text-xs ml-1">
+                              / {selectedPersonelSalaryDef.frequency === 'monthly' ? 'ay' : selectedPersonelSalaryDef.frequency === 'daily' ? 'gün' : selectedPersonelSalaryDef.frequency === 'weekly' ? 'hafta' : 'yıl'}
+                            </span>
+                          </div>
+                          {selectedPersonelSalaryDef.extraCostPercentage > 0 && (
+                            <div className="text-xs text-gray-400">+%{selectedPersonelSalaryDef.extraCostPercentage} ek gider dahil</div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => loadFromSalaryDef(selectedPersonelSalaryDef)}
+                          className="px-3 py-2 bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs font-semibold hover:bg-emerald-500/30 transition-all active:scale-95"
+                        >
+                          Yükle
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Ödeme Tipi */}
+                  <div>
+                    <label className="text-xs text-gray-400 mb-1.5 block">Ödeme Tipi</label>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {(['maas', 'prim', 'ikramiye', 'avans', 'diger'] as const).map(tip => (
+                        <button
+                          key={tip}
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, odemeTipi: tip }));
+                            // Maaş seçilince ve personel seçiliyse tanımdan otomatik yükle
+                            if (tip === 'maas' && formData.personelId) {
+                              const def = salaryDefs.find(s => s.userId === formData.personelId);
+                              if (def) loadFromSalaryDef(def);
+                            }
+                          }}
+                          className={`py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95 ${
+                            formData.odemeTipi === tip
+                              ? `${odemeTipiColors[tip]} border`
+                              : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10'
+                          }`}
+                        >
+                          {odemeTipiLabels[tip].split(' ')[0]}<br />
+                          <span className="text-xs">{odemeTipiLabels[tip].split(' ').slice(1).join(' ')}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Dönem */}
+                  <div>
+                    <label className="text-xs text-gray-400 mb-1.5 block">Dönem (Ay/Yıl)</label>
+                    <input
+                      type="month"
+                      value={formData.donem}
+                      onChange={e => setFormData(prev => ({ ...prev, donem: e.target.value }))}
+                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-sm focus:outline-none focus:border-purple-400 transition-all"
+                    />
+                    {formData.donem && (
+                      <p className="text-xs text-purple-300 mt-1">📅 {formatDonem(formData.donem)}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Tutar + Para Birimi ── */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="text-xs text-gray-400 mb-1.5 block">Tutar</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={formData.amount}
+                    onChange={e => setFormData(prev => ({ ...prev, amount: e.target.value }))}
+                    placeholder="0.00"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-[#9dd9ea] transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 mb-1.5 block">Para Birimi</label>
+                  <select
+                    value={formData.currency}
+                    onChange={e => setFormData(prev => ({ ...prev, currency: e.target.value }))}
+                    className="w-full px-3 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-[#9dd9ea] transition-all"
+                  >
+                    <option value="TRY" className="bg-gray-900">TRY</option>
+                    <option value="EUR" className="bg-gray-900">EUR</option>
+                    <option value="USD" className="bg-gray-900">USD</option>
+                    <option value="GBP" className="bg-gray-900">GBP</option>
+                  </select>
+                </div>
               </div>
-              
-              {/* Date */}
+
+              {/* ── Tarih ── */}
               <div>
-                <label className="block text-sm text-gray-300 mb-2">Tarih</label>
+                <label className="text-xs text-gray-400 mb-1.5 block">Ödeme Tarihi</label>
                 <input
                   type="date"
                   value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white"
+                  onChange={e => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-[#9dd9ea] transition-all"
                 />
               </div>
-              
-              {/* Description */}
+
+              {/* ── Açıklama ── */}
               <div>
-                <label className="block text-sm text-gray-300 mb-2">Açıklama (Opsiyonel)</label>
+                <label className="text-xs text-gray-400 mb-1.5 block">Açıklama / Not <span className="text-gray-600">(opsiyonel)</span></label>
                 <input
                   type="text"
                   value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Örn: Mart ayı maaşları"
-                  className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white"
+                  onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder={formData.category === 'personel' ? 'Örn: "Şubat maaşı", "Fuar primleri"' : 'Açıklama...'}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-[#9dd9ea] transition-all"
                 />
               </div>
-              
-              {/* Buttons */}
-              <div className="flex gap-2">
+
+              {/* ── Kaydet / İptal ── */}
+              <div className="flex gap-3 pt-1">
                 <button
-                  onClick={editingExpense ? handleUpdateExpense : handleAddExpense}
-                  className="flex-1 bg-green-500/20 border border-green-500/30 text-green-400 font-semibold py-2 rounded-lg hover:bg-green-500/30 transition-colors"
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="flex-1 py-3 bg-gradient-to-r from-[#9dd9ea] to-[#7ec8dd] text-[#0a051e] font-bold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-all active:scale-95 disabled:opacity-60 disabled:scale-100"
                 >
-                  {editingExpense ? '💾 Güncelle' : '💾 Kaydet'}
+                  {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                  {isSaving ? 'Kaydediliyor...' : (editingExpense ? 'Güncelle' : 'Kaydet')}
                 </button>
                 <button
                   onClick={cancelEdit}
-                  className="flex-1 bg-gray-500/20 border border-gray-500/30 text-gray-400 font-semibold py-2 rounded-lg hover:bg-gray-500/30 transition-colors"
+                  className="px-5 py-3 bg-white/10 border border-white/20 rounded-xl text-white font-semibold hover:bg-white/20 transition-all active:scale-95"
                 >
-                  ❌ İptal
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Category Summary */}
-        {categorySummary.length > 0 && (
-          <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 border border-white/20 rounded-2xl p-5">
-            <h3 className="font-bold text-white mb-4">📊 Kategori Bazlı Özet</h3>
-            
-            <div className="space-y-2">
-              {categorySummary.map(item => {
-                // Personel ve Müdür rolleri operasyonel ve personel kategorilerini göremez
-                if ((currentRole === 'personel' || currentRole === 'mudur') && (item.category === 'operasyonel' || item.category === 'personel')) {
-                  return null;
-                }
-                
-                return (
-                  <div key={item.category} className="bg-black/40 rounded-lg p-3">
-                    {/* Header */}
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-white">
-                          {categoryLabels[item.category]}
-                        </span>
-                        <span className="text-xs text-gray-500">({item.count} kayıt)</span>
-                      </div>
-                      
-                      <div className="text-right">
-                        <div className="text-sm font-bold text-white">
-                          ₺{item.total.toLocaleString('tr-TR')}
-                        </div>
-                        <div className={`text-xs ${categoryColors[item.category].text}`}>
-                          {item.percentage.toFixed(1)}%
+          {/* ── Kategori Özet ── */}
+          {categorySummary.length > 0 && (
+            <div className="backdrop-blur-xl bg-white/5 border border-white/15 rounded-2xl p-5">
+              <h3 className="font-bold text-white mb-4 text-sm">📊 Kategori Bazlı Özet</h3>
+              <div className="space-y-2">
+                {categorySummary.map(item => {
+                  if ((currentRole === 'personel' || currentRole === 'mudur') && (item.category === 'operasyonel' || item.category === 'personel')) return null;
+                  return (
+                    <div key={item.category} className="bg-white/5 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-semibold text-white">{categoryLabels[item.category]} <span className="text-xs text-gray-500 font-normal">({item.count})</span></span>
+                        <div className="text-right">
+                          <div className="text-sm font-bold text-white">₺{item.total.toLocaleString('tr-TR')}</div>
+                          <div className={`text-xs ${categoryColors[item.category].text}`}>{item.percentage.toFixed(1)}%</div>
                         </div>
                       </div>
+                      <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                        <div className={`h-full bg-gradient-to-r ${categoryColors[item.category].progress} transition-all`} style={{ width: `${item.percentage}%` }} />
+                      </div>
                     </div>
-                    
-                    {/* Progress Bar */}
-                    <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full bg-gradient-to-r ${categoryColors[item.category].progress}`}
-                        style={{ width: `${item.percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Search and Filters */}
-        <div className="space-y-3">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Gider ara... (açıklama veya kategori)"
-              className="w-full bg-black/40 border border-white/10 rounded-lg pl-10 pr-3 py-2.5 text-white"
-            />
-          </div>
-
-          {/* Category Filter */}
-          <div className="relative">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="w-full bg-black/40 border border-white/10 rounded-lg pl-10 pr-3 py-2.5 text-white"
-            >
-              <option value="all">🏷️ Tüm Kategoriler</option>
-              {Object.entries(categoryLabels).map(([key, label]) => (
-                <option key={key} value={key}>{label}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Active Filters */}
-          {(searchQuery || categoryFilter !== 'all') && (
-            <div className="flex items-center gap-2 flex-wrap">
-              {searchQuery && (
-                <div className="flex items-center gap-1 bg-[#9dd9ea]/20 border border-[#9dd9ea]/30 text-[#9dd9ea] px-3 py-1 rounded-lg text-xs">
-                  <span>🔍 "{searchQuery}"</span>
-                  <button onClick={() => setSearchQuery('')} className="ml-1">✕</button>
-                </div>
-              )}
-              
-              {categoryFilter !== 'all' && (
-                <div className="flex items-center gap-1 bg-purple-500/20 border border-purple-500/30 text-purple-400 px-3 py-1 rounded-lg text-xs">
-                  <span>{categoryLabels[categoryFilter as Expense['category']]}</span>
-                  <button onClick={() => setCategoryFilter('all')} className="ml-1">✕</button>
-                </div>
-              )}
-              
-              <button
-                onClick={() => { setSearchQuery(''); setCategoryFilter('all'); }}
-                className="text-xs text-gray-400 hover:text-white underline"
+          {/* ── Arama & Filtre ── */}
+          <div className="space-y-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Ara... (personel, açıklama, kategori)"
+                className="w-full bg-white/10 border border-white/20 rounded-xl pl-10 pr-4 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-[#9dd9ea] transition-all"
+              />
+            </div>
+            <div className="relative">
+              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <select
+                value={categoryFilter}
+                onChange={e => setCategoryFilter(e.target.value)}
+                className="w-full bg-white/10 border border-white/20 rounded-xl pl-10 pr-4 py-2.5 text-white text-sm focus:outline-none focus:border-[#9dd9ea] transition-all"
               >
-                Tümünü Temizle
-              </button>
+                <option value="all" className="bg-gray-900">🏷️ Tüm Kategoriler</option>
+                {Object.entries(categoryLabels).map(([k, v]) => (
+                  <option key={k} value={k} className="bg-gray-900">{v}</option>
+                ))}
+              </select>
             </div>
-          )}
-        </div>
+          </div>
 
-        {/* Export Buttons */}
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={exportToPDF}
-            className="flex-1 bg-gradient-to-r from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2 hover:shadow-lg transition-all"
-          >
-            <Download className="w-4 h-4" />
-            <span className="text-sm">PDF</span>
-          </button>
-          
-          <button 
-            onClick={exportToCSV}
-            className="flex-1 bg-green-500/20 border border-green-500/30 text-green-400 font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2 hover:bg-green-500/30 transition-colors"
-          >
-            <FileText className="w-4 h-4" />
-            <span className="text-sm">CSV</span>
-          </button>
-          
-          <button 
-            onClick={() => window.print()}
-            className="flex-1 bg-purple-500/20 border border-purple-500/30 text-purple-400 font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2 hover:bg-purple-500/30 transition-colors"
-          >
-            <Printer className="w-4 h-4" />
-            <span className="text-sm">Yazdır</span>
-          </button>
-        </div>
+          {/* ── Export ── */}
+          <div className="grid grid-cols-3 gap-2">
+            <button onClick={exportToPDF} className="bg-gradient-to-r from-[#9dd9ea] to-[#7ec8dd] text-[#0a051e] font-semibold py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-sm">
+              <Download className="w-4 h-4" /> PDF
+            </button>
+            <button onClick={exportToCSV} className="bg-green-500/20 border border-green-500/30 text-green-400 font-semibold py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-sm">
+              <FileText className="w-4 h-4" /> CSV
+            </button>
+            <button onClick={() => window.print()} className="bg-purple-500/20 border border-purple-500/30 text-purple-400 font-semibold py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-sm">
+              <Printer className="w-4 h-4" /> Yazdır
+            </button>
+          </div>
 
-        {/* Expenses List */}
-        <div className="space-y-2">
-          <h3 className="font-bold text-white text-lg mb-3">
-            📋 Gider Listesi ({filteredExpenses.length} kayıt)
-          </h3>
+          {/* ── Gider Listesi ── */}
+          <div>
+            <h3 className="font-bold text-white text-base mb-3">
+              📋 Gider Listesi <span className="text-gray-400 font-normal text-sm">({filteredExpenses.length} kayıt)</span>
+            </h3>
 
-          {filteredExpenses.length === 0 ? (
-            <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-8 text-center">
-              <p className="text-gray-400">Kayıt bulunamadı</p>
-            </div>
-          ) : (
-            <>
-              {filteredExpenses
-                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                .slice(0, displayLimit)
-                .map(expense => (
-                  <div key={expense.id} className="bg-black/40 border border-white/10 rounded-xl p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        {/* Category + Date */}
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm font-semibold text-white">
-                            {categoryLabels[expense.category]}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            {new Date(expense.date).toLocaleDateString('tr-TR', {
-                              day: 'numeric',
-                              month: 'short',
-                              year: 'numeric'
-                            })}
-                          </span>
+            {filteredExpenses.length === 0 ? (
+              <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-10 text-center">
+                <div className="text-4xl mb-3">📭</div>
+                <p className="text-gray-400">Bu dönemde kayıt bulunamadı</p>
+              </div>
+            ) : (
+              <>
+                {filteredExpenses
+                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                  .slice(0, displayLimit)
+                  .map(expense => (
+                    <div key={expense.id} className="mb-2 backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-4 hover:bg-white/8 transition-all">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          {/* ── Personel kategorisi özel görünüm ── */}
+                          {expense.category === 'personel' && expense.personelAdi ? (
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-xl shrink-0">
+                                {roleAvatars[expense.personelRol || ''] || '👤'}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-bold text-white text-sm">{expense.personelAdi}</span>
+                                  {expense.odemeTipi && (
+                                    <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold ${odemeTipiColors[expense.odemeTipi]}`}>
+                                      {odemeTipiLabels[expense.odemeTipi]}
+                                    </span>
+                                  )}
+                                  {expense.personelRol && (
+                                    <span className={`text-xs px-1.5 py-0.5 rounded-full border ${roleColors[expense.personelRol] || 'bg-white/10 text-gray-400 border-white/20'}`}>
+                                      {roleLabels[expense.personelRol] || expense.personelRol}
+                                    </span>
+                                  )}
+                                </div>
+                                {expense.donem && (
+                                  <div className="text-xs text-purple-300 mt-0.5">📅 {formatDonem(expense.donem)}</div>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-xs font-semibold px-2 py-1 rounded-lg bg-gradient-to-r ${categoryColors[expense.category].bg} border ${categoryColors[expense.category].border} ${categoryColors[expense.category].text}`}>
+                                {categoryLabels[expense.category]}
+                              </span>
+                            </div>
+                          )}
+
+                          {expense.description && (
+                            <p className="text-xs text-gray-400 mb-2 line-clamp-1">{expense.description}</p>
+                          )}
+
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="text-xl font-black text-[#ffb3ba]">
+                              ₺{expense.amount.toLocaleString('tr-TR')}
+                              {expense.currency && expense.currency !== 'TRY' && (
+                                <span className="text-sm font-normal text-gray-400 ml-1">{expense.currency}</span>
+                              )}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {new Date(expense.date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3 mt-1.5">
+                            <span className="text-xs text-gray-600">👤 {expense.created_by}</span>
+                            <span className="text-xs text-gray-700">
+                              {new Date(expense.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
                         </div>
-                        
-                        {/* Description */}
-                        {expense.description && (
-                          <p className="text-xs text-gray-400 mb-2">{expense.description}</p>
-                        )}
-                        
-                        {/* Created By + Time */}
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-xs text-gray-500">
-                            👤 {expense.created_by || 'Bilinmeyen'}
-                          </span>
-                          <span className="text-xs text-gray-600">•</span>
-                          <span className="text-xs text-gray-500">
-                            🕐 {new Date(expense.created_at).toLocaleTimeString('tr-TR', {
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </span>
+
+                        <div className="flex gap-1.5 shrink-0">
+                          {canAddExpense && (
+                            <button onClick={() => startEdit(expense)} className="w-8 h-8 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center hover:bg-blue-500/30 transition-colors">
+                              <Edit2 className="w-3.5 h-3.5 text-blue-400" />
+                            </button>
+                          )}
+                          {canDeleteExpense && (
+                            <button onClick={() => handleDelete(expense.id)} className="w-8 h-8 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center hover:bg-red-500/30 transition-colors">
+                              <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                            </button>
+                          )}
                         </div>
-                        
-                        {/* Amount */}
-                        <div className="text-lg font-bold text-[#ffb3ba]">
-                          ₺{expense.amount.toLocaleString('tr-TR')}
-                        </div>
-                      </div>
-                      
-                      {/* Edit/Delete Buttons */}
-                      <div className="flex gap-2">
-                        {canAddExpense && (
-                          <button
-                            onClick={() => startEdit(expense)}
-                            className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-500/30 flex items-center justify-center hover:bg-blue-500/30 transition-colors"
-                          >
-                            <Edit2 className="w-4 h-4 text-blue-400" />
-                          </button>
-                        )}
-                        {canDeleteExpense && (
-                          <button
-                            onClick={() => handleDeleteExpense(expense.id)}
-                            className="w-8 h-8 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center justify-center hover:bg-red-500/30 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4 text-red-400" />
-                          </button>
-                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
-              
-              {/* Load More */}
-              {filteredExpenses.length > displayLimit && (
-                <button
-                  onClick={() => setDisplayLimit(displayLimit + 15)}
-                  className="w-full bg-[#9dd9ea]/20 border border-[#9dd9ea]/30 text-[#9dd9ea] font-semibold px-6 py-3 rounded-lg hover:bg-[#9dd9ea]/30 transition-colors"
-                >
-                  📄 Daha Fazla Yükle ({filteredExpenses.length - displayLimit} kayıt daha)
-                </button>
-              )}
-            </>
-          )}
-        </div>
+                  ))}
 
-        {/* Info Card */}
-        <div className="mt-6 mb-6">
-          <div className="backdrop-blur-xl bg-gradient-to-br from-white/5 to-white/5 border border-white/10 rounded-2xl p-5">
+                {filteredExpenses.length > displayLimit && (
+                  <button
+                    onClick={() => setDisplayLimit(p => p + 15)}
+                    className="w-full bg-white/5 border border-white/15 text-gray-300 font-semibold px-6 py-3 rounded-xl hover:bg-white/10 transition-colors text-sm"
+                  >
+                    📄 Daha Fazla Yükle ({filteredExpenses.length - displayLimit} kayıt daha)
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* ── Bilgi Kartı ── */}
+          <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-5">
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center flex-shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center shrink-0">
                 <span className="text-xl">ℹ️</span>
               </div>
-              <div className="flex-1">
-                <h4 className="font-semibold text-white mb-2">💼 İşletme Genel Durum ve Yetki Sistemi</h4>
-                <p className="text-sm text-gray-400 mb-3">
-                  Gelir, gider ve finansal raporları görme ve düzenleme yetkileri rol bazlıdır.
-                </p>
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-400">
-                    <span className="text-red-300 font-medium">🛡️ Admin (Yönetici):</span> Tüm giderleri görebilir, ekleyebilir ve silebilir.
-                  </p>
-                  <p className="text-sm text-gray-400">
-                    <span className="text-indigo-300 font-medium">👤 Üst-Müdür:</span> Tüm giderleri görebilir, ekleyebilir ve düzenleyebilir.
-                  </p>
-                  <p className="text-sm text-gray-400">
-                    <span className="text-indigo-300 font-medium">👥 Müdür:</span> Belirli giderleri görebilir, ekleyebilir ve düzenleyebilir.
-                  </p>
-                  <p className="text-sm text-gray-400">
-                    <span className="text-blue-300 font-medium">⚙️ Operasyon:</span> Belirli giderleri görebilir, düzenleyemez.
-                  </p>
-                  <p className="text-sm text-gray-400">
-                    <span className="text-purple-300 font-medium">💼 İdari:</span> Tüm giderleri görebilir, ekleyebilir ve silebilir.
-                  </p>
-                  <p className="text-sm text-gray-400">
-                    <span className="text-gray-300 font-medium">❌ Personel, Bekleyen:</span> Hiçbir şey göremez (sayfa erişimi yok).
-                  </p>
+              <div>
+                <h4 className="font-semibold text-white mb-2">Yetki Sistemi</h4>
+                <div className="space-y-1.5 text-xs text-gray-400">
+                  <p><span className="text-purple-300 font-medium">Yönetici / İdari:</span> Tüm giderleri görebilir, ekleyebilir ve silebilir.</p>
+                  <p><span className="text-blue-300 font-medium">Üst Müdür / Müdür:</span> Tüm giderleri görebilir ve ekleyebilir.</p>
+                  <p><span className="text-orange-300 font-medium">Operasyon:</span> Sadece ekipman ve ulaşım giderlerini görebilir.</p>
+                  <p><span className="text-gray-300 font-medium">Personel / Bekleyen:</span> Bu sayfaya erişim yok.</p>
                 </div>
               </div>
             </div>
           </div>
+
+          {/* ── Otomatik Gider Kaynakları Bilgi Kartı ── */}
+          <div className="backdrop-blur-xl bg-gradient-to-br from-[#9dd9ea]/8 to-[#7ec8dd]/5 border border-[#9dd9ea]/20 rounded-2xl p-5 mb-4">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-[#9dd9ea]/15 border border-[#9dd9ea]/30 flex items-center justify-center shrink-0">
+                <Sparkles className="w-5 h-5 text-[#9dd9ea]" />
+              </div>
+              <div>
+                <h4 className="font-semibold text-white mb-0.5">Otomatik Gider Kaynakları</h4>
+                <p className="text-xs text-gray-400">Maliyet Yönetimi'ndeki veriler bu sayfada referans olarak görünür. Düzenlemek için Maliyet Yönetimi'ne gidin.</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {/* Mekan Kiraları */}
+              <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-base">🏠</span>
+                  <span className="text-sm font-semibold text-orange-300">Mekan Kiraları</span>
+                  <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-orange-500/20 border border-orange-500/30 text-orange-300 font-medium">→ 🏢 Operasyonel</span>
+                </div>
+                {mekanKiralar.length === 0 ? (
+                  <p className="text-xs text-gray-500 italic">Kira bedeli tanımlı mekan yok.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {mekanKiralar.map(m => (
+                      <div key={m.id} className="flex items-center justify-between">
+                        <span className="text-xs text-gray-300">{m.emoji} {m.name}</span>
+                        <div className="text-right">
+                          <span className="text-xs font-semibold text-orange-200">
+                            ₺{Math.round(m.yearlyRent / 12).toLocaleString('tr-TR')}/ay
+                          </span>
+                          <span className="text-xs text-gray-500 ml-1">(yıllık ₺{m.yearlyRent.toLocaleString('tr-TR')})</span>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="pt-1.5 border-t border-orange-500/20 flex items-center justify-between">
+                      <span className="text-xs text-gray-400 font-medium">Toplam aylık</span>
+                      <span className="text-sm font-bold text-orange-300">
+                        ₺{Math.round(mekanKiralar.reduce((s, m) => s + m.yearlyRent / 12, 0)).toLocaleString('tr-TR')}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Düzenli Giderler */}
+              <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-base">🔄</span>
+                  <span className="text-sm font-semibold text-orange-300">Düzenli Giderler</span>
+                  <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-orange-500/20 border border-orange-500/30 text-orange-300 font-medium">→ 🏢 Operasyonel</span>
+                </div>
+                {recurringCosts.length === 0 ? (
+                  <p className="text-xs text-gray-500 italic">Düzenli gider tanımlanmamış.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {recurringCosts.map((r: RecurringCostItem) => {
+                      const freqLabel: Record<string, string> = { daily: '/gün', weekly: '/hafta', monthly: '/ay', yearly: '/yıl' };
+                      const toMonthly = (rc: RecurringCostItem) => {
+                        if (rc.frequency === 'daily') return rc.amount * 30;
+                        if (rc.frequency === 'weekly') return rc.amount * 4;
+                        if (rc.frequency === 'yearly') return rc.amount / 12;
+                        return rc.amount;
+                      };
+                      return (
+                        <div key={r.id} className="flex items-center justify-between">
+                          <span className="text-xs text-gray-300">{r.name}</span>
+                          <div className="text-right">
+                            <span className="text-xs font-semibold text-orange-200">
+                              {r.amount.toLocaleString('tr-TR')} {r.currency}{freqLabel[r.frequency] || ''}
+                            </span>
+                            {r.frequency !== 'monthly' && (
+                              <span className="text-xs text-gray-500 ml-1">(≈₺{Math.round(toMonthly(r)).toLocaleString('tr-TR')}/ay)</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Personel Maaşları */}
+              <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-base">💰</span>
+                  <span className="text-sm font-semibold text-purple-300">Personel Maaşları</span>
+                  <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 font-medium">→ 💼 Personel</span>
+                </div>
+                {allSalaries.length === 0 ? (
+                  <p className="text-xs text-gray-500 italic">Maaş tanımlanmamış.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {allSalaries.map((s: SalaryDef) => {
+                      const ekMaliyet = s.extraCostPercentage > 0
+                        ? Math.round(s.amount * (1 + s.extraCostPercentage / 100))
+                        : s.amount;
+                      return (
+                        <div key={s.id} className="flex items-center justify-between">
+                          <span className="text-xs text-gray-300">
+                            {roleAvatars[s.userRole || ''] || '👤'} {s.name}
+                          </span>
+                          <div className="text-right">
+                            <span className="text-xs font-semibold text-purple-200">
+                              ₺{s.amount.toLocaleString('tr-TR')}/ay
+                            </span>
+                            {s.extraCostPercentage > 0 && (
+                              <span className="text-xs text-gray-500 ml-1">(+%{s.extraCostPercentage} → ₺{ekMaliyet.toLocaleString('tr-TR')})</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div className="pt-1.5 border-t border-purple-500/20 flex items-center justify-between">
+                      <span className="text-xs text-gray-400 font-medium">Toplam aylık maaş yükü</span>
+                      <span className="text-sm font-bold text-purple-300">
+                        ₺{allSalaries.reduce((s: number, sal: SalaryDef) => s + Math.round(sal.amount * (1 + (sal.extraCostPercentage || 0) / 100)), 0).toLocaleString('tr-TR')}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Toplam satır */}
+            <div className="mt-3 flex items-center gap-2 px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl">
+              <span className="text-xs text-gray-400">Tahmini toplam aylık sabit gider</span>
+              <span className="text-sm font-bold text-[#9dd9ea] ml-auto">
+                ₺{(
+                  mekanKiralar.reduce((s, m) => s + Math.round(m.yearlyRent / 12), 0) +
+                  recurringCosts.reduce((s: number, r: RecurringCostItem) => {
+                    if (r.frequency === 'daily') return s + r.amount * 30;
+                    if (r.frequency === 'weekly') return s + r.amount * 4;
+                    if (r.frequency === 'yearly') return s + Math.round(r.amount / 12);
+                    return s + r.amount;
+                  }, 0) +
+                  allSalaries.reduce((s: number, sal: SalaryDef) => s + Math.round(sal.amount * (1 + (sal.extraCostPercentage || 0) / 100)), 0)
+                ).toLocaleString('tr-TR')}
+              </span>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

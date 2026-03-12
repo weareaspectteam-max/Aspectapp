@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Calendar,
@@ -13,9 +13,14 @@ import {
   Clock,
   MapPin,
   FileText,
-  Briefcase
+  Briefcase,
+  Loader2
 } from 'lucide-react';
 import { UserRole } from './login';
+import { getToken, buildHeaders } from '../lib/api';
+import { projectId } from '/utils/supabase/info';
+
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
 interface Interview {
   id: string;
@@ -43,6 +48,7 @@ interface StaffInterviewsProps {
   onBack: () => void;
   userName?: string;
   userRole?: UserRole;
+  accessToken?: string;
 }
 
 const mockInterviews: Interview[] = [
@@ -207,10 +213,48 @@ const moodConfig = {
   negative: { icon: TrendingDown, label: 'Negatif', color: 'red' }
 };
 
-export function StaffInterviews({ onBack, userName = '', userRole = 'personel' }: StaffInterviewsProps) {
+export function StaffInterviews({ onBack, userName = '', userRole = 'personel', accessToken = '' }: StaffInterviewsProps) {
   const [selectedType, setSelectedType] = useState<string>('all');
   const [showNewInterviewForm, setShowNewInterviewForm] = useState(false);
-  const [interviews, setInterviews] = useState<Interview[]>(mockInterviews);
+  const [interviews, setInterviews] = useState<Interview[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [staffList, setStaffList] = useState<{ id: string; name: string; role: string; avatar: string }[]>([]);
+
+  const getAuthHeaders = async () => buildHeaders(await getToken());
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        const h = await getAuthHeaders();
+        const [gorusmeRes, personelRes] = await Promise.all([
+          fetch(`${API_BASE}/gorusmeler`, { headers: h }),
+          fetch(`${API_BASE}/users`, { headers: h }),
+        ]);
+        if (gorusmeRes.ok) { const d = await gorusmeRes.json(); setInterviews(d.gorusmeler || []); }
+        else { const e = await gorusmeRes.json().catch(() => ({})); setApiError(e.error || `HTTP ${gorusmeRes.status}`); }
+        if (personelRes.ok) {
+          const d = await personelRes.json();
+          const aktifRoller = ['personel', 'operasyon', 'mudur', 'ust-mudur', 'idari'];
+          const mapped = (d.users || [])
+            .filter((u: any) => aktifRoller.includes(u.role))
+            .map((u: any) => ({
+              id: u.id,
+              name: u.full_name || u.email || 'İsimsiz',
+              role: u.role,
+              avatar: u.avatar || '👤',
+            }));
+          setStaffList(mapped);
+        } else {
+          console.log('Personel listesi yüklenemedi:', personelRes.status);
+        }
+      } catch (err) { console.log('fetchData gorusmeler error:', err); setApiError('Sunucuya bağlanılamadı.'); }
+      finally { setIsLoading(false); }
+    };
+    fetchData();
+  }, []);
 
   // Yetki kontrolü: Yönetici ve Üst Müdür hepsini görebilir, diğerleri sadece kendi görüşmelerini
   const canSeeAllInterviews = userRole === 'yonetici' || userRole === 'ust-mudur';
@@ -228,11 +272,10 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel' }
         i.staffName === userName
       );
 
-  // Form States
-  const [managerName, setManagerName] = useState('');
+  // Form States — managerName ve location kaldırıldı, userName otomatik kullanılıyor
+  const [selectedStaffId, setSelectedStaffId] = useState('');
   const [staffName, setStaffName] = useState('');
   const [staffRole, setStaffRole] = useState('');
-  const [location, setLocation] = useState('');
   const [date, setDate] = useState('');
   const [duration, setDuration] = useState(30);
   const [interviewType, setInterviewType] = useState<Interview['type']>('performance');
@@ -247,10 +290,9 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel' }
   const [nextMeetingDate, setNextMeetingDate] = useState('');
 
   const resetForm = () => {
-    setManagerName('');
+    setSelectedStaffId('');
     setStaffName('');
     setStaffRole('');
-    setLocation('');
     setDate('');
     setDuration(30);
     setInterviewType('performance');
@@ -290,44 +332,40 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel' }
   };
 
   const canSave = 
-    managerName.trim() !== '' &&
     staffName.trim() !== '' &&
-    staffRole.trim() !== '' &&
-    location.trim() !== '' &&
     date.trim() !== '' &&
     topics.some(t => t.trim() !== '') &&
     discussionPoints.some(d => d.trim() !== '');
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const validTopics = topics.filter(t => t.trim() !== '');
     const validDiscussionPoints = discussionPoints.filter(d => d.trim() !== '');
     const validAgreements = agreements.filter(a => a.trim() !== '');
 
-    const newInterview: Interview = {
-      id: Date.now().toString(),
-      managerName,
-      staffName,
-      staffRole,
-      location,
+    const payload = {
+      managerName: userName,
+      staffName, staffRole,
+      location: '',
       date,
-      type: interviewType,
-      duration,
+      type: interviewType, duration,
       topics: validTopics,
-      staffPerformance: {
-        salesScore,
-        customerServiceScore,
-        teamworkScore,
-        attendanceScore
-      },
+      staffPerformance: { salesScore, customerServiceScore, teamworkScore, attendanceScore },
       discussionPoints: validDiscussionPoints,
       agreements: validAgreements,
-      nextMeetingDate,
-      mood
+      nextMeetingDate, mood,
     };
 
-    setInterviews([newInterview, ...interviews]);
-    setShowNewInterviewForm(false);
-    resetForm();
+    setIsSaving(true);
+    try {
+      const h = await getAuthHeaders();
+      const res = await fetch(`${API_BASE}/gorusmeler`, { method: 'POST', headers: h, body: JSON.stringify(payload) });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.error || 'Kayıt başarısız.'); return; }
+      const { gorusme } = await res.json();
+      setInterviews(prev => [gorusme, ...prev]);
+      setShowNewInterviewForm(false);
+      resetForm();
+    } catch (err) { console.log('handleSave gorusme error:', err); alert('Sunucu hatası!'); }
+    finally { setIsSaving(false); }
   };
 
   const getScoreColor = (score: number) => {
@@ -361,72 +399,75 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel' }
                 <p className="text-sm text-gray-400">Personel görüşmesi detayları</p>
               </div>
             </div>
+            {/* Müdür bilgisi - sadece gösterim */}
+            <div className="mb-3 px-3 py-2 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2">
+              <span className="text-lg">👤</span>
+              <div>
+                <p className="text-xs text-gray-400">Görüşmeyi yapan</p>
+                <p className="text-sm font-semibold text-white">{userName}</p>
+              </div>
+            </div>
             <button
               onClick={handleSave}
-              disabled={!canSave}
-              className={`w-full py-3 rounded-xl font-medium transition-all ${
-                canSave
+              disabled={!canSave || isSaving}
+              className={`w-full py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
+                canSave && !isSaving
                   ? 'bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 active:scale-95'
                   : 'bg-gray-600/50 text-gray-400 cursor-not-allowed'
               }`}
             >
-              {canSave ? '✅ Görüşmeyi Kaydet' : '⚠️ Gerekli Alanları Doldurun'}
+              {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Kaydediliyor...</> : canSave ? '✅ Görüşmeyi Kaydet' : '⚠️ Gerekli Alanları Doldurun'}
             </button>
           </div>
         </div>
 
         <div className="px-4 py-6 space-y-4">
-          {/* Manager Name */}
-          <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-4">
-            <label className="block text-white font-medium mb-2 flex items-center gap-2">
-              👤 Müdür Adı <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="text"
-              value={managerName}
-              onChange={(e) => setManagerName(e.target.value)}
-              placeholder="Müdür adını girin..."
-              className="w-full bg-white/5 border border-white/10 text-white placeholder-gray-500 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-400/50"
-            />
-          </div>
-
-          {/* Staff Info */}
+          {/* Personel Seçimi */}
           <div className="backdrop-blur-xl bg-gradient-to-br from-blue-500/10 to-blue-600/10 border border-blue-500/20 rounded-2xl p-4">
             <h3 className="text-white font-bold mb-3 flex items-center gap-2">
               <User className="w-5 h-5 text-blue-400" />
-              Personel Bilgileri <span className="text-red-400">*</span>
+              Personel Seçimi <span className="text-red-400">*</span>
             </h3>
-            <div className="space-y-3">
-              <input
-                type="text"
-                value={staffName}
-                onChange={(e) => setStaffName(e.target.value)}
-                placeholder="Personel adı..."
-                className="w-full bg-white/5 border border-white/10 text-white placeholder-gray-500 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-400/50"
-              />
-              <input
-                type="text"
-                value={staffRole}
-                onChange={(e) => setStaffRole(e.target.value)}
-                placeholder="Fotoğrafçı, Satış Danışmanı, vb."
-                className="w-full bg-white/5 border border-white/10 text-white placeholder-gray-500 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-400/50"
-              />
-            </div>
-          </div>
-
-          {/* Location */}
-          <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-4">
-            <label className="block text-white font-medium mb-2 flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-purple-400" />
-              Lokasyon <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="text"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="Beach Club Antalya..."
-              className="w-full bg-white/5 border border-white/10 text-white placeholder-gray-500 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-400/50"
-            />
+            {staffList.length === 0 ? (
+              <div className="text-center py-4 text-gray-400 text-sm">
+                <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-400" />
+                Personel listesi yükleniyor...
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {staffList
+                  .filter(s => s.name !== userName)
+                  .map(s => {
+                    const isSelected = selectedStaffId === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => {
+                          setSelectedStaffId(s.id);
+                          setStaffName(s.name);
+                          setStaffRole(s.role);
+                        }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all active:scale-95 text-left ${
+                          isSelected
+                            ? 'bg-blue-500/20 border-blue-400/50 shadow-lg shadow-blue-500/10'
+                            : 'bg-white/5 border-white/10 hover:bg-white/10'
+                        }`}
+                      >
+                        <span className="text-2xl">{s.avatar || '👤'}</span>
+                        <div className="flex-1">
+                          <p className={`font-semibold text-sm ${isSelected ? 'text-blue-200' : 'text-white'}`}>{s.name}</p>
+                          <p className="text-xs text-gray-400 capitalize">{s.role}</p>
+                        </div>
+                        {isSelected && (
+                          <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
           </div>
 
           {/* Date & Duration */}
@@ -695,6 +736,18 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel' }
   // MAIN LIST VIEW
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] pb-20">
+
+      {isLoading && (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
+        </div>
+      )}
+      {apiError && !isLoading && (
+        <div className="mx-4 mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-center">
+          <p className="text-red-300 text-sm mb-2">{apiError}</p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="sticky top-0 z-[5] backdrop-blur-xl bg-[#2a2a3a]/95 border-b border-white/10">
         <div className="px-4 py-4">

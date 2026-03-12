@@ -2,12 +2,17 @@ import { useState, useRef, useEffect } from 'react';
 import { 
   MapPin, Calendar, Clock, Star, Camera, CheckCircle, AlertTriangle, 
   XCircle, Plus, Filter, Search, User, ArrowLeft, ChevronRight, 
-  TrendingUp, Award, FileText, X, Edit2, Trash2
+  TrendingUp, Award, FileText, X, Edit2, Trash2, Loader2
 } from 'lucide-react';
+import { getToken, buildHeaders } from '../lib/api';
+import { projectId } from '/utils/supabase/info';
+
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
 interface LocationVisitsProps {
   userName?: string;
   userRole?: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
+  accessToken?: string;
   onLogout?: () => void;
   onNavigate?: (tab: string) => void;
   embedded?: boolean;
@@ -53,13 +58,7 @@ interface Location {
   type: 'Beach Club' | 'Restaurant' | 'Hotel' | 'Boat Tour';
 }
 
-const mockLocations: Location[] = [
-  { id: '1', name: 'Sunset Beach Club', type: 'Beach Club' },
-  { id: '2', name: 'Blue Lagoon Restaurant', type: 'Restaurant' },
-  { id: '3', name: 'Paradise Hotel', type: 'Hotel' },
-  { id: '4', name: 'Ocean Explorer Tours', type: 'Boat Tour' },
-  { id: '5', name: 'Golden Sands Resort', type: 'Beach Club' }
-];
+// mockLocations kaldırıldı — gerçek mekan listesi API'den geliyor
 
 const visitTypeConfig = {
   routine: { emoji: '📅', label: 'Rutin Kontrol', color: 'blue' },
@@ -76,7 +75,8 @@ const statusConfig = {
 
 export function LocationVisits({ 
   userName = '', 
-  userRole = 'yonetici', 
+  userRole = 'yonetici',
+  accessToken = '',
   onLogout = () => {}, 
   onNavigate = () => {},
   embedded = false,
@@ -86,6 +86,10 @@ export function LocationVisits({
   onNewVisitFormOpen = () => {}
 }: LocationVisitsProps) {
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [realLocations, setRealLocations] = useState<{ id: string; name: string; type: string }[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
   const [showNewVisitForm, setShowNewVisitForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -111,94 +115,42 @@ export function LocationVisits({
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // localStorage kaldırıldı - KV store entegrasyonu yapılacak
-  useEffect(() => {
-    // Boş başlıyoruz
-    if (false) {
-      // Initialize with mock data
-      const initialVisits: Visit[] = [
-        {
-          id: '1',
-          locationName: 'Sunset Beach Club',
-          locationId: '1',
-          visitDate: '2024-03-01',
-          visitTime: '10:30',
-          manager: 'Ahmet Yılmaz',
-          managerRole: 'Müdür',
-          visitType: 'routine',
-          status: 'completed',
-          duration: '45',
-          generalScore: 4.5,
-          cleanlinessScore: 5,
-          equipmentScore: 4,
-          staffScore: 5,
-          customerScore: 4,
-          issuesFound: ['Yazıcı kağıdı azalmış', 'Bir fotoğraf çerçevesi kırık'],
-          actionsTaken: ['Yeni kağıt sipariş edildi', 'Çerçeve değiştirildi'],
-          photos: [
-            { id: '1', url: 'https://images.unsplash.com/photo-1760869350325-8f015973ffaa?w=400', timestamp: Date.now() },
-            { id: '2', url: 'https://images.unsplash.com/photo-1579829307994-bd8ec22e31d1?w=400', timestamp: Date.now() }
-          ],
-          notes: 'Genel olarak iyi durumda. Personel motivasyonu yüksek.',
-          nextVisitDate: '2024-03-08',
-          hasOpenActions: false
-        },
-        {
-          id: '2',
-          locationName: 'Blue Lagoon Restaurant',
-          locationId: '2',
-          visitDate: '2024-03-03',
-          visitTime: '14:00',
-          manager: 'Mehmet Demir',
-          managerRole: 'Yönetici',
-          visitType: 'quality',
-          status: 'completed',
-          duration: '60',
-          generalScore: 4.25,
-          cleanlinessScore: 4,
-          equipmentScore: 5,
-          staffScore: 4,
-          customerScore: 4,
-          issuesFound: ['Menü kartı yıpranmış'],
-          actionsTaken: [],
-          photos: [
-            { id: '3', url: 'https://images.unsplash.com/photo-1680946496238-5272d3c407fc?w=400', timestamp: Date.now() }
-          ],
-          notes: 'Yeni ekipman testi başarılı. Müşteri geri bildirimleri olumlu.',
-          nextVisitDate: '2024-03-10',
-          hasOpenActions: true
-        },
-        {
-          id: '3',
-          locationName: 'Paradise Hotel',
-          locationId: '3',
-          visitDate: '2024-03-05',
-          visitTime: '09:00',
-          manager: 'Ayşe Kaya',
-          managerRole: 'Müdür',
-          visitType: 'problem',
-          status: 'pending',
-          duration: '90',
-          generalScore: 3.5,
-          cleanlinessScore: 3,
-          equipmentScore: 3,
-          staffScore: 4,
-          customerScore: 4,
-          issuesFound: ['Yazıcı arızalı', 'Albüm stoğu düşük', 'Lobide ışık yetersiz'],
-          actionsTaken: ['Teknisyen çağrıldı'],
-          photos: [
-            { id: '4', url: 'https://images.unsplash.com/photo-1708107243243-557a2cad3cf0?w=400', timestamp: Date.now() }
-          ],
-          notes: 'Teknik sorunlar mevcut. Takip gerekiyor.',
-          nextVisitDate: '2024-03-07',
-          hasOpenActions: true
-        }
-      ];
-      setVisits(initialVisits);
-    }
-  }, []);
+  const getAuthHeaders = async () => {
+    const token = await getToken();
+    return buildHeaders(token);
+  };
 
-  // localStorage kaldırıldı - KV store entegrasyonu yapılacak
+  useEffect(() => { fetchData(); }, []);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    setApiError(null);
+    try {
+      const h = await getAuthHeaders();
+      const [visitsRes, mekanRes] = await Promise.all([
+        fetch(`${API_BASE}/ziyaretler`, { headers: h }),
+        fetch(`${API_BASE}/mekanlar`, { headers: h }),
+      ]);
+      if (visitsRes.ok) {
+        const d = await visitsRes.json();
+        setVisits(d.ziyaretler || []);
+      } else {
+        const e = await visitsRes.json().catch(() => ({}));
+        setApiError(e.error || `HTTP ${visitsRes.status}`);
+      }
+      if (mekanRes.ok) {
+        const d = await mekanRes.json();
+        setRealLocations((d.mekanlar || []).map((m: any) => ({
+          id: m.id, name: m.name || m.ad || 'Mekan', type: m.type || m.tur || '',
+        })));
+      }
+    } catch (err) {
+      console.log('fetchData ziyaretler error:', err);
+      setApiError('Sunucuya bağlanılamadı.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Handle external trigger for new visit
   useEffect(() => {
@@ -279,38 +231,50 @@ export function LocationVisits({
     setNextVisitDate('');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const avgScore = (cleanlinessScore + equipmentScore + staffScore + customerScore) / 4;
     const validIssues = issuesFound.filter(i => i.trim());
     const validActions = actionsTaken.filter(a => a.trim());
-    
-    const newVisit: Visit = {
-      id: Date.now().toString(),
-      locationName,
-      locationId,
-      visitDate,
-      visitTime,
+
+    const payload = {
+      locationName, locationId, visitDate, visitTime,
       manager: userName || 'Yönetici',
       managerRole: ['yonetici', 'ust-mudur'].includes(userRole ?? '') ? 'Yönetici' : 'Müdür',
-      visitType,
-      status: 'completed',
-      duration,
-      generalScore: avgScore,
-      cleanlinessScore,
-      equipmentScore,
-      staffScore,
-      customerScore,
-      issuesFound: validIssues,
-      actionsTaken: validActions,
-      photos,
-      notes,
-      nextVisitDate,
-      hasOpenActions: validIssues.length > validActions.length
+      visitType, status: 'completed', duration,
+      generalScore: avgScore, cleanlinessScore, equipmentScore, staffScore, customerScore,
+      issuesFound: validIssues, actionsTaken: validActions,
+      photos, notes, nextVisitDate,
+      hasOpenActions: validIssues.length > validActions.length,
     };
-    
-    setVisits([newVisit, ...visits]);
-    setShowNewVisitForm(false);
-    resetForm();
+
+    setIsSaving(true);
+    try {
+      const h = await getAuthHeaders();
+      const res = await fetch(`${API_BASE}/ziyaretler`, {
+        method: 'POST', headers: h, body: JSON.stringify(payload),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.error || 'Kayıt başarısız.'); return; }
+      const { ziyaret } = await res.json();
+      setVisits(prev => [ziyaret, ...prev]);
+      setShowNewVisitForm(false);
+      resetForm();
+    } catch (err) {
+      console.log('handleSave ziyaret error:', err);
+      alert('Sunucu hatası!');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteVisit = async (id: string) => {
+    if (!confirm('Bu ziyareti silmek istediğinizden emin misiniz?')) return;
+    try {
+      const h = await getAuthHeaders();
+      const res = await fetch(`${API_BASE}/ziyaretler/${id}`, { method: 'DELETE', headers: h });
+      if (!res.ok) { alert('Silinemedi.'); return; }
+      setVisits(prev => prev.filter(v => v.id !== id));
+      if (selectedVisit?.id === id) setSelectedVisit(null);
+    } catch (err) { alert('Sunucu hatası!'); }
   };
 
   const canSave = locationName && duration && 
@@ -595,14 +559,14 @@ export function LocationVisits({
               </div>
               <button 
                 onClick={handleSave}
-                disabled={!canSave}
-                className={`w-full py-3 rounded-xl font-medium transition-all ${
-                  canSave
+                disabled={!canSave || isSaving}
+                className={`w-full py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
+                  canSave && !isSaving
                     ? 'bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 active:scale-95'
                     : 'bg-gray-600/50 text-gray-400 cursor-not-allowed'
                 }`}
               >
-                {canSave ? '✅ Kaydet' : '⚠️ Tüm Gerekli Alanları Doldurun'}
+                {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Kaydediliyor...</> : canSave ? '✅ Kaydet' : '⚠️ Tüm Gerekli Alanları Doldurun'}
               </button>
             </div>
           </div>
@@ -618,16 +582,16 @@ export function LocationVisits({
               value={locationId}
               onChange={(e) => {
                 setLocationId(e.target.value);
-                const loc = mockLocations.find(l => l.id === e.target.value);
-                setLocationName(loc ? `${loc.name}` : '');
+                const loc = realLocations.find(l => l.id === e.target.value);
+                setLocationName(loc ? loc.name : '');
               }}
               className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-400/50"
               style={{ colorScheme: 'dark' }}
             >
               <option value="" className="bg-[#2a2a3a] text-white">Mekan Seçin</option>
-              {mockLocations.map(loc => (
+              {realLocations.map(loc => (
                 <option key={loc.id} value={loc.id} className="bg-[#2a2a3a] text-white">
-                  {loc.name} - {loc.type}
+                  {loc.name}{loc.type ? ` - ${loc.type}` : ''}
                 </option>
               ))}
             </select>
@@ -914,6 +878,20 @@ export function LocationVisits({
   // MAIN LIST VIEW
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] pb-20">
+
+      {/* Loading / Error */}
+      {isLoading && (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-teal-400" />
+        </div>
+      )}
+      {apiError && !isLoading && (
+        <div className="mx-4 mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-center">
+          <p className="text-red-300 text-sm mb-2">{apiError}</p>
+          <button onClick={fetchData} className="px-4 py-2 bg-red-500/20 border border-red-500/30 rounded-xl text-red-300 text-sm">Tekrar Dene</button>
+        </div>
+      )}
+
       {/* Header */}
       {embedded && showOwnHeader && (
         <div className="sticky top-0 z-10 backdrop-blur-xl bg-[#2a2a3a]/95 border-b border-white/10">

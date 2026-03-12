@@ -1,4 +1,4 @@
-import { ArrowLeft, MapPin, Package, Users, ArrowRight, DollarSign } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, Users, ArrowRight, DollarSign, BarChart3 } from 'lucide-react';
 
 interface ResourceManagementProps {
   userName: string;
@@ -49,6 +49,16 @@ export function ResourceManagement({ userName, userRole, onLogout, onNavigate }:
       iconBg: 'bg-blue-600/60',
       action: () => onNavigate('cost-management'),
     },
+    {
+      title: 'Satış Raporu',
+      description: 'Ciro, personel ve albüm kırılımı',
+      icon: BarChart3,
+      emoji: '📈',
+      bgColor: 'bg-teal-700/40',
+      borderColor: 'border-teal-600/50',
+      iconBg: 'bg-teal-600/60',
+      action: () => onNavigate('satis-raporu'),
+    },
   ];
 
   return (
@@ -64,7 +74,7 @@ export function ResourceManagement({ userName, userRole, onLogout, onNavigate }:
           </button>
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
-              <h1 className="text-2xl font-bold text-white">Mekan - Malzeme - Kullanıcı - Maliyet Yönetimi</h1>
+              <h1 className="text-2xl font-bold text-white">Mekan - Malzeme - Kullanıcı - Maliyet - Satış Raporu</h1>
             </div>
             <p className="text-sm text-gray-400">Tüm kaynakları tek yerden yönetin</p>
           </div>

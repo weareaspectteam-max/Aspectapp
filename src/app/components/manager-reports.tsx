@@ -1,14 +1,19 @@
-import { useState } from 'react';
-import { FileText, TrendingUp, ArrowLeft, Calendar, Users, ArrowRight, Plus } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { FileText, TrendingUp, ArrowLeft, Calendar, Users, ArrowRight, Plus, Star, MapPin, Camera, User, Award, Loader2, TrendingDown, Minus } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { LocationVisits } from './location-visits';
 import { StaffInterviews } from './staff-interviews';
 import { WeeklyMonthlyReports } from './weekly-monthly-reports';
 import { UserRole } from './login';
+import { getToken, buildHeaders } from '../lib/api';
+import { projectId } from '/utils/supabase/info';
+
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
 interface ManagerReportsProps {
   userName?: string;
   userRole?: UserRole;
+  accessToken?: string;
   onLogout?: () => void;
   onNavigate?: (tab: string) => void;
   onBack?: () => void;
@@ -18,7 +23,8 @@ type ReportCategory = 'main' | 'location-visits' | 'weekly-monthly' | 'staff-int
 
 export function ManagerReports({ 
   userName = '', 
-  userRole = 'yonetici', 
+  userRole = 'yonetici',
+  accessToken = '',
   onLogout = () => {}, 
   onNavigate = () => {},
   onBack = () => {}
@@ -100,6 +106,7 @@ export function ManagerReports({
             <LocationVisits 
               userName={userName}
               userRole={userRole}
+              accessToken={accessToken}
               onLogout={onLogout}
               onNavigate={onNavigate}
               embedded={true}
@@ -111,7 +118,7 @@ export function ManagerReports({
           </TabsContent>
 
           <TabsContent value="performance" className="m-0">
-            <PerformanceTab />
+            <PerformanceTab accessToken={accessToken} />
           </TabsContent>
         </Tabs>
       </div>
@@ -125,6 +132,7 @@ export function ManagerReports({
         onBack={handleBackToMain}
         userName={userName}
         userRole={userRole}
+        accessToken={accessToken}
       />
     );
   }
@@ -136,6 +144,7 @@ export function ManagerReports({
         onBack={handleBackToMain} 
         userName={userName}
         userRole={userRole}
+        accessToken={accessToken}
       />
     );
   }
@@ -245,147 +254,182 @@ export function ManagerReports({
 }
 
 // Performance Summary Tab
-function PerformanceTab() {
-  const performanceData = [
-    {
-      location: 'Sunset Beach Club',
-      type: 'Beach Club',
-      avgScore: 4.5,
-      totalVisits: 12,
-      lastVisit: '2024-03-01',
-      trend: 'up',
-      improvement: '+0.3',
-      status: 'excellent'
-    },
-    {
-      location: 'Blue Lagoon Restaurant',
-      type: 'Restaurant',
-      avgScore: 4.25,
-      totalVisits: 8,
-      lastVisit: '2024-03-03',
-      trend: 'stable',
-      improvement: '0.0',
-      status: 'good'
-    },
-    {
-      location: 'Paradise Hotel',
-      type: 'Hotel',
-      avgScore: 3.5,
-      totalVisits: 15,
-      lastVisit: '2024-03-05',
-      trend: 'down',
-      improvement: '-0.5',
-      status: 'needsAttention'
-    },
-    {
-      location: 'Ocean Explorer Tours',
-      type: 'Boat Tour',
-      avgScore: 4.8,
-      totalVisits: 6,
-      lastVisit: '2024-02-28',
-      trend: 'up',
-      improvement: '+0.2',
-      status: 'excellent'
-    },
-    {
-      location: 'Golden Sands Resort',
-      type: 'Beach Club',
-      avgScore: 4.0,
-      totalVisits: 10,
-      lastVisit: '2024-02-25',
-      trend: 'stable',
-      improvement: '0.0',
-      status: 'good'
-    }
-  ];
+function PerformanceTab({ accessToken = '' }: { accessToken?: string }) {
+  const [visits, setVisits] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const h = buildHeaders(await getToken());
+        const res = await fetch(`${API_BASE}/ziyaretler`, { headers: h });
+        if (res.ok) { const d = await res.json(); setVisits(d.ziyaretler || []); }
+      } catch (e) { console.log('PerformanceTab fetch error:', e); }
+      finally { setIsLoading(false); }
+    };
+    load();
+  }, []);
+
+  // Lokasyon bazlı gruplama ve istatistik hesaplama
+  const locationMap = new Map<string, any[]>();
+  visits.forEach(v => {
+    const key = v.locationName || 'Bilinmeyen';
+    if (!locationMap.has(key)) locationMap.set(key, []);
+    locationMap.get(key)!.push(v);
+  });
+
+  const performanceData = Array.from(locationMap.entries()).map(([locName, locVisits]) => {
+    const completed = locVisits.filter(v => v.status === 'completed');
+    const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+    const avgScore = avg(completed.map(v => v.generalScore ?? 0));
+    const avgCleanliness = avg(completed.map(v => v.cleanlinessScore ?? 0));
+    const avgEquipment = avg(completed.map(v => v.equipmentScore ?? 0));
+    const avgStaff = avg(completed.map(v => v.staffScore ?? 0));
+    const avgCustomer = avg(completed.map(v => v.customerScore ?? 0));
+
+    // Trend: son 3 ile önceki 3 karşılaştır
+    const sorted = [...completed].sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime());
+    const recent = avg(sorted.slice(0, 3).map(v => v.generalScore ?? 0));
+    const older  = avg(sorted.slice(3, 6).map(v => v.generalScore ?? 0));
+    const diff = older > 0 ? recent - older : 0;
+    const trend = diff > 0.1 ? 'up' : diff < -0.1 ? 'down' : 'stable';
+
+    const lastVisit = sorted[0]?.visitDate ?? null;
+    const status = avgScore >= 4.5 ? 'excellent' : avgScore >= 3.5 ? 'good' : 'needsAttention';
+
+    return { locName, totalVisits: locVisits.length, avgScore, avgCleanliness, avgEquipment, avgStaff, avgCustomer, trend, diff, lastVisit, status };
+  }).sort((a, b) => b.avgScore - a.avgScore);
+
+  const overallAvg = performanceData.length ? performanceData.reduce((s, l) => s + l.avgScore, 0) / performanceData.length : 0;
+  const totalVisits = visits.length;
+  const excellentCount = performanceData.filter(l => l.status === 'excellent').length;
+  const attentionCount = performanceData.filter(l => l.status === 'needsAttention').length;
 
   const statusConfig = {
-    excellent: { label: 'Mükemmel', color: 'green', emoji: '🌟' },
-    good: { label: 'İyi', color: 'blue', emoji: '✅' },
-    needsAttention: { label: 'İyileştirme Gerekli', color: 'orange', emoji: '⚠️' }
+    excellent:       { label: 'Mükemmel',          color: 'green',  emoji: '🌟' },
+    good:            { label: 'İyi',                color: 'blue',   emoji: '✅' },
+    needsAttention:  { label: 'İyileştirme Gerekli', color: 'orange', emoji: '⚠️' }
   };
 
-  const overallStats = {
-    avgScore: 4.21,
-    totalVisits: 51,
-    activeLocations: 5,
-    improvementRate: 78
-  };
+  const ScoreBar = ({ label, score, color }: { label: string; score: number; color: string }) => (
+    <div>
+      <div className="flex justify-between items-center mb-1">
+        <span className="text-xs text-gray-400">{label}</span>
+        <span className="text-xs font-bold text-white">{score.toFixed(1)}</span>
+      </div>
+      <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full bg-${color}-400 transition-all duration-700`}
+          style={{ width: `${(score / 5) * 100}%` }}
+        />
+      </div>
+    </div>
+  );
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+      </div>
+    );
+  }
+
+  if (performanceData.length === 0) {
+    return (
+      <div className="px-4 py-16 text-center">
+        <TrendingUp className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+        <p className="text-gray-400">Henüz ziyaret verisi yok</p>
+        <p className="text-sm text-gray-500 mt-1">Mekan ziyaretleri eklendikçe performans analizi burada görünecek.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 py-6 space-y-4">
       {/* Overall Stats */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3">
         <div className="backdrop-blur-xl bg-gradient-to-br from-indigo-500/20 to-indigo-600/20 border border-indigo-400/30 rounded-2xl p-4 text-center">
-          <div className="text-3xl font-bold text-white mb-1">{overallStats.avgScore}</div>
-          <div className="text-xs text-gray-300">Ortalama Skor</div>
+          <div className="text-3xl font-bold text-white mb-1">{overallAvg.toFixed(2)}</div>
+          <div className="text-xs text-gray-300">Genel Ort. Skor</div>
+          <div className="flex justify-center gap-0.5 mt-1">
+            {[1,2,3,4,5].map(i => (
+              <Star key={i} className={`w-3 h-3 ${i <= Math.round(overallAvg) ? 'fill-yellow-400 text-yellow-400' : 'text-gray-600'}`} />
+            ))}
+          </div>
         </div>
         <div className="backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-400/30 rounded-2xl p-4 text-center">
-          <div className="text-3xl font-bold text-white mb-1">{overallStats.totalVisits}</div>
+          <div className="text-3xl font-bold text-white mb-1">{totalVisits}</div>
           <div className="text-xs text-gray-300">Toplam Ziyaret</div>
         </div>
-        <div className="backdrop-blur-xl bg-gradient-to-br from-blue-500/20 to-blue-600/20 border border-blue-400/30 rounded-2xl p-4 text-center">
-          <div className="text-3xl font-bold text-white mb-1">{overallStats.activeLocations}</div>
-          <div className="text-xs text-gray-300">Aktif Mekan</div>
-        </div>
         <div className="backdrop-blur-xl bg-gradient-to-br from-green-500/20 to-green-600/20 border border-green-400/30 rounded-2xl p-4 text-center">
-          <div className="text-3xl font-bold text-white mb-1">%{overallStats.improvementRate}</div>
-          <div className="text-xs text-gray-300">İyileşme Oranı</div>
+          <div className="text-3xl font-bold text-white mb-1">{excellentCount}</div>
+          <div className="text-xs text-gray-300">🌟 Mükemmel Mekan</div>
+        </div>
+        <div className="backdrop-blur-xl bg-gradient-to-br from-orange-500/20 to-orange-600/20 border border-orange-400/30 rounded-2xl p-4 text-center">
+          <div className="text-3xl font-bold text-white mb-1">{attentionCount}</div>
+          <div className="text-xs text-gray-300">⚠️ Dikkat Gereken</div>
         </div>
       </div>
 
       {/* Section Title */}
       <div className="pt-2">
         <h2 className="text-lg font-bold text-white mb-1">Mekan Performansları</h2>
-        <p className="text-sm text-gray-400">Detaylı performans değerlendirmeleri</p>
+        <p className="text-sm text-gray-400">Ziyaret kayıtlarından hesaplanan canlı veriler</p>
       </div>
 
       {/* Location Performance Cards */}
       <div className="space-y-3">
-        {performanceData.map((location, idx) => {
-          const status = statusConfig[location.status as keyof typeof statusConfig];
+        {performanceData.map((loc, idx) => {
+          const status = statusConfig[loc.status as keyof typeof statusConfig];
           return (
-            <div 
-              key={idx}
-              className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-4 hover:bg-white/10 transition-all"
-            >
+            <div key={idx} className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-4 hover:bg-white/8 transition-all">
               {/* Header */}
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1">
-                  <h3 className="text-white font-bold mb-1">{location.location}</h3>
-                  <p className="text-xs text-gray-400">{location.type}</p>
-                </div>
-                <div className={`px-3 py-1 rounded-full text-xs font-medium bg-${status.color}-500/20 text-${status.color}-300 border border-${status.color}-400/30 flex items-center gap-1`}>
-                  <span>{status.emoji}</span>
-                  <span>{status.label}</span>
-                </div>
-              </div>
-
-              {/* Metrics */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-white mb-1">{location.avgScore}</div>
-                  <div className="text-xs text-gray-400">Ort. Skor</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-white mb-1">{location.totalVisits}</div>
-                  <div className="text-xs text-gray-400">Ziyaret</div>
-                </div>
-                <div className="text-center">
-                  <div className={`text-2xl font-bold mb-1 ${
-                    location.trend === 'up' ? 'text-green-400' : 
-                    location.trend === 'down' ? 'text-red-400' : 
-                    'text-gray-400'
-                  }`}>
-                    {location.improvement}
+                  <div className="flex items-center gap-2 mb-1">
+                    <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <h3 className="text-white font-bold text-sm">{loc.locName}</h3>
                   </div>
-                  <div className="text-xs text-gray-400">Trend</div>
+                  <div className="flex items-center gap-3 ml-6">
+                    <span className="text-xs text-gray-400">{loc.totalVisits} ziyaret</span>
+                    {loc.lastVisit && (
+                      <span className="text-xs text-gray-500">
+                        Son: {new Date(loc.lastVisit).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className={`px-2.5 py-1 rounded-full text-xs font-medium bg-${status.color}-500/20 text-${status.color}-300 border border-${status.color}-400/30 flex items-center gap-1 flex-shrink-0`}>
+                  <span>{status.emoji}</span>
                 </div>
               </div>
 
-              {/* Last Visit */}
-              <div className="mt-3 pt-3 border-t border-white/10 text-xs text-gray-400 text-center">
-                Son Ziyaret: {new Date(location.lastVisit).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })}
+              {/* Genel skor + trend */}
+              <div className="flex items-center justify-between mb-3 bg-white/5 rounded-xl px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl font-bold text-white">{loc.avgScore.toFixed(2)}</span>
+                  <div className="flex gap-0.5">
+                    {[1,2,3,4,5].map(i => (
+                      <Star key={i} className={`w-3.5 h-3.5 ${i <= Math.round(loc.avgScore) ? 'fill-yellow-400 text-yellow-400' : 'text-gray-600'}`} />
+                    ))}
+                  </div>
+                </div>
+                <div className={`flex items-center gap-1 text-sm font-semibold ${
+                  loc.trend === 'up' ? 'text-green-400' : loc.trend === 'down' ? 'text-red-400' : 'text-gray-400'
+                }`}>
+                  {loc.trend === 'up'     ? <TrendingUp   className="w-4 h-4" /> :
+                   loc.trend === 'down'   ? <TrendingDown className="w-4 h-4" /> :
+                                            <Minus        className="w-4 h-4" />}
+                  <span>{loc.diff > 0 ? '+' : ''}{loc.diff.toFixed(1)}</span>
+                </div>
+              </div>
+
+              {/* Alt skorlar — bar chart */}
+              <div className="space-y-2">
+                <ScoreBar label="🧹 Temizlik"  score={loc.avgCleanliness} color="blue"   />
+                <ScoreBar label="📷 Ekipman"   score={loc.avgEquipment}   color="purple" />
+                <ScoreBar label="👤 Personel"  score={loc.avgStaff}       color="green"  />
+                <ScoreBar label="😊 İşletme Memnuniyeti" score={loc.avgCustomer} color="orange" />
               </div>
             </div>
           );

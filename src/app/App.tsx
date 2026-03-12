@@ -30,6 +30,7 @@ import { StokDagilimi } from './components/stok-dagilimi';
 import { ResourceManagement } from './components/resource-management';
 import { CostManagement } from './components/cost-management';
 import { LocationVisits } from './components/location-visits';
+import { SatisRaporu } from './components/satis-raporu';
 import { ManagerReports } from './components/manager-reports';
 import { BirthdayCalendar } from './components/birthday-calendar';
 import { BirthdayNotifications } from './components/birthday-notifications';
@@ -480,6 +481,7 @@ export default function App() {
           <IsletmeGenelDurum 
             userName={userName}
             userRole={userRole}
+            accessToken={accessToken}
             onNavigate={handleNavigate}
           />
         );
@@ -525,6 +527,17 @@ export default function App() {
           />
         );
       
+      case 'satis-raporu':
+        return (
+          <SatisRaporu
+            userName={userName}
+            userRole={userRole}
+            accessToken={accessToken}
+            onLogout={handleLogout}
+            onNavigate={handleNavigate}
+          />
+        );
+      
       case 'location-visits':
         return (
           <LocationVisits 
@@ -542,6 +555,7 @@ export default function App() {
           <ManagerReports 
             userName={userName}
             userRole={userRole}
+            accessToken={accessToken}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
             onBack={() => handleNavigate('business-panel')}
