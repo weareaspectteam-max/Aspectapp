@@ -1542,6 +1542,72 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
 });
 
 // ──────────────────────────────────────────
+// STOK: Açılış + Kapanışı sıfırla (satışlar korunur)
+// POST /stok/acilis-sifirla
+// Body: { mekanId, tarih }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/stok/acilis-sifirla", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { mekanId, tarih } = await c.req.json();
+    if (!mekanId || !tarih) {
+      return c.json({ error: "mekanId ve tarih zorunludur." }, 400);
+    }
+
+    const kvKey = `stok_gunluk_${mekanId}_${tarih}`;
+    const existing: any = await kv.get(kvKey);
+
+    if (!existing) {
+      return c.json({ error: "Bu tarih için kayıt bulunamadı." }, 404);
+    }
+
+    // Satışlar, kare kayıtları ve mekan/tarih bilgisi korunur.
+    // Açılış ve kapanışa ait tüm alanlar temizlenir.
+    const {
+      acilis: _a,
+      acilisNot: _an,
+      acilisYapildi: _ay,
+      acilisZamani: _az,
+      acilisYapanId: _ayi,
+      acilisYapanAd: _aya,
+      acilisAnomali: _aano,
+      kapanish: _k,
+      kapanisNot: _kn,
+      kapanisYapildi: _ky,
+      kapanisZamani: _kz,
+      kapanisYapanId: _kyi,
+      kapanisYapanAd: _kya,
+      kapanisAnomali: _kano,
+      kapanisBeklenen: _kb,
+      printerData: _pd,
+      toplamRibonDegisim: _tr,
+      vardiyaToplam: _vt,
+      yoneticiGuncelleme: _yg,
+      yoneticiSifirlama: _ys,
+      ...korunan
+    } = existing;
+
+    const yeniKayit = {
+      ...korunan,
+      acilisSifirlamaZamani: new Date().toISOString(),
+      acilisSifirlamaYapanId: user.id,
+      acilisSifirlamaYapanAd: user.user_metadata?.full_name || user.email,
+    };
+
+    await kv.set(kvKey, yeniKayit);
+    console.log(`Açılış+Kapanış sıfırlandı: ${mekanId} / ${tarih} by ${user.id}`);
+    return c.json({ message: "Açılış ve kapanış başarıyla sıfırlandı. Satış verileri korundu.", kayit: yeniKayit });
+  } catch (err) {
+    console.log("Stok acilis-sifirla error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
 // STOK: Gün içi ekleme
 // POST /stok/ekleme
 // Body: { mekanId, tarih, miktar: {...}, not? }
@@ -3429,4 +3495,18 @@ app.delete("/make-server-4da0b637/malzeme/sil/:id", async (c) => {
   }
 });
 
-Deno.serve(app.fetch);
+Deno.serve(async (req) => {
+  // Supabase Edge Functions'da OPTIONS preflight istekleri gateway tarafından kesilebilir.
+  // Bu nedenle OPTIONS'ı Hono'ya göndermeden önce burada açıkça handle ediyoruz.
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-access-token',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Max-Age': '600',
+      },
+    });
+  }
+  return app.fetch(req);
+});

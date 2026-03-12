@@ -118,6 +118,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [stokEklemeler, setStokEklemeler] = useState<StokEkleme[]>([]);
   const [showAcilisAnomaliUyari, setShowAcilisAnomaliUyari] = useState(false);
   const [showKapanisAnomaliUyari, setShowKapanisAnomaliUyari] = useState(false);
+  const [showAcilisSifirlaModal, setShowAcilisSifirlaModal] = useState(false);
+  const [acilisSifirlaYukleniyor, setAcilisSifirlaYukleniyor] = useState(false);
   const [printers, setPrinters] = useState([{ id: '1', label: 'Yazıcı 1', startCounter: '' }]);
   const [printerEndCounters, setPrinterEndCounters] = useState<Record<string, string>>({});
   const [shiftShelves, setShiftShelves] = useState<Record<string, number>>({
@@ -518,6 +520,54 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       setShowKapanisAnomaliUyari(true);
     } else {
       handleShiftEndComplete();
+    }
+  };
+
+  const handleAcilisSifirla = async () => {
+    if (!selectedProject) return;
+    const mekanId = resolvedMekanId || selectedProject.id;
+    const tarih = bugunTarih();
+    setAcilisSifirlaYukleniyor(true);
+    try {
+      const hdr = buildHeaders(accessToken);
+      const res = await fetch(`${API_BASE_QS}/stok/acilis-sifirla`, {
+        method: 'POST',
+        headers: { ...hdr, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mekanId, tarih }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        console.error('Açılış sıfırlama hatası:', data.error);
+        alert(`Hata: ${data.error}`);
+      } else {
+        // Frontend state sıfırla
+        setStokGunluk(null);
+        setShiftStartDone(false);
+        setShiftEndDone(false);
+        setAcilisSayim(dunKapanis ? { ...dunKapanis } : bosStok());
+        setAcilisNot('');
+        setAcilisAnomaliNeden('');
+        setKapanisSayim(bosStok());
+        setKapanisNot('');
+        setKapanisAnomali({});
+        setKapanisBeklenen(null);
+        setKapanisAnomaliNeden('');
+        setTeamPhotoTaken(false);
+        setTeamPhotoPreview(null);
+        setPrinters([{ id: '1', label: 'Yazıcı 1', startCounter: '' }]);
+        setPrinterEndCounters({});
+        setPrinterRibbonChanges({});
+        setPrinterIadePhotos({});
+        setReyonAcik(false);
+        setReyonKapanisSayim(bosStok());
+        setActiveMode('shift-start');
+        setShowAcilisSifirlaModal(false);
+      }
+    } catch (err) {
+      console.error('Açılış sıfırlama beklenmeyen hata:', err);
+      alert('Sunucuya ulaşılamadı. Lütfen tekrar deneyin.');
+    } finally {
+      setAcilisSifirlaYukleniyor(false);
     }
   };
 
@@ -983,6 +1033,17 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                   <><CheckCircle className="w-5 h-5" /> Vardiyayı Aç → Satışa Geç</>
                 )}
               </button>
+
+              {/* Açılışı Sıfırla — sadece açılış yapıldıysa göster */}
+              {stokGunluk?.acilisYapildi && (
+                <button
+                  onClick={() => setShowAcilisSifirlaModal(true)}
+                  className="w-full py-3 rounded-2xl font-semibold text-sm transition-all flex items-center justify-center gap-2 border border-red-500/40 text-red-400 bg-red-500/10 hover:bg-red-500/20 active:scale-[0.98]"
+                >
+                  <X className="w-4 h-4" />
+                  Açılışı Sıfırla
+                </button>
+              )}
             </div>
           )}
 
@@ -2291,6 +2352,101 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
           </div>
         </div>
       )}
+
+      {/* Açılış Sıfırla Onay Modalı */}
+      <AnimatePresence>
+        {showAcilisSifirlaModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[110] flex items-end justify-center p-4 pb-6"
+            onClick={() => !acilisSifirlaYukleniyor && setShowAcilisSifirlaModal(false)}
+          >
+            <motion.div
+              initial={{ y: 60, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 60, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              className="w-full max-w-md bg-gradient-to-b from-[#1a0a2e] to-[#0a051e] border border-red-500/30 rounded-3xl shadow-2xl overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-r from-red-900/60 to-red-800/40 border-b border-red-500/20 p-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-red-500/20 border border-red-500/30 flex items-center justify-center">
+                    <span className="text-2xl">⚠️</span>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Açılışı Sıfırla</h3>
+                    <p className="text-xs text-red-300">Bu işlem geri alınamaz</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 space-y-4">
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-2">
+                  <p className="text-sm font-semibold text-white">Sıfırlanacaklar:</p>
+                  <div className="space-y-1.5">
+                    {[
+                      { icon: '🔄', text: 'Açılış stok sayımı', color: 'text-red-300' },
+                      { icon: '🔄', text: 'Kapanış stok sayımı', color: 'text-red-300' },
+                      { icon: '🖨️', text: 'Yazıcı sayaç verileri', color: 'text-red-300' },
+                    ].map((item, i) => (
+                      <div key={i} className={`flex items-center gap-2 text-xs ${item.color}`}>
+                        <span>{item.icon}</span>
+                        <span>{item.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-green-500/10 border border-green-500/20 rounded-2xl p-4 space-y-2">
+                  <p className="text-sm font-semibold text-white">Korunacaklar:</p>
+                  <div className="space-y-1.5">
+                    {[
+                      { icon: '✅', text: 'Tüm satış kayıtları', color: 'text-green-300' },
+                      { icon: '✅', text: 'Kare fotoğraf kayıtları', color: 'text-green-300' },
+                    ].map((item, i) => (
+                      <div key={i} className={`flex items-center gap-2 text-xs ${item.color}`}>
+                        <span>{item.icon}</span>
+                        <span>{item.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-400 text-center">
+                  Sıfırladıktan sonra yeniden fiziksel sayım yapıp açılışı ve kapanışı tekrar doldurabilirsiniz.
+                </p>
+
+                {/* Buttons */}
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <button
+                    onClick={() => setShowAcilisSifirlaModal(false)}
+                    disabled={acilisSifirlaYukleniyor}
+                    className="py-3.5 rounded-2xl border border-white/20 text-white font-semibold text-sm transition-all hover:bg-white/10 active:scale-95 disabled:opacity-50"
+                  >
+                    Vazgeç
+                  </button>
+                  <button
+                    onClick={handleAcilisSifirla}
+                    disabled={acilisSifirlaYukleniyor}
+                    className="py-3.5 rounded-2xl bg-gradient-to-r from-red-600 to-red-500 text-white font-bold text-sm shadow-lg transition-all hover:shadow-red-500/40 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {acilisSifirlaYukleniyor ? (
+                      <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Sıfırlanıyor...</>
+                    ) : (
+                      <><X className="w-4 h-4" />Evet, Sıfırla</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Cancel Modal */}
       {showCancelModal && (
