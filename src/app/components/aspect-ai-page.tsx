@@ -740,7 +740,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   return (
     <div
       className="flex flex-col bg-gradient-to-br from-[#0a051e] via-[#120830] to-[#1a0a3c] overflow-hidden"
-      style={{ height: 'calc(100vh - 60px - 68px)' }}
+      style={{ height: 'calc(100vh - 60px - 51px)' }}
     >
 
       {/* ── SUB-HEADER — sabit, asla kımıldamaz ── */}
