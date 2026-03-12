@@ -26,7 +26,7 @@ interface Message {
 }
 
 interface ResponseCard {
-  type: 'briefing' | 'profit' | 'stock' | 'personnel' | 'anomaly' | 'tip' | 'payment' | 'golden_hour';
+  type: 'briefing' | 'profit' | 'stock' | 'personnel' | 'anomaly' | 'tip' | 'payment' | 'golden_hour' | 'mekan_detay';
   data: any;
 }
 
@@ -72,6 +72,7 @@ const ADMIN_CHIPS = [
   { icon: '👤', label: 'Personel', q: 'En iyi personel kimdi bugün?' },
   { icon: '💳', label: 'Ödeme dağılımı', q: 'Ödeme yöntemleri nasıl dağılmış?' },
   { icon: '🌅', label: 'Altın saat', q: 'Bugün Fethiye altın saat kaçta?' },
+  { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
 ];
 
 const STAFF_CHIPS = [
@@ -189,7 +190,7 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null): { tex
   }
 
   const d = ozet;
-  const bestMekan = d.mekanlar[0];
+  const bestMekan = [...d.mekanlar].sort((a, b) => b.ciro - a.ciro)[0];
 
   // Günlük özet
   if (lower.includes('özet') || lower.includes('genel') || lower.includes('nasıl geçti') || lower.includes('operasyon')) {
@@ -550,6 +551,7 @@ function MessageBubble({ msg }: { msg: Message }) {
             {msg.card.type === 'anomaly' && <AnomalyCard data={msg.card.data} />}
             {msg.card.type === 'tip' && <TipCard data={msg.card.data} />}
             {msg.card.type === 'golden_hour' && <GoldenHourCard data={msg.card.data} />}
+            {msg.card.type === 'mekan_detay' && <MekanDetayCard data={msg.card.data} />}
           </>
         )}
         <span className="text-[10px] text-white/25 mt-1 px-1">
@@ -635,6 +637,135 @@ function DailyBriefingTopCard({
   );
 }
 
+// ─── Mekan Seçim Modalı ───────────────────────────────────────────────────────
+
+function MekanSecModal({
+  mekanlar,
+  onSelect,
+  onClose,
+}: {
+  mekanlar: AIOzet['mekanlar'];
+  onSelect: (mekan: AIOzet['mekanlar'][0]) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center"
+      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-t-3xl bg-gradient-to-b from-[#1a0a3c] to-[#0a051e] border-t border-white/15 pb-8 pt-4 px-4"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Handle */}
+        <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-5" />
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-base">📍</span>
+          <span className="text-sm font-bold text-white">Mekan Detaylı Bilgi</span>
+          <span className="text-xs text-white/40 ml-1">— bir mekan seç</span>
+        </div>
+        {mekanlar.length === 0 ? (
+          <p className="text-sm text-white/40 text-center py-6">
+            Bugün aktif mekan verisi yok.
+          </p>
+        ) : (
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {mekanlar.map(m => (
+              <button
+                key={m.id}
+                onClick={() => onSelect(m)}
+                className="w-full flex items-center justify-between bg-white/6 hover:bg-white/12 active:scale-95 border border-white/10 rounded-2xl px-4 py-3 transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">{m.emoji}</span>
+                  <div className="text-left">
+                    <div className="text-sm font-semibold text-white">{m.name}</div>
+                    <div className="text-xs text-white/40">{m.satisAdet} satış · {m.acilisYapildi ? (m.kapanisYapildi ? 'Kapandı' : 'Açık') : 'Açılış yok'}</div>
+                  </div>
+                </div>
+                <span className="text-sm font-bold text-emerald-400">₺{m.ciro.toLocaleString('tr-TR')}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={onClose}
+          className="mt-4 w-full py-3 rounded-full bg-white/8 border border-white/12 text-sm text-white/50 font-semibold"
+        >
+          İptal
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── MekanDetayCard ───────────────────────────────────────────────────────────
+
+function MekanDetayCard({ data }: { data: AIOzet['mekanlar'][0] }) {
+  const vardiyaDurum = !data.acilisYapildi
+    ? { label: 'Açılış Yapılmadı', color: '#f87171', bg: 'rgba(239,68,68,0.12)' }
+    : data.kapanisYapildi
+    ? { label: 'Kapandı', color: '#a78bfa', bg: 'rgba(139,92,246,0.12)' }
+    : { label: 'Vardiya Açık', color: '#4ade80', bg: 'rgba(74,222,128,0.12)' };
+
+  return (
+    <div className="mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden">
+      {/* Başlık */}
+      <div className="px-4 py-3 border-b border-white/8 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">{data.emoji}</span>
+          <span className="text-sm font-bold text-white">{data.name}</span>
+        </div>
+        <span
+          className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+          style={{ color: vardiyaDurum.color, background: vardiyaDurum.bg }}
+        >
+          {vardiyaDurum.label}
+        </span>
+      </div>
+
+      {/* İstatistikler */}
+      <div className="grid grid-cols-3 gap-px bg-white/5 border-b border-white/8">
+        {[
+          { label: 'Ciro', val: `₺${data.ciro.toLocaleString('tr-TR')}`, color: '#4ade80' },
+          { label: 'Satış', val: `${data.satisAdet}`, color: '#a78bfa' },
+          { label: 'İskonto', val: `₺${data.iskonto.toLocaleString('tr-TR')}`, color: '#fbbf24' },
+        ].map(item => (
+          <div key={item.label} className="bg-white/3 px-2 py-2.5 text-center">
+            <div className="text-sm font-bold" style={{ color: item.color }}>{item.val}</div>
+            <div className="text-[10px] text-white/40 mt-0.5">{item.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Durum detayı */}
+      <div className="p-3 space-y-2">
+        <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
+          <span className="text-xs text-white/50">Açılış</span>
+          <span className={`text-xs font-semibold ${data.acilisYapildi ? 'text-emerald-400' : 'text-red-400'}`}>
+            {data.acilisYapildi ? '✅ Yapıldı' : '❌ Yapılmadı'}
+          </span>
+        </div>
+        <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
+          <span className="text-xs text-white/50">Kapanış</span>
+          <span className={`text-xs font-semibold ${data.kapanisYapildi ? 'text-emerald-400' : 'text-amber-400'}`}>
+            {data.kapanisYapildi ? '✅ Tamamlandı' : '⏳ Bekleniyor'}
+          </span>
+        </div>
+        {data.ciro > 0 && (
+          <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
+            <span className="text-xs text-white/50">Net ciro</span>
+            <span className="text-xs font-bold text-emerald-400">
+              ₺{(data.ciro - data.iskonto).toLocaleString('tr-TR')}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', onLogout, onNavigate }: AspectAIProps) {
@@ -661,6 +792,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const [kestirmelerOpen, setKestirmelerOpen] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [mekanModal, setMekanModal] = useState(false);
 
   // Scroll to bottom — sadece yeni mesaj eklenince, açılışta değil
   useEffect(() => {
@@ -726,7 +858,17 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     setIsLoading(false);
   }, [isLoading, ozet, userRole]);
 
-  const handleChip = (q: string) => sendMessage(q);
+  const handleChip = (q: string) => {
+    if (q === '__MEKAN_DETAY_MODAL__') {
+      if (!ozet || ozet.mekanlar.length === 0) {
+        sendMessage('Mekan detayı için önce vardiya açılışı yapılmalı.');
+        return;
+      }
+      setMekanModal(true);
+      return;
+    }
+    sendMessage(q);
+  };
   const handleSend = () => sendMessage(input);
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
@@ -738,12 +880,37 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.`
     : nameParts[0];
 
+  const handleMekanSec = (mekan: AIOzet['mekanlar'][0]) => {
+    setMekanModal(false);
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      text: `📍 ${mekan.emoji} ${mekan.name} mekanının detaylı bilgisini göster`,
+      ts: new Date(),
+    };
+    const aiMsg: Message = {
+      id: (Date.now() + 1).toString(),
+      role: 'ai',
+      text: `**${mekan.emoji} ${mekan.name}** için bugünün detayları:\n${mekan.satisAdet > 0 ? `${mekan.satisAdet} satış ile ₺${mekan.ciro.toLocaleString('tr-TR')} ciro sağlandı.` : 'Henüz satış kaydı yok.'} ${mekan.kapanisYapildi ? 'Vardiya kapanışı tamamlandı.' : mekan.acilisYapildi ? 'Vardiya hâlâ açık.' : 'Açılış yapılmamış.'}`,
+      ts: new Date(),
+      card: { type: 'mekan_detay', data: mekan },
+    };
+    setMessages(prev => [...prev, userMsg, aiMsg]);
+  };
+
   return (
     <div
       className="flex flex-col bg-gradient-to-br from-[#0a051e] via-[#120830] to-[#1a0a3c] overflow-hidden"
       style={{ height: 'calc(100vh - 60px - 51px)' }}
     >
-
+      {/* Mekan Seçim Modalı */}
+      {mekanModal && ozet && (
+        <MekanSecModal
+          mekanlar={ozet.mekanlar}
+          onSelect={handleMekanSec}
+          onClose={() => setMekanModal(false)}
+        />
+      )}
       {/* ── SUB-HEADER — sabit, asla kımıldamaz ── */}
       <div className="shrink-0 px-4 pt-3 pb-3 bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-b border-white/8">
         <div className="flex items-center gap-2">
