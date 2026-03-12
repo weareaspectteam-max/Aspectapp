@@ -249,6 +249,22 @@ export default function App() {
       return <PendingDashboard userName={userName} onLogout={handleLogout} onNavigate={handleNavigate} />;
     }
 
+    // Hızlı Satış sekmesine explicit navigate edilirse TÜM roller QuickSales görür
+    if (activeTab === 'quick-sales') {
+      return (
+        <QuickSales
+          userName={userName}
+          userRole={userRole}
+          accessToken={accessToken}
+          userId={userId}
+          onProjectSelect={handleProjectSelect}
+          preSelectedProject={isStaffRole && shiftSetupCompleted ? selectedProject : undefined}
+          onLogout={handleLogout}
+          onNavigate={handleNavigate}
+        />
+      );
+    }
+
     // Personel için mevcut akış
     if (isStaffRole && selectedProject && showCurrentStock) {
       return (
@@ -332,20 +348,6 @@ export default function App() {
       
       case 'dashboard':
         return renderDashboard();
-      
-      case 'quick-sales':
-        return (
-          <QuickSales 
-            userName={userName} 
-            userRole={userRole}
-            accessToken={accessToken}
-            userId={userId}
-            onProjectSelect={handleProjectSelect}
-            preSelectedProject={isStaffRole && shiftSetupCompleted ? selectedProject : undefined}
-            onLogout={handleLogout}
-            onNavigate={handleNavigate}
-          />
-        );
       
       case 'live-feed':
         return <LiveSalesFeed userName={userName} userRole={userRole} onLogout={handleLogout} onNavigate={handleNavigate} />;
