@@ -81,23 +81,146 @@ interface AIOzet {
 
 // ─── Quick chip categories ────────────────────────────────────────────────────
 
-const ADMIN_CHIPS = [
-  { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
-  { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
-  { icon: '🏆', label: 'En İyi Mekan', q: 'Bugün hangi mekan en iyi performansı gösterdi?' },
-  { icon: '👤', label: 'Personel', q: 'En iyi personel kimdi bugün?' },
-  { icon: '💳', label: 'Ödeme Dağılımı', q: 'Ödeme yöntemleri nasıl dağılmış?' },
-  { icon: '🌅', label: 'Altın Saat', q: 'Bugün Fethiye altın saat kaçta?' },
-  { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
-  { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
-];
+// ─── Rol Konfigürasyonu ────────────────────────────────────────────────────────
 
-const STAFF_CHIPS = [
-  { icon: '📦', label: 'Stok sorgula', q: 'Stok durumu nedir?' },
-  { icon: '📸', label: 'Çekim ipuçları', q: 'Portre çekim ipuçları ver' },
-  { icon: '❓', label: 'Satış kaydı', q: 'Nasıl satış kaydederim?' },
-  { icon: '🌅', label: 'Altın saat', q: 'Bugün Fethiye altın saat kaçta?' },
-];
+interface RoleConfig {
+  chips: { icon: string; label: string; q: string }[];
+  welcomeText: (name: string) => string;
+  blockedKeywords: string[];
+  blockedMessage: string;
+  canSeeFinancials: boolean;
+  canSeePersonnel: boolean;
+  canSeeAnomalies: boolean;
+  loadOzet: boolean;
+}
+
+const ROLE_CONFIG: Record<string, RoleConfig> = {
+  yonetici: {
+    chips: [
+      { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
+      { icon: '💰', label: 'Ciro & Kâr', q: 'Bugün toplam ciro ne kadar?' },
+      { icon: '🏆', label: 'En İyi Mekan', q: 'Bugün hangi mekan en iyi performansı gösterdi?' },
+      { icon: '👤', label: 'Personel', q: 'En iyi personel kimdi bugün?' },
+      { icon: '💳', label: 'Ödeme Dağılımı', q: 'Ödeme yöntemleri nasıl dağılmış?' },
+      { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
+      { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
+      { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
+    ],
+    welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Tüm mekanların satış, kâr, stok ve personel verilerine erişimim var. Ne öğrenmek istersin?`,
+    blockedKeywords: [],
+    blockedMessage: '',
+    canSeeFinancials: true,
+    canSeePersonnel: true,
+    canSeeAnomalies: true,
+    loadOzet: true,
+  },
+  'ust-mudur': {
+    chips: [
+      { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
+      { icon: '🏆', label: 'En İyi Mekan', q: 'Bugün hangi mekan en iyi performansı gösterdi?' },
+      { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
+      { icon: '💳', label: 'Ödeme Dağılımı', q: 'Ödeme yöntemleri nasıl dağılmış?' },
+      { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
+      { icon: '👤', label: 'Personel', q: 'En iyi personel kimdi bugün?' },
+      { icon: '🌅', label: 'Altın Saat', q: 'Bugün Fethiye altın saat kaçta?' },
+      { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
+    ],
+    welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Operasyon geneli, mekan performansları ve anomali takibi için buradayım.`,
+    blockedKeywords: [],
+    blockedMessage: '',
+    canSeeFinancials: true,
+    canSeePersonnel: true,
+    canSeeAnomalies: true,
+    loadOzet: true,
+  },
+  mudur: {
+    chips: [
+      { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
+      { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
+      { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
+      { icon: '👤', label: 'Personel', q: 'En iyi personel kimdi bugün?' },
+      { icon: '🌅', label: 'Altın Saat', q: 'Bugün Fethiye altın saat kaçta?' },
+      { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
+    ],
+    welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Mekan yönetimi, stok takibi ve personel performansı konularında yardımcı olabilirim.`,
+    blockedKeywords: [],
+    blockedMessage: '',
+    canSeeFinancials: true,
+    canSeePersonnel: true,
+    canSeeAnomalies: true,
+    loadOzet: true,
+  },
+  operasyon: {
+    chips: [
+      { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
+      { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
+      { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
+      { icon: '🌅', label: 'Altın Saat', q: 'Bugün Fethiye altın saat kaçta?' },
+      { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
+    ],
+    welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Saha koordinasyonu, stok durumu ve mekan anomalileri için buradayım.`,
+    blockedKeywords: ['kâr marjı', 'net kâr', 'brüt kâr'],
+    blockedMessage: '🔒 Kâr/maliyet detaylarına erişim yetkiniz bulunmuyor. Stok, anomali veya mekan durumu hakkında yardımcı olabilirim!',
+    canSeeFinancials: true,
+    canSeePersonnel: true,
+    canSeeAnomalies: true,
+    loadOzet: true,
+  },
+  idari: {
+    chips: [
+      { icon: '💳', label: 'Ödeme Dağılımı', q: 'Ödeme yöntemleri nasıl dağılmış?' },
+      { icon: '💰', label: 'Ciro & Kâr', q: 'Bugün toplam ciro ne kadar?' },
+      { icon: '👤', label: 'Personel', q: 'En iyi personel kimdi bugün?' },
+      { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
+      { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
+    ],
+    welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Ödeme dağılımları, ciro takibi ve personel verileri için buradayım.`,
+    blockedKeywords: [],
+    blockedMessage: '',
+    canSeeFinancials: true,
+    canSeePersonnel: true,
+    canSeeAnomalies: false,
+    loadOzet: true,
+  },
+  personel: {
+    chips: [
+      { icon: '📦', label: 'Stok Sorgula', q: 'Stok durumu nedir?' },
+      { icon: '📸', label: 'Çekim İpuçları', q: 'Portre çekim ipuçları ver' },
+      { icon: '❓', label: 'Satış Kaydı', q: 'Nasıl satış kaydederim?' },
+      { icon: '🌅', label: 'Altın Saat', q: 'Bugün Fethiye altın saat kaçta?' },
+    ],
+    welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Stok durumu, çekim teknikleri veya satış süreci hakkında sorularına yardımcı olabilirim!`,
+    blockedKeywords: [
+      'ciro', 'kâr', 'kar', 'kazandık', 'kazanç', 'gelir', 'para',
+      'ödeme', 'nakit', 'kart', 'iban', 'döviz', 'fiyat', 'ücret',
+      'indirim', 'iskonto', 'toplam satış', 'özet', 'genel', 'operasyon',
+      'en iyi mekan', 'en iyi personel', 'personel sıralama', 'anomali',
+      'nasıl geçti', 'bugün ne',
+    ],
+    blockedMessage: '🔒 Bu bilgiye erişim yetkiniz bulunmuyor. Stok durumu, çekim ipuçları veya satış kayıt süreci hakkında yardımcı olabilirim!',
+    canSeeFinancials: false,
+    canSeePersonnel: false,
+    canSeeAnomalies: false,
+    loadOzet: false,
+  },
+  bekleyen: {
+    chips: [
+      { icon: '📸', label: 'Çekim İpuçları', q: 'Portre çekim ipuçları ver' },
+      { icon: '🌅', label: 'Altın Saat', q: 'Bugün Fethiye altın saat kaçta?' },
+      { icon: '❓', label: 'Nasıl Başlarım?', q: 'Uygulamayı nasıl kullanabilirim?' },
+    ],
+    welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Hesabın henüz onay aşamasında. Bu süreçte fotoğrafçılık ipuçları ve genel bilgiler için buradayım!`,
+    blockedKeywords: [
+      'ciro', 'kâr', 'kar', 'satış', 'stok', 'mekan', 'anomali',
+      'personel', 'ödeme', 'gelir', 'operasyon', 'vardiya',
+    ],
+    blockedMessage: '🔒 Hesabınız henüz onaylanmamış. Yönetici onayından sonra tüm özelliklere erişebilirsiniz.',
+    canSeeFinancials: false,
+    canSeePersonnel: false,
+    canSeeAnomalies: false,
+    loadOzet: false,
+  },
+};
 
 // ─── Altın Saat API ───────────────────────────────────────────────────────────
 
@@ -173,28 +296,17 @@ async function fetchAltiSaat(): Promise<{ text: string; card: ResponseCard }> {
 
 function generateAIResponse(q: string, role: string, ozet: AIOzet | null): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' {
   const lower = q.toLowerCase();
-  const isAdmin = ['yonetici', 'ust-mudur', 'mudur', 'idari', 'operasyon'].includes(role);
-  const isPersonel = role === 'personel';
+  const config = ROLE_CONFIG[role] ?? ROLE_CONFIG['personel'];
+  const isAdmin = config.loadOzet;
 
   // Altın saat — async flag döndür
   if (lower.includes('altın saat') || lower.includes('altin saat') || lower.includes('golden hour') || lower.includes('gün batımı saati') || lower.includes('günbatımı')) {
     return 'GOLDEN_HOUR';
   }
 
-  // Personel: para/ciro/finansal sorgular engellendi
-  if (isPersonel) {
-    const finansalKelimeler = [
-      'ciro', 'kâr', 'kar', 'kazandık', 'kazanç', 'gelir', 'para',
-      'ödeme', 'nakit', 'kart', 'iban', 'döviz', 'fiyat', 'ücret',
-      'indirim', 'iskonto', 'toplam satış', 'özet', 'genel', 'operasyon',
-      'en iyi mekan', 'en iyi personel', 'personel sıralama', 'anomali',
-      'nasıl geçti', 'bugün ne'
-    ];
-    if (finansalKelimeler.some(k => lower.includes(k))) {
-      return {
-        text: '🔒 Bu bilgiye erişim yetkiniz bulunmuyor. Stok durumu, çekim ipuçları veya satış kayıt süreci hakkında yardımcı olabilirim!',
-      };
-    }
+  // Rol bazlı erişim engeli
+  if (config.blockedKeywords.length > 0 && config.blockedKeywords.some(k => lower.includes(k))) {
+    return { text: config.blockedMessage };
   }
 
   // Veri yok durumu
@@ -333,11 +445,10 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null): { tex
     };
   }
 
-  // Default
+  // Default — role göre yönlendirme
+  const chipLabels = config.chips.map(c => c.label).join(', ');
   return {
-    text: isAdmin
-      ? `Anlıyorum. "${q}" hakkında şu an elimdeki verilere göre yardımcı olabilirim. Günlük özet, ciro, stok durumu, anomaliler veya personel performansı hakkında soru sorabilirsin.`
-      : `"${q}" için elimdeki verilere göre yardımcı olmaya çalışayım. Stok durumu veya çekim ipuçları hakkında soru sorabilirsin!`,
+    text: `"${q}" hakkında elimdeki verilere göre yardımcı olmaya çalışayım. Kestirmeler arasından seçim yapabilirsin: ${chipLabels}.`,
   };
 }
 
@@ -1112,16 +1223,15 @@ function MekanDetayCard({ data }: { data: MekanDetayData }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', onLogout, onNavigate }: AspectAIProps) {
-  const isAdmin = ['yonetici', 'ust-mudur', 'mudur', 'idari', 'operasyon'].includes(userRole);
-  const chips = isAdmin ? ADMIN_CHIPS : STAFF_CHIPS;
+  const roleConfig = ROLE_CONFIG[userRole] ?? ROLE_CONFIG['personel'];
+  const isAdmin = roleConfig.loadOzet;
+  const chips = roleConfig.chips;
 
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '0',
       role: 'ai',
-      text: isAdmin
-        ? `Merhaba **${userName}**! Ben Aspect AI. Satış raporları, kâr hesabı, stok durumu ve operasyonel analizler için buradayım. Soru sorabilir ya da kestirmeleri kullanabilirsin.`
-        : `Merhaba **${userName}**! Ben Aspect AI. Stok durumu, çekim teknikleri veya satış süreci hakkında sorularına yardımcı olabilirim!`,
+      text: roleConfig.welcomeText(userName),
       ts: new Date(),
     }
   ]);
@@ -1204,9 +1314,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const initialMessage: Message = {
     id: '0',
     role: 'ai',
-    text: isAdmin
-      ? `Merhaba **${userName}**! Ben Aspect AI. Satış raporları, kâr hesabı, stok durumu ve operasyonel analizler için buradayım. Soru sorabilir ya da kestirmeleri kullanabilirsin.`
-      : `Merhaba **${userName}**! Ben Aspect AI. Stok durumu, çekim teknikleri veya satış süreci hakkında sorularına yardımcı olabilirim!`,
+    text: roleConfig.welcomeText(userName),
     ts: new Date(),
   };
 
