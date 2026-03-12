@@ -8,12 +8,34 @@ import {
 } from 'lucide-react';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
+import type { VardiyaSatis } from '../services/stock-service';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
-// Fethiye koordinatları
-const FETHIYE_LAT = 36.6552;
-const FETHIYE_LON = 29.1234;
+// ─── Albüm maliyet tipi ───────────────────────────────────────────────────────
+interface AlbumMaliyet {
+  size: number;
+  tamBoy: number;
+  yarimBoy: number;
+  currency: string;
+}
+
+// ─── Mekan detay zenginleştirilmiş veri ──────────────────────────────────────
+type AIOzetMekan = {
+  id: string; name: string; emoji: string; color: string;
+  ciro: number; satisAdet: number; iskonto: number;
+  acilisYapildi: boolean; kapanisYapildi: boolean;
+};
+
+type MekanDetayData = AIOzetMekan & {
+  satislar?: VardiyaSatis[];
+  albumMaliyetleri?: AlbumMaliyet[];
+  printType?: 'tam' | 'yarim';
+  vardiyaToplam?: { toplamKullanilanBaskı: number; toplamMaliyet: number; paperName: string | null; birimMaliyet: number; currency: string } | null;
+  personelListesi?: { id: string; name: string; gunlukMaas: number; hasMaas: boolean }[];
+  kiraMaliyeti?: number;
+  yukleniyor?: boolean;
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,11 +68,7 @@ interface AIOzet {
   toplamKare: number;
   mekanSayisi: number;
   aktifMekanSayisi: number;
-  mekanlar: {
-    id: string; name: string; emoji: string; color: string;
-    ciro: number; satisAdet: number; iskonto: number;
-    acilisYapildi: boolean; kapanisYapildi: boolean;
-  }[];
+  mekanlar: AIOzetMekan[];
   stokDurum: { alan: string; name: string; count: number; status: string }[];
   anomaliler: { mekan: string; mekanEmoji: string; type: string; detail: any }[];
   personelSiralama: { ad: string; ciro: number; satis: number }[];
@@ -64,14 +82,13 @@ interface AIOzet {
 // ─── Quick chip categories ────────────────────────────────────────────────────
 
 const ADMIN_CHIPS = [
-  { icon: '📊', label: 'Günlük özet', q: 'Bugünkü operasyon özetini göster' },
-  { icon: '💰', label: 'Kâr hesabı', q: 'Bugün ne kadar ciro yaptık?' },
-  { icon: '📦', label: 'Stok durumu', q: 'Stok durumu nedir?' },
-  { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
-  { icon: '🏆', label: 'En iyi mekan', q: 'Bugün hangi mekan en iyi performansı gösterdi?' },
+  { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
+  { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
+  { icon: '🏆', label: 'En İyi Mekan', q: 'Bugün hangi mekan en iyi performansı gösterdi?' },
   { icon: '👤', label: 'Personel', q: 'En iyi personel kimdi bugün?' },
-  { icon: '💳', label: 'Ödeme dağılımı', q: 'Ödeme yöntemleri nasıl dağılmış?' },
-  { icon: '🌅', label: 'Altın saat', q: 'Bugün Fethiye altın saat kaçta?' },
+  { icon: '💳', label: 'Ödeme Dağılımı', q: 'Ödeme yöntemleri nasıl dağılmış?' },
+  { icon: '🌅', label: 'Altın Saat', q: 'Bugün Fethiye altın saat kaçta?' },
+  { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
   { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
 ];
 
@@ -655,7 +672,7 @@ function MekanSecModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm rounded-t-3xl bg-gradient-to-b from-[#1a0a3c] to-[#0a051e] border-t border-white/15 pb-8 pt-4 px-4"
+        className="w-full max-w-sm rounded-t-3xl bg-gradient-to-b from-[#1a0a3c] to-[#0a051e] border-t border-white/15 pb-8 pt-4 px-4 mb-24"
         onClick={e => e.stopPropagation()}
       >
         {/* Handle */}
@@ -702,12 +719,84 @@ function MekanSecModal({
 
 // ─── MekanDetayCard ───────────────────────────────────────────────────────────
 
-function MekanDetayCard({ data }: { data: AIOzet['mekanlar'][0] }) {
+// Ürün adından albüm boyunu çıkar: "5'li" → 5, "13'lü" → 13
+function extractAlbumSize(productName: string): number | null {
+  const match = productName.match(/^(\d+)/);
+  return match ? parseInt(match[1]) : null;
+}
+
+// Paspartu / albümsüz satış mı?
+function _isPaspartu(productName: string): boolean {
+  const lower = productName.toLowerCase();
+  return lower === 'paspartu' || lower === '1 fotoğraf' || lower === '1 fotograf';
+}
+
+// Satışlardan albüm dağılımını hesapla
+function computeAlbumBreakdown(
+  satislar: VardiyaSatis[],
+  albumMaliyetleri: AlbumMaliyet[],
+  printType: 'tam' | 'yarim'
+): { productName: string; quantity: number; birimMaliyet: number | null; toplamMaliyet: number | null; paspartu: boolean }[] {
+  const grouped: Record<string, { quantity: number; birimMaliyet: number | null; paspartu: boolean }> = {};
+
+  for (const satis of satislar) {
+    for (const item of satis.items) {
+      const name = item.product;
+      if (!grouped[name]) {
+        const pp = _isPaspartu(name);
+        let birimMal: number | null = null;
+        if (!pp) {
+          const size = extractAlbumSize(name);
+          if (size !== null) {
+            const album = albumMaliyetleri.find(a => a.size === size);
+            if (album) {
+              birimMal = printType === 'tam' ? album.tamBoy : album.yarimBoy;
+            }
+          }
+        }
+        grouped[name] = { quantity: 0, birimMaliyet: birimMal, paspartu: pp };
+      }
+      grouped[name].quantity += item.quantity;
+    }
+  }
+
+  return Object.entries(grouped)
+    .map(([productName, { quantity, birimMaliyet, paspartu }]) => ({
+      productName,
+      quantity,
+      birimMaliyet,
+      toplamMaliyet: birimMaliyet !== null ? quantity * birimMaliyet : null,
+      paspartu,
+    }))
+    .sort((a, b) => {
+      if (a.paspartu && !b.paspartu) return 1;
+      if (!a.paspartu && b.paspartu) return -1;
+      return (extractAlbumSize(a.productName) ?? 0) - (extractAlbumSize(b.productName) ?? 0);
+    });
+}
+
+function MekanDetayCard({ data }: { data: MekanDetayData }) {
   const vardiyaDurum = !data.acilisYapildi
     ? { label: 'Açılış Yapılmadı', color: '#f87171', bg: 'rgba(239,68,68,0.12)' }
     : data.kapanisYapildi
     ? { label: 'Kapandı', color: '#a78bfa', bg: 'rgba(139,92,246,0.12)' }
     : { label: 'Vardiya Açık', color: '#4ade80', bg: 'rgba(74,222,128,0.12)' };
+
+  const breakdown = data.satislar && data.albumMaliyetleri && !data.yukleniyor
+    ? computeAlbumBreakdown(data.satislar, data.albumMaliyetleri, data.printType || 'yarim')
+    : null;
+
+  const toplamAlbumMaliyeti = breakdown
+    ? breakdown.reduce((sum, r) => sum + (r.toplamMaliyet ?? 0), 0)
+    : 0;
+  const toplamAlbumAdet = breakdown
+    ? breakdown.reduce((sum, r) => sum + r.quantity, 0)
+    : 0;
+  const baskiMaliyeti = data.vardiyaToplam?.toplamMaliyet ?? 0;
+  const personelToplamMaliyet = (data.personelListesi || []).reduce((s, p) => s + p.gunlukMaas, 0);
+  const kiraMaliyeti = data.kiraMaliyeti ?? 0;
+  const toplamMaliyet = toplamAlbumMaliyeti + baskiMaliyeti;
+  const toplamGiderMaliyet = toplamMaliyet + personelToplamMaliyet + kiraMaliyeti;
 
   return (
     <div className="mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden">
@@ -762,6 +851,260 @@ function MekanDetayCard({ data }: { data: AIOzet['mekanlar'][0] }) {
           </div>
         )}
       </div>
+
+      {/* ── Satılan Albümler & Maliyet ── */}
+      <div className="border-t border-white/8">
+        {/* Bölüm başlığı */}
+        <div className="px-4 py-2.5 flex items-center gap-2 bg-white/3">
+          <span className="text-sm">📦</span>
+          <span className="text-[11px] font-bold text-white/60 tracking-wider uppercase">Satılan Albümler & Maliyet</span>
+          {data.printType && !data.yukleniyor && (
+            <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/25">
+              {data.printType === 'tam' ? 'Tam Boy' : 'Yarım Boy'}
+            </span>
+          )}
+        </div>
+
+        {/* Yükleniyor */}
+        {data.yukleniyor && (
+          <div className="flex items-center justify-center gap-2 py-5">
+            <Loader2 className="w-4 h-4 text-violet-400 animate-spin" />
+            <span className="text-xs text-white/40">Satış verileri yükleniyor...</span>
+          </div>
+        )}
+
+        {/* Satış yok */}
+        {!data.yukleniyor && (!breakdown || breakdown.length === 0) && (
+          <div className="px-4 py-4 text-center">
+            <span className="text-xs text-white/30">Bugün satış kaydı bulunamadı</span>
+          </div>
+        )}
+
+        {/* Tablo */}
+        {!data.yukleniyor && breakdown && breakdown.length > 0 && (
+          <div className="px-3 pb-3">
+            {/* Tablo başlığı */}
+            <div className="grid grid-cols-4 gap-1 px-2 py-1.5 mb-1">
+              <span className="text-[10px] font-semibold text-white/30 col-span-2">Ürün</span>
+              <span className="text-[10px] font-semibold text-white/30 text-right">Adet</span>
+              <span className="text-[10px] font-semibold text-white/30 text-right">Maliyet</span>
+            </div>
+
+            {/* Satırlar */}
+            <div className="space-y-1">
+              {breakdown.map((row, i) => (
+                <div
+                  key={i}
+                  className={`grid grid-cols-4 gap-1 px-2 py-2 rounded-xl ${
+                    row.paspartu ? 'bg-white/3' : 'bg-white/5'
+                  }`}
+                >
+                  {/* Ürün adı */}
+                  <div className="col-span-2 flex items-center gap-1.5 min-w-0">
+                    <span className="text-sm shrink-0">{row.paspartu ? '🖼️' : '📘'}</span>
+                    <span className={`text-xs font-medium truncate ${row.paspartu ? 'text-white/40' : 'text-white/80'}`}>
+                      {row.productName}
+                    </span>
+                    {!row.paspartu && row.birimMaliyet !== null && (
+                      <span className="text-[9px] text-white/20 shrink-0">@{row.birimMaliyet}₺</span>
+                    )}
+                  </div>
+                  {/* Adet */}
+                  <div className="text-right self-center">
+                    <span className="text-xs font-bold text-violet-300">{row.quantity}</span>
+                  </div>
+                  {/* Maliyet */}
+                  <div className="text-right self-center">
+                    {row.paspartu ? (
+                      <span className="text-[10px] text-white/25">—</span>
+                    ) : row.toplamMaliyet !== null ? (
+                      <span className="text-xs font-bold text-orange-300">₺{row.toplamMaliyet.toLocaleString('tr-TR')}</span>
+                    ) : (
+                      <span className="text-[10px] text-amber-400/60">?</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Baskı maliyeti satırı — kapanış yapılmışsa göster */}
+            {baskiMaliyeti > 0 && (
+              <div className="mt-1 grid grid-cols-4 gap-1 px-2 py-2 rounded-xl bg-blue-500/8 border border-blue-500/15">
+                <div className="col-span-2 flex items-center gap-1.5">
+                  <span className="text-sm shrink-0">🖨️</span>
+                  <div>
+                    <span className="text-xs font-medium text-blue-300">Baskı Maliyeti</span>
+                    {data.vardiyaToplam?.paperName && (
+                      <div className="text-[9px] text-white/25">{data.vardiyaToplam.paperName}</div>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right self-center">
+                  <span className="text-xs font-bold text-blue-300">
+                    {data.vardiyaToplam?.toplamKullanilanBaskı ?? '—'}
+                  </span>
+                </div>
+                <div className="text-right self-center">
+                  <span className="text-xs font-bold text-orange-300">₺{baskiMaliyeti.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Toplam satır */}
+            <div className="mt-2 grid grid-cols-4 gap-1 px-2 py-2.5 rounded-xl bg-gradient-to-r from-violet-500/15 to-indigo-500/10 border border-violet-500/20">
+              <div className="col-span-2">
+                <span className="text-xs font-bold text-white/70">Toplam Maliyet</span>
+              </div>
+              <div className="text-right">
+                <span className="text-xs font-bold text-violet-300">{toplamAlbumAdet}</span>
+              </div>
+              <div className="text-right">
+                {toplamMaliyet > 0 ? (
+                  <span className="text-xs font-bold text-orange-300">₺{toplamMaliyet.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}</span>
+                ) : (
+                  <span className="text-[10px] text-white/30">—</span>
+                )}
+              </div>
+            </div>
+
+            {/* Brüt kâr özeti — sadece albüm+baskı bazlı */}
+            {toplamMaliyet > 0 && data.ciro > 0 && (
+              <div className="mt-2 flex items-center justify-between px-3 py-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                <div>
+                  <div className="text-[10px] text-emerald-400/60">Brüt Kâr (Ürün)</div>
+                  <div className="text-[9px] text-white/25">Net ciro − Albüm − Baskı</div>
+                </div>
+                <span className="text-sm font-bold text-emerald-400">
+                  ₺{(data.ciro - data.iskonto - toplamMaliyet).toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Personel Maliyeti ── */}
+      {!data.yukleniyor && (
+        <div className="border-t border-white/8">
+          <div className="px-4 py-2.5 flex items-center gap-2 bg-white/3">
+            <span className="text-sm">👥</span>
+            <span className="text-[11px] font-bold text-white/60 tracking-wider uppercase">Personel Maliyeti</span>
+            {(data.personelListesi || []).length > 0 && (
+              <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300 border border-pink-500/25">
+                {(data.personelListesi || []).length} kişi
+              </span>
+            )}
+          </div>
+
+          {(data.personelListesi || []).length === 0 ? (
+            <div className="px-4 py-3 text-center">
+              <span className="text-xs text-white/30">Bugün rotasyona atanan personel bulunamadı</span>
+            </div>
+          ) : (
+            <div className="px-3 pb-3">
+              {/* Tablo başlığı */}
+              <div className="grid grid-cols-3 gap-1 px-2 py-1.5 mb-1">
+                <span className="text-[10px] font-semibold text-white/30 col-span-2">Personel</span>
+                <span className="text-[10px] font-semibold text-white/30 text-right">Günlük</span>
+              </div>
+              <div className="space-y-1">
+                {(data.personelListesi || []).map((p) => (
+                  <div key={p.id} className="grid grid-cols-3 gap-1 px-2 py-2 rounded-xl bg-white/5">
+                    <div className="col-span-2 flex items-center gap-1.5">
+                      <span className="text-sm shrink-0">👤</span>
+                      <span className="text-xs font-medium text-white/80 truncate">{p.name}</span>
+                    </div>
+                    <div className="text-right self-center">
+                      {p.hasMaas ? (
+                        <span className="text-xs font-bold text-pink-300">
+                          ₺{p.gunlukMaas.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-amber-400/60">Maaş yok</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Personel toplam */}
+              {personelToplamMaliyet > 0 && (
+                <div className="mt-2 flex items-center justify-between px-2 py-2 rounded-xl bg-pink-500/10 border border-pink-500/20">
+                  <span className="text-xs font-bold text-white/70">Toplam Personel</span>
+                  <span className="text-xs font-bold text-pink-300">
+                    ₺{personelToplamMaliyet.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Kira ── */}
+      {!data.yukleniyor && kiraMaliyeti > 0 && (
+        <div className="border-t border-white/8">
+          <div className="px-4 py-2.5 flex items-center gap-2 bg-white/3">
+            <span className="text-sm">🏢</span>
+            <span className="text-[11px] font-bold text-white/60 tracking-wider uppercase">Kira Gideri</span>
+          </div>
+          <div className="px-3 pb-3">
+            <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-white/5">
+              <div>
+                <div className="text-xs text-white/60">Günlük Kira</div>
+                <div className="text-[9px] text-white/25">Yıllık kira ÷ 365</div>
+              </div>
+              <span className="text-xs font-bold text-amber-300">
+                ₺{kiraMaliyeti.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Net Kâr Özeti ── */}
+      {!data.yukleniyor && data.ciro > 0 && toplamGiderMaliyet > 0 && (
+        <div className="border-t border-white/8 px-3 py-3">
+          <div className="rounded-xl border border-emerald-500/25 bg-gradient-to-r from-emerald-500/10 to-teal-500/5 px-3 py-3">
+            <div className="text-[10px] text-white/30 mb-2">Gider Dağılımı</div>
+            <div className="space-y-1 mb-3">
+              {toplamAlbumMaliyeti > 0 && (
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-white/40">📦 Albüm</span>
+                  <span className="text-orange-300">₺{toplamAlbumMaliyeti.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              {baskiMaliyeti > 0 && (
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-white/40">🖨️ Baskı</span>
+                  <span className="text-orange-300">₺{baskiMaliyeti.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              {personelToplamMaliyet > 0 && (
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-white/40">👥 Personel</span>
+                  <span className="text-pink-300">₺{personelToplamMaliyet.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              {kiraMaliyeti > 0 && (
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-white/40">🏢 Kira</span>
+                  <span className="text-amber-300">₺{kiraMaliyeti.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}</span>
+                </div>
+              )}
+            </div>
+            <div className="border-t border-white/10 pt-2 flex items-center justify-between">
+              <div>
+                <div className="text-xs font-bold text-emerald-300">Net Kâr</div>
+                <div className="text-[9px] text-white/25">Net ciro − Albüm − Baskı − Personel − Kira</div>
+              </div>
+              <span className={`text-base font-bold ${(data.ciro - data.iskonto - toplamGiderMaliyet) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                ₺{(data.ciro - data.iskonto - toplamGiderMaliyet).toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -787,7 +1130,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const [isOnline, setIsOnline] = useState(true);
   const [ozet, setOzet] = useState<AIOzet | null>(null);
   const [ozetLoading, setOzetLoading] = useState(false);
-  const [activeMode, setActiveMode] = useState<'brifing' | 'kestirmeler'>('brifing');
+  const [_activeMode, _setActiveMode] = useState<'brifing' | 'kestirmeler'>('brifing');
   const [brifingOpen, setBrifingOpen] = useState(true);
   const [kestirmelerOpen, setKestirmelerOpen] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -875,12 +1218,9 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   };
 
   // Derived display name: "Özgür D." style
-  const nameParts = userName.trim().split(' ');
-  const displayName = nameParts.length >= 2
-    ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.`
-    : nameParts[0];
+  const _nameParts = userName.trim().split(' ');
 
-  const handleMekanSec = (mekan: AIOzet['mekanlar'][0]) => {
+  const handleMekanSec = async (mekan: AIOzet['mekanlar'][0]) => {
     setMekanModal(false);
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -888,14 +1228,99 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       text: `📍 ${mekan.emoji} ${mekan.name} mekanının detaylı bilgisini göster`,
       ts: new Date(),
     };
-    const aiMsg: Message = {
-      id: (Date.now() + 1).toString(),
+    // Yükleniyor placeholder mesajı ekle
+    const loadingMsgId = (Date.now() + 1).toString();
+    const loadingMsg: Message = {
+      id: loadingMsgId,
       role: 'ai',
-      text: `**${mekan.emoji} ${mekan.name}** için bugünün detayları:\n${mekan.satisAdet > 0 ? `${mekan.satisAdet} satış ile ₺${mekan.ciro.toLocaleString('tr-TR')} ciro sağlandı.` : 'Henüz satış kaydı yok.'} ${mekan.kapanisYapildi ? 'Vardiya kapanışı tamamlandı.' : mekan.acilisYapildi ? 'Vardiya hâlâ açık.' : 'Açılış yapılmamış.'}`,
+      text: `**${mekan.emoji} ${mekan.name}** verileri yükleniyor...`,
       ts: new Date(),
-      card: { type: 'mekan_detay', data: mekan },
+      card: { type: 'mekan_detay', data: { ...mekan, yukleniyor: true } },
     };
-    setMessages(prev => [...prev, userMsg, aiMsg]);
+    setMessages(prev => [...prev, userMsg, loadingMsg]);
+    setIsLoading(true);
+
+    // Gerçek verileri paralel çek
+    const today = new Date().toISOString().split('T')[0];
+    let satislar: VardiyaSatis[] = [];
+    let albumMaliyetleri: AlbumMaliyet[] = [];
+    let printType: 'tam' | 'yarim' = 'yarim';
+    let vardiyaToplam: MekanDetayData['vardiyaToplam'] = null;
+    let personelListesi: MekanDetayData['personelListesi'] = [];
+    let kiraMaliyeti = 0;
+
+    try {
+      const headers = await authHeaders();
+      const [stokRes, maliyetRes, mekanlarRes, rotasyonRes] = await Promise.all([
+        fetch(`${API_BASE}/stok/gunluk/${mekan.id}/${today}`, { headers }),
+        fetch(`${API_BASE}/maliyetler`, { headers }),
+        fetch(`${API_BASE}/mekanlar`, { headers }),
+        fetch(`${API_BASE}/rotasyon/gorevler`, { headers }),
+      ]);
+
+      if (stokRes.ok) {
+        const stokData = await stokRes.json();
+        satislar = (stokData.bugun?.satislar || []).filter((s: any) => !s.iptal);
+        if (stokData.bugun?.vardiyaToplam) {
+          vardiyaToplam = stokData.bugun.vardiyaToplam;
+        }
+      }
+
+      let salaries: any[] = [];
+      if (maliyetRes.ok) {
+        const malData = await maliyetRes.json();
+        albumMaliyetleri = malData.albums || [];
+        salaries = malData.salaries || [];
+      }
+
+      let yearlyRent = 0;
+      if (mekanlarRes.ok) {
+        const mekanData = await mekanlarRes.json();
+        const mekanDetay = (mekanData.mekanlar || []).find((m: any) => m.id === mekan.id);
+        if (mekanDetay?.printType) printType = mekanDetay.printType;
+        yearlyRent = Number(mekanDetay?.yearlyRent) || 0;
+      }
+      kiraMaliyeti = yearlyRent > 0 ? parseFloat((yearlyRent / 365).toFixed(2)) : 0;
+
+      // Rotasyondan bugün bu mekanda çalışan personeli bul
+      if (rotasyonRes.ok) {
+        const rotData = await rotasyonRes.json();
+        const allTasks: any[] = rotData.tasks || [];
+        // task.location = mekan adı (string), today = YYYY-MM-DD
+        const bugunPersonelMap: Record<string, string> = {};
+        for (const task of allTasks) {
+          if (task.date !== today) continue;
+          if (task.status === 'cancelled') continue;
+          // location mekan adıyla eşleştir
+          if (task.location !== mekan.name) continue;
+          for (const p of (task.personnel || [])) {
+            if (p?.id && !bugunPersonelMap[p.id]) {
+              bugunPersonelMap[p.id] = p.name || 'Bilinmiyor';
+            }
+          }
+        }
+        personelListesi = Object.entries(bugunPersonelMap).map(([id, name]) => {
+          const salary = salaries.find((s: any) => s.userId === id);
+          const gunlukMaas = salary
+            ? parseFloat(((salary.amount / 30) * (1 + (salary.extraCostPercentage || 0) / 100)).toFixed(2))
+            : 0;
+          return { id, name, gunlukMaas, hasMaas: !!salary };
+        });
+      }
+    } catch (e) {
+      console.error('Mekan detay veri yükleme hatası:', e);
+    }
+
+    // Placeholder'ı gerçek veriyle güncelle
+    const enrichedData: MekanDetayData = { ...mekan, satislar, albumMaliyetleri, printType, vardiyaToplam, personelListesi, kiraMaliyeti, yukleniyor: false };
+    const aiText = `**${mekan.emoji} ${mekan.name}** için bugünün detayları:\n${mekan.satisAdet > 0 ? `${mekan.satisAdet} satış ile ₺${mekan.ciro.toLocaleString('tr-TR')} ciro sağlandı.` : 'Henüz satış kaydı yok.'} ${mekan.kapanisYapildi ? 'Vardiya kapanışı tamamlandı.' : mekan.acilisYapildi ? 'Vardiya hâlâ açık.' : 'Açılış yapılmamış.'}`;
+
+    setMessages(prev => prev.map(m =>
+      m.id === loadingMsgId
+        ? { ...m, text: aiText, card: { type: 'mekan_detay', data: enrichedData } }
+        : m
+    ));
+    setIsLoading(false);
   };
 
   return (

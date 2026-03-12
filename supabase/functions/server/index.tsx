@@ -1306,7 +1306,37 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
     const { mekanId, tarih } = c.req.param();
-    const bugun = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
+    const bugunRaw = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
+
+    // ── Baskı maliyeti kur düzeltmesi ──
+    // Eski kayıtlarda toplamMaliyet yabancı para birimi cinsinden TL gibi kaydedilmiş olabilir.
+    // GET sırasında on-the-fly kur uygulanarak doğru TL değeri hesaplanır.
+    let bugun = bugunRaw;
+    if (bugunRaw?.vardiyaToplam) {
+      const vt = bugunRaw.vardiyaToplam;
+      const paperCur: string = vt.paperCurrency || vt.currency || "TRY";
+      // Eğer kur dönüşümü daha önce yapılmamışsa (kurCarpani eksikse veya 1'se)
+      const kurZatenUygulanmis = !!vt.kurCarpani && vt.kurCarpani !== 1;
+      if (paperCur !== "TRY" && !kurZatenUygulanmis) {
+        const exRates = await kv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
+        const kur = paperCur === "EUR" ? Number(exRates.EUR) || 35.50
+          : paperCur === "USD" ? Number(exRates.USD) || 32.80
+          : paperCur === "GBP" ? Number(exRates.GBP) || 41.20
+          : 1;
+        const duzeltilmisMaliyet = parseFloat((vt.toplamMaliyet * kur).toFixed(2));
+        const duzeltilmisBirimMaliyet = parseFloat((vt.birimMaliyet * kur).toFixed(4));
+        bugun = {
+          ...bugunRaw,
+          vardiyaToplam: {
+            ...vt,
+            toplamMaliyet: duzeltilmisMaliyet,
+            birimMaliyet: duzeltilmisBirimMaliyet,
+            kurCarpani: kur,
+            currency: "TRY",
+          },
+        };
+      }
+    }
 
     const dunTarih = new Date(tarih);
     dunTarih.setDate(dunTarih.getDate() - 1);
@@ -1330,7 +1360,7 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
       bekleyenAktarimlar,
     });
   } catch (err) {
-    console.log("Get stok gunluk error:", err);
+    console.log("Get stok gunluk error (kur düzeltmesi dahil):", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
@@ -1458,9 +1488,19 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     const kapasitePerTakim = paper
       ? (Number(paper.pcsPerBox) / Number(paper.setsPerBox))
       : 0;
-    // birimMaliyet: tam kağıtta boxPrice/pcsPerBox — yarım kağıtta da aynı (cikis 2x, birim 0.5x → toplam aynı)
+
+    // Kur dönüşümü: kağıt para birimi → TL
+    const exchangeRates = await kv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
+    const paperCurrency: string = paper?.currency || "TRY";
+    const kurCarpani = paperCurrency === "TRY" ? 1
+      : paperCurrency === "EUR" ? Number(exchangeRates.EUR) || 35.50
+      : paperCurrency === "USD" ? Number(exchangeRates.USD) || 32.80
+      : paperCurrency === "GBP" ? Number(exchangeRates.GBP) || 41.20
+      : 1;
+
+    // birimMaliyet TL cinsinden: (boxPrice / pcsPerBox) × kur
     const birimMaliyetTam = paper
-      ? (Number(paper.boxPrice) / Number(paper.pcsPerBox))
+      ? (Number(paper.boxPrice) / Number(paper.pcsPerBox)) * kurCarpani
       : 0;
     // carpan: yarım kağıtta 1 baskı → 2 fotoğraf çıkışı
     const carpan = printType === "tam" ? 1 : 2;
@@ -1482,7 +1522,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       const cikisAdedi = Math.round(kullanilanBaskı * carpan);
       // satılanFotograf: iade çıkarılınca net satış
       const satılanFotograf = Math.max(0, cikisAdedi - iadeFotograf);
-      // toplamMaliyet: kullanilanBaskı × birimMaliyetTam (tek alan, tam/yarım fark etmez)
+      // toplamMaliyet: kullanilanBaskı × birimMaliyetTam(TL) — kur dönüşümü dahil, tam/yarım fark etmez
       const toplamMaliyet = birimMaliyetTam > 0
         ? parseFloat((kullanilanBaskı * birimMaliyetTam).toFixed(4))
         : 0;
@@ -1511,8 +1551,11 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       printType,
       carpan,
       paperName: paper?.name || null,
-      birimMaliyet: birimMaliyetTam > 0 ? parseFloat(birimMaliyetTam.toFixed(6)) : 0,
-      currency: paper?.currency || "TRY",
+      paperCurrency,
+      kurCarpani: parseFloat(kurCarpani.toFixed(4)),
+      birimMaliyetOrijinal: paper ? parseFloat((Number(paper.boxPrice) / Number(paper.pcsPerBox)).toFixed(6)) : 0,
+      birimMaliyet: birimMaliyetTam > 0 ? parseFloat(birimMaliyetTam.toFixed(4)) : 0,
+      currency: "TRY",
     };
 
     const kayit = {
