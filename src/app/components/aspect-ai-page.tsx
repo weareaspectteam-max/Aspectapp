@@ -662,9 +662,11 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Scroll to bottom
+  // Scroll to bottom — sadece yeni mesaj eklenince, açılışta değil
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length > 1 || isLoading) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, isLoading]);
 
   const loadOzet = useCallback(() => {
@@ -738,7 +740,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   return (
     <div
       className="flex flex-col bg-gradient-to-br from-[#0a051e] via-[#120830] to-[#1a0a3c] overflow-hidden"
-      style={{ height: 'calc(100vh - 60px - 96px)' }}
+      style={{ height: 'calc(100vh - 60px - 68px)' }}
     >
 
       {/* ── SUB-HEADER — sabit, asla kımıldamaz ── */}
