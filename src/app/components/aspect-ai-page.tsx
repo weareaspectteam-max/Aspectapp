@@ -1,13 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Sparkles, Send, ChevronDown, ChevronUp,
-  TrendingUp, TrendingDown, Package, Users, MapPin,
-  AlertTriangle, CheckCircle, BarChart3, Zap,
-  RefreshCw, Clock, DollarSign, ShoppingBag,
-  Brain, MessageSquare, Star, Loader2, WifiOff, Wifi, Sunrise,
-  Bell, Menu, ArrowLeft
+  Package,
+  AlertTriangle, CheckCircle, Zap,
+  RefreshCw, Clock,
+  Brain, MessageSquare, Loader2,
 } from 'lucide-react';
-import { NewBottomNav } from './new-bottom-nav';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 
@@ -659,6 +657,8 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const [ozet, setOzet] = useState<AIOzet | null>(null);
   const [ozetLoading, setOzetLoading] = useState(false);
   const [activeMode, setActiveMode] = useState<'brifing' | 'kestirmeler'>('brifing');
+  const [brifingOpen, setBrifingOpen] = useState(true);
+  const [kestirmelerOpen, setKestirmelerOpen] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -736,23 +736,21 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     : nameParts[0];
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-[#0a051e] via-[#120830] to-[#1a0a3c] overflow-hidden">
+    <div
+      className="flex flex-col bg-gradient-to-br from-[#0a051e] via-[#120830] to-[#1a0a3c] overflow-hidden"
+      style={{ height: 'calc(100vh - 60px - 96px)' }}
+    >
 
-      {/* ── SUB-HEADER ── */}
-      <div className="px-4 pt-12 pb-3 shrink-0">
+      {/* ── SUB-HEADER — sabit, asla kımıldamaz ── */}
+      <div className="shrink-0 px-4 pt-3 pb-3 bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-b border-white/8">
         <div className="flex items-center gap-2">
           {/* Brain icon */}
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/30 shrink-0">
-            <Brain className="w-5 h-5 text-white" />
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/30 shrink-0">
+            <Brain className="w-4.5 h-4.5 text-white" />
           </div>
-          {/* Title + DEMO */}
+          {/* Title */}
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-base font-bold text-white leading-tight">Aspect AI</span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-violet-400/40 text-violet-300 bg-violet-500/10 leading-tight">
-                DEMO
-              </span>
-            </div>
+            <span className="text-[15px] font-bold text-white leading-tight">Aspect AI</span>
           </div>
 
           {/* Right controls */}
@@ -768,9 +766,9 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
 
             {/* Brifing toggle */}
             <button
-              onClick={() => setActiveMode('brifing')}
+              onClick={() => setBrifingOpen(v => !v)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                activeMode === 'brifing'
+                brifingOpen
                   ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/30'
                   : 'bg-white/8 border border-white/15 text-white/55'
               }`}
@@ -781,9 +779,9 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
 
             {/* Kestirmeler toggle */}
             <button
-              onClick={() => setActiveMode('kestirmeler')}
+              onClick={() => setKestirmelerOpen(v => !v)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                activeMode === 'kestirmeler'
+                kestirmelerOpen
                   ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/30'
                   : 'bg-white/8 border border-white/15 text-white/55'
               }`}
@@ -795,7 +793,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
         </div>
 
         {/* Online status line */}
-        <div className="flex items-center gap-1.5 mt-2 pl-0.5">
+        <div className="flex items-center gap-1.5 mt-1.5 pl-0.5">
           <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-red-400'}`} />
           <span className="text-[10px] text-white/35">
             KV Tabanlı · {isOnline ? 'Çevrimiçi' : 'Çevrimdışı'}
@@ -806,36 +804,40 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       {/* ── SCROLLABLE CONTENT ── */}
       <div className="flex-1 overflow-y-auto px-4 pb-2">
 
-        {/* GÜNLÜK BRİFİNG card — brifing mod + admin */}
-        {activeMode === 'brifing' && isAdmin && (
-          <DailyBriefingTopCard
-            ozet={ozet}
-            loading={ozetLoading}
-            onDetay={() => sendMessage('Bugünkü operasyon özetini göster')}
-            onAnomali={() => sendMessage('Bugün anomali var mı?')}
-          />
+        {/* GÜNLÜK BRİFİNG card — brifingOpen + admin */}
+        {brifingOpen && isAdmin && (
+          <div className="mt-4">
+            <DailyBriefingTopCard
+              ozet={ozet}
+              loading={ozetLoading}
+              onDetay={() => sendMessage('Bugünkü operasyon özetini göster')}
+              onAnomali={() => sendMessage('Bugün anomali var mı?')}
+            />
+          </div>
         )}
 
         {/* KESTİRMELER 2×3 grid */}
-        <div className={activeMode === 'brifing' ? 'mt-4' : 'mt-2'}>
-          <div className="flex items-center gap-1.5 mb-3">
-            <MessageSquare className="w-3 h-3 text-white/30" />
-            <span className="text-[10px] font-bold text-white/30 tracking-widest uppercase">Kestirmeler</span>
+        {kestirmelerOpen && (
+          <div className="mt-4">
+            <div className="flex items-center gap-1.5 mb-3">
+              <MessageSquare className="w-3 h-3 text-white/30" />
+              <span className="text-[10px] font-bold text-white/30 tracking-widest uppercase">Kestirmeler</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {chips.map(chip => (
+                <button
+                  key={chip.label}
+                  onClick={() => handleChip(chip.q)}
+                  disabled={isLoading}
+                  className="flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-white/6 border border-white/10 text-left hover:bg-white/10 active:scale-95 transition-all disabled:opacity-40"
+                >
+                  <span className="text-xl leading-none">{chip.icon}</span>
+                  <span className="text-xs font-medium text-white/75">{chip.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            {chips.map(chip => (
-              <button
-                key={chip.label}
-                onClick={() => handleChip(chip.q)}
-                disabled={isLoading}
-                className="flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-white/6 border border-white/10 text-left hover:bg-white/10 active:scale-95 transition-all disabled:opacity-40"
-              >
-                <span className="text-xl leading-none">{chip.icon}</span>
-                <span className="text-xs font-medium text-white/75">{chip.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+        )}
 
         {/* Time divider */}
         <div className="flex items-center gap-3 my-5">
@@ -858,9 +860,9 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
         <div ref={bottomRef} className="h-2" />
       </div>
 
-      {/* ── INPUT BAR ── */}
-      <div className="px-4 pb-3 shrink-0">
-        <div className="flex items-center gap-3 bg-[rgba(10,5,30,0.92)] border border-white/15 rounded-2xl px-4 py-3 backdrop-blur-sm">
+      {/* ── INPUT BAR — sabit, asla kımıldamaz ── */}
+      <div className="shrink-0 px-4 pt-2 pb-3 bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-t border-white/8">
+        <div className="flex items-center gap-3 bg-white/6 border border-white/12 rounded-2xl px-4 py-3">
           <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shrink-0">
             <Sparkles className="w-3.5 h-3.5 text-white" />
           </div>
@@ -885,15 +887,8 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
             }
           </button>
         </div>
-        <p className="text-[10px] text-white/25 text-center mt-1.5">KV tabanlı · Gerçek zamanlı demo</p>
       </div>
 
-      {/* Bottom Nav */}
-      <NewBottomNav
-        activeTab="aspect-ai"
-        onNavigate={onNavigate || (() => {})}
-        userRole={userRole}
-      />
     </div>
   );
 }
