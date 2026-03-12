@@ -4,7 +4,7 @@ import {
   Package,
   AlertTriangle, CheckCircle, Zap,
   RefreshCw, Clock,
-  Brain, MessageSquare, Loader2,
+  Brain, MessageSquare, Loader2, Trash2,
 } from 'lucide-react';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
@@ -1201,6 +1201,19 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     setIsLoading(false);
   }, [isLoading, ozet, userRole]);
 
+  const initialMessage: Message = {
+    id: '0',
+    role: 'ai',
+    text: isAdmin
+      ? `Merhaba **${userName}**! Ben Aspect AI. Satış raporları, kâr hesabı, stok durumu ve operasyonel analizler için buradayım. Soru sorabilir ya da kestirmeleri kullanabilirsin.`
+      : `Merhaba **${userName}**! Ben Aspect AI. Stok durumu, çekim teknikleri veya satış süreci hakkında sorularına yardımcı olabilirim!`,
+    ts: new Date(),
+  };
+
+  const handleClearMessages = () => {
+    setMessages([{ ...initialMessage, ts: new Date() }]);
+  };
+
   const handleChip = (q: string) => {
     if (q === '__MEKAN_DETAY_MODAL__') {
       if (!ozet || ozet.mekanlar.length === 0) {
@@ -1355,9 +1368,21 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
               onClick={handleRefresh}
               disabled={ozetLoading}
               className="w-8 h-8 rounded-full bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-all"
+              title="Veriyi Yenile"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-white/60 ${ozetLoading ? 'animate-spin' : ''}`} />
             </button>
+
+            {/* Sohbeti Temizle */}
+            {messages.length > 1 && (
+              <button
+                onClick={handleClearMessages}
+                className="w-8 h-8 rounded-full bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-all hover:bg-red-500/20 hover:border-red-500/30 group"
+                title="Sohbeti Temizle"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-white/50 group-hover:text-red-400 transition-colors" />
+              </button>
+            )}
 
             {/* Brifing toggle */}
             <button
