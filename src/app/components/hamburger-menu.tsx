@@ -96,7 +96,7 @@ function getSections(
       title: 'OPERASYON',
       color: '#fb923c',
       items: [
-        { icon: Zap,          label: 'Hızlı Satış',       roles: ops,  action: () => go('quick-sales')     },
+        { icon: Zap,          label: 'Hızlı Satış',       roles: all,  action: () => go('quick-sales')     },
         { icon: Activity,     label: 'Canlı Feed',         roles: mgmt, action: () => go('live-feed')       },
         { icon: MapPin,       label: 'Mekanlar',           roles: mgmt, action: () => go('business-panel')  },
         { icon: RotateCcw,    label: 'Rotasyon',           roles: all,  action: () => go('rotation')        },
