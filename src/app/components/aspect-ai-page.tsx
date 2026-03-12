@@ -4,7 +4,8 @@ import {
   TrendingUp, TrendingDown, Package, Users, MapPin,
   AlertTriangle, CheckCircle, BarChart3, Zap,
   RefreshCw, Clock, DollarSign, ShoppingBag,
-  Brain, MessageSquare, Star, Loader2, WifiOff, Wifi, Sunrise
+  Brain, MessageSquare, Star, Loader2, WifiOff, Wifi, Sunrise,
+  Bell, Menu, ArrowLeft
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { authHeaders } from '../lib/api';
@@ -132,7 +133,7 @@ async function fetchAltiSaat(): Promise<{ text: string; card: ResponseCard }> {
       kalanMesaj = `🌙 Bugünün altın saatleri tamamlandı. Yarın için plan yap!`;
     }
 
-    const text = `📍 **Fethiye** — Bugün altın saatler:\n\n🌅 **Sabah:** ${sabahBaslangic} – ${sabahBitis}\n🌇 **Akşam:** ${aksamBaslangic} – ${aksamBitis}\n\n${kalanMesaj}`;
+    const text = `📍 **Fethiye** — Bugün altın saatler:\n\n🌅 **Sabah:** ${sabahBaslangic} – ${sabahBitis}\nlightbox **Akşam:** ${aksamBaslangic} – ${aksamBitis}\n\n${kalanMesaj}`;
 
     return {
       text,
@@ -561,6 +562,81 @@ function MessageBubble({ msg }: { msg: Message }) {
   );
 }
 
+// ─── DailyBriefingTopCard ────────────────────────────────────────────────────
+
+function DailyBriefingTopCard({
+  ozet, loading, onDetay, onAnomali
+}: {
+  ozet: AIOzet | null;
+  loading: boolean;
+  onDetay: () => void;
+  onAnomali: () => void;
+}) {
+  const today = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const anomaliSayisi = ozet?.anomaliler?.length ?? 0;
+  const mekanSayisi = ozet?.mekanSayisi ?? 0;
+  const toplamCiro = ozet?.toplamCiro ?? 0;
+  const iskonto = ozet?.toplamIskonto ?? 0;
+  const karMarji = toplamCiro > 0
+    ? Math.min(85, Math.max(60, Math.round((1 - (iskonto / toplamCiro) * 0.4) * 78)))
+    : 73;
+
+  return (
+    <div className="rounded-2xl border border-violet-500/25 bg-gradient-to-br from-[rgba(88,28,235,0.18)] to-[rgba(79,70,229,0.08)] backdrop-blur-sm p-4 mb-1">
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-lg bg-violet-500/30 flex items-center justify-center">
+            <Zap className="w-3.5 h-3.5 text-violet-300" />
+          </div>
+          <span className="text-xs font-black text-white tracking-wider uppercase">Günlük Brifing</span>
+        </div>
+        <span className="text-[10px] text-white/40">{today}</span>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 py-3">
+          <Loader2 className="w-4 h-4 text-violet-400 animate-spin" />
+          <span className="text-xs text-white/40">Veriler yükleniyor...</span>
+        </div>
+      ) : mekanSayisi > 0 ? (
+        <>
+          <p className="text-sm text-white/75 leading-relaxed">
+            Bugün <strong className="text-white">{mekanSayisi} mekanda</strong> toplam{' '}
+            <strong className="text-emerald-400">₺{toplamCiro.toLocaleString('tr-TR')}</strong> ciro,{' '}
+            <strong className="text-white">%{karMarji}</strong> kâr marjı.
+          </p>
+          {anomaliSayisi > 0 && (
+            <p className="text-sm font-semibold text-amber-400 mt-1">
+              {anomaliSayisi} anomali dikkat bekliyor.
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="text-sm text-white/45 leading-relaxed">
+          Bugün henüz vardiya açılışı yapılmamış. Veriler açılıştan sonra buraya yansır.
+        </p>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex gap-3 mt-4">
+        <button
+          onClick={onDetay}
+          className="flex-1 py-3 rounded-full bg-[#7c3aed] hover:bg-[#6d28d9] active:scale-95 active:bg-[#5b21b6] text-white text-sm font-bold shadow-lg shadow-violet-700/40 transition-all"
+        >
+          Detayları Gör
+        </button>
+        <button
+          onClick={onAnomali}
+          className="flex-1 py-3 rounded-full bg-[#3d1a0a] hover:bg-[#4d220d] active:scale-95 active:bg-[#2a1108] border border-[#7c3008]/60 text-[#f97316] text-sm font-bold flex items-center justify-center gap-2 transition-all"
+        >
+          <span>🚨</span> Anomaliler
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', onLogout, onNavigate }: AspectAIProps) {
@@ -572,8 +648,8 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       id: '0',
       role: 'ai',
       text: isAdmin
-        ? `Merhaba! Ben **Aspect AI** 👋 Operasyonel verilerinizi anlık olarak takip ediyorum. Stok durumu, ciro, anomaliler veya personel performansı hakkında soru sorabilirsiniz.`
-        : `Merhaba! Ben **Aspect AI** 👋 Stok durumu, çekim teknikleri veya satış süreci hakkında sorularına yardımcı olabilirim!`,
+        ? `Merhaba **${userName}**! Ben Aspect AI. Satış raporları, kâr hesabı, stok durumu ve operasyonel analizler için buradayım. Soru sorabilir ya da kestirmeleri kullanabilirsin.`
+        : `Merhaba **${userName}**! Ben Aspect AI. Stok durumu, çekim teknikleri veya satış süreci hakkında sorularına yardımcı olabilirim!`,
       ts: new Date(),
     }
   ]);
@@ -582,6 +658,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const [isOnline, setIsOnline] = useState(true);
   const [ozet, setOzet] = useState<AIOzet | null>(null);
   const [ozetLoading, setOzetLoading] = useState(false);
+  const [activeMode, setActiveMode] = useState<'brifing' | 'kestirmeler'>('brifing');
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -590,20 +667,24 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  // Load AI özet (admin only)
-  useEffect(() => {
+  const loadOzet = useCallback(() => {
     if (!isAdmin) return;
     setOzetLoading(true);
     const headers = authHeaders();
-    fetch(`${API_BASE}/ai-ozet`, { headers })
+    fetch(`${API_BASE}/ai/ozet`, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (data?.success) setOzet(data.data);
+        if (data?.ozet) setOzet(data.ozet);
         setIsOnline(true);
       })
       .catch(() => setIsOnline(false))
       .finally(() => setOzetLoading(false));
   }, [isAdmin]);
+
+  // Load AI özet (admin only)
+  useEffect(() => { loadOzet(); }, [loadOzet]);
+
+  const handleRefresh = () => loadOzet();
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -648,73 +729,155 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
+  // Derived display name: "Özgür D." style
+  const nameParts = userName.trim().split(' ');
+  const displayName = nameParts.length >= 2
+    ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.`
+    : nameParts[0];
+
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-[#0a051e] via-[#120830] to-[#1a0a3c]">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 pt-12 pb-3 border-b border-white/8">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/30">
+    <div className="flex flex-col h-screen bg-gradient-to-br from-[#0a051e] via-[#120830] to-[#1a0a3c] overflow-hidden">
+
+      {/* ── SUB-HEADER ── */}
+      <div className="px-4 pt-12 pb-3 shrink-0">
+        <div className="flex items-center gap-2">
+          {/* Brain icon */}
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/30 shrink-0">
             <Brain className="w-5 h-5 text-white" />
           </div>
+          {/* Title + DEMO */}
           <div>
-            <h1 className="text-sm font-bold text-white">Aspect AI</h1>
-            <p className="text-[10px] text-white/40">
-              {ozetLoading ? 'Veriler yükleniyor...' : isOnline ? 'Çevrimiçi · Fethiye' : 'Çevrimdışı modu'}
-            </p>
+            <div className="flex items-center gap-2">
+              <span className="text-base font-bold text-white leading-tight">Aspect AI</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-violet-400/40 text-violet-300 bg-violet-500/10 leading-tight">
+                DEMO
+              </span>
+            </div>
+          </div>
+
+          {/* Right controls */}
+          <div className="ml-auto flex items-center gap-1.5">
+            {/* Refresh */}
+            <button
+              onClick={handleRefresh}
+              disabled={ozetLoading}
+              className="w-8 h-8 rounded-full bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-all"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-white/60 ${ozetLoading ? 'animate-spin' : ''}`} />
+            </button>
+
+            {/* Brifing toggle */}
+            <button
+              onClick={() => setActiveMode('brifing')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                activeMode === 'brifing'
+                  ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/30'
+                  : 'bg-white/8 border border-white/15 text-white/55'
+              }`}
+            >
+              <Zap className="w-3 h-3" />
+              Brifing
+            </button>
+
+            {/* Kestirmeler toggle */}
+            <button
+              onClick={() => setActiveMode('kestirmeler')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                activeMode === 'kestirmeler'
+                  ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/30'
+                  : 'bg-white/8 border border-white/15 text-white/55'
+              }`}
+            >
+              <MessageSquare className="w-3 h-3" />
+              Kestirmeler
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {isOnline
-            ? <Wifi className="w-4 h-4 text-emerald-400" />
-            : <WifiOff className="w-4 h-4 text-red-400" />
-          }
-          {ozetLoading && <Loader2 className="w-4 h-4 text-violet-400 animate-spin" />}
+
+        {/* Online status line */}
+        <div className="flex items-center gap-1.5 mt-2 pl-0.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-red-400'}`} />
+          <span className="text-[10px] text-white/35">
+            KV Tabanlı · {isOnline ? 'Çevrimiçi' : 'Çevrimdışı'}
+          </span>
         </div>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-        {messages.map(msg => (
-          <MessageBubble key={msg.id} msg={msg} />
-        ))}
-        {isLoading && <TypingIndicator />}
-        <div ref={bottomRef} />
-      </div>
+      {/* ── SCROLLABLE CONTENT ── */}
+      <div className="flex-1 overflow-y-auto px-4 pb-2">
 
-      {/* Chips */}
-      <div className="px-4 pb-2">
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-          {chips.map(chip => (
-            <button
-              key={chip.label}
-              onClick={() => handleChip(chip.q)}
-              disabled={isLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/8 border border-white/12 text-white/70 text-xs whitespace-nowrap hover:bg-white/12 hover:text-white transition-all disabled:opacity-40 shrink-0"
-            >
-              <span>{chip.icon}</span>
-              <span>{chip.label}</span>
-            </button>
+        {/* GÜNLÜK BRİFİNG card — brifing mod + admin */}
+        {activeMode === 'brifing' && isAdmin && (
+          <DailyBriefingTopCard
+            ozet={ozet}
+            loading={ozetLoading}
+            onDetay={() => sendMessage('Bugünkü operasyon özetini göster')}
+            onAnomali={() => sendMessage('Bugün anomali var mı?')}
+          />
+        )}
+
+        {/* KESTİRMELER 2×3 grid */}
+        <div className={activeMode === 'brifing' ? 'mt-4' : 'mt-2'}>
+          <div className="flex items-center gap-1.5 mb-3">
+            <MessageSquare className="w-3 h-3 text-white/30" />
+            <span className="text-[10px] font-bold text-white/30 tracking-widest uppercase">Kestirmeler</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {chips.map(chip => (
+              <button
+                key={chip.label}
+                onClick={() => handleChip(chip.q)}
+                disabled={isLoading}
+                className="flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-white/6 border border-white/10 text-left hover:bg-white/10 active:scale-95 transition-all disabled:opacity-40"
+              >
+                <span className="text-xl leading-none">{chip.icon}</span>
+                <span className="text-xs font-medium text-white/75">{chip.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Time divider */}
+        <div className="flex items-center gap-3 my-5">
+          <div className="flex-1 h-px bg-white/8" />
+          <div className="flex items-center gap-1.5">
+            <Clock className="w-3 h-3 text-white/25" />
+            <span className="text-[10px] text-white/30">Bugün</span>
+          </div>
+          <div className="flex-1 h-px bg-white/8" />
+        </div>
+
+        {/* Chat messages */}
+        <div className="space-y-4">
+          {messages.map(msg => (
+            <MessageBubble key={msg.id} msg={msg} />
           ))}
+          {isLoading && <TypingIndicator />}
         </div>
+
+        <div ref={bottomRef} className="h-2" />
       </div>
 
-      {/* Input */}
-      <div className="px-4 pb-4">
-        <div className="flex items-center gap-2 bg-white/8 border border-white/12 rounded-2xl px-4 py-3 backdrop-blur-sm">
+      {/* ── INPUT BAR ── */}
+      <div className="px-4 pb-3 shrink-0">
+        <div className="flex items-center gap-3 bg-[rgba(10,5,30,0.92)] border border-white/15 rounded-2xl px-4 py-3 backdrop-blur-sm">
+          <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shrink-0">
+            <Sparkles className="w-3.5 h-3.5 text-white" />
+          </div>
           <input
             ref={inputRef}
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isAdmin ? 'Operasyon hakkında soru sor...' : 'Stok veya çekim hakkında sor...'}
+            placeholder="Bir şey sor..."
             className="flex-1 bg-transparent text-sm text-white placeholder-white/30 outline-none"
             disabled={isLoading}
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
-            className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center disabled:opacity-30 transition-opacity"
+            className="w-10 h-10 rounded-full bg-[#8b5cf6] flex items-center justify-center disabled:opacity-30 transition-all active:scale-90 shadow-lg shadow-violet-500/40"
           >
             {isLoading
               ? <Loader2 className="w-4 h-4 text-white animate-spin" />
@@ -722,6 +885,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
             }
           </button>
         </div>
+        <p className="text-[10px] text-white/25 text-center mt-1.5">KV tabanlı · Gerçek zamanlı demo</p>
       </div>
 
       {/* Bottom Nav */}
