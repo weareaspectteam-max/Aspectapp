@@ -1550,7 +1550,11 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                 const td = new Date(task.date); td.setHours(0,0,0,0);
                 const tod = new Date(); tod.setHours(0,0,0,0);
                 if (td < tod) return true;
-                if (task.date === todayStr && task.endTime && task.endTime < currentTime) return true;
+                if (task.date === todayStr && task.endTime) {
+                  // "00:00" gece yarısı = ertesi günün başı → asla bugün geçmiş sayılmaz
+                  const endNorm = task.endTime === '00:00' ? '24:00' : task.endTime;
+                  if (endNorm < currentTime) return true;
+                }
                 return false;
               };
 
