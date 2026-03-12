@@ -413,7 +413,7 @@ function StokGuncelleModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/65 backdrop-blur-sm"
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 backdrop-blur-sm"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="w-full max-w-md rounded-t-3xl overflow-hidden"
         style={{ background: '#0e0826', border: '1px solid rgba(255,255,255,0.12)', maxHeight: '92vh' }}>
@@ -461,7 +461,7 @@ function StokGuncelleModal({
           {hata && <div className="rounded-xl bg-red-500/12 border border-red-500/20 px-4 py-3 text-xs text-red-300">{hata}</div>}
         </div>
         {/* Footer */}
-        <div className="px-5 pb-6 pt-3 flex gap-3 border-t border-white/8">
+        <div className="px-5 pt-3 flex gap-3 border-t border-white/8" style={{ paddingBottom: 'calc(1.5rem + max(80px, env(safe-area-inset-bottom) + 70px))' }}>
           <button onClick={onClose}
             className="flex-1 h-11 rounded-xl bg-white/6 border border-white/12 text-sm font-semibold text-white/50 active:scale-95 transition-transform">
             İptal
