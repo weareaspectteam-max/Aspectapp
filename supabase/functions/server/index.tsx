@@ -3538,6 +3538,43 @@ app.delete("/make-server-4da0b637/malzeme/sil/:id", async (c) => {
   }
 });
 
+// ──────────────────────────────────────────
+// ASPECT AI: Rol Konfigürasyonu
+// GET  /make-server-4da0b637/ai/role-config
+// POST /make-server-4da0b637/ai/role-config
+// ──────────────────────────────────────────
+
+app.get("/make-server-4da0b637/ai/role-config", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const config = await kv.get("ai_role_config_v1") || null;
+    return c.json({ config });
+  } catch (err) {
+    console.log("AI role-config GET error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+app.post("/make-server-4da0b637/ai/role-config", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur"].includes(callerRole)) {
+      return c.json({ error: "Bu ayarı sadece Yönetici ve Üst Müdür değiştirebilir." }, 403);
+    }
+    const body = await c.req.json();
+    if (!body.config) return c.json({ error: "config alanı zorunlu." }, 400);
+    await kv.set("ai_role_config_v1", body.config);
+    console.log(`AI role-config güncellendi: ${callerRole} — ${user.user_metadata?.full_name}`);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("AI role-config POST error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 Deno.serve(async (req) => {
   // Supabase Edge Functions'da OPTIONS preflight istekleri gateway tarafından kesilebilir.
   // Bu nedenle OPTIONS'ı Hono'ya göndermeden önce burada açıkça handle ediyoruz.

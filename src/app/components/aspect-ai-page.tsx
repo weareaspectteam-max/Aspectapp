@@ -4,11 +4,13 @@ import {
   Package,
   AlertTriangle, CheckCircle, Zap,
   RefreshCw, Clock,
-  Brain, MessageSquare, Loader2, Trash2,
+  Brain, MessageSquare, Loader2, Trash2, Settings,
 } from 'lucide-react';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 import type { VardiyaSatis } from '../services/stock-service';
+import { getLeaveRequests, type LeaveRequest } from '../services/rotation-service';
+import { AspectAISettings } from './aspect-ai-settings';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -48,7 +50,7 @@ interface Message {
 }
 
 interface ResponseCard {
-  type: 'briefing' | 'profit' | 'stock' | 'personnel' | 'anomaly' | 'tip' | 'payment' | 'golden_hour' | 'mekan_detay';
+  type: 'briefing' | 'profit' | 'stock' | 'personnel' | 'anomaly' | 'tip' | 'payment' | 'golden_hour' | 'mekan_detay' | 'izin';
   data: any;
 }
 
@@ -188,6 +190,7 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
       { icon: '📸', label: 'Çekim İpuçları', q: 'Portre çekim ipuçları ver' },
       { icon: '❓', label: 'Satış Kaydı', q: 'Nasıl satış kaydederim?' },
       { icon: '🌅', label: 'Altın Saat', q: 'Bugün Fethiye altın saat kaçta?' },
+      { icon: '📅', label: 'İzin Geçmişim', q: '__IZIN_GECMISIM__' },
     ],
     welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Stok durumu, çekim teknikleri veya satış süreci hakkında sorularına yardımcı olabilirim!`,
     blockedKeywords: [
@@ -292,16 +295,85 @@ async function fetchAltiSaat(): Promise<{ text: string; card: ResponseCard }> {
   }
 }
 
+// ─── İzin Geçmişi Fetch ───────────────────────────────────────────────────────
+
+async function fetchIzinGecmisi(userName: string): Promise<{ text: string; card: ResponseCard }> {
+  try {
+    const leaves = await getLeaveRequests();
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // Kullanıcıya ait onaylı izinleri son 30 günle kesişen şekilde filtrele
+    const myLeaves = leaves.filter(l => {
+      const nameLower = l.personnelName.toLowerCase();
+      const userLower = userName.toLowerCase();
+      const nameMatch = nameLower.includes(userLower.split(' ')[0]) ||
+                        userLower.includes(nameLower.split(' ')[0]);
+      const leaveEnd = new Date(l.endDate);
+      return nameMatch && l.status === 'approved' && leaveEnd >= thirtyDaysAgo;
+    });
+
+    // İzin günlerini hesapla (30 gün penceresi ile kesişen kısım)
+    let totalLeaveDays = 0;
+    let annualDays = 0, sickDays = 0, personalDays = 0;
+
+    for (const l of myLeaves) {
+      const start = new Date(Math.max(new Date(l.startDate).getTime(), thirtyDaysAgo.getTime()));
+      const end = new Date(Math.min(new Date(l.endDate).getTime(), now.getTime()));
+      const diffDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const clampedDays = Math.max(0, Math.min(diffDays, l.days));
+      totalLeaveDays += clampedDays;
+      if (l.type === 'annual') annualDays += clampedDays;
+      else if (l.type === 'sick') sickDays += clampedDays;
+      else personalDays += clampedDays;
+    }
+
+    // Turizm işletmesi 7 gün çalışır — takvim günü baz alınır
+    const totalCalendarDays = 30;
+    const estimatedWorkDays = Math.max(0, totalCalendarDays - totalLeaveDays);
+
+    let text = '';
+    if (totalLeaveDays === 0) {
+      text = `📅 Son 30 günde onaylı izin kaydın bulunmuyor.\n\n${totalCalendarDays} günün tamamında aktif çalışıyorsun! 💪`;
+    } else {
+      text = `📅 **Son 30 gün özeti:**\n\n• 🏖️ Toplam **${totalLeaveDays} gün** izin kullandın\n• 💼 Tahminen **${estimatedWorkDays} gün** aktif çalıştın`;
+      if (annualDays > 0) text += `\n• Yıllık izin: ${annualDays} gün`;
+      if (sickDays > 0) text += `\n• Hastalık izni: ${sickDays} gün`;
+      if (personalDays > 0) text += `\n• Mazeret izni: ${personalDays} gün`;
+    }
+
+    return {
+      text,
+      card: {
+        type: 'izin',
+        data: { myLeaves, totalLeaveDays, annualDays, sickDays, personalDays, totalCalendarDays, estimatedWorkDays, userName },
+      },
+    };
+  } catch (e) {
+    console.error('fetchIzinGecmisi error:', e);
+    return {
+      text: `İzin geçmişine şu an ulaşılamadı. Rotasyon modülüne bağlanamadım.`,
+      card: { type: 'tip', data: { title: 'İzin Geçmişi', icon: '📅' } },
+    };
+  }
+}
+
 // ─── AI Response Engine (gerçek KV verisi kullanır) ───────────────────────────
 
-function generateAIResponse(q: string, role: string, ozet: AIOzet | null): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' {
+function generateAIResponse(q: string, role: string, ozet: AIOzet | null, configMap?: Record<string, RoleConfig>): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' | 'IZIN_GECMISI' {
   const lower = q.toLowerCase();
-  const config = ROLE_CONFIG[role] ?? ROLE_CONFIG['personel'];
+  const map = configMap ?? ROLE_CONFIG;
+  const config = map[role] ?? ROLE_CONFIG['personel'];
   const isAdmin = config.loadOzet;
 
   // Altın saat — async flag döndür
   if (lower.includes('altın saat') || lower.includes('altin saat') || lower.includes('golden hour') || lower.includes('gün batımı saati') || lower.includes('günbatımı')) {
     return 'GOLDEN_HOUR';
+  }
+
+  // İzin geçmişi — async flag döndür
+  if (q === '__IZIN_GECMISIM__' || lower.includes('izin geçmişim') || lower.includes('izin geçmiş') || lower.includes('kaç gün izin') || lower.includes('ne kadar izin') || lower.includes('izin istatistik') || lower.includes('çalışma geçmiş')) {
+    return 'IZIN_GECMISI';
   }
 
   // Rol bazlı erişim engeli
@@ -624,6 +696,131 @@ function TipCard({ data }: { data: { title: string; icon: string } }) {
   );
 }
 
+function IzinGecmisiCard({ data }: {
+  data: {
+    myLeaves: LeaveRequest[];
+    totalLeaveDays: number;
+    annualDays: number;
+    sickDays: number;
+    personalDays: number;
+    totalCalendarDays: number;
+    estimatedWorkDays: number;
+    userName: string;
+  };
+}) {
+  const leaveTypeLabel: Record<string, string> = {
+    annual: 'Yıllık İzin',
+    sick: 'Hastalık İzni',
+    personal: 'Mazeret İzni',
+  };
+  const leaveTypeIcon: Record<string, string> = {
+    annual: '🏖️',
+    sick: '🤒',
+    personal: '📋',
+  };
+  const leaveTypeColor: Record<string, string> = {
+    annual: 'text-blue-300 bg-blue-500/10 border-blue-500/20',
+    sick: 'text-red-300 bg-red-500/10 border-red-500/20',
+    personal: 'text-amber-300 bg-amber-500/10 border-amber-500/20',
+  };
+  const workPct = data.totalCalendarDays > 0 ? Math.round((data.estimatedWorkDays / data.totalCalendarDays) * 100) : 100;
+
+  return (
+    <div className="mt-3 rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-500/10 to-violet-500/5 overflow-hidden">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-white/8 flex items-center gap-2">
+        <span className="text-lg">📅</span>
+        <span className="text-xs font-black text-white uppercase tracking-wider">Son 30 Gün — İzin & Çalışma</span>
+      </div>
+
+      <div className="p-4 space-y-3">
+        {/* Özet istatistik kutuları */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="bg-white/5 rounded-xl p-3 flex flex-col items-center gap-1">
+            <span className="text-2xl font-black text-violet-300">{data.estimatedWorkDays}</span>
+            <span className="text-[10px] text-white/45 text-center">gün aktif çalıştın</span>
+          </div>
+          <div className="bg-white/5 rounded-xl p-3 flex flex-col items-center gap-1">
+            <span className="text-2xl font-black text-indigo-300">{data.totalLeaveDays}</span>
+            <span className="text-[10px] text-white/45 text-center">gün izin kullandın</span>
+          </div>
+        </div>
+
+        {/* İlerleme çubuğu */}
+        <div>
+          <div className="flex justify-between items-center mb-1.5">
+            <span className="text-[10px] text-white/40">Çalışma oranı</span>
+            <span className="text-[10px] font-bold text-violet-300">%{workPct}</span>
+          </div>
+          <div className="h-2 bg-white/8 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-violet-500 to-indigo-400 rounded-full transition-all"
+              style={{ width: `${workPct}%` }}
+            />
+          </div>
+          <div className="flex justify-between mt-1">
+            <span className="text-[9px] text-white/25">0</span>
+            <span className="text-[9px] text-white/25">{data.totalCalendarDays} takvim günü</span>
+          </div>
+        </div>
+
+        {/* İzin türü dağılımı */}
+        {data.totalLeaveDays > 0 && (
+          <div className="space-y-1.5">
+            {(['annual', 'sick', 'personal'] as const).map(type => {
+              const days = type === 'annual' ? data.annualDays : type === 'sick' ? data.sickDays : data.personalDays;
+              if (days === 0) return null;
+              return (
+                <div key={type} className={`flex items-center justify-between px-3 py-2 rounded-xl border ${leaveTypeColor[type]}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">{leaveTypeIcon[type]}</span>
+                    <span className="text-xs">{leaveTypeLabel[type]}</span>
+                  </div>
+                  <span className="text-xs font-bold">{days} gün</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* İzin listesi (varsa) */}
+        {data.myLeaves.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[10px] text-white/35 uppercase tracking-wider font-medium">İzin Kayıtları</p>
+            {data.myLeaves.slice(0, 4).map((l) => {
+              const fmt = (d: string) => new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
+              return (
+                <div key={l.id} className="flex items-center gap-2 bg-white/5 rounded-xl px-3 py-2">
+                  <span className="text-sm shrink-0">{leaveTypeIcon[l.type] || '📅'}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-white/70 truncate">{leaveTypeLabel[l.type] || l.type}</p>
+                    <p className="text-[10px] text-white/35">{fmt(l.startDate)} – {fmt(l.endDate)}</p>
+                  </div>
+                  <span className="text-xs font-bold text-white/60 shrink-0">{l.days}g</span>
+                </div>
+              );
+            })}
+            {data.myLeaves.length > 4 && (
+              <p className="text-[10px] text-white/30 text-center">+{data.myLeaves.length - 4} kayıt daha</p>
+            )}
+          </div>
+        )}
+
+        {data.totalLeaveDays === 0 && (
+          <div className="flex items-center gap-2 px-3 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+            <p className="text-xs text-emerald-300">Son 30 günde kayıtlı izin yok 💪</p>
+          </div>
+        )}
+
+        <p className="text-[9px] text-white/20 text-center">
+          * Tahmini değerler. Yalnızca onaylı izinler dahildir.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function AnomalyCard({ data }: { data: any[] }) {
   if (!data || data.length === 0) {
     return (
@@ -680,6 +877,7 @@ function MessageBubble({ msg }: { msg: Message }) {
             {msg.card.type === 'tip' && <TipCard data={msg.card.data} />}
             {msg.card.type === 'golden_hour' && <GoldenHourCard data={msg.card.data} />}
             {msg.card.type === 'mekan_detay' && <MekanDetayCard data={msg.card.data} />}
+            {msg.card.type === 'izin' && <IzinGecmisiCard data={msg.card.data} />}
           </>
         )}
         <span className="text-[10px] text-white/25 mt-1 px-1">
@@ -1223,7 +1421,11 @@ function MekanDetayCard({ data }: { data: MekanDetayData }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', onLogout, onNavigate }: AspectAIProps) {
-  const roleConfig = ROLE_CONFIG[userRole] ?? ROLE_CONFIG['personel'];
+  // KV'den yüklenmiş config override — başlangıçta kod sabit config'i kullanır,
+  // sunucudan gelince otomatik override edilir
+  const [serverConfig, setServerConfig] = useState<Record<string, RoleConfig> | null>(null);
+  const activeROLE_CONFIG = serverConfig ?? ROLE_CONFIG;
+  const roleConfig = activeROLE_CONFIG[userRole] ?? ROLE_CONFIG['personel'];
   const isAdmin = roleConfig.loadOzet;
   const chips = roleConfig.chips;
 
@@ -1246,6 +1448,39 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [mekanModal, setMekanModal] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
+  // KV'den config yükle ve ROLE_CONFIG'i override et
+  useEffect(() => {
+    authHeaders().then(headers =>
+      fetch(`${API_BASE}/ai/role-config`, { headers })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.config && typeof data.config === 'object') {
+            // Serializable config'i RoleConfig'e dönüştür (welcomeTemplate → welcomeText fn)
+            const converted: Record<string, RoleConfig> = {};
+            for (const [role, cfg] of Object.entries(data.config as Record<string, any>)) {
+              converted[role] = {
+                ...cfg,
+                welcomeText: (name: string) => (cfg.welcomeTemplate as string).replace('{name}', name),
+              };
+            }
+            setServerConfig(converted);
+            // Karşılama mesajını da güncelle (ilk mesaj)
+            if (converted[userRole]) {
+              const newWelcome = converted[userRole].welcomeText(userName);
+              setMessages(prev => {
+                if (prev.length === 1 && prev[0].id === '0') {
+                  return [{ ...prev[0], text: newWelcome }];
+                }
+                return prev;
+              });
+            }
+          }
+        })
+        .catch(() => {/* sessiz hata — fallback ROLE_CONFIG kullanılır */})
+    ).catch(() => {});
+  }, [userRole, userName]);
 
   // Scroll to bottom — sadece yeni mesaj eklenince, açılışta değil
   useEffect(() => {
@@ -1277,7 +1512,12 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || isLoading) return;
 
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', text: text.trim(), ts: new Date() };
+    // __IZIN_GECMISIM__ özel komut — kullanıcıya gösterilen metin farklı
+    const displayText = text.trim() === '__IZIN_GECMISIM__'
+      ? '📅 İzin geçmişimi göster'
+      : text.trim();
+
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', text: displayText, ts: new Date() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
@@ -1285,7 +1525,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     // Simulate AI thinking delay
     await new Promise(r => setTimeout(r, 700 + Math.random() * 600));
 
-    const result = generateAIResponse(text.trim(), userRole, ozet);
+    const result = generateAIResponse(text.trim(), userRole, ozet, activeROLE_CONFIG);
 
     let aiText: string;
     let aiCard: ResponseCard | undefined;
@@ -1294,6 +1534,10 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       const ghResult = await fetchAltiSaat();
       aiText = ghResult.text;
       aiCard = ghResult.card;
+    } else if (result === 'IZIN_GECMISI') {
+      const izinResult = await fetchIzinGecmisi(userName);
+      aiText = izinResult.text;
+      aiCard = izinResult.card;
     } else {
       aiText = result.text;
       aiCard = result.card;
@@ -1309,7 +1553,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
 
     setMessages(prev => [...prev, aiMsg]);
     setIsLoading(false);
-  }, [isLoading, ozet, userRole]);
+  }, [isLoading, ozet, userRole, activeROLE_CONFIG, userName]);
 
   const initialMessage: Message = {
     id: '0',
@@ -1457,6 +1701,38 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
           onClose={() => setMekanModal(false)}
         />
       )}
+
+      {/* AI Ayarları Overlay */}
+      {showSettings && (
+        <div className="absolute inset-0 z-50 bg-[#0a051e] overflow-y-auto">
+          <AspectAISettings
+            userRole={userRole}
+            onBack={() => setShowSettings(false)}
+            onSaved={() => {
+              // Kaydedilen config'i yeniden yükle
+              setTimeout(async () => {
+                try {
+                  const headers = await authHeaders();
+                  const res = await fetch(`${API_BASE}/ai/role-config`, { headers });
+                  const data = await res.json();
+                  if (data?.config && typeof data.config === 'object') {
+                    const converted: Record<string, RoleConfig> = {};
+                    for (const [role, cfg] of Object.entries(data.config as Record<string, any>)) {
+                      converted[role] = {
+                        ...cfg,
+                        welcomeText: (name: string) => (cfg.welcomeTemplate as string).replace('{name}', name),
+                      };
+                    }
+                    setServerConfig(converted);
+                  }
+                } catch (e) {
+                  console.error('Config reload error:', e);
+                }
+              }, 300);
+            }}
+          />
+        </div>
+      )}
       {/* ── SUB-HEADER — sabit, asla kımıldamaz ── */}
       <div className="shrink-0 px-4 pt-3 pb-3 bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-b border-white/8">
         <div className="flex items-center gap-2">
@@ -1471,6 +1747,17 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
 
           {/* Right controls */}
           <div className="ml-auto flex items-center gap-1.5">
+            {/* AI Ayarları — sadece yonetici */}
+            {userRole === 'yonetici' && (
+              <button
+                onClick={() => setShowSettings(true)}
+                className="w-8 h-8 rounded-full bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-all hover:bg-violet-500/20 hover:border-violet-500/30"
+                title="AI Ayarları"
+              >
+                <Settings className="w-3.5 h-3.5 text-white/60" />
+              </button>
+            )}
+
             {/* Refresh */}
             <button
               onClick={handleRefresh}

@@ -25,6 +25,7 @@ interface RotationTaskModalProps {
   accessToken: string;
   onClose: () => void;
   onTaskSaved?: (task: Task) => void; // optimistik güncelleme için
+  onRemoveDailyOnLeave?: (personnelIds: string[]) => void; // günlük izinden çıkar
 }
 
 export function RotationTaskModal({
@@ -41,6 +42,7 @@ export function RotationTaskModal({
   accessToken,
   onClose,
   onTaskSaved,
+  onRemoveDailyOnLeave,
 }: RotationTaskModalProps) {
   const [selectedLocation, setSelectedLocation] = useState<string>('');
   const [customLocation, setCustomLocation] = useState<string>('');
@@ -57,6 +59,7 @@ export function RotationTaskModal({
     personnelId: string;
     personnelName: string;
   }>({ show: false, personnelId: '', personnelName: '' });
+  const [confirmedDailyLeaveIds, setConfirmedDailyLeaveIds] = useState<string[]>([]);
 
   // ==========================================
   // INITIALIZATION
@@ -77,7 +80,25 @@ export function RotationTaskModal({
       }
       setStartTime(editingTask.startTime);
       setEndTime(editingTask.endTime);
-      setSelectedPersonnel(editingTask.personnel.map(p => p.id));
+      // Edit modunda onaylı izinli personeli baştan listeden çıkar
+      setSelectedPersonnel(
+        editingTask.personnel
+          .map(p => p.id)
+          .filter(id => {
+            const staff = staffMembers.find(s => s.id === id);
+            if (!staff) return true;
+            const isOnLeave =
+              staff.status === 'on_leave' ||
+              leaveRequests.some(
+                leave =>
+                  leave.personnelId === staff.id &&
+                  leave.status === 'approved' &&
+                  new Date(selectedDate) >= new Date(leave.startDate) &&
+                  new Date(selectedDate) <= new Date(leave.endDate)
+              );
+            return !isOnLeave;
+          })
+      );
       setNotes(editingTask.notes || '');
     } else {
       if (preselectedLocation && modalType === 'regular_location') {
@@ -95,6 +116,7 @@ export function RotationTaskModal({
     }
     setShowWarning('');
     setIsSaving(false);
+    setConfirmedDailyLeaveIds([]);
   }, [editingTask, modalType, isOpen, preselectedLocation]);
 
   // Auto-set working hours when location is selected
@@ -156,6 +178,7 @@ export function RotationTaskModal({
   const handleConfirmDailyLeave = () => {
     const { personnelId } = showDailyLeaveConfirm;
     setSelectedPersonnel(prev => [...prev, personnelId]);
+    setConfirmedDailyLeaveIds(prev => [...prev, personnelId]);
     setShowDailyLeaveConfirm({ show: false, personnelId: '', personnelName: '' });
   };
 
@@ -171,16 +194,21 @@ export function RotationTaskModal({
       setShowWarning('En az bir personel seçmelisiniz!');
       return;
     }
-    if (modalType === 'regular_location') {
-      if (!selectedLocation.trim()) {
-        setShowWarning('Mekan seçiniz!');
-        return;
-      }
-    } else {
-      if (!customLocation.trim()) {
-        setShowWarning('Lokasyon giriniz!');
-        return;
-      }
+
+    // ── İzinli personel kontrolü (kaydet sırasında çift kontrol) ──
+    const onLeaveInSelection = selectedPersonnel.filter(id => {
+      const staff = staffMembers.find(s => s.id === id);
+      if (!staff) return false;
+      return isPersonnelFixedOnLeave(staff);
+    });
+    if (onLeaveInSelection.length > 0) {
+      const names = onLeaveInSelection
+        .map(id => staffMembers.find(s => s.id === id)?.name || id)
+        .join(', ');
+      setShowWarning(`Onaylı izinli personel göreve atanamaz: ${names}`);
+      // Seçimden çıkar
+      setSelectedPersonnel(prev => prev.filter(id => !onLeaveInSelection.includes(id)));
+      return;
     }
 
     // ── Prepare data ────────────────────────────────────────────
@@ -260,6 +288,12 @@ export function RotationTaskModal({
           onTaskSaved(newTask);
         }
       }
+
+      // Başarılı kayıt sonrası — onaylanan günlük izinlileri listeden çıkar
+      if (confirmedDailyLeaveIds.length > 0 && onRemoveDailyOnLeave) {
+        onRemoveDailyOnLeave(confirmedDailyLeaveIds);
+      }
+
       onClose();
     } catch (err: any) {
       console.error('[TaskModal] save error:', err);

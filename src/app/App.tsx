@@ -29,6 +29,7 @@ import { EquipmentPage } from './components/equipment-page';
 import { StokDagilimi } from './components/stok-dagilimi';
 import { ResourceManagement } from './components/resource-management';
 import { CostManagement } from './components/cost-management';
+import { PersonelIzinCetveli } from './components/personel-izin-cetveli';
 import { LocationVisits } from './components/location-visits';
 import { SatisRaporu } from './components/satis-raporu';
 import { ManagerReports } from './components/manager-reports';
@@ -525,6 +526,17 @@ export default function App() {
       case 'cost-management':
         return (
           <CostManagement 
+            userName={userName}
+            userRole={userRole}
+            accessToken={accessToken}
+            onLogout={handleLogout}
+            onNavigate={handleNavigate}
+          />
+        );
+      
+      case 'personel-izin-cetveli':
+        return (
+          <PersonelIzinCetveli 
             userName={userName}
             userRole={userRole}
             accessToken={accessToken}

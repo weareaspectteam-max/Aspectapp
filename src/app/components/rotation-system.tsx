@@ -187,9 +187,21 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
 
   const getOnLeavePersonnel = (): StaffMember[] => {
     const onLeaveIds = dailyOnLeave[selectedDate] || [];
-    return staffMembers.filter(s => 
-      s.status === 'on_leave' || onLeaveIds.includes(s.id)
-    );
+    return staffMembers.filter(s => {
+      // 1. Onaylı izin (status kalıcı veya rotation_leave_ onaylı — ikisi aynı kavram)
+      if (s.status === 'on_leave') return true;
+      const hasApprovedLeave = leaveRequests.some(
+        leave =>
+          leave.personnelId === s.id &&
+          leave.status === 'approved' &&
+          new Date(selectedDate) >= new Date(leave.startDate) &&
+          new Date(selectedDate) <= new Date(leave.endDate)
+      );
+      if (hasApprovedLeave) return true;
+      // 2. Günlük manuel işaretleme
+      if (onLeaveIds.includes(s.id)) return true;
+      return false;
+    });
   };
 
   const getStandbyPersonnel = (): StaffMember[] => {
@@ -464,9 +476,20 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
     );
   };
 
+  const isOnayliIzinHelper = (personId: string, personStatus: string): boolean => {
+    if (personStatus === 'on_leave') return true;
+    return leaveRequests.some(
+      leave =>
+        leave.personnelId === personId &&
+        leave.status === 'approved' &&
+        new Date(selectedDate) >= new Date(leave.startDate) &&
+        new Date(selectedDate) <= new Date(leave.endDate)
+    );
+  };
+
   const handleSelectAllOnLeave = () => {
     const onLeavePersonnel = getOnLeavePersonnel();
-    const selectableOnLeave = onLeavePersonnel.filter(p => p.status !== 'on_leave');
+    const selectableOnLeave = onLeavePersonnel.filter(p => !isOnayliIzinHelper(p.id, p.status));
     setSelectedOnLeave(selectableOnLeave.map(p => p.id));
   };
 
@@ -501,6 +524,21 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
     await saveDailyOnLeave(updatedOnLeave, accessToken);
   };
 
+  // Görev modalından onaylanan günlük izinlileri listeden çıkar
+  const handleTaskConfirmedDailyLeave = async (personnelIds: string[]) => {
+    const updatedOnLeave = { ...dailyOnLeave };
+    if (updatedOnLeave[selectedDate]) {
+      updatedOnLeave[selectedDate] = updatedOnLeave[selectedDate].filter(
+        id => !personnelIds.includes(id)
+      );
+      if (updatedOnLeave[selectedDate].length === 0) {
+        delete updatedOnLeave[selectedDate];
+      }
+    }
+    setDailyOnLeave(updatedOnLeave);
+    await saveDailyOnLeave(updatedOnLeave, accessToken);
+  };
+
   const handleMoveOnLeaveToStandby = async (personnelIds: string[]) => {
     const updatedOnLeave = { ...dailyOnLeave };
 
@@ -523,7 +561,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
 
   const handleMoveAllOnLeaveToStandby = () => {
     const onLeavePersonnel = getOnLeavePersonnel();
-    const dailyOnLeaveIds = onLeavePersonnel.filter(p => p.status !== 'on_leave').map(p => p.id);
+    const dailyOnLeaveIds = onLeavePersonnel.filter(p => !isOnayliIzinHelper(p.id, p.status)).map(p => p.id);
     
     if (dailyOnLeaveIds.length === 0) {
       setNotificationMessage('Beklemeye alınacak izinli personel yok 🤷‍♂️');
@@ -693,11 +731,9 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
     // DRAFT ve REVISED durumu için TURUNCU
     if (task.status === 'draft' || task.status === 'revised') return 'border-l-orange-500';
     
-    // Check if personnel is on leave
-    const hasOnLeave = task.personnel.some(p => {
-      const staff = staffMembers.find(s => s.id === p.id);
-      return staff?.status === 'on_leave';
-    });
+    // Check if personnel is on leave (sabit durum + rotation_leave_ + günlük)
+    const onLeavePersonnelIds = new Set(getOnLeavePersonnel().map(p => p.id));
+    const hasOnLeave = task.personnel.some(p => onLeavePersonnelIds.has(p.id));
     if (hasOnLeave) return 'border-l-rose-400';
     
     // Check if task has standby personnel
@@ -919,9 +955,22 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                                     <div key={person.id} className="flex items-center gap-1.5 bg-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white">
                                       <span>{person.avatar}</span>
                                       <span className="font-medium">{person.name}</span>
-                                      {staff?.status === 'on_leave' && (
-                                        <span className="text-[9px] bg-orange-500/30 text-orange-200 px-1 py-0.5 rounded font-bold">İZİN</span>
-                                      )}
+                                      {(() => {
+                                        if (!staff) return null;
+                                        const isOnLeave =
+                                          staff.status === 'on_leave' ||
+                                          (dailyOnLeave[selectedDate] || []).includes(staff.id) ||
+                                          leaveRequests.some(
+                                            leave =>
+                                              leave.personnelId === staff.id &&
+                                              leave.status === 'approved' &&
+                                              new Date(selectedDate) >= new Date(leave.startDate) &&
+                                              new Date(selectedDate) <= new Date(leave.endDate)
+                                          );
+                                        return isOnLeave ? (
+                                          <span className="text-[9px] bg-orange-500/30 text-orange-200 px-1 py-0.5 rounded font-bold">İZİN</span>
+                                        ) : null;
+                                      })()}
                                     </div>
                                   );
                                 })}
@@ -1340,13 +1389,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                     <span>Seçili Personelleri Beklemeye Al</span>
                   </button>
 
-                  <button
-                    onClick={handleMoveAllOnLeaveToStandby}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium text-xs transition-all border border-white/15 text-white/60 hover:bg-white/8 active:scale-95"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>Tümünü Beklemeye Al</span>
-                  </button>
+
                 </div>
 
                 {/* PERSONEL LİSTESİ */}
@@ -1360,7 +1403,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => {
-                            const selectableOnLeave = onLeavePersonnel.filter(p => p.status !== 'on_leave');
+                            const selectableOnLeave = onLeavePersonnel.filter(p => !isOnayliIzinHelper(p.id, p.status));
                             if (selectedOnLeave.length === selectableOnLeave.length) {
                               setSelectedOnLeave([]);
                             } else {
@@ -1369,19 +1412,25 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                           }}
                           className="text-xs text-white/50 hover:text-white/80 transition-all whitespace-nowrap px-2 py-1 rounded bg-white/6 hover:bg-white/12 border border-white/12"
                         >
-                          {selectedOnLeave.length === onLeavePersonnel.filter(p => p.status !== 'on_leave').length ? 'Temizle' : 'Tümünü Seç'}
+                          {selectedOnLeave.length === onLeavePersonnel.filter(p => !isOnayliIzinHelper(p.id, p.status)).length ? 'Temizle' : 'Tümünü Seç'}
                         </button>
                       </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2 mb-3">
                       {onLeavePersonnel.map((person) => {
-                        const isDefaultLeave = person.status === 'on_leave';
-                        const isDailyLeave = !isDefaultLeave && (dailyOnLeave[selectedDate] || []).includes(person.id);
+                        const isOnayliIzin = isOnayliIzinHelper(person.id, person.status);
+                        const isDailyLeave = !isOnayliIzin && (dailyOnLeave[selectedDate] || []).includes(person.id);
                         
                         return (
                           <div key={person.id} className="relative">
-                            {!isDefaultLeave ? (
+                            {isOnayliIzin ? (
+                              <div className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-xs text-gray-300">
+                                <span>{person.avatar}</span>
+                                <span>{person.name}</span>
+                                <span className="text-[9px] bg-green-700 text-white px-1 py-0.5 rounded font-bold">ONAYLANMIŞ</span>
+                              </div>
+                            ) : (
                               <button
                                 onClick={() => handleToggleOnLeaveSelection(person.id)}
                                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
@@ -1401,12 +1450,6 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                                   <span className="text-[9px] bg-red-600 text-white px-1 py-0.5 rounded font-bold">GÜNLÜK</span>
                                 )}
                               </button>
-                            ) : (
-                              <div className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-xs text-gray-300">
-                                <span>{person.avatar}</span>
-                                <span>{person.name}</span>
-                                <span className="text-[9px] bg-blue-600 text-white px-1 py-0.5 rounded font-bold">SABİT</span>
-                              </div>
                             )}
                             
                             {isDailyLeave && (
@@ -1458,13 +1501,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                     <span>Seçili Personelleri İzinli Ata</span>
                   </button>
 
-                  <button
-                    onClick={handleMoveAllStandbyToOnLeave}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium text-xs transition-all border border-white/15 text-white/60 hover:bg-white/8 active:scale-95"
-                  >
-                    <Plus className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>Tümünü İzinli Ata</span>
-                  </button>
+
                 </div>
 
                 {/* PERSONEL LİSTESİ */}
@@ -2232,6 +2269,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
           accessToken={accessToken}
           onClose={handleCloseTaskModal}
           onTaskSaved={handleTaskSaved}
+          onRemoveDailyOnLeave={handleTaskConfirmedDailyLeave}
         />
       )}
 
