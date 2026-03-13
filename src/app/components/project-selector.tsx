@@ -50,11 +50,11 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
   const [ozelTasks, setOzelTasks] = useState<Task[]>([]);
 
   // Rol bazlı davranış
-  // Rotasyona TAMAMEN BAĞLI roller: personel, operasyon, idari ve diğerleri
-  // Rotasyonu BYPASS eden roller (her mekana girebilir): yonetici, ust-mudur, mudur
-  const serbest = ['yonetici', 'ust-mudur', 'mudur'].includes(userRole || '');
+  // SADECE yonetici rotasyonu bypass eder (her mekana girebilir)
+  // Diğer herkes (ust-mudur, mudur, operasyon, personel, idari vb.) rotasyona tabi
+  const serbest = userRole === 'yonetici';
   const isPersonel = userRole === 'personel'; // tam kilit ekranı sadece personel için
-  const rotasyonZorunlu = !serbest; // operasyon, idari, personel vb. hepsi rotasyona tabi
+  const rotasyonZorunlu = !serbest;
 
   // Load locations from Mekan Yönetimi
   useEffect(() => {
@@ -301,8 +301,8 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
           <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
           <p className="text-gray-400 text-sm">Rotasyon bilgisi kontrol ediliyor...</p>
         </div>
-      ) : isPersonel && rotasyonDurumu !== 'tamam' ? (
-        /* Personel kilitli ekran */
+      ) : rotasyonZorunlu && rotasyonDurumu !== 'tamam' ? (
+        /* Rotasyon zorunlu + rotasyon 'tamam' değil → tam kilit ekranı */
         <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 rounded-2xl p-8 border-2 border-red-500/30 text-center">
           <div className="w-16 h-16 rounded-2xl bg-red-500/20 border-2 border-red-500/30 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-8 h-8 text-red-400" />
