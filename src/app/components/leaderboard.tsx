@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Trophy, Medal, Award, RefreshCw, Loader2, ChevronDown,
   Tag, TrendingUp, AlertTriangle, Users, MapPin,
-  ShieldCheck, Filter, Zap, Camera,
+  ShieldCheck, Filter, Zap, Camera, Pencil, X, Check, MessageSquare,
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { projectId } from '/utils/supabase/info';
@@ -56,6 +56,7 @@ interface Personel {
 interface Mekan { id: string; name: string; emoji: string; }
 interface LeaderboardProps {
   userName: string;
+  userId?: string;
   userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   accessToken?: string;
   onLogout: () => void;
@@ -68,6 +69,19 @@ const PERIOD_LABELS: Record<Period, string> = {
   'bu-yil': 'Bu Yıl',
   'tum-zamanlar': 'Tüm Zamanlar',
 };
+
+function getPeriodKey(period: Period): string {
+  const now = trNow();
+  if (period === 'bu-hafta') {
+    const day = now.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const mon = new Date(now); mon.setDate(now.getDate() + diff);
+    return `hafta_${fmt(mon)}`;
+  }
+  if (period === 'bu-ay') return `ay_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  if (period === 'bu-yil') return `yil_${now.getFullYear()}`;
+  return 'tumzamanlar';
+}
 
 function getPeriodDates(period: Period) {
   const now = trNow();
@@ -175,7 +189,7 @@ function RankAccent({ sira }: { sira: number }) {
 /* ────────────────────────────────────────────────────────────
    Ana bileşen
 ──────────────────────────────────────────────────────────── */
-export function Leaderboard({ userName, userRole, accessToken, onLogout, onNavigate }: LeaderboardProps) {
+export function Leaderboard({ userName, userId, userRole, accessToken, onLogout, onNavigate }: LeaderboardProps) {
   const [period, setPeriod] = useState<Period>('bu-ay');
   const [mekanFilter, setMekanFilter] = useState('');
   const [personeller, setPersoneller] = useState<Personel[]>([]);
@@ -184,6 +198,11 @@ export function Leaderboard({ userName, userRole, accessToken, onLogout, onNavig
   const [error, setError] = useState('');
   const [acikKart, setAcikKart] = useState<string | null>(null);
   const [showMekanFilter, setShowMekanFilter] = useState(false);
+  // Quote state
+  const [quotes, setQuotes] = useState<Record<string, string>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [quoteInput, setQuoteInput] = useState('');
+  const [savingQuote, setSavingQuote] = useState(false);
 
   const showCiro = ['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole);
 
@@ -192,18 +211,41 @@ export function Leaderboard({ userName, userRole, accessToken, onLogout, onNavig
     try {
       const token = accessToken || await getToken();
       const { baslangic, bitis } = getPeriodDates(period);
-      const params = new URLSearchParams({ baslangic, bitis });
+      const pk = getPeriodKey(period);
+      const params = new URLSearchParams({ baslangic, bitis, periodKey: pk });
       if (mekanFilter) params.set('mekanId', mekanFilter);
       const res = await fetch(`${API_BASE}/leaderboard/performans?${params}`, { headers: buildHeaders(token) });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Veri yüklenemedi.'); return; }
       setPersoneller(data.personeller || []);
       setMekanlar(data.mekanlar || []);
+      setQuotes(data.quotes || {});
     } catch (e) {
       setError('Sunucuya ulaşılamadı.');
       console.error('Leaderboard error:', e);
     } finally { setLoading(false); }
   }, [accessToken, period, mekanFilter]);
+
+  const handleSaveQuote = async () => {
+    if (!editingId) return;
+    setSavingQuote(true);
+    try {
+      const token = accessToken || await getToken();
+      const pk = getPeriodKey(period);
+      const res = await fetch(`${API_BASE}/leaderboard/quotes`, {
+        method: 'PUT',
+        headers: buildHeaders(token),
+        body: JSON.stringify({ periodKey: pk, quote: quoteInput }),
+      });
+      const data = await res.json();
+      if (!res.ok) { console.error('Quote save error:', data.error); return; }
+      setQuotes(prev => ({ ...prev, [editingId]: quoteInput.trim() }));
+      setEditingId(null);
+      setQuoteInput('');
+    } catch (e) {
+      console.error('Quote save error:', e);
+    } finally { setSavingQuote(false); }
+  };
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -407,7 +449,83 @@ export function Leaderboard({ userName, userRole, accessToken, onLogout, onNavig
                         <p className="text-center text-xs font-bold text-white mb-0.5 leading-tight px-1 truncate w-full">
                           {p.ad.split(' ')[0]}
                         </p>
-                        <p className="text-[10px] mb-2" style={{ color: 'rgba(255,255,255,0.30)' }}>{p.ham.satisAdet} satış</p>
+                        <p className="text-[10px] mb-1.5" style={{ color: 'rgba(255,255,255,0.30)' }}>{p.ham.satisAdet} satış</p>
+
+                        {/* Quote alanı */}
+                        <div className="w-full mb-1.5 min-h-[28px] flex flex-col items-center gap-1">
+                          {editingId === p.id ? (
+                            /* Düzenleme modu */
+                            <div className="w-full px-1">
+                              <textarea
+                                autoFocus
+                                value={quoteInput}
+                                onChange={e => setQuoteInput(e.target.value)}
+                                maxLength={80}
+                                rows={2}
+                                placeholder="Mesajını yaz..."
+                                className="w-full text-[9px] text-white rounded-xl px-2 py-1.5 resize-none outline-none"
+                                style={{
+                                  background: 'rgba(255,255,255,0.10)',
+                                  border: `1px solid ${glowColor}50`,
+                                  lineHeight: 1.4,
+                                  fontStyle: 'italic',
+                                }}
+                                onClick={e => e.stopPropagation()}
+                              />
+                              <div className="flex gap-1 mt-1 justify-center">
+                                <button
+                                  onClick={e => { e.stopPropagation(); handleSaveQuote(); }}
+                                  disabled={savingQuote}
+                                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold transition-all active:scale-95"
+                                  style={{ background: glowColor, color: isFirst ? '#1a1a1a' : '#fff' }}
+                                >
+                                  {savingQuote ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Check className="w-2.5 h-2.5" />}
+                                  Kaydet
+                                </button>
+                                <button
+                                  onClick={e => { e.stopPropagation(); setEditingId(null); setQuoteInput(''); }}
+                                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold transition-all active:scale-95"
+                                  style={{ background: 'rgba(255,255,255,0.10)', color: 'rgba(255,255,255,0.6)' }}
+                                >
+                                  <X className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            /* Görüntüleme modu */
+                            <div className="w-full flex flex-col items-center gap-0.5">
+                              {quotes[p.id] ? (
+                                <p
+                                  className="text-center text-[9px] leading-tight px-1.5 w-full"
+                                  style={{ color: `${glowColor}cc`, fontStyle: 'italic' }}
+                                >
+                                  "{quotes[p.id]}"
+                                </p>
+                              ) : userId === p.id ? (
+                                <p className="text-[9px]" style={{ color: 'rgba(255,255,255,0.20)', fontStyle: 'italic' }}>
+                                  mesaj yaz...
+                                </p>
+                              ) : null}
+                              {/* Edit butonu — sadece kendi slotu */}
+                              {userId === p.id && (
+                                <button
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    setEditingId(p.id);
+                                    setQuoteInput(quotes[p.id] || '');
+                                  }}
+                                  className="flex items-center gap-1 px-2 py-0.5 rounded-lg transition-all active:scale-95"
+                                  style={{ background: `${glowColor}18`, border: `1px solid ${glowColor}30` }}
+                                >
+                                  <Pencil className="w-2.5 h-2.5" style={{ color: glowColor }} />
+                                  <span className="text-[8px] font-semibold" style={{ color: `${glowColor}cc` }}>
+                                    {quotes[p.id] ? 'düzenle' : 'yaz'}
+                                  </span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
 
                         {/* Basamak */}
                         <div
@@ -504,6 +622,12 @@ export function Leaderboard({ userName, userRole, accessToken, onLogout, onNavig
                       {/* İsim + özet */}
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-sm text-white truncate leading-tight">{p.ad}</p>
+                        {p.sira <= 3 && quotes[p.id] && (
+                          <p className="text-[10px] truncate mt-0.5 flex items-center gap-1" style={{ color: `${glowColor}bb`, fontStyle: 'italic' }}>
+                            <MessageSquare className="w-2.5 h-2.5 flex-shrink-0" style={{ color: glowColor }} />
+                            {quotes[p.id]}
+                          </p>
+                        )}
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>{p.ham.satisAdet} satış</span>
                           {showCiro && (

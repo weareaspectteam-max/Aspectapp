@@ -4279,6 +4279,7 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
     const baslangic = c.req.query("baslangic") || "";
     const bitis = c.req.query("bitis") || "";
     const mekanIdFilter = c.req.query("mekanId") || "";
+    const periodKey = c.req.query("periodKey") || "";
 
     // ── 1. Mekanlar ──
     const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
@@ -4491,14 +4492,68 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
       },
     }));
 
+    // ── 7. Podyum quote'ları: top3'ü çek, top3 dışındakileri sil ──
+    const quotesMap: Record<string, string> = {};
+    if (periodKey) {
+      const top3Ids = new Set(result.slice(0, 3).map((p: any) => p.id));
+      const allQuotes: any[] = await kv.getByPrefix("podium_quote_") || [];
+      for (const q of allQuotes) {
+        if (q._periodKey !== periodKey) continue;
+        if (!top3Ids.has(q.userId)) {
+          // Top3 dışına düştü — quote'u sil
+          await kv.del(`podium_quote_${q.userId}_${periodKey}`);
+        } else if (q.quote) {
+          quotesMap[q.userId] = q.quote;
+        }
+      }
+    }
+
     console.log(`Leaderboard: ${baslangic}–${bitis} → ${result.length} personel`);
     return c.json({
       personeller: result,
       mekanlar: mekanlarList.map((m: any) => ({ id: m.id, name: m.name, emoji: m.emoji || "📍" })),
       donem: { baslangic, bitis },
+      quotes: quotesMap,
     });
   } catch (err) {
     console.log("Leaderboard performans error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────
+// LEADERBOARD QUOTES: Podyum mesajı kaydet
+// PUT /make-server-4da0b637/leaderboard/quotes
+// Body: { periodKey, quote }
+// ──────────────────────────────────────────────────────────────
+app.put("/make-server-4da0b637/leaderboard/quotes", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const { periodKey, quote } = await c.req.json();
+    if (!periodKey || typeof periodKey !== "string") return c.json({ error: "periodKey gerekli." }, 400);
+    if (typeof quote !== "string" || quote.length > 120) return c.json({ error: "Mesaj en fazla 120 karakter olmalı." }, 400);
+
+    const trimmed = quote.trim();
+    if (!trimmed) {
+      // Boş mesaj → sil
+      await kv.del(`podium_quote_${user.id}_${periodKey}`);
+      return c.json({ ok: true, deleted: true });
+    }
+
+    await kv.set(`podium_quote_${user.id}_${periodKey}`, {
+      userId: user.id,
+      _periodKey: periodKey,
+      quote: trimmed,
+      ad: user.user_metadata?.full_name || user.email || "",
+      updatedAt: new Date().toISOString(),
+    });
+
+    console.log(`Podium quote saved: ${user.id} | ${periodKey} | "${trimmed}"`);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("Leaderboard quotes PUT error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });

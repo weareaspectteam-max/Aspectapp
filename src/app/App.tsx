@@ -359,6 +359,7 @@ export default function App() {
         return (
           <Leaderboard 
             userName={userName}
+            userId={userId}
             userRole={userRole}
             accessToken={accessToken}
             onLogout={handleLogout}
