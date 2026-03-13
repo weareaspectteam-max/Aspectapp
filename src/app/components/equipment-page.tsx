@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ArrowLeft, Search, Plus, Edit2, Trash2, User, X,
   Save, Loader2, WifiOff, RefreshCw, AlertCircle,
-  Camera, ImageOff,
+  Camera, ImageOff, Maximize2,
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { UserRole } from './login';
@@ -149,6 +149,36 @@ function EquipmentPhoto({ url, alt, className = '' }: { url: string; alt: string
   );
 }
 
+// ─── Lightbox ─────────────────────────────────────────────────────────────────
+function Lightbox({ url, alt, onKapat }: { url: string; alt: string; onKapat: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onKapat(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/92 backdrop-blur-md"
+      onClick={onKapat}
+    >
+      <button
+        onClick={onKapat}
+        className="absolute top-5 right-5 w-10 h-10 rounded-full bg-white/10 border border-white/20 flex items-center justify-center active:scale-90 transition-transform z-10"
+      >
+        <X className="w-5 h-5 text-white" />
+      </button>
+      <img
+        src={url}
+        alt={alt}
+        className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
+        style={{ maxHeight: '90vh', maxWidth: '95vw' }}
+        onClick={e => e.stopPropagation()}
+      />
+      <p className="absolute bottom-5 left-1/2 -translate-x-1/2 text-xs text-white/40 text-center px-4">{alt}</p>
+    </div>
+  );
+}
+
 // ─── Ana Bileşen ──────────────────────────────────────────────────────────────
 export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedded = false }: EquipmentPageProps) {
   const [liste, setListe]             = useState<Equipment[]>([]);
@@ -176,6 +206,10 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
   const [gecmisAcik, setGecmisAcik]         = useState(false);
   const [kayitYukleniyor, setKayitYukleniyor] = useState(false);
   const [modalHata, setModalHata]           = useState('');
+
+  // Lightbox
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [lightboxAlt, setLightboxAlt] = useState('');
 
   // Fotoğraf state
   const [fotoPreview, setFotoPreview]       = useState<string | null>(null); // önizleme (base64)
@@ -474,6 +508,11 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
     <div className="pb-24 min-h-screen bg-gradient-to-br from-[#0a051e] via-[#120830] to-[#1a0a3c]">
       {toast && <Toast mesaj={toast.mesaj} tip={toast.tip} onKapat={() => setToast(null)} />}
 
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <Lightbox url={lightboxUrl} alt={lightboxAlt} onKapat={() => setLightboxUrl(null)} />
+      )}
+
       {/* Header */}
       <div className="bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-b border-white/10 px-4 pt-3 pb-3">
         <div className="flex items-center gap-3">
@@ -635,6 +674,13 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                         <div className={`absolute top-3 right-3 px-2.5 py-1 rounded-lg border text-[10px] font-bold ${durumClass(eq.status)}`}>
                           {durumLabel(eq.status)}
                         </div>
+                        {/* Büyüt butonu sağ alt */}
+                        <button
+                          onClick={() => { setLightboxUrl(eq.imageUrl!); setLightboxAlt(`${eq.brand} ${eq.model}`); }}
+                          className="absolute bottom-3 right-3 w-8 h-8 rounded-xl bg-black/50 border border-white/20 flex items-center justify-center backdrop-blur-sm active:scale-90 transition-transform"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5 text-white/80" />
+                        </button>
                       </div>
                     )}
 
