@@ -396,9 +396,9 @@ export function OzelIsEkrani({ userName, userId, userRole, task, onBack, onLogou
             <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
           </div>
         )}
-        {asama === 'bekliyor' && <BeklyorEkrani />}
-        {asama === 'devamda' && <DevamEkrani />}
-        {asama === 'tamamlandi' && <TamamlandiEkrani />}
+        {asama === 'bekliyor' && BeklyorEkrani()}
+        {asama === 'devamda' && DevamEkrani()}
+        {asama === 'tamamlandi' && TamamlandiEkrani()}
       </div>
     </div>
   );
