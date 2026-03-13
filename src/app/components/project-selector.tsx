@@ -51,7 +51,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
   const currentUserRole = getCurrentUserRole();
 
   // Rol bazlı davranış
-  const isTopRole = userRole === 'yonetici' || userRole === 'ust-mudur';
+  const isTopRole = userRole === 'yonetici';
   const isPersonel = userRole === 'personel';
 
   // Load locations from Mekan Yönetimi
@@ -359,7 +359,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
               const isMyVenue = myRotationVenues.has(project.name);
               const hasRotationData = myRotationVenues.size > 0;
               // Personel için rotasyonunda olmayan mekanları kilitle
-              const locked = isPersonel && hasRotationData && !isMyVenue;
+              const locked = userRole !== 'yonetici' && hasRotationData && !isMyVenue;
               return (
                 <button
                   key={project.id}
