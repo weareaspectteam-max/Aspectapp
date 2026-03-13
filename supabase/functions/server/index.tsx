@@ -2660,11 +2660,25 @@ app.get("/make-server-4da0b637/ekstra-is/kaynaklar", async (c) => {
     if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
     const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
-    const mekanlar = mekanlarList.map((m: any) => ({
-      id: m.id,
-      name: m.name,
-      emoji: m.emoji || "📍",
-      color: m.color || "#9dd9ea",
+
+    // Bugünün tarihini Türkiye saatiyle hesapla (UTC+3)
+    const nowTR = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    const bugunTR = nowTR.toISOString().split('T')[0];
+    const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15"];
+
+    // Her mekan için bugünün günlük stok kaydını çek
+    const mekanlar = await Promise.all(mekanlarList.map(async (m: any) => {
+      const gunlukKayit: any = await kv.get(`stok_gunluk_${m.id}_${bugunTR}`) || null;
+      const albumSayilari: Record<string, number> = {};
+      let acilisYapildi = false;
+      if (gunlukKayit) {
+        const aktifStok = gunlukKayit.kapanish || gunlukKayit.acilis || {};
+        acilisYapildi = !!gunlukKayit.acilisYapildi;
+        for (const alan of albumAlanlari) albumSayilari[alan] = Number(aktifStok[alan]) || 0;
+      } else {
+        for (const alan of albumAlanlari) albumSayilari[alan] = 0;
+      }
+      return { id: m.id, name: m.name, emoji: m.emoji || "📍", color: m.color || "#9dd9ea", albumSayilari, acilisYapildi };
     }));
 
     const depoStok: any = await kv.get("depo_stok") || {};
