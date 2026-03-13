@@ -3699,6 +3699,238 @@ app.delete("/make-server-4da0b637/users/:userId", async (c) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════════
+// MESAJLAŞMA SİSTEMİ
+// KV yapısı:
+//   chat_msgs_{channelId}   → { messages: Message[], lastUpdated: string }
+//   chat_dm_{uid1}_{uid2}   → { messages: Message[], lastUpdated: string }
+//   chat_read_{userId}      → Record<channelId, ISO string>
+//   chat_dm_list_{userId}   → string[]  (DM yaptığı userId listesi)
+// ══════════════════════════════════════════════════════════════════
+
+const MAX_MSGS = 100;
+
+function sortedDmKey(a: string, b: string) {
+  return a < b ? `chat_dm_${a}_${b}` : `chat_dm_${b}_${a}`;
+}
+
+// ── GET /mesajlar/kanallar — kanal listesi ──
+app.get("/make-server-4da0b637/mesajlar/kanallar", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    const isAdmin = ["yonetici", "ust-mudur", "mudur", "idari", "operasyon"].includes(role);
+
+    const STATIC_CHANNELS = [
+      { id: "general",  name: "general",  type: "channel", isAdminOnly: false },
+      { id: "rotasyon", name: "rotasyon", type: "channel", isAdminOnly: false },
+    ];
+
+    let mekanChannels: any[] = [];
+    if (isAdmin) {
+      const mekanlar: any[] = await kv.getByPrefix("mekan_") || [];
+      mekanChannels = mekanlar.map((m: any) => ({
+        id: `mekan_${m.id}`, name: m.name, type: "project", emoji: m.emoji || "📍", isAdminOnly: true,
+      }));
+    }
+
+    const allChannels = [...STATIC_CHANNELS, ...mekanChannels];
+    const readMap: Record<string, string> = await kv.get(`chat_read_${user.id}`) || {};
+
+    const channelsWithMeta = await Promise.all(allChannels.map(async (ch) => {
+      const data: any = await kv.get(`chat_msgs_${ch.id}`) || { messages: [] };
+      const msgs: any[] = data.messages || [];
+      const lastMsg = msgs[msgs.length - 1];
+      const lastReadTime = readMap[ch.id] ? new Date(readMap[ch.id]).getTime() : 0;
+      const unread = msgs.filter((m: any) =>
+        new Date(m.timestamp).getTime() > lastReadTime && m.senderId !== user.id
+      ).length;
+      return { ...ch, lastMessage: lastMsg?.content || "", lastMessageTime: lastMsg?.timestamp || null, unread };
+    }));
+
+    return c.json({ channels: channelsWithMeta });
+  } catch (err) {
+    console.log("GET mesajlar/kanallar error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ── GET /mesajlar/kanallar/:channelId — mesajları getir ──
+app.get("/make-server-4da0b637/mesajlar/kanallar/:channelId", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const { channelId } = c.req.param();
+    const data: any = await kv.get(`chat_msgs_${channelId}`) || { messages: [] };
+    const readMap: Record<string, string> = await kv.get(`chat_read_${user.id}`) || {};
+    readMap[channelId] = new Date().toISOString();
+    await kv.set(`chat_read_${user.id}`, readMap);
+    return c.json({ messages: data.messages || [] });
+  } catch (err) {
+    console.log("GET mesajlar/kanallar/:id error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ── POST /mesajlar/kanallar/:channelId — mesaj gönder ──
+app.post("/make-server-4da0b637/mesajlar/kanallar/:channelId", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const { channelId } = c.req.param();
+    const { content } = await c.req.json();
+    if (!content?.trim()) return c.json({ error: "Mesaj boş olamaz." }, 400);
+    if (channelId.startsWith("mekan_")) return c.json({ error: "Mekan kanalları salt okunurdur." }, 403);
+
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const msg = {
+      id,
+      senderId: user.id,
+      senderName: user.user_metadata?.full_name || user.email || "Bilinmeyen",
+      senderRole: user.user_metadata?.role || "personel",
+      content: content.trim(),
+      timestamp: new Date().toISOString(),
+      channelId,
+    };
+
+    const data: any = await kv.get(`chat_msgs_${channelId}`) || { messages: [] };
+    const messages = [...(data.messages || []), msg].slice(-MAX_MSGS);
+    await kv.set(`chat_msgs_${channelId}`, { messages, lastUpdated: new Date().toISOString() });
+    console.log(`Mesaj: ${user.user_metadata?.full_name} → #${channelId}`);
+    return c.json({ message: msg }, 201);
+  } catch (err) {
+    console.log("POST mesajlar/kanallar/:id error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ── GET /mesajlar/kullanicilar — DM için kullanıcı listesi ──
+app.get("/make-server-4da0b637/mesajlar/kullanicilar", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const supabase = getAdminClient();
+    const { data: { users }, error } = await supabase.auth.admin.listUsers({ perPage: 500 });
+    if (error) return c.json({ error: `Kullanıcılar alınamadı: ${error.message}` }, 400);
+    const list = users
+      .filter((u: any) => u.id !== user.id && u.user_metadata?.role !== "bekleyen")
+      .map((u: any) => ({
+        id: u.id,
+        name: u.user_metadata?.full_name || u.email || "Bilinmeyen",
+        role: u.user_metadata?.role || "personel",
+        avatar: u.user_metadata?.avatar || "",
+      }));
+    return c.json({ users: list });
+  } catch (err) {
+    console.log("GET mesajlar/kullanicilar error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ── GET /mesajlar/dm-list — aktif DM konuşmalarını listele ──
+app.get("/make-server-4da0b637/mesajlar/dm-list", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const dmListKey = `chat_dm_list_${user.id}`;
+    const dmList: string[] = await kv.get(dmListKey) || [];
+
+    const supabase = getAdminClient();
+    const { data: { users } } = await supabase.auth.admin.listUsers({ perPage: 500 });
+    const userMap: Record<string, any> = {};
+    for (const u of (users || [])) userMap[u.id] = u;
+
+    const readMap: Record<string, string> = await kv.get(`chat_read_${user.id}`) || {};
+
+    const conversations = await Promise.all(dmList.map(async (otherUserId: string) => {
+      const other = userMap[otherUserId];
+      if (!other) return null;
+      const dmKey = sortedDmKey(user.id, otherUserId);
+      const data: any = await kv.get(dmKey) || { messages: [] };
+      const msgs: any[] = data.messages || [];
+      const lastMsg = msgs[msgs.length - 1];
+      const lastReadTime = readMap[`dm_${otherUserId}`]
+        ? new Date(readMap[`dm_${otherUserId}`]).getTime() : 0;
+      const unread = msgs.filter((m: any) =>
+        new Date(m.timestamp).getTime() > lastReadTime && m.senderId !== user.id
+      ).length;
+      return {
+        userId: otherUserId,
+        name: other.user_metadata?.full_name || other.email || "Bilinmeyen",
+        role: other.user_metadata?.role || "personel",
+        avatar: other.user_metadata?.avatar || "",
+        lastMessage: lastMsg?.content || "",
+        lastMessageTime: lastMsg?.timestamp || null,
+        unread,
+      };
+    }));
+
+    return c.json({ conversations: conversations.filter(Boolean) });
+  } catch (err) {
+    console.log("GET mesajlar/dm-list error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ── GET /mesajlar/dm/:otherUserId — DM mesajlarını getir ──
+app.get("/make-server-4da0b637/mesajlar/dm/:otherUserId", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const { otherUserId } = c.req.param();
+    const dmKey = sortedDmKey(user.id, otherUserId);
+    const data: any = await kv.get(dmKey) || { messages: [] };
+    const readMap: Record<string, string> = await kv.get(`chat_read_${user.id}`) || {};
+    readMap[`dm_${otherUserId}`] = new Date().toISOString();
+    await kv.set(`chat_read_${user.id}`, readMap);
+    return c.json({ messages: data.messages || [] });
+  } catch (err) {
+    console.log("GET mesajlar/dm/:id error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ── POST /mesajlar/dm/:otherUserId — DM gönder ──
+app.post("/make-server-4da0b637/mesajlar/dm/:otherUserId", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const { otherUserId } = c.req.param();
+    const { content } = await c.req.json();
+    if (!content?.trim()) return c.json({ error: "Mesaj boş olamaz." }, 400);
+
+    const dmKey = sortedDmKey(user.id, otherUserId);
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const msg = {
+      id,
+      senderId: user.id,
+      senderName: user.user_metadata?.full_name || user.email || "Bilinmeyen",
+      senderRole: user.user_metadata?.role || "personel",
+      content: content.trim(),
+      timestamp: new Date().toISOString(),
+    };
+
+    const data: any = await kv.get(dmKey) || { messages: [] };
+    const messages = [...(data.messages || []), msg].slice(-MAX_MSGS);
+    await kv.set(dmKey, { messages, lastUpdated: new Date().toISOString() });
+
+    // Her iki kullanıcının DM listesine ekle
+    for (const [meId, themId] of [[user.id, otherUserId], [otherUserId, user.id]]) {
+      const listKey = `chat_dm_list_${meId}`;
+      const list: string[] = await kv.get(listKey) || [];
+      if (!list.includes(themId)) await kv.set(listKey, [...list, themId]);
+    }
+
+    console.log(`DM: ${user.user_metadata?.full_name} → ${otherUserId}`);
+    return c.json({ message: msg }, 201);
+  } catch (err) {
+    console.log("POST mesajlar/dm/:id error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 Deno.serve(async (req) => {
   // Supabase Edge Functions'da OPTIONS preflight istekleri gateway tarafından kesilebilir.
   // Bu nedenle OPTIONS'ı Hono'ya göndermeden önce burada açıkça handle ediyoruz.

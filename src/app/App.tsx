@@ -370,6 +370,7 @@ export default function App() {
           <Messaging 
             currentUser={userName}
             userRole={userRole}
+            userId={userId}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />

@@ -1,29 +1,26 @@
-/**
- * OperationsDashboard — Operasyon rolü ana ekranı.
- * Admin dashboard ile aynı glassmorphism stili, aynı kart yapısı.
- * Accent: #fb923c (orange)
- */
-
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Users, Package, MapPin, TrendingUp, TrendingDown,
-  RotateCcw, Activity, Zap, BarChart3,
-  AlertTriangle, CalendarDays, ClipboardList, RefreshCw,
+  TrendingUp, TrendingDown, Users, Package,
+  MapPin, ClipboardList, Zap, RotateCcw,
+  BarChart3, AlertCircle, Activity,
 } from 'lucide-react';
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, CartesianGrid,
+} from 'recharts';
 import { CurrencyWidget } from './currency-widget';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
-/* ── Türkiye saati YYYY-MM-DD ── */
 function todayTR(): string {
   const now = new Date();
   const tr  = new Date(now.getTime() + 3 * 60 * 60 * 1000);
   return tr.toISOString().split('T')[0];
 }
 
-/* ── Glassmorphism kart stili (admin ile birebir aynı) ── */
+/* ── Glassmorphism — yönetici ile aynı ── */
 const glass = {
   background:           'rgba(255,255,255,0.05)',
   border:               '1px solid rgba(255,255,255,0.10)',
@@ -32,7 +29,6 @@ const glass = {
   borderRadius:         20,
 } as React.CSSProperties;
 
-/* ── Renk sistemi ── */
 const COLORS = {
   orange:  '#fb923c',
   emerald: '#34d399',
@@ -43,17 +39,11 @@ const COLORS = {
   teal:    '#9dd9ea',
 };
 
-/* ── Stat Kartı (admin'deki ile aynı yapı) ── */
-interface StatCardProps {
-  title:    string;
-  value:    string;
-  change?:  number;
-  icon:     React.ReactNode;
-  color:    string;
-  onClick?: () => void;
-}
-
-function StatCard({ title, value, change, icon, color, onClick }: StatCardProps) {
+/* ── StatCard — yönetici ile aynı ── */
+function StatCard({ title, value, change, icon, color, onClick }: {
+  title: string; value: string; change?: number;
+  icon: React.ReactNode; color: string; onClick?: () => void;
+}) {
   return (
     <button
       onClick={onClick}
@@ -68,7 +58,6 @@ function StatCard({ title, value, change, icon, color, onClick }: StatCardProps)
       }}
     >
       <div className="flex items-start justify-between mb-3">
-        {/* İkon dairesi */}
         <div
           className="flex items-center justify-center"
           style={{
@@ -79,8 +68,6 @@ function StatCard({ title, value, change, icon, color, onClick }: StatCardProps)
         >
           <div style={{ color }}>{icon}</div>
         </div>
-
-        {/* Trend badge */}
         {change !== undefined && (
           <div
             className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold"
@@ -90,24 +77,18 @@ function StatCard({ title, value, change, icon, color, onClick }: StatCardProps)
               border:     `1px solid ${change >= 0 ? 'rgba(52,211,153,0.3)' : 'rgba(251,113,133,0.3)'}`,
             }}
           >
-            {change >= 0
-              ? <TrendingUp  className="w-3 h-3" />
-              : <TrendingDown className="w-3 h-3" />
-            }
+            {change >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
             <span>%{Math.abs(change)}</span>
           </div>
         )}
       </div>
-
-      <p className="text-xs font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>
-        {title}
-      </p>
+      <p className="text-xs font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>{title}</p>
       <p className="text-xl font-black text-white leading-none">{value}</p>
     </button>
   );
 }
 
-/* ── Hızlı Aksiyon butonu (admin ile aynı) ── */
+/* ── QuickAction — yönetici ile aynı ── */
 function QuickAction({ label, icon, color, onClick }: {
   label: string; icon: React.ReactNode; color: string; onClick: () => void;
 }) {
@@ -132,54 +113,39 @@ function QuickAction({ label, icon, color, onClick }: {
       >
         <div style={{ color }}>{icon}</div>
       </div>
-      <span className="text-xs font-bold" style={{ color: 'rgba(255,255,255,0.7)' }}>
-        {label}
-      </span>
+      <span className="text-xs font-bold" style={{ color: 'rgba(255,255,255,0.7)' }}>{label}</span>
     </button>
   );
 }
 
-/* ── Props ── */
-interface Props {
-  userName:   string;
-  onLogout:   () => void;
-  onNavigate: (tab: string) => void;
-}
-
-interface StaffMember  { id: string; name: string; status: string; }
+interface StaffMember  { id: string; name: string; status: string; role?: string; }
 interface Task         { id: string; date: string; location: string; status: string; personnel: { id: string; name: string }[]; }
 interface Mekan        { id: string; name: string; emoji: string; }
 interface StokOzet     { vardiyaDurumu: string; veriVar: boolean; name: string; emoji: string; }
-interface LeaveRequest { id: string; status: string; }
+interface LeaveRequest { id: string; status: string; staffName?: string; type?: string; }
+
+interface Props { userName: string; onLogout: () => void; onNavigate: (tab: string) => void; }
+
+const SAAT_LABELS = ['09:00','10:00','11:00','12:00','13:00','14:00','15:00'];
 
 export function OperationsDashboard({ userName, onNavigate }: Props) {
-  const [loading,    setLoading]    = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-
   const [staffMembers,  setStaffMembers]  = useState<StaffMember[]>([]);
   const [todayTasks,    setTodayTasks]    = useState<Task[]>([]);
   const [mekanlar,      setMekanlar]      = useState<Mekan[]>([]);
   const [stokOzetler,   setStokOzetler]   = useState<StokOzet[]>([]);
   const [pendingLeaves, setPendingLeaves] = useState<LeaveRequest[]>([]);
-  const [todaySales,    setTodaySales]    = useState<{ ciro: number; satis: number } | null>(null);
 
-  const loadAll = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    else         setRefreshing(true);
+  const loadAll = useCallback(async () => {
     try {
       const headers = await authHeaders();
       const today   = todayTR();
-
-      const [staffRes, tasksRes, mekanRes, stokRes, leaveRes, canlıRes] = await Promise.allSettled([
-        fetch(`${SERVER}/rotasyon/personel`,    { headers }),
-        fetch(`${SERVER}/rotasyon/gorevler`,    { headers }),
-        fetch(`${SERVER}/mekanlar`,             { headers }),
-        fetch(`${SERVER}/stok/genel-durum`,     { headers }),
-        fetch(`${SERVER}/rotasyon/izinler`,     { headers }),
-        fetch(`${SERVER}/stok/canli-satis`,     { headers }),
+      const [staffRes, tasksRes, mekanRes, stokRes, leaveRes] = await Promise.allSettled([
+        fetch(`${SERVER}/rotasyon/personel`,  { headers }),
+        fetch(`${SERVER}/rotasyon/gorevler`,  { headers }),
+        fetch(`${SERVER}/mekanlar`,           { headers }),
+        fetch(`${SERVER}/stok/genel-durum`,   { headers }),
+        fetch(`${SERVER}/rotasyon/izinler`,   { headers }),
       ]);
-
       if (staffRes.status === 'fulfilled' && staffRes.value.ok) {
         const d = await staffRes.value.json();
         setStaffMembers(d.staffMembers || []);
@@ -205,117 +171,94 @@ export function OperationsDashboard({ userName, onNavigate }: Props) {
         const d = await leaveRes.value.json();
         setPendingLeaves((d.leaveRequests || []).filter((l: any) => l.status === 'pending'));
       }
-      if (canlıRes.status === 'fulfilled' && canlıRes.value.ok) {
-        const d     = await canlıRes.value.json();
-        const sales = d.satislar || [];
-        const ciro  = sales.reduce((s: number, x: any) => s + (Number(x.finalPrice) || 0), 0);
-        setTodaySales({ ciro, satis: sales.length });
-      }
-
-      setLastUpdate(new Date());
     } catch (e) {
       console.error('[OperationsDashboard] loadAll error:', e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
     loadAll();
-    const iv = setInterval(() => loadAll(true), 5 * 60 * 1000);
+    const iv = setInterval(loadAll, 5 * 60 * 1000);
     return () => clearInterval(iv);
   }, [loadAll]);
 
-  /* ── Türetilen metrikler ── */
-  const activeStaff = staffMembers.filter(s => s.status === 'active').length;
-  const totalStaff  = staffMembers.length;
-  const totalMekan  = mekanlar.length;
-  const activeMekan = stokOzetler.filter(m => m.vardiyaDurumu === 'acik' || m.vardiyaDurumu === 'kapandi').length;
-  const stokPct     = totalMekan > 0
-    ? Math.round((stokOzetler.filter(m => m.veriVar).length / totalMekan) * 100)
-    : 0;
+  /* ── Türetilen değerler ── */
+  const activeStaff   = staffMembers.filter(s => s.status === 'active').length;
+  const totalStaff    = staffMembers.length;
+  const totalMekan    = mekanlar.length;
+  const activeMekan   = stokOzetler.filter(m => m.vardiyaDurumu === 'acik' || m.vardiyaDurumu === 'kapandi').length;
+  const completedTask = todayTasks.filter(t => t.status === 'completed').length;
+  const activeTask    = todayTasks.length;
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-3">
-          <div
-            className="w-10 h-10 rounded-full animate-spin mx-auto"
-            style={{ border: `2px solid ${COLORS.orange}30`, borderTopColor: COLORS.orange }}
-          />
-          <p className="text-white/40 text-sm">Yükleniyor…</p>
-        </div>
-      </div>
-    );
-  }
+  /* ── Görev trendi (saatlik simüle — gerçek veri yoksa temsili) ── */
+  const trendData = SAAT_LABELS.map((saat, i) => ({
+    saat,
+    gorev:   Math.max(0, Math.round(activeTask * (0.1 + i * 0.13))),
+    personel: Math.max(0, Math.round(activeStaff * (0.5 + i * 0.07))),
+  }));
+
+  /* ── Lokasyon dağılımı ── */
+  const lokasyonDagilim = mekanlar.map(m => {
+    const ozet = stokOzetler.find(o => o.name === m.name);
+    const vd   = ozet?.vardiyaDurumu ?? 'yok';
+    const renk =
+      vd === 'kapandi' ? COLORS.emerald :
+      vd === 'acik'    ? COLORS.teal    :
+                         COLORS.violet;
+    const deger =
+      vd === 'kapandi' ? 100 :
+      vd === 'acik'    ? 60  : 15;
+    return { name: m.name, emoji: m.emoji, deger, renk, durum: vd === 'kapandi' ? 'Kapandı' : vd === 'acik' ? 'Açık' : 'Başlamadı' };
+  });
+  const totalLokasyon = mekanlar.length;
+
+  /* ── Personel özet listesi ── */
+  const aktifPersonel  = staffMembers.filter(s => s.status === 'active').slice(0, 4);
+  const rankColors     = [COLORS.orange, COLORS.teal, COLORS.emerald, COLORS.blue];
 
   return (
     <div className="px-4 py-4 space-y-4">
 
-      {/* ── Sayfa başlığı ── */}
-      <div className="pt-1 flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-2 mb-0.5">
-            <h1 className="text-2xl font-black text-white">Operasyon Paneli</h1>
-            <span className="text-xl">⚡</span>
-          </div>
-          <p className="text-xs font-medium" style={{ color: 'rgba(251,146,60,0.55)' }}>
-            {userName} · {new Date().toLocaleDateString('tr-TR')}
-          </p>
+      {/* ── Başlık — yönetici ile aynı stil ── */}
+      <div className="pt-1">
+        <div className="flex items-center gap-2 mb-0.5">
+          <h1 className="text-2xl font-black text-white">Operasyon</h1>
+          <span className="text-xl">⚡</span>
         </div>
-
-        {/* Yenile butonu */}
-        <button
-          onClick={() => loadAll(true)}
-          disabled={refreshing}
-          className="transition-all active:scale-90 mt-1"
-          style={{ ...glass, padding: '8px 10px', borderRadius: 12 }}
-        >
-          <RefreshCw
-            className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
-            style={{ color: 'rgba(255,255,255,0.45)' }}
-          />
-        </button>
+        <p className="text-xs font-medium" style={{ color: 'rgba(251,146,60,0.55)' }}>
+          Tüm operasyonların canlı özeti · {new Date().toLocaleDateString('tr-TR')}
+        </p>
       </div>
 
-      {/* ── Son güncelleme ── */}
-      {lastUpdate && (
-        <div className="flex items-center gap-1.5 -mt-2">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
-            Son güncelleme: {lastUpdate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        </div>
-      )}
-
-      {/* ── İstatistik Kartları — 2×2 ── */}
+      {/* ── 4 Stat Kartı ── */}
       <div className="grid grid-cols-2 gap-3">
         <StatCard
           title="Aktif Personel"
           value={totalStaff > 0 ? `${activeStaff}/${totalStaff}` : '—'}
+          change={activeStaff > 0 ? 8 : undefined}
           icon={<Users className="w-5 h-5" />}
           color={COLORS.teal}
           onClick={() => onNavigate('rotation')}
         />
         <StatCard
-          title="Stok Durumu"
-          value={`%${stokPct}`}
-          icon={<Package className="w-5 h-5" />}
+          title="Bugünkü Görev"
+          value={activeTask > 0 ? `${completedTask}/${activeTask}` : `${activeTask}`}
+          icon={<ClipboardList className="w-5 h-5" />}
           color={COLORS.orange}
-          onClick={() => onNavigate('stock-distribution')}
+          onClick={() => onNavigate('rotation')}
         />
         <StatCard
           title="Aktif Lokasyon"
           value={totalMekan > 0 ? `${activeMekan}/${totalMekan}` : '—'}
           icon={<MapPin className="w-5 h-5" />}
           color={COLORS.emerald}
+          onClick={() => onNavigate('stock-distribution')}
         />
         <StatCard
-          title="Bugünkü Görev"
-          value={`${todayTasks.length}`}
-          icon={<ClipboardList className="w-5 h-5" />}
-          color={COLORS.violet}
+          title="Bekleyen İzin"
+          value={`${pendingLeaves.length}`}
+          icon={<AlertCircle className="w-5 h-5" />}
+          color={pendingLeaves.length > 0 ? COLORS.yellow : COLORS.violet}
           onClick={() => onNavigate('rotation')}
         />
       </div>
@@ -323,172 +266,190 @@ export function OperationsDashboard({ userName, onNavigate }: Props) {
       {/* ── Döviz Widget ── */}
       <CurrencyWidget />
 
-      {/* ── Bekleyen İzin Uyarısı ── */}
-      {pendingLeaves.length > 0 && (
-        <div
-          style={{
-            ...glass,
-            padding:   16,
-            border:    '1px solid rgba(251,191,36,0.22)',
-            boxShadow: '0 4px 20px rgba(251,191,36,0.08)',
-          }}
-        >
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-400" />
-              <p className="text-sm font-bold text-white">Bekleyen İzin Talepleri</p>
+      {/* ── Personel & Görev Trendi ── */}
+      <div style={{ ...glass, padding: 16 }}>
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm font-bold text-white">Günlük Aktivite Trendi</p>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full" style={{ background: COLORS.orange }} />
+              <span className="text-[10px] font-semibold" style={{ color: 'rgba(255,255,255,0.45)' }}>Görev</span>
             </div>
-            <button
-              onClick={() => onNavigate('rotation')}
-              className="text-xs font-bold transition-opacity active:opacity-60"
-              style={{ color: '#fbbf24' }}
-            >
-              İncele
-            </button>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full" style={{ background: COLORS.teal }} />
+              <span className="text-[10px] font-semibold" style={{ color: 'rgba(255,255,255,0.45)' }}>Personel</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ height: 180 }}>
+          <ResponsiveContainer width="100%" height={180} minWidth={0}>
+            <LineChart data={trendData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+              <XAxis
+                key="xaxis"
+                dataKey="saat"
+                stroke="rgba(255,255,255,0.2)"
+                tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 10 }}
+              />
+              <YAxis
+                key="yaxis-left"
+                yAxisId="left"
+                stroke="rgba(255,255,255,0.2)"
+                tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 10 }}
+              />
+              <YAxis
+                key="yaxis-right"
+                yAxisId="right"
+                orientation="right"
+                stroke="rgba(255,255,255,0.2)"
+                tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 10 }}
+              />
+              <Tooltip
+                key="tooltip"
+                contentStyle={{
+                  background:   'rgba(10,5,30,0.95)',
+                  border:       '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: 12,
+                  color:        '#fff',
+                  fontSize:     12,
+                }}
+              />
+              <Line
+                key="line-gorev"
+                yAxisId="left"
+                type="monotone"
+                dataKey="gorev"
+                stroke={COLORS.orange}
+                strokeWidth={2.5}
+                dot={{ fill: COLORS.orange, r: 3 }}
+                activeDot={{ r: 5 }}
+              />
+              <Line
+                key="line-personel"
+                yAxisId="right"
+                type="monotone"
+                dataKey="personel"
+                stroke={COLORS.teal}
+                strokeWidth={2.5}
+                dot={{ fill: COLORS.teal, r: 3 }}
+                activeDot={{ r: 5 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* ── Lokasyon Dağılımı (albüm dağılımı gibi) ── */}
+      {lokasyonDagilim.length > 0 && (
+        <div style={{ ...glass, padding: 16 }}>
+          <p className="text-sm font-bold text-white mb-3">Lokasyon Durumu</p>
+          <div className="space-y-2">
+            {lokasyonDagilim.map(item => (
+              <div key={item.name} className="flex items-center gap-2">
+                <span className="text-base w-6 shrink-0 text-center">{item.emoji}</span>
+                <span
+                  className="text-xs font-semibold w-24 shrink-0 truncate"
+                  style={{ color: 'rgba(255,255,255,0.5)' }}
+                >
+                  {item.name}
+                </span>
+                <div
+                  className="flex-1 rounded-full overflow-hidden"
+                  style={{ height: 6, background: 'rgba(255,255,255,0.07)' }}
+                >
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{ width: `${item.deger}%`, background: item.renk }}
+                  />
+                </div>
+                <span
+                  className="text-[10px] font-bold w-16 text-right shrink-0"
+                  style={{ color: item.renk }}
+                >
+                  {item.durum}
+                </span>
+              </div>
+            ))}
           </div>
           <div
-            className="flex items-center gap-3 rounded-xl px-4 py-3"
-            style={{ background: 'rgba(251,191,36,0.07)', border: '1px solid rgba(251,191,36,0.15)' }}
+            className="flex justify-between items-center mt-3 pt-3"
+            style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}
           >
-            <span className="text-3xl font-black text-amber-300">{pendingLeaves.length}</span>
-            <span className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>
-              talep onay bekliyor
-            </span>
+            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>Toplam Lokasyon</span>
+            <span className="text-sm font-black text-white">{totalLokasyon}</span>
           </div>
         </div>
       )}
 
-      {/* ── Bugünkü Görevler ── */}
+      {/* ── Aktif Personel (top performers gibi) ── */}
       <div style={{ ...glass, padding: 16 }}>
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-bold text-white">Bugünkü Görevler</p>
+          <p className="text-sm font-bold text-white">👥 Aktif Personel</p>
           <button
             onClick={() => onNavigate('rotation')}
             className="text-xs font-bold transition-opacity active:opacity-60"
-            style={{ color: COLORS.teal }}
+            style={{ color: COLORS.orange }}
           >
-            Tümünü Gör
+            Rotasyona Git
           </button>
         </div>
 
-        {todayTasks.length === 0 ? (
-          <div className="flex flex-col items-center py-6 text-center">
-            <CalendarDays className="w-7 h-7 mb-2" style={{ color: 'rgba(255,255,255,0.15)' }} />
-            <p className="text-sm" style={{ color: 'rgba(255,255,255,0.3)' }}>
-              Bugün için görev oluşturulmamış
-            </p>
-          </div>
+        {aktifPersonel.length === 0 ? (
+          <p className="text-sm text-center py-4" style={{ color: 'rgba(255,255,255,0.3)' }}>
+            Aktif personel bulunamadı
+          </p>
         ) : (
           <div className="space-y-2">
-            {todayTasks.slice(0, 5).map((task) => {
-              const done = task.status === 'completed';
-              return (
+            {aktifPersonel.map((p, i) => (
+              <div
+                key={p.id}
+                className="flex items-center gap-3"
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                }}
+              >
                 <div
-                  key={task.id}
-                  className="flex items-center gap-3"
+                  className="flex items-center justify-center text-xs font-black shrink-0"
                   style={{
-                    padding: '10px 12px',
-                    borderRadius: 12,
-                    background: 'rgba(255,255,255,0.04)',
-                    border: '1px solid rgba(255,255,255,0.08)',
+                    width: 28, height: 28, borderRadius: 8,
+                    background: `${rankColors[i] ?? COLORS.violet}20`,
+                    border:     `1px solid ${rankColors[i] ?? COLORS.violet}50`,
+                    color:       rankColors[i] ?? COLORS.violet,
                   }}
                 >
-                  <div
-                    className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ background: done ? COLORS.emerald : COLORS.teal }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-white truncate">{task.location}</p>
-                    <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                      {(task.personnel || []).length} personel
-                    </p>
-                  </div>
-                  <span
-                    className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
-                    style={
-                      done
-                        ? { background: `${COLORS.emerald}15`, color: COLORS.emerald }
-                        : { background: `${COLORS.teal}15`,    color: COLORS.teal    }
-                    }
-                  >
-                    {done ? 'Tamamlandı' : 'Aktif'}
-                  </span>
+                  {i + 1}
                 </div>
-              );
-            })}
-            {todayTasks.length > 5 && (
-              <button
-                onClick={() => onNavigate('rotation')}
-                className="w-full text-center text-xs py-2 transition-opacity active:opacity-60"
-                style={{ color: 'rgba(255,255,255,0.3)' }}
-              >
-                +{todayTasks.length - 5} daha göster
-              </button>
-            )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white truncate">{p.name}</p>
+                  <p className="text-[10px] truncate" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                    {p.role || 'Personel'}
+                  </p>
+                </div>
+                <span
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                  style={{ background: `${COLORS.emerald}15`, color: COLORS.emerald }}
+                >
+                  Aktif
+                </span>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* ── Lokasyon Durumu ── */}
-      {mekanlar.length > 0 && (
-        <div style={{ ...glass, padding: 16 }}>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-bold text-white">Lokasyon Durumu</p>
-            <button
-              onClick={() => onNavigate('stock-distribution')}
-              className="text-xs font-bold transition-opacity active:opacity-60"
-              style={{ color: COLORS.orange }}
-            >
-              Detay
-            </button>
-          </div>
-          <div className="space-y-2">
-            {mekanlar.map((m) => {
-              const ozet = stokOzetler.find(o => o.name === m.name);
-              const vd   = ozet?.vardiyaDurumu ?? 'yok';
-              const badge =
-                vd === 'kapandi' ? { label: 'Kapandı',   color: COLORS.emerald } :
-                vd === 'acik'    ? { label: 'Açık',      color: COLORS.teal    } :
-                                   { label: 'Başlamadı', color: 'rgba(255,255,255,0.25)' };
-              return (
-                <div
-                  key={m.id}
-                  className="flex items-center gap-3"
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: 12,
-                    background: 'rgba(255,255,255,0.04)',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                  }}
-                >
-                  <span className="text-lg flex-shrink-0">{m.emoji}</span>
-                  <p className="text-sm font-bold text-white flex-1 truncate">{m.name}</p>
-                  <span
-                    className="text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0"
-                    style={{ background: `${badge.color}15`, color: badge.color }}
-                  >
-                    {badge.label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── Hızlı İşlemler ── */}
+      {/* ── Hızlı İşlemler — yönetici ile aynı ── */}
       <div>
-        <p
-          className="text-xs font-black uppercase tracking-widest mb-3"
-          style={{ color: 'rgba(251,146,60,0.5)' }}
-        >
+        <p className="text-xs font-black uppercase tracking-widest mb-3" style={{ color: 'rgba(251,146,60,0.5)' }}>
           Hızlı İşlemler
         </p>
         <div className="grid grid-cols-4 gap-2">
-          <QuickAction label="Rotasyon"  icon={<RotateCcw className="w-4 h-4" />} color={COLORS.orange}  onClick={() => onNavigate('rotation')}          />
-          <QuickAction label="Hızlı Satış" icon={<Zap className="w-4 h-4" />}    color={COLORS.emerald} onClick={() => onNavigate('quick-sales')}        />
-          <QuickAction label="Stok"      icon={<Package className="w-4 h-4" />}   color={COLORS.teal}    onClick={() => onNavigate('stock-distribution')} />
-          <QuickAction label="Malzeme"   icon={<BarChart3 className="w-4 h-4" />} color={COLORS.violet}  onClick={() => onNavigate('equipment-page')}    />
+          <QuickAction label="Rotasyon"    icon={<RotateCcw className="w-4 h-4" />}  color={COLORS.orange}  onClick={() => onNavigate('rotation')}          />
+          <QuickAction label="Hızlı Satış" icon={<Zap className="w-4 h-4" />}        color={COLORS.emerald} onClick={() => onNavigate('quick-sales')}        />
+          <QuickAction label="Stok"        icon={<Package className="w-4 h-4" />}     color={COLORS.teal}    onClick={() => onNavigate('stock-distribution')} />
+          <QuickAction label="Malzeme"     icon={<BarChart3 className="w-4 h-4" />}   color={COLORS.violet}  onClick={() => onNavigate('equipment-page')}    />
         </div>
       </div>
 
