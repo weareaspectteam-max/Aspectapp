@@ -44,8 +44,11 @@ import { ShiftSetup } from './components/shift-setup';
 import { ShiftChoice } from './components/shift-choice';
 import { ShiftEnd } from './components/shift-end';
 import { CurrentStock } from './components/current-stock';
+import { EkstraIsEkrani } from './components/ekstra-is-ekrani';
+import { OzelIsEkrani } from './components/ozel-is-ekrani';
 import type { UserRole } from './components/login';
 import type { ShiftSetupData } from './components/shift-setup';
+import type { Task } from './services/rotation-service';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -65,6 +68,10 @@ export default function App() {
   const [showShiftSetup, setShowShiftSetup] = useState(false);
   const [showShiftEnd, setShowShiftEnd] = useState(false);
   const [showCurrentStock, setShowCurrentStock] = useState(false);
+  const [selectedEkstraTask, setSelectedEkstraTask] = useState<Task | null>(null);
+  const [selectedOzelTask, setSelectedOzelTask] = useState<Task | null>(null);
+  const [showEkstraIs, setShowEkstraIs] = useState(false);
+  const [showOzelIs, setShowOzelIs] = useState(false);
   const sessionApplied = useRef(false); // ← İlk giriş işareti
 
   // ─── Supabase session yönetimi ───────────────────
@@ -139,6 +146,10 @@ export default function App() {
     setShowShiftSetup(false);
     setShowShiftEnd(false);
     setShowCurrentStock(false);
+    setSelectedEkstraTask(null);
+    setSelectedOzelTask(null);
+    setShowEkstraIs(false);
+    setShowOzelIs(false);
   };
 
   const handleLogin = (role: UserRole, name: string, uid: string, token: string, avatar: string = '👨‍💼', email: string = '') => {
@@ -211,10 +222,42 @@ export default function App() {
     setSelectedProject('');
   };
 
+  const handleEkstraIsSelect = (task: Task) => {
+    setSelectedEkstraTask(task);
+    setShowEkstraIs(true);
+    setShowShiftChoice(false);
+    setShowShiftSetup(false);
+    setShowShiftEnd(false);
+    setShowCurrentStock(false);
+    setShowOzelIs(false);
+  };
+
+  const handleOzelIsSelect = (task: Task) => {
+    setSelectedOzelTask(task);
+    setShowOzelIs(true);
+    setShowShiftChoice(false);
+    setShowShiftSetup(false);
+    setShowShiftEnd(false);
+    setShowCurrentStock(false);
+    setShowEkstraIs(false);
+  };
+
+  const handleBackFromEkstraIs = () => {
+    setShowEkstraIs(false);
+    setSelectedEkstraTask(null);
+  };
+
+  const handleBackFromOzelIs = () => {
+    setShowOzelIs(false);
+    setSelectedOzelTask(null);
+  };
+
   const handleNavigate = (tab: string) => {
     setShowCurrentStock(false);
     setShowShiftSetup(false);
     setShowShiftEnd(false);
+    setShowEkstraIs(false);
+    setShowOzelIs(false);
     
     if (tab === 'home' && userRole === 'personel' && selectedProject) {
       setShowShiftChoice(true);
@@ -250,6 +293,50 @@ export default function App() {
     // Bekleyen kullanıcılar için sadece pending dashboard
     if (isPendingRole) {
       return <PendingDashboard userName={userName} onLogout={handleLogout} onNavigate={handleNavigate} />;
+    }
+
+    // ── Ekstra İş ekranı ──
+    if (showEkstraIs && selectedEkstraTask) {
+      return (
+        <EkstraIsEkrani
+          userName={userName}
+          userId={userId}
+          userRole={userRole}
+          task={{
+            id: selectedEkstraTask.id,
+            location: selectedEkstraTask.location,
+            locationIcon: selectedEkstraTask.locationIcon,
+            startTime: selectedEkstraTask.startTime,
+            endTime: selectedEkstraTask.endTime,
+            notes: selectedEkstraTask.notes,
+          }}
+          onBack={handleBackFromEkstraIs}
+          onLogout={handleLogout}
+          onNavigate={handleNavigate}
+        />
+      );
+    }
+
+    // ── Özel İş ekranı ──
+    if (showOzelIs && selectedOzelTask) {
+      return (
+        <OzelIsEkrani
+          userName={userName}
+          userId={userId}
+          userRole={userRole}
+          task={{
+            id: selectedOzelTask.id,
+            location: selectedOzelTask.location,
+            locationIcon: selectedOzelTask.locationIcon,
+            startTime: selectedOzelTask.startTime,
+            endTime: selectedOzelTask.endTime,
+            notes: selectedOzelTask.notes,
+          }}
+          onBack={handleBackFromOzelIs}
+          onLogout={handleLogout}
+          onNavigate={handleNavigate}
+        />
+      );
     }
 
     // Hızlı Satış sekmesine explicit navigate edilirse TÜM roller QuickSales görür
@@ -308,6 +395,8 @@ export default function App() {
           onLogout={handleLogout}
           onNavigate={handleNavigate}
           onBack={handleBackFromChoice}
+          onEkstraIsSelect={handleEkstraIsSelect}
+          onOzelIsSelect={handleOzelIsSelect}
         />
       );
     }
@@ -344,6 +433,8 @@ export default function App() {
               onEndShift={handleEndShift}
               onLogout={handleLogout}
               onNavigate={handleNavigate}
+              onEkstraIsSelect={handleEkstraIsSelect}
+              onOzelIsSelect={handleOzelIsSelect}
             />
           );
         }
@@ -732,7 +823,7 @@ export default function App() {
         {isLoggedIn && <BirthdayNotifications />}
 
         {/* App Header — tüm roller için, vardiya akışı dışında */}
-        {(activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock)) && (
+        {(activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock || showEkstraIs || showOzelIs)) && (
           <AppHeader
             userName={userName}
             userRole={userRole}
@@ -744,7 +835,7 @@ export default function App() {
 
         {/* Main Content */}
         <main className={
-          (activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock))
+          (activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock || showEkstraIs || showOzelIs))
             ? 'pt-[60px] pb-24'
             : ''
         }>
@@ -752,7 +843,7 @@ export default function App() {
         </main>
 
         {/* Bottom Navigation */}
-        {(activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock)) && (
+        {(activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock || showEkstraIs || showOzelIs)) && (
           <NewBottomNav activeTab={activeTab} onTabChange={handleNavigate} userRole={userRole} />
         )}
 

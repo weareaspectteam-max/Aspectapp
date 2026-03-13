@@ -2607,6 +2607,387 @@ app.get("/make-server-4da0b637/stok/transferler", async (c) => {
 });
 
 // ──────────────────────────────────────────
+// EKSTRA İŞ: Kaynak listesi (depo + mekanlar)
+// GET /make-server-4da0b637/ekstra-is/kaynaklar
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/ekstra-is/kaynaklar", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanlar = mekanlarList.map((m: any) => ({
+      id: m.id,
+      name: m.name,
+      emoji: m.emoji || "📍",
+      color: m.color || "#9dd9ea",
+    }));
+
+    const depoStok: any = await kv.get("depo_stok") || {};
+    const depo = {
+      id: "depo",
+      name: "Depo",
+      emoji: "🏪",
+      albumSayilari: {
+        album3: Number(depoStok.album3) || 0,
+        album5: Number(depoStok.album5) || 0,
+        album7: Number(depoStok.album7) || 0,
+        album9: Number(depoStok.album9) || 0,
+        album11: Number(depoStok.album11) || 0,
+        album13: Number(depoStok.album13) || 0,
+        album15: Number(depoStok.album15) || 0,
+      },
+      ribonTakim: Number(depoStok.ribon) || 0,
+    };
+
+    return c.json({ mekanlar, depo });
+  } catch (err) {
+    console.log("Ekstra-is kaynaklar error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// EKSTRA İŞ: Durum sorgula
+// GET /make-server-4da0b637/ekstra-is/durum/:taskId/:tarih
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/ekstra-is/durum/:taskId/:tarih", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { taskId, tarih } = c.req.param();
+    const kayit: any = await kv.get(`ekstra_is_${taskId}_${tarih}`);
+    return c.json({ kayit: kayit || null });
+  } catch (err) {
+    console.log("Ekstra-is durum error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// EKSTRA İŞ: Açılış (kaynak stok transferi)
+// POST /make-server-4da0b637/ekstra-is/acilis
+// Body: { taskId, tarih, kaynakId, kaynakTipi, kaynakAdi, kaynakEmoji, acilis, acilisNot? }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/ekstra-is/acilis", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { taskId, tarih, kaynakId, kaynakAdi, kaynakEmoji, acilis, acilisNot } = await c.req.json();
+    if (!taskId || !tarih || !kaynakId || !acilis) {
+      return c.json({ error: "taskId, tarih, kaynakId ve acilis zorunludur." }, 400);
+    }
+
+    const mevcutKayit: any = await kv.get(`ekstra_is_${taskId}_${tarih}`);
+    if (mevcutKayit?.acilisYapildi) {
+      return c.json({ error: "Açılış zaten yapılmış." }, 400);
+    }
+
+    const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15"];
+
+    // Kaynak stoktan düş
+    if (kaynakId === "depo") {
+      const depoStok: any = await kv.get("depo_stok") || {};
+      for (const alan of albumAlanlari) {
+        const istenen = Number(acilis[alan]) || 0;
+        if (istenen <= 0) continue;
+        const mevcutStok = Number(depoStok[alan]) || 0;
+        if (mevcutStok < istenen) {
+          return c.json({ error: `Depo ${alan} stoğu yetersiz. Mevcut: ${mevcutStok}, İstenen: ${istenen}` }, 400);
+        }
+        depoStok[alan] = mevcutStok - istenen;
+      }
+      depoStok.guncellenmeTarihi = new Date().toISOString();
+      await kv.set("depo_stok", depoStok);
+    } else {
+      // Mekan stoku — bugünün kaydından düş
+      const mekanKayit: any = await kv.get(`stok_gunluk_${kaynakId}_${tarih}`);
+      if (!mekanKayit) {
+        return c.json({ error: "Kaynak mekan bugün açılış yapmamış." }, 400);
+      }
+      const aktifField = mekanKayit.kapanish ? "kapanish" : "acilis";
+      const aktifStok: any = { ...(mekanKayit[aktifField] || {}) };
+      // Önce yeterliliği kontrol et
+      for (const alan of albumAlanlari) {
+        const istenen = Number(acilis[alan]) || 0;
+        if (istenen <= 0) continue;
+        const mevcutStok = Number(aktifStok[alan]) || 0;
+        if (mevcutStok < istenen) {
+          return c.json({ error: `${kaynakAdi} ${alan} stoğu yetersiz. Mevcut: ${mevcutStok}, İstenen: ${istenen}` }, 400);
+        }
+      }
+      // Düş
+      for (const alan of albumAlanlari) {
+        const istenen = Number(acilis[alan]) || 0;
+        if (istenen <= 0) continue;
+        aktifStok[alan] = (Number(aktifStok[alan]) || 0) - istenen;
+      }
+      const guncelKayit: any = { ...mekanKayit, [aktifField]: aktifStok, stokTransferGuncelleme: new Date().toISOString() };
+      await kv.set(`stok_gunluk_${kaynakId}_${tarih}`, guncelKayit);
+    }
+
+    // Ekstra iş kaydı oluştur
+    const kayit = {
+      taskId,
+      tarih,
+      kaynakId,
+      kaynakAdi: kaynakAdi || (kaynakId === "depo" ? "Depo" : kaynakId),
+      kaynakEmoji: kaynakEmoji || (kaynakId === "depo" ? "🏪" : "📍"),
+      acilis,
+      acilisNot: acilisNot || "",
+      acilisYapildi: true,
+      acilisZamani: new Date().toISOString(),
+      acilisYapanId: user.id,
+      acilisYapanAd: user.user_metadata?.full_name || user.email,
+      kapanisYapildi: false,
+      kareKayitlari: [],
+      satislar: [],
+    };
+
+    await kv.set(`ekstra_is_${taskId}_${tarih}`, kayit);
+    console.log(`Ekstra iş açılış: taskId=${taskId} tarih=${tarih} kaynak=${kaynakAdi} by ${user.id}`);
+    return c.json({ kayit });
+  } catch (err) {
+    console.log("Ekstra-is acilis error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// EKSTRA İŞ: Kare kaydı ekle
+// POST /make-server-4da0b637/ekstra-is/kare
+// Body: { taskId, tarih, photographerName, photographerId, frameCount }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/ekstra-is/kare", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { taskId, tarih, photographerName, photographerId, frameCount } = await c.req.json();
+    if (!taskId || !tarih || !frameCount) return c.json({ error: "taskId, tarih ve frameCount zorunludur." }, 400);
+
+    const mevcut: any = await kv.get(`ekstra_is_${taskId}_${tarih}`);
+    if (!mevcut?.acilisYapildi) return c.json({ error: "Önce açılış yapılmalıdır." }, 400);
+
+    const yeniKare = {
+      id: `kare_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      photographerName: photographerName || user.user_metadata?.full_name || user.email,
+      photographerId: photographerId || user.id,
+      frameCount: Number(frameCount),
+      timestamp: new Date().toISOString(),
+      kaydeden: user.user_metadata?.full_name || user.email,
+      kaydedenId: user.id,
+    };
+
+    const kareKayitlari = [...(mevcut.kareKayitlari || []), yeniKare];
+    await kv.set(`ekstra_is_${taskId}_${tarih}`, { ...mevcut, kareKayitlari });
+    console.log(`Ekstra iş kare: taskId=${taskId} fotoğrafçı=${photographerName} kare=${frameCount}`);
+    return c.json({ kare: yeniKare, kareKayitlari });
+  } catch (err) {
+    console.log("Ekstra-is kare error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// EKSTRA İŞ: Kapanış (iade transferi + anomali)
+// POST /make-server-4da0b637/ekstra-is/kapalis
+// Body: { taskId, tarih, kapalis: StokSayim, kapalisNot? }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/ekstra-is/kapalis", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { taskId, tarih, kapalis, kapalisNot } = await c.req.json();
+    if (!taskId || !tarih || !kapalis) return c.json({ error: "taskId, tarih ve kapalis zorunludur." }, 400);
+
+    const mevcut: any = await kv.get(`ekstra_is_${taskId}_${tarih}`);
+    if (!mevcut?.acilisYapildi) return c.json({ error: "Önce açılış yapılmalıdır." }, 400);
+    if (mevcut?.kapanisYapildi) return c.json({ error: "Kapanış zaten yapılmış." }, 400);
+
+    const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15"];
+    const { kaynakId, kaynakAdi, acilis, satislar = [] } = mevcut;
+
+    // Beklenen iade = acilis - satışlarda albüm düşümü
+    // Satışlar items içinde product ismine göre albüm tipi çıkarılır
+    const beklenen: Record<string, number> = {};
+    const albumItemMap: Record<string, string> = {
+      album3: "3", album5: "5", album7: "7", album9: "9",
+      album11: "11", album13: "13", album15: "15"
+    };
+    for (const alan of albumAlanlari) {
+      let toplam = Number(acilis[alan]) || 0;
+      const kareNo = albumItemMap[alan];
+      for (const satis of satislar) {
+        if (!satis.iptal) {
+          for (const item of (satis.items || [])) {
+            if (item.product?.includes(kareNo) || item.product?.toLowerCase().includes(alan)) {
+              toplam -= Number(item.quantity) || 0;
+            }
+          }
+        }
+      }
+      beklenen[alan] = Math.max(0, toplam);
+    }
+
+    // Anomali hesapla
+    const anomali: Record<string, number> = {};
+    for (const alan of albumAlanlari) {
+      const fark = (Number(kapalis[alan]) || 0) - (beklenen[alan] || 0);
+      if (fark !== 0) anomali[alan] = fark;
+    }
+
+    // Gerçek iade stoku kaynağa geri aktar
+    if (kaynakId === "depo") {
+      const depoStok: any = await kv.get("depo_stok") || {};
+      for (const alan of albumAlanlari) {
+        const iade = Number(kapalis[alan]) || 0;
+        if (iade <= 0) continue;
+        depoStok[alan] = (Number(depoStok[alan]) || 0) + iade;
+      }
+      depoStok.guncellenmeTarihi = new Date().toISOString();
+      await kv.set("depo_stok", depoStok);
+    } else {
+      const mekanKayit: any = await kv.get(`stok_gunluk_${kaynakId}_${tarih}`);
+      if (mekanKayit) {
+        const aktifField = mekanKayit.kapanish ? "kapanish" : "acilis";
+        const guncelStok: any = { ...(mekanKayit[aktifField] || {}) };
+        for (const alan of albumAlanlari) {
+          const iade = Number(kapalis[alan]) || 0;
+          if (iade <= 0) continue;
+          guncelStok[alan] = (Number(guncelStok[alan]) || 0) + iade;
+        }
+        const guncelKayit: any = { ...mekanKayit, [aktifField]: guncelStok, stokTransferGuncelleme: new Date().toISOString() };
+        await kv.set(`stok_gunluk_${kaynakId}_${tarih}`, guncelKayit);
+      }
+    }
+
+    const guncelKayit = {
+      ...mevcut,
+      kapalis,
+      kapalisNot: kapalisNot || "",
+      kapanisYapildi: true,
+      kapanisZamani: new Date().toISOString(),
+      kapanisYapanId: user.id,
+      kapanisYapanAd: user.user_metadata?.full_name || user.email,
+      kapanisAnomali: anomali,
+      kapanisBeklenen: beklenen,
+    };
+
+    await kv.set(`ekstra_is_${taskId}_${tarih}`, guncelKayit);
+    console.log(`Ekstra iş kapanış: taskId=${taskId} tarih=${tarih} by ${user.id} anomali=${JSON.stringify(anomali)}`);
+    return c.json({ kayit: guncelKayit, anomali, beklenen });
+  } catch (err) {
+    console.log("Ekstra-is kapalis error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// ÖZEL İŞ: Durum sorgula
+// GET /make-server-4da0b637/ozel-is/durum/:taskId/:tarih
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/ozel-is/durum/:taskId/:tarih", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { taskId, tarih } = c.req.param();
+    const kayit: any = await kv.get(`ozel_is_${taskId}_${tarih}`);
+    return c.json({ kayit: kayit || null });
+  } catch (err) {
+    console.log("Ozel-is durum error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// ÖZEL İŞ: Başlat
+// POST /make-server-4da0b637/ozel-is/baslat
+// Body: { taskId, tarih, baslamaNot? }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/ozel-is/baslat", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { taskId, tarih, baslamaNot } = await c.req.json();
+    if (!taskId || !tarih) return c.json({ error: "taskId ve tarih zorunludur." }, 400);
+
+    const mevcutKayit: any = await kv.get(`ozel_is_${taskId}_${tarih}`);
+    if (mevcutKayit?.baslatildi) return c.json({ error: "Görev zaten başlatılmış." }, 400);
+
+    const kayit = {
+      taskId,
+      tarih,
+      baslatildi: true,
+      tamamlandi: false,
+      baslamaNot: baslamaNot || "",
+      baslatan: user.user_metadata?.full_name || user.email,
+      baslatanId: user.id,
+      baslamaTarihi: new Date().toISOString(),
+      tamamlamaTarihi: null,
+      tamamlamaNot: "",
+      fotografUrl: null,
+    };
+
+    await kv.set(`ozel_is_${taskId}_${tarih}`, kayit);
+    console.log(`Özel iş başlatıldı: taskId=${taskId} tarih=${tarih} by ${user.id}`);
+    return c.json({ kayit });
+  } catch (err) {
+    console.log("Ozel-is baslat error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// ÖZEL İŞ: Tamamla
+// POST /make-server-4da0b637/ozel-is/tamamla
+// Body: { taskId, tarih, tamamlamaNot?, fotografUrl? }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/ozel-is/tamamla", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const { taskId, tarih, tamamlamaNot, fotografUrl } = await c.req.json();
+    if (!taskId || !tarih) return c.json({ error: "taskId ve tarih zorunludur." }, 400);
+
+    const mevcutKayit: any = await kv.get(`ozel_is_${taskId}_${tarih}`);
+    if (!mevcutKayit?.baslatildi) return c.json({ error: "Önce görevi başlatmalısınız." }, 400);
+    if (mevcutKayit?.tamamlandi) return c.json({ error: "Görev zaten tamamlanmış." }, 400);
+
+    const guncelKayit = {
+      ...mevcutKayit,
+      tamamlandi: true,
+      tamamlamaNot: tamamlamaNot || "",
+      fotografUrl: fotografUrl || null,
+      tamamlayan: user.user_metadata?.full_name || user.email,
+      tamamlayanId: user.id,
+      tamamlamaTarihi: new Date().toISOString(),
+    };
+
+    await kv.set(`ozel_is_${taskId}_${tarih}`, guncelKayit);
+    console.log(`Özel iş tamamlandı: taskId=${taskId} tarih=${tarih} by ${user.id}`);
+    return c.json({ kayit: guncelKayit });
+  } catch (err) {
+    console.log("Ozel-is tamamla error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
 // ASPECT AI: Günlük özet veri
 // GET /make-server-4da0b637/ai/ozet
 // Tüm mekanların bugünkü satış, stok ve anomali verilerini toplar

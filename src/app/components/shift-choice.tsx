@@ -2,6 +2,7 @@ import { Package, ShoppingCart, ArrowRight, Sparkles, Eye, Moon, Printer, Film }
 import { motion } from 'motion/react';
 import { StaffTopBar } from './staff-top-bar';
 import { NewBottomNav } from './new-bottom-nav';
+import type { Task } from '../services/rotation-service';
 
 interface ShiftChoiceProps {
   userName: string;
@@ -14,9 +15,11 @@ interface ShiftChoiceProps {
   onLogout: () => void;
   onNavigate: (tab: string) => void;
   onBack?: () => void;
+  onEkstraIsSelect?: (task: Task) => void;
+  onOzelIsSelect?: (task: Task) => void;
 }
 
-export function ShiftChoice({ userName, userRole, projectName, onStartShiftSetup, onStartSales, onViewStock, onEndShift, onLogout, onNavigate, onBack }: ShiftChoiceProps) {
+export function ShiftChoice({ userName, userRole, projectName, onStartShiftSetup, onStartSales, onViewStock, onEndShift, onLogout, onNavigate, onBack, onEkstraIsSelect, onOzelIsSelect }: ShiftChoiceProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] relative pb-20">
       {/* Sticky Top Bar - Only for staff */}
