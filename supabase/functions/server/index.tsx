@@ -29,6 +29,25 @@ const getAdminClient = () =>
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
+// ── Supabase Storage: ekipman fotoğrafları bucket ──────────────────────────
+const EQUIPMENT_BUCKET = "make-4da0b637-equipment-photos";
+let bucketReady = false;
+async function ensureEquipmentBucket() {
+  if (bucketReady) return;
+  try {
+    const sb = getAdminClient();
+    const { data: buckets } = await sb.storage.listBuckets();
+    const exists = buckets?.some((b: any) => b.name === EQUIPMENT_BUCKET);
+    if (!exists) {
+      await sb.storage.createBucket(EQUIPMENT_BUCKET, { public: false });
+      console.log("Bucket oluşturuldu:", EQUIPMENT_BUCKET);
+    }
+    bucketReady = true;
+  } catch (e) {
+    console.log("ensureEquipmentBucket error:", e);
+  }
+}
+
 // Helper: verify caller and return user
 // Supabase projesi ES256 (asimetrik) JWT kullandığından gateway bunu reddedebilir.
 // Çözüm: gateway için Authorization: Bearer <anonKey> (HS256), kullanıcı için X-Access-Token: <userJWT> (ES256).
@@ -3379,6 +3398,53 @@ app.get("/make-server-4da0b637/auth/kullanicilar", async (c) => {
 });
 
 // ──────────────────────────────────────────
+// MALZEME: Fotoğraf Yükle
+// POST /make-server-4da0b637/malzeme/foto-yukle
+// Body: { imageData: "data:image/jpeg;base64,...", equipmentId: string }
+// Returns: { imagePath: string }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/malzeme/foto-yukle", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role;
+    if (!["admin", "yonetici", "ust-mudur", "mudur", "operasyon"].includes(role))
+      return c.json({ error: "Yetki yok." }, 403);
+
+    const { imageData, equipmentId } = await c.req.json();
+    if (!imageData) return c.json({ error: "imageData zorunludur." }, 400);
+
+    await ensureEquipmentBucket();
+
+    // data:image/jpeg;base64,<base64data> formatını ayrıştır
+    const match = imageData.match(/^data:([a-zA-Z0-9+\/]+\/[a-zA-Z0-9+\/]+);base64,(.+)$/);
+    if (!match) return c.json({ error: "Geçersiz imageData formatı." }, 400);
+    const mimeType = match[1];
+    const base64 = match[2];
+    const ext = mimeType.split("/")[1]?.replace("jpeg", "jpg") || "jpg";
+
+    const fileName = `${equipmentId || Date.now()}_${Date.now()}.${ext}`;
+    const bytes = Uint8Array.from(atob(base64), (ch) => ch.charCodeAt(0));
+
+    const sb = getAdminClient();
+    const { data, error } = await sb.storage
+      .from(EQUIPMENT_BUCKET)
+      .upload(fileName, bytes, { contentType: mimeType, upsert: true });
+
+    if (error) {
+      console.log("Storage upload error:", error.message);
+      return c.json({ error: `Yükleme hatası: ${error.message}` }, 500);
+    }
+
+    console.log(`Ekipman fotoğrafı yüklendi: ${fileName} — ${user.user_metadata?.full_name}`);
+    return c.json({ imagePath: data.path }, 201);
+  } catch (err) {
+    console.log("Malzeme foto-yukle error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
 // MALZEME: Liste
 // GET /make-server-4da0b637/malzeme/liste
 // ──────────────────────────────────────────
@@ -3392,7 +3458,24 @@ app.get("/make-server-4da0b637/malzeme/liste", async (c) => {
     const sirali = tumEkipmanlar.sort((a: any, b: any) =>
       new Date(a.olusturulmaTarihi || 0).getTime() - new Date(b.olusturulmaTarihi || 0).getTime()
     );
-    return c.json({ ekipmanlar: sirali });
+
+    // imagePath olan ekipmanlar için imzalı URL üret (1 saat geçerli)
+    const sb = getAdminClient();
+    const ekipmanlarWithUrls = await Promise.all(
+      sirali.map(async (eq: any) => {
+        if (!eq.imagePath) return eq;
+        try {
+          const { data } = await sb.storage
+            .from(EQUIPMENT_BUCKET)
+            .createSignedUrl(eq.imagePath, 3600);
+          return { ...eq, imageUrl: data?.signedUrl || null };
+        } catch {
+          return eq;
+        }
+      })
+    );
+
+    return c.json({ ekipmanlar: ekipmanlarWithUrls });
   } catch (err) {
     console.log("Malzeme liste error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -3425,6 +3508,7 @@ app.post("/make-server-4da0b637/malzeme/ekle", async (c) => {
       flashId: body.flashId || undefined,
       notes: body.notes || undefined,
       gecmis: body.gecmis || [],
+      imagePath: body.imagePath || undefined,
       assignedTo: undefined,
       assignedToId: undefined,
       olusturulmaTarihi: new Date().toISOString(),
@@ -3527,6 +3611,17 @@ app.delete("/make-server-4da0b637/malzeme/sil/:id", async (c) => {
     const id = c.req.param("id");
     const mevcut: any = await kv.get(id);
     if (!mevcut) return c.json({ error: "Ekipman bulunamadı." }, 404);
+
+    // Storage'dan fotoğrafı sil (varsa)
+    if (mevcut.imagePath) {
+      try {
+        const sb = getAdminClient();
+        await sb.storage.from(EQUIPMENT_BUCKET).remove([mevcut.imagePath]);
+        console.log(`Ekipman fotoğrafı silindi: ${mevcut.imagePath}`);
+      } catch (imgErr) {
+        console.log("Fotoğraf silme hatası (devam ediliyor):", imgErr);
+      }
+    }
 
     await kv.del(id);
 
@@ -3715,27 +3810,38 @@ function sortedDmKey(a: string, b: string) {
 }
 
 // ── GET /mesajlar/kanallar — kanal listesi ──
+// Mekan kanalları: sadece yonetici + ust-mudur
+// Özel kanallar  : tüm aktif roller
 app.get("/make-server-4da0b637/mesajlar/kanallar", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role || "personel";
-    const isAdmin = ["yonetici", "ust-mudur", "mudur", "idari", "operasyon"].includes(role);
+    const canSeeMekan = ["yonetici", "ust-mudur"].includes(role);
 
     const STATIC_CHANNELS = [
-      { id: "general",  name: "general",  type: "channel", isAdminOnly: false },
-      { id: "rotasyon", name: "rotasyon", type: "channel", isAdminOnly: false },
+      { id: "general",  name: "general",  type: "channel", isAdminOnly: false, deletable: false },
+      { id: "rotasyon", name: "rotasyon", type: "channel", isAdminOnly: false, deletable: false },
     ];
 
+    // Mekan kanalları — sadece yonetici + ust-mudur
     let mekanChannels: any[] = [];
-    if (isAdmin) {
+    if (canSeeMekan) {
       const mekanlar: any[] = await kv.getByPrefix("mekan_") || [];
       mekanChannels = mekanlar.map((m: any) => ({
-        id: `mekan_${m.id}`, name: m.name, type: "project", emoji: m.emoji || "📍", isAdminOnly: true,
+        id: `mekan_${m.id}`, name: m.name, type: "project", emoji: m.emoji || "📍",
+        isAdminOnly: true, deletable: false,
       }));
     }
 
-    const allChannels = [...STATIC_CHANNELS, ...mekanChannels];
+    // Özel kanallar — tüm aktif roller görebilir
+    const customs: any[] = await kv.getByPrefix("chat_channel_") || [];
+    const customChannels = customs.map((ch: any) => ({
+      id: ch.id, name: ch.name, type: "channel", emoji: ch.emoji || "💬",
+      isAdminOnly: false, deletable: true, createdBy: ch.createdBy,
+    }));
+
+    const allChannels = [...STATIC_CHANNELS, ...mekanChannels, ...customChannels];
     const readMap: Record<string, string> = await kv.get(`chat_read_${user.id}`) || {};
 
     const channelsWithMeta = await Promise.all(allChannels.map(async (ch) => {
@@ -3752,6 +3858,54 @@ app.get("/make-server-4da0b637/mesajlar/kanallar", async (c) => {
     return c.json({ channels: channelsWithMeta });
   } catch (err) {
     console.log("GET mesajlar/kanallar error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ── POST /mesajlar/ozel-kanal — yeni özel kanal oluştur (yonetici + ust-mudur) ──
+app.post("/make-server-4da0b637/mesajlar/ozel-kanal", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    if (!["yonetici", "ust-mudur"].includes(role)) {
+      return c.json({ error: "Kanal oluşturma yetkisi yalnızca Yönetici ve Üst Müdür rolüne aittir." }, 403);
+    }
+    const { name, emoji } = await c.req.json();
+    if (!name?.trim()) return c.json({ error: "Kanal adı zorunludur." }, 400);
+
+    const id = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const channel = {
+      id, name: name.trim(), emoji: emoji || "💬",
+      createdBy: user.user_metadata?.full_name || user.email || "Bilinmeyen",
+      createdById: user.id,
+      createdAt: new Date().toISOString(),
+    };
+    await kv.set(`chat_channel_${id}`, channel);
+    console.log(`Yeni özel kanal: ${name} by ${user.id}`);
+    return c.json({ channel }, 201);
+  } catch (err) {
+    console.log("POST mesajlar/ozel-kanal error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ── DELETE /mesajlar/ozel-kanal/:channelId — özel kanalı sil (yonetici + ust-mudur) ──
+app.delete("/make-server-4da0b637/mesajlar/ozel-kanal/:channelId", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    if (!["yonetici", "ust-mudur"].includes(role)) {
+      return c.json({ error: "Kanal silme yetkisi yalnızca Yönetici ve Üst Müdür rolüne aittir." }, 403);
+    }
+    const { channelId } = c.req.param();
+    await kv.del(`chat_channel_${channelId}`);
+    await kv.del(`chat_msgs_${channelId}`);
+    console.log(`Özel kanal silindi: ${channelId} by ${user.id}`);
+    return c.json({ success: true });
+  } catch (err) {
+    console.log("DELETE mesajlar/ozel-kanal error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });

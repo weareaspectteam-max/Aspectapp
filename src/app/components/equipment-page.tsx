@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ArrowLeft, Search, Plus, Edit2, Trash2, User, X,
   Save, Loader2, WifiOff, RefreshCw, AlertCircle,
+  Camera, ImageOff,
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { UserRole } from './login';
@@ -33,6 +34,8 @@ interface Equipment {
   gecmis?: GecmisKayit[];
   assignedTo?: string;
   assignedToId?: string;
+  imagePath?: string;   // Storage'daki dosya yolu
+  imageUrl?: string;    // Sunucudan gelen imzalı URL (geçici)
   olusturulmaTarihi?: string;
   guncellemeTarihi?: string;
 }
@@ -61,36 +64,36 @@ interface EquipmentPageProps {
 
 // ─── Sabitler ─────────────────────────────────────────────────────────────────
 const KATEGORILER = [
-  { id: 'all',      label: 'Tümü',        icon: '📦', color: '#9ca3af' },
-  { id: 'camera',   label: 'Kamera',      icon: '📷', color: '#d4b5f7' },
-  { id: 'flash',    label: 'Flash',       icon: '⚡', color: '#ffd4a3' },
-  { id: 'printer',  label: 'Yazıcı',      icon: '🖨️', color: '#9dd9ea' },
-  { id: 'computer', label: 'Bilgisayar',  icon: '💻', color: '#a8e6cf' },
+  { id: 'all',      label: 'Tümü',       icon: '📦', color: '#9ca3af' },
+  { id: 'camera',   label: 'Kamera',     icon: '📷', color: '#d4b5f7' },
+  { id: 'flash',    label: 'Flash',      icon: '⚡', color: '#ffd4a3' },
+  { id: 'printer',  label: 'Yazıcı',     icon: '🖨️', color: '#9dd9ea' },
+  { id: 'computer', label: 'Bilgisayar', icon: '💻', color: '#a8e6cf' },
 ];
 
 const DURUMLAR = [
-  { id: 'all',         label: 'Tümü',     icon: '📋' },
+  { id: 'all',         label: 'Tümü',      icon: '📋' },
   { id: 'working',     label: 'Çalışıyor', icon: '✅' },
   { id: 'broken',      label: 'Arızalı',   icon: '❌' },
   { id: 'maintenance', label: 'Bakımda',   icon: '🔧' },
 ];
 
 const BOŞ_FORM = {
-  category: 'camera' as Equipment['category'],
-  brand: '',
-  model: '',
+  category:     'camera' as Equipment['category'],
+  brand:        '',
+  model:        '',
   serialNumber: '',
-  status: 'working' as Equipment['status'],
+  status:       'working' as Equipment['status'],
   locationType: 'diger' as 'mekan' | 'depo' | 'diger',
-  locationId: '',
+  locationId:   '',
   locationText: '',
-  flashId: '',
-  notes: '',
+  flashId:      '',
+  notes:        '',
 };
 
 // ─── Yardımcılar ──────────────────────────────────────────────────────────────
-const katRenk = (id: string) => KATEGORILER.find(k => k.id === id)?.color || '#9dd9ea';
-const katIkon = (id: string) => KATEGORILER.find(k => k.id === id)?.icon || '📦';
+const katRenk  = (id: string) => KATEGORILER.find(k => k.id === id)?.color || '#9dd9ea';
+const katIkon  = (id: string) => KATEGORILER.find(k => k.id === id)?.icon || '📦';
 const katLabel = (id: string) => {
   const map: Record<string, string> = { camera: 'Kameralar', flash: 'Flashlar', printer: 'Yazıcılar', computer: 'Bilgisayarlar' };
   return map[id] || id;
@@ -108,11 +111,21 @@ const durumLabel = (s: string) => {
   return s;
 };
 
+// Dosyayı base64 data URL'ye çevir
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 // ─── Toast ────────────────────────────────────────────────────────────────────
-function Toast({ mesaj, tip, onKapat }: { mesaj: string; tip: 'basarili'|'hata'; onKapat: () => void }) {
+function Toast({ mesaj, tip, onKapat }: { mesaj: string; tip: 'basarili' | 'hata'; onKapat: () => void }) {
   useEffect(() => { const t = setTimeout(onKapat, 3000); return () => clearTimeout(t); }, []);
   return (
-    <div className={`fixed top-5 left-1/2 -translate-x-1/2 z-[100] px-4 py-3 rounded-xl border text-sm font-semibold shadow-2xl backdrop-blur max-w-xs text-center transition-all ${
+    <div className={`fixed top-5 left-1/2 -translate-x-1/2 z-[100] px-4 py-3 rounded-xl border text-sm font-semibold shadow-2xl backdrop-blur max-w-xs text-center ${
       tip === 'basarili'
         ? 'bg-emerald-900/80 border-emerald-500/40 text-emerald-200'
         : 'bg-red-900/80 border-red-500/40 text-red-200'
@@ -122,38 +135,60 @@ function Toast({ mesaj, tip, onKapat }: { mesaj: string; tip: 'basarili'|'hata';
   );
 }
 
+// ─── Fotoğraf Bileşeni ───────────────────────────────────────────────────────
+function EquipmentPhoto({ url, alt, className = '' }: { url: string; alt: string; className?: string }) {
+  const [err, setErr] = useState(false);
+  if (err) return null;
+  return (
+    <img
+      src={url}
+      alt={alt}
+      className={`object-cover ${className}`}
+      onError={() => setErr(true)}
+    />
+  );
+}
+
 // ─── Ana Bileşen ──────────────────────────────────────────────────────────────
 export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedded = false }: EquipmentPageProps) {
-  const [liste, setListe] = useState<Equipment[]>([]);
+  const [liste, setListe]             = useState<Equipment[]>([]);
   const [kullanicilar, setKullanicilar] = useState<Kullanici[]>([]);
-  const [mekanlar, setMekanlar] = useState<Mekan[]>([]);
-  const [yukleniyor, setYukleniyor] = useState(false);
-  const [hataVar, setHataVar] = useState(false);
-  const [toast, setToast] = useState<{ mesaj: string; tip: 'basarili'|'hata' } | null>(null);
+  const [mekanlar, setMekanlar]       = useState<Mekan[]>([]);
+  const [yukleniyor, setYukleniyor]   = useState(false);
+  const [hataVar, setHataVar]         = useState(false);
+  const [toast, setToast]             = useState<{ mesaj: string; tip: 'basarili' | 'hata' } | null>(null);
 
   // Filtreler
   const [katFilt, setKatFilt] = useState('all');
   const [durFilt, setDurFilt] = useState('all');
   const [zimFilt, setZimFilt] = useState('all');
-  const [arama, setArama] = useState('');
+  const [arama, setArama]     = useState('');
 
   // Modallar
-  const [modalAcik, setModalAcik] = useState(false);
-  const [zimmetModal, setZimmetModal] = useState(false);
-  const [duzenleHedef, setDuzenleHedef] = useState<Equipment | null>(null);
-  const [zimmetHedef, setZimmetHedef] = useState<Equipment | null>(null);
-  const [form, setForm] = useState({ ...BOŞ_FORM });
-  const [gecmisForm, setGecmisForm] = useState<GecmisKayit[]>([]);
-  const [yeniNot, setYeniNot] = useState('');
-  const [yeniTarih, setYeniTarih] = useState(new Date().toISOString().split('T')[0]);
-  const [gecmisAcik, setGecmisAcik] = useState(false);
+  const [modalAcik, setModalAcik]           = useState(false);
+  const [zimmetModal, setZimmetModal]       = useState(false);
+  const [duzenleHedef, setDuzenleHedef]     = useState<Equipment | null>(null);
+  const [zimmetHedef, setZimmetHedef]       = useState<Equipment | null>(null);
+  const [form, setForm]                     = useState({ ...BOŞ_FORM });
+  const [gecmisForm, setGecmisForm]         = useState<GecmisKayit[]>([]);
+  const [yeniNot, setYeniNot]               = useState('');
+  const [yeniTarih, setYeniTarih]           = useState(new Date().toISOString().split('T')[0]);
+  const [gecmisAcik, setGecmisAcik]         = useState(false);
   const [kayitYukleniyor, setKayitYukleniyor] = useState(false);
-  const [modalHata, setModalHata] = useState('');
+  const [modalHata, setModalHata]           = useState('');
+
+  // Fotoğraf state
+  const [fotoPreview, setFotoPreview]       = useState<string | null>(null); // önizleme (base64)
+  const [fotoFile, setFotoFile]             = useState<File | null>(null);   // yüklenecek dosya
+  const [mevcutFotoUrl, setMevcutFotoUrl]   = useState<string | null>(null); // mevcut imzalı URL
+  const [fotoYukleniyor, setFotoYukleniyor] = useState(false);
+  const [fotoSil, setFotoSil]               = useState(false);               // mevcut fotoğrafı sil flag
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Yetkiler
-  const canAdd   = ['admin','yonetici','ust-mudur','mudur','operasyon'].includes(userRole);
-  const canEdit  = ['admin','yonetici','ust-mudur','mudur','operasyon'].includes(userRole);
-  const canDel   = ['admin','yonetici','ust-mudur','mudur'].includes(userRole);
+  const canAdd    = ['admin','yonetici','ust-mudur','mudur','operasyon'].includes(userRole);
+  const canEdit   = ['admin','yonetici','ust-mudur','mudur','operasyon'].includes(userRole);
+  const canDel    = ['admin','yonetici','ust-mudur','mudur'].includes(userRole);
   const canAssign = ['admin','yonetici','ust-mudur','mudur'].includes(userRole);
 
   // ─── Veri Yükle ─────────────────────────────────────────────────────────────
@@ -163,16 +198,16 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
     try {
       const h = await authHeaders();
       const [listeRes, kulRes, mekRes] = await Promise.all([
-        fetch(`${API_BASE}/malzeme/liste`, { headers: h }),
+        fetch(`${API_BASE}/malzeme/liste`,    { headers: h }),
         fetch(`${API_BASE}/auth/kullanicilar`, { headers: h }),
-        fetch(`${API_BASE}/mekanlar`, { headers: h }),
+        fetch(`${API_BASE}/mekanlar`,          { headers: h }),
       ]);
       const listeJson = await listeRes.json();
       const kulJson   = await kulRes.json();
       const mekJson   = await mekRes.json();
       if (listeJson.ekipmanlar) setListe(listeJson.ekipmanlar);
       if (kulJson.kullanicilar) setKullanicilar(kulJson.kullanicilar);
-      if (mekJson.mekanlar) setMekanlar(mekJson.mekanlar);
+      if (mekJson.mekanlar)     setMekanlar(mekJson.mekanlar);
     } catch (err) {
       console.error('[EquipmentPage] Veri yüklenemedi:', err);
       setHataVar(true);
@@ -189,8 +224,8 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
       eq.brand.toLowerCase().includes(arama.toLowerCase()) ||
       eq.model.toLowerCase().includes(arama.toLowerCase()) ||
       eq.serialNumber.toLowerCase().includes(arama.toLowerCase());
-    const katUygun  = katFilt === 'all' || eq.category === katFilt;
-    const durUygun  = durFilt === 'all' || eq.status === durFilt;
+    const katUygun = katFilt === 'all' || eq.category === katFilt;
+    const durUygun = durFilt === 'all' || eq.status === durFilt;
     let zimUygun = true;
     if (zimFilt === 'unassigned') zimUygun = !eq.assignedTo;
     else if (zimFilt === 'assigned') zimUygun = !!eq.assignedTo;
@@ -199,23 +234,22 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
   });
 
   const stats = {
-    toplam:  filtrelenmis.length,
+    toplam:    filtrelenmis.length,
     calisiyor: filtrelenmis.filter(e => e.status === 'working').length,
-    arizali: filtrelenmis.filter(e => e.status === 'broken').length,
-    bakimda: filtrelenmis.filter(e => e.status === 'maintenance').length,
+    arizali:   filtrelenmis.filter(e => e.status === 'broken').length,
+    bakimda:   filtrelenmis.filter(e => e.status === 'maintenance').length,
   };
 
-  // Flash dropdown: düzenlenen kameranın mevcut flashı da dahil, başka kameralara atanmış olanlar hariç
   const secilebilirFlashlar = liste.filter(eq => {
     if (eq.category !== 'flash') return false;
-    if (duzenleHedef && eq.id === duzenleHedef.flashId) return true; // Bu kameranın mevcut flashı
+    if (duzenleHedef && eq.id === duzenleHedef.flashId) return true;
     const atanmisIds = liste
       .filter(e => e.category === 'camera' && e.flashId && e.id !== duzenleHedef?.id)
       .map(e => e.flashId);
     return !atanmisIds.includes(eq.id);
   });
 
-  // ─── Ekle / Güncelle ────────────────────────────────────────────────────────
+  // ─── Modal Aç/Kapat ─────────────────────────────────────────────────────────
   const modalKapat = () => {
     setModalAcik(false);
     setDuzenleHedef(null);
@@ -225,29 +259,85 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
     setYeniTarih(new Date().toISOString().split('T')[0]);
     setGecmisAcik(false);
     setModalHata('');
+    setFotoPreview(null);
+    setFotoFile(null);
+    setMevcutFotoUrl(null);
+    setFotoSil(false);
   };
 
   const duzenleBas = (eq: Equipment) => {
     setDuzenleHedef(eq);
     setForm({
-      category: eq.category,
-      brand: eq.brand,
-      model: eq.model,
+      category:     eq.category,
+      brand:        eq.brand,
+      model:        eq.model,
       serialNumber: eq.serialNumber,
-      status: eq.status,
+      status:       eq.status,
       locationType: (eq.locationType as any) || 'diger',
-      locationId: eq.locationId || '',
+      locationId:   eq.locationId || '',
       locationText: (!eq.locationType || eq.locationType === 'diger') ? eq.location : '',
-      flashId: eq.flashId || '',
-      notes: eq.notes || '',
+      flashId:      eq.flashId || '',
+      notes:        eq.notes || '',
     });
     setGecmisForm(eq.gecmis || []);
     setGecmisAcik(false);
+    setFotoPreview(null);
+    setFotoFile(null);
+    setMevcutFotoUrl(eq.imageUrl || null);
+    setFotoSil(false);
     setModalAcik(true);
   };
 
+  // ─── Fotoğraf seç ───────────────────────────────────────────────────────────
+  const handleFotoSec = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Max 5MB
+    if (file.size > 5 * 1024 * 1024) {
+      setModalHata("Fotograf max 5MB olmalidir.");
+      return;
+    }
+    setFotoFile(file);
+    const base64 = await fileToBase64(file);
+    setFotoPreview(base64);
+    setMevcutFotoUrl(null);
+    setFotoSil(false);
+    setModalHata('');
+  };
+
+  const handleFotoKaldir = () => {
+    setFotoPreview(null);
+    setFotoFile(null);
+    if (mevcutFotoUrl) setFotoSil(true);
+    setMevcutFotoUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // ─── Fotoğraf Yükle (sunucuya) ──────────────────────────────────────────────
+  const fotoYukle = async (equipmentId: string): Promise<string | null> => {
+    if (!fotoFile || !fotoPreview) return null;
+    setFotoYukleniyor(true);
+    try {
+      const h = await authHeaders();
+      const res = await fetch(`${API_BASE}/malzeme/foto-yukle`, {
+        method:  'POST',
+        headers: { ...h, 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ imageData: fotoPreview, equipmentId }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || 'Yükleme başarısız');
+      return json.imagePath as string;
+    } catch (err: any) {
+      console.error('[EquipmentPage] fotoYukle:', err);
+      setModalHata('Fotoğraf yüklenemedi: ' + (err.message || 'Sunucu hatası'));
+      return null;
+    } finally {
+      setFotoYukleniyor(false);
+    }
+  };
+
+  // ─── Ekle / Güncelle ────────────────────────────────────────────────────────
   const kaydet = async () => {
-    // Konum doğrulama + hesaplama
     let konumStr = '';
     if (form.locationType === 'depo') {
       konumStr = '🏭 Depo';
@@ -263,32 +353,58 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
       setModalHata('Marka, model ve seri no zorunludur.');
       return;
     }
+
     setKayitYukleniyor(true);
     setModalHata('');
+
     try {
       const h = await authHeaders();
+
+      // ── 1) Yeni ekipman için önce ID ile placeholder kaydet, sonra fotoğraf yükle ──
+      // ── Alternatif: önce kaydet, ID al, fotoğraf yükle, imagePath ile güncelle ────
+      let imagePath: string | undefined = duzenleHedef?.imagePath;
+
+      // Eğer fotoSil flag'i varsa (mevcut fotoğraf kaldırıldı)
+      if (fotoSil) imagePath = undefined;
+
       const body = {
-        category: form.category,
-        brand: form.brand,
-        model: form.model,
+        category:     form.category,
+        brand:        form.brand,
+        model:        form.model,
         serialNumber: form.serialNumber,
-        status: form.status,
-        location: konumStr,
+        status:       form.status,
+        location:     konumStr,
         locationType: form.locationType,
-        locationId: form.locationType === 'mekan' ? form.locationId : undefined,
-        flashId: form.flashId || undefined,
-        notes: form.notes || undefined,
-        gecmis: gecmisForm,
+        locationId:   form.locationType === 'mekan' ? form.locationId : undefined,
+        flashId:      form.flashId || undefined,
+        notes:        form.notes || undefined,
+        gecmis:       gecmisForm,
+        imagePath,
         ...(duzenleHedef ? { id: duzenleHedef.id } : {}),
       };
-      const url = duzenleHedef ? `${API_BASE}/malzeme/guncelle` : `${API_BASE}/malzeme/ekle`;
+
+      const url    = duzenleHedef ? `${API_BASE}/malzeme/guncelle` : `${API_BASE}/malzeme/ekle`;
       const method = duzenleHedef ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers: h, body: JSON.stringify(body) });
-      const json = await res.json();
+      const res    = await fetch(url, { method, headers: h, body: JSON.stringify(body) });
+      const json   = await res.json();
       if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
 
-      // ─── Flash konum senkronizasyonu ─────────────────────────────────────────
-      // Kameraya atanan flash'ın konumunu kamerayla aynı yap
+      const savedId = json.ekipman?.id || duzenleHedef?.id;
+
+      // ── 2) Fotoğraf seçilmişse yükle, ardından imagePath'i güncelle ─────────────
+      if (fotoFile && fotoPreview && savedId) {
+        const newPath = await fotoYukle(savedId);
+        if (newPath) {
+          // Ekipmanı imagePath ile güncelle
+          await fetch(`${API_BASE}/malzeme/guncelle`, {
+            method: 'PUT',
+            headers: { ...h, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: savedId, imagePath: newPath }),
+          });
+        }
+      }
+
+      // ── Flash konum senkronizasyonu ────────────────────────────────────────────
       if (form.category === 'camera' && form.flashId) {
         try {
           await fetch(`${API_BASE}/malzeme/guncelle`, {
@@ -304,7 +420,6 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
           console.warn('[EquipmentPage] Flash konum senkronizasyonu başarısız:', e);
         }
       }
-      // Eski flash varsa ve kaldırıldıysa konum değişmeden kalır (kullanıcı sonra ayarlar)
 
       setToast({ mesaj: duzenleHedef ? '✅ Ekipman güncellendi.' : '✅ Ekipman eklendi.', tip: 'basarili' });
       modalKapat();
@@ -321,7 +436,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
     if (!window.confirm(`${eq.brand} ${eq.model} silinecek. Emin misiniz?`)) return;
     try {
       const h = await authHeaders();
-      const res = await fetch(`${API_BASE}/malzeme/sil/${eq.id}`, { method: 'DELETE', headers: h });
+      const res  = await fetch(`${API_BASE}/malzeme/sil/${eq.id}`, { method: 'DELETE', headers: h });
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error);
       setToast({ mesaj: '🗑️ Ekipman silindi.', tip: 'basarili' });
@@ -332,10 +447,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
   };
 
   // ─── Zimmet ─────────────────────────────────────────────────────────────────
-  const zimmetBas = (eq: Equipment) => {
-    setZimmetHedef(eq);
-    setZimmetModal(true);
-  };
+  const zimmetBas = (eq: Equipment) => { setZimmetHedef(eq); setZimmetModal(true); };
 
   const zimmetAta = async (kul: Kullanici | null) => {
     if (!zimmetHedef) return;
@@ -344,11 +456,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
       const res = await fetch(`${API_BASE}/malzeme/zimmet`, {
         method: 'PUT',
         headers: h,
-        body: JSON.stringify({
-          id: zimmetHedef.id,
-          assignedTo: kul?.ad || null,
-          assignedToId: kul?.id || null,
-        }),
+        body: JSON.stringify({ id: zimmetHedef.id, assignedTo: kul?.ad || null, assignedToId: kul?.id || null }),
       });
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error);
@@ -364,14 +472,13 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="pb-24 min-h-screen bg-gradient-to-br from-[#0a051e] via-[#120830] to-[#1a0a3c]">
-
       {toast && <Toast mesaj={toast.mesaj} tip={toast.tip} onKapat={() => setToast(null)} />}
 
       {/* Header */}
       <div className="bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-b border-white/10 px-4 pt-3 pb-3">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => onNavigate(userRole === 'personel' ? 'dashboard' : (embedded ? 'resource-management' : 'resource-management'))}
+            onClick={() => onNavigate(userRole === 'personel' ? 'dashboard' : 'resource-management')}
             className="w-9 h-9 rounded-xl bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-transform"
           >
             <ArrowLeft className="w-4 h-4 text-white/70" />
@@ -382,11 +489,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
               <span className="text-base">📦</span>
             </div>
             <p className="text-[10px] text-white/30 mt-0.5">
-              {yukleniyor
-                ? 'Yükleniyor...'
-                : hataVar
-                ? 'Bağlantı hatası'
-                : `${liste.length} ekipman · Supabase KV`}
+              {yukleniyor ? 'Yükleniyor...' : hataVar ? 'Bağlantı hatası' : `${liste.length} ekipman · Supabase KV`}
             </p>
           </div>
           {canAdd && (
@@ -398,8 +501,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
             </button>
           )}
           <button
-            onClick={yukle}
-            disabled={yukleniyor}
+            onClick={yukle} disabled={yukleniyor}
             className="w-9 h-9 rounded-xl bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-transform disabled:opacity-40"
           >
             <RefreshCw className={`w-4 h-4 text-white/50 ${yukleniyor ? 'animate-spin' : ''}`} />
@@ -407,7 +509,6 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
         </div>
       </div>
 
-      {/* Yükleniyor */}
       {yukleniyor && liste.length === 0 && (
         <div className="flex flex-col items-center justify-center pt-24 gap-3">
           <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
@@ -415,7 +516,6 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
         </div>
       )}
 
-      {/* Hata */}
       {hataVar && liste.length === 0 && (
         <div className="mx-4 mt-8 rounded-2xl border border-red-500/20 bg-red-500/8 px-5 py-6 text-center">
           <WifiOff className="w-8 h-8 text-red-400 mx-auto mb-2" />
@@ -433,12 +533,12 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
           {/* İstatistikler */}
           <div className="grid grid-cols-4 gap-2">
             {[
-              { label: 'Toplam',    deger: stats.toplam,     renk: 'text-white',         bg: 'from-white/10 to-white/5',         border: 'border-white/15' },
-              { label: 'Çalışıyor', deger: stats.calisiyor,  renk: 'text-emerald-400',   bg: 'from-emerald-500/15 to-emerald-600/10', border: 'border-emerald-500/25' },
-              { label: 'Arızalı',   deger: stats.arizali,    renk: 'text-red-400',       bg: 'from-red-500/15 to-red-600/10',    border: 'border-red-500/25' },
-              { label: 'Bakımda',   deger: stats.bakimda,    renk: 'text-amber-400',     bg: 'from-amber-500/15 to-amber-600/10','border-amber-500/25': 'border-amber-500/25' },
+              { label: 'Toplam',    deger: stats.toplam,    renk: 'text-white',       bg: 'from-white/10 to-white/5',              border: 'border-white/15' },
+              { label: 'Çalışıyor', deger: stats.calisiyor, renk: 'text-emerald-400', bg: 'from-emerald-500/15 to-emerald-600/10', border: 'border-emerald-500/25' },
+              { label: 'Arızalı',   deger: stats.arizali,   renk: 'text-red-400',     bg: 'from-red-500/15 to-red-600/10',         border: 'border-red-500/25' },
+              { label: 'Bakımda',   deger: stats.bakimda,   renk: 'text-amber-400',   bg: 'from-amber-500/15 to-amber-600/10',     border: 'border-amber-500/25' },
             ].map(({ label, deger, renk, bg, border }) => (
-              <div key={label} className={`backdrop-blur rounded-xl p-3 flex flex-col items-center bg-gradient-to-br ${bg} border ${border || 'border-white/15'}`}>
+              <div key={label} className={`backdrop-blur rounded-xl p-3 flex flex-col items-center bg-gradient-to-br ${bg} border ${border}`}>
                 <div className={`text-2xl font-bold mb-0.5 ${renk}`}>{deger}</div>
                 <div className="text-[10px] text-white/35">{label}</div>
               </div>
@@ -447,42 +547,32 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
 
           {/* Filtreler */}
           <div className="rounded-2xl border border-white/10 bg-[rgba(10,5,30,0.55)] backdrop-blur p-4 space-y-3">
-
-            {/* Kategori */}
             <div>
               <p className="text-[10px] font-semibold text-white/35 uppercase tracking-wider mb-2">Kategori</p>
               <div className="flex flex-wrap gap-1.5">
                 {KATEGORILER.map(k => (
                   <button key={k.id} onClick={() => setKatFilt(k.id)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
-                      katFilt === k.id
-                        ? 'bg-white/12 border-white/25 text-white'
-                        : 'bg-white/4 border-white/8 text-white/40 active:bg-white/8'
+                      katFilt === k.id ? 'bg-white/12 border-white/25 text-white' : 'bg-white/4 border-white/8 text-white/40 active:bg-white/8'
                     }`}>
                     <span>{k.icon}</span>{k.label}
                   </button>
                 ))}
               </div>
             </div>
-
-            {/* Durum */}
             <div>
               <p className="text-[10px] font-semibold text-white/35 uppercase tracking-wider mb-2">Durum</p>
               <div className="flex flex-wrap gap-1.5">
                 {DURUMLAR.map(d => (
                   <button key={d.id} onClick={() => setDurFilt(d.id)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
-                      durFilt === d.id
-                        ? 'bg-white/12 border-white/25 text-white'
-                        : 'bg-white/4 border-white/8 text-white/40 active:bg-white/8'
+                      durFilt === d.id ? 'bg-white/12 border-white/25 text-white' : 'bg-white/4 border-white/8 text-white/40 active:bg-white/8'
                     }`}>
                     <span>{d.icon}</span>{d.label}
                   </button>
                 ))}
               </div>
             </div>
-
-            {/* Zimmet */}
             <div>
               <p className="text-[10px] font-semibold text-white/35 uppercase tracking-wider mb-2">Zimmet</p>
               <div className="flex gap-1.5">
@@ -493,17 +583,13 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                 ].map(z => (
                   <button key={z.id} onClick={() => setZimFilt(z.id)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
-                      zimFilt === z.id
-                        ? 'bg-white/12 border-white/25 text-white'
-                        : 'bg-white/4 border-white/8 text-white/40 active:bg-white/8'
+                      zimFilt === z.id ? 'bg-white/12 border-white/25 text-white' : 'bg-white/4 border-white/8 text-white/40 active:bg-white/8'
                     }`}>
                     <span>{z.icon}</span>{z.label}
                   </button>
                 ))}
               </div>
             </div>
-
-            {/* Arama */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25" />
               <input
@@ -526,143 +612,162 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
           ) : (
             <div className="space-y-3">
               {filtrelenmis.map(eq => {
-                const catColor = katRenk(eq.category);
-                const atanmisFlash = eq.flashId ? liste.find(e => e.id === eq.flashId) : null;
-                // Flash için: hangi kameraya atandığını hesapla
+                const catColor      = katRenk(eq.category);
+                const atanmisFlash  = eq.flashId ? liste.find(e => e.id === eq.flashId) : null;
                 const atandigiMakina = eq.category === 'flash'
                   ? liste.find(e => e.category === 'camera' && e.flashId === eq.id)
                   : null;
                 return (
                   <div key={eq.id}
-                    className="rounded-2xl border border-white/12 bg-[rgba(10,5,30,0.6)] backdrop-blur p-4">
+                    className="rounded-2xl border border-white/12 bg-[rgba(10,5,30,0.6)] backdrop-blur overflow-hidden">
 
-                    {/* Üst satır */}
-                    <div className="flex items-start gap-3 mb-3">
-                      <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-                        style={{ backgroundColor: `${catColor}22`, border: `2px solid ${catColor}44` }}>
-                        <span className="text-2xl">{katIkon(eq.category)}</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-white text-base leading-tight">{eq.brand} {eq.model}</h3>
-                        <p className="text-[11px] text-white/35 mt-0.5">{katLabel(eq.category)}</p>
-                      </div>
-                      <div className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold shrink-0 ${durumClass(eq.status)}`}>
-                        {durumLabel(eq.status)}
-                      </div>
-                    </div>
-
-                    {/* Seri no */}
-                    <div className="rounded-xl bg-black/30 border border-white/6 px-3 py-2 mb-3">
-                      <p className="text-[10px] text-white/30 mb-0.5">Seri Numarası</p>
-                      <p className="font-mono text-white text-xs font-semibold">{eq.serialNumber}</p>
-                    </div>
-
-                    {/* Lokasyon + Zimmet */}
-                    <div className="grid grid-cols-2 gap-2 mb-3">
-                      <div className="rounded-xl bg-white/5 border border-white/8 px-3 py-2">
-                        <p className="text-[10px] text-white/30 mb-0.5">📍 Konum</p>
-                        <p className="text-xs font-semibold text-white">{eq.location}</p>
-                      </div>
-                      <div className="rounded-xl bg-white/5 border border-white/8 px-3 py-2">
-                        <p className="text-[10px] text-white/30 mb-0.5">👤 Zimmet</p>
-                        <p className="text-xs font-semibold text-white truncate">{eq.assignedTo || 'Genel Havuz'}</p>
-                      </div>
-                    </div>
-
-                    {/* Flash bağlantısı — kamera tarafı */}
-                    {eq.category === 'camera' && atanmisFlash && (
-                      <div className="rounded-xl bg-blue-500/10 border border-blue-500/25 px-3 py-2 mb-3 flex items-center gap-2">
-                        <span className="text-base">⚡</span>
-                        <div>
-                          <p className="text-[10px] text-blue-300">Atanmış Flash</p>
-                          <p className="text-xs font-bold text-white">{atanmisFlash.brand} {atanmisFlash.model}</p>
-                          <p className="text-[10px] text-blue-200/50 font-mono">{atanmisFlash.serialNumber}</p>
+                    {/* Fotoğraf şeridi (varsa) */}
+                    {eq.imageUrl && (
+                      <div className="relative w-full h-40 bg-black/40">
+                        <EquipmentPhoto
+                          url={eq.imageUrl}
+                          alt={`${eq.brand} ${eq.model}`}
+                          className="w-full h-full object-cover"
+                        />
+                        {/* Gradient overlay */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-[rgba(10,5,30,0.85)] via-transparent to-transparent" />
+                        {/* Durum rozeti üstte */}
+                        <div className={`absolute top-3 right-3 px-2.5 py-1 rounded-lg border text-[10px] font-bold ${durumClass(eq.status)}`}>
+                          {durumLabel(eq.status)}
                         </div>
                       </div>
                     )}
 
-                    {/* Flash bağlantısı — flash tarafı */}
-                    {eq.category === 'flash' && atandigiMakina && (
-                      <div className="rounded-xl bg-violet-500/10 border border-violet-500/25 px-3 py-2 mb-3 flex items-center gap-2">
-                        <span className="text-base">📷</span>
-                        <div>
-                          <p className="text-[10px] text-violet-300">Atandığı Makina</p>
-                          <p className="text-xs font-bold text-white">{atandigiMakina.brand} {atandigiMakina.model}</p>
-                          <p className="text-[10px] text-violet-200/50 font-mono">{atandigiMakina.serialNumber}</p>
+                    <div className="p-4">
+                      {/* Üst satır */}
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                          style={{ backgroundColor: `${catColor}22`, border: `2px solid ${catColor}44` }}>
+                          <span className="text-2xl">{katIkon(eq.category)}</span>
                         </div>
-                      </div>
-                    )}
-
-                    {eq.category === 'flash' && !atandigiMakina && (
-                      <div className="rounded-xl bg-white/4 border border-white/8 px-3 py-2 mb-3 flex items-center gap-2">
-                        <span className="text-base">📷</span>
-                        <div>
-                          <p className="text-[10px] text-white/25">Atandığı Makina</p>
-                          <p className="text-xs font-semibold text-white/35">Henüz atanmadı</p>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-bold text-white text-base leading-tight">{eq.brand} {eq.model}</h3>
+                          <p className="text-[11px] text-white/35 mt-0.5">{katLabel(eq.category)}</p>
                         </div>
-                      </div>
-                    )}
-
-                    {/* Geçmiş özeti — kayıt varsa */}
-                    {eq.gecmis && eq.gecmis.length > 0 && (() => {
-                      const son = [...eq.gecmis].sort((a, b) => b.tarih.localeCompare(a.tarih))[0];
-                      return (
-                        <div className="rounded-xl bg-violet-500/8 border border-violet-500/20 px-3 py-2 mb-3">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-[10px] font-bold text-violet-300/70 uppercase tracking-wider">📋 Geçmiş</span>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-500/20 border border-violet-400/25 text-violet-300">{eq.gecmis.length} kayıt</span>
+                        {/* Durum (fotoğraf yoksa burada göster) */}
+                        {!eq.imageUrl && (
+                          <div className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold shrink-0 ${durumClass(eq.status)}`}>
+                            {durumLabel(eq.status)}
                           </div>
-                          <p className="text-xs text-white/60 leading-relaxed truncate">{son.not}</p>
-                          <p className="text-[9px] text-violet-300/50 mt-0.5">
-                            {new Date(son.tarih).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' })}
-                          </p>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Notlar */}
-                    {eq.notes && (
-                      <div className="rounded-xl bg-amber-500/10 border border-amber-500/25 px-3 py-2 mb-3">
-                        <p className="text-[10px] text-amber-300">💬 {eq.notes}</p>
+                        )}
                       </div>
-                    )}
 
-                    {/* Güncelleme tarihi */}
-                    {eq.guncellemeTarihi && (
-                      <p className="text-[9px] text-white/18 mb-3">
-                        Son güncelleme: {new Date(eq.guncellemeTarihi).toLocaleString('tr-TR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}
-                      </p>
-                    )}
+                      {/* Seri no */}
+                      <div className="rounded-xl bg-black/30 border border-white/6 px-3 py-2 mb-3">
+                        <p className="text-[10px] text-white/30 mb-0.5">Seri Numarası</p>
+                        <p className="font-mono text-white text-xs font-semibold">{eq.serialNumber}</p>
+                      </div>
 
-                    {/* Butonlar */}
-                    <div className={`grid gap-2 ${
-                      canEdit && canAssign && canDel ? 'grid-cols-3' :
-                      canEdit && canAssign ? 'grid-cols-2' :
-                      canEdit || canAssign || canDel ? 'grid-cols-1' : 'grid-cols-1'
-                    }`}>
-                      {canEdit && (
-                        <button onClick={() => duzenleBas(eq)}
-                          className="bg-blue-500/15 border border-blue-500/25 text-blue-400 font-semibold py-2 rounded-xl text-xs transition-all active:scale-95 flex items-center justify-center gap-1">
-                          <Edit2 className="w-3.5 h-3.5" />Düzenle
-                        </button>
-                      )}
-                      {canAssign && (
-                        <button onClick={() => zimmetBas(eq)}
-                          className="bg-violet-500/15 border border-violet-500/25 text-violet-400 font-semibold py-2 rounded-xl text-xs transition-all active:scale-95 flex items-center justify-center gap-1">
-                          <User className="w-3.5 h-3.5" />Zimmet
-                        </button>
-                      )}
-                      {canDel && (
-                        <button onClick={() => sil(eq)}
-                          className="bg-red-500/15 border border-red-500/25 text-red-400 font-semibold py-2 rounded-xl text-xs transition-all active:scale-95 flex items-center justify-center gap-1">
-                          <Trash2 className="w-3.5 h-3.5" />Sil
-                        </button>
-                      )}
-                      {!canEdit && !canAssign && !canDel && (
-                        <div className="bg-white/5 border border-white/10 text-white/25 font-semibold py-2 rounded-xl text-xs flex items-center justify-center">
-                          Görüntüleme Modu
+                      {/* Lokasyon + Zimmet */}
+                      <div className="grid grid-cols-2 gap-2 mb-3">
+                        <div className="rounded-xl bg-white/5 border border-white/8 px-3 py-2">
+                          <p className="text-[10px] text-white/30 mb-0.5">📍 Konum</p>
+                          <p className="text-xs font-semibold text-white">{eq.location}</p>
+                        </div>
+                        <div className="rounded-xl bg-white/5 border border-white/8 px-3 py-2">
+                          <p className="text-[10px] text-white/30 mb-0.5">👤 Zimmet</p>
+                          <p className="text-xs font-semibold text-white truncate">{eq.assignedTo || 'Genel Havuz'}</p>
+                        </div>
+                      </div>
+
+                      {/* Flash bağlantısı — kamera tarafı */}
+                      {eq.category === 'camera' && atanmisFlash && (
+                        <div className="rounded-xl bg-blue-500/10 border border-blue-500/25 px-3 py-2 mb-3 flex items-center gap-2">
+                          <span className="text-base">⚡</span>
+                          <div>
+                            <p className="text-[10px] text-blue-300">Atanmış Flash</p>
+                            <p className="text-xs font-bold text-white">{atanmisFlash.brand} {atanmisFlash.model}</p>
+                            <p className="text-[10px] text-blue-200/50 font-mono">{atanmisFlash.serialNumber}</p>
+                          </div>
                         </div>
                       )}
+
+                      {/* Flash bağlantısı — flash tarafı */}
+                      {eq.category === 'flash' && atandigiMakina && (
+                        <div className="rounded-xl bg-violet-500/10 border border-violet-500/25 px-3 py-2 mb-3 flex items-center gap-2">
+                          <span className="text-base">📷</span>
+                          <div>
+                            <p className="text-[10px] text-violet-300">Atandığı Makina</p>
+                            <p className="text-xs font-bold text-white">{atandigiMakina.brand} {atandigiMakina.model}</p>
+                            <p className="text-[10px] text-violet-200/50 font-mono">{atandigiMakina.serialNumber}</p>
+                          </div>
+                        </div>
+                      )}
+                      {eq.category === 'flash' && !atandigiMakina && (
+                        <div className="rounded-xl bg-white/4 border border-white/8 px-3 py-2 mb-3 flex items-center gap-2">
+                          <span className="text-base">📷</span>
+                          <div>
+                            <p className="text-[10px] text-white/25">Atandığı Makina</p>
+                            <p className="text-xs font-semibold text-white/35">Henüz atanmadı</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Geçmiş özeti */}
+                      {eq.gecmis && eq.gecmis.length > 0 && (() => {
+                        const son = [...eq.gecmis].sort((a, b) => b.tarih.localeCompare(a.tarih))[0];
+                        return (
+                          <div className="rounded-xl bg-violet-500/8 border border-violet-500/20 px-3 py-2 mb-3">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[10px] font-bold text-violet-300/70 uppercase tracking-wider">📋 Geçmiş</span>
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-500/20 border border-violet-400/25 text-violet-300">{eq.gecmis.length} kayıt</span>
+                            </div>
+                            <p className="text-xs text-white/60 leading-relaxed truncate">{son.not}</p>
+                            <p className="text-[9px] text-violet-300/50 mt-0.5">
+                              {new Date(son.tarih).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </p>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Notlar */}
+                      {eq.notes && (
+                        <div className="rounded-xl bg-amber-500/10 border border-amber-500/25 px-3 py-2 mb-3">
+                          <p className="text-[10px] text-amber-300">💬 {eq.notes}</p>
+                        </div>
+                      )}
+
+                      {eq.guncellemeTarihi && (
+                        <p className="text-[9px] text-white/18 mb-3">
+                          Son güncelleme: {new Date(eq.guncellemeTarihi).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      )}
+
+                      {/* Butonlar */}
+                      <div className={`grid gap-2 ${
+                        canEdit && canAssign && canDel ? 'grid-cols-3' :
+                        canEdit && canAssign ? 'grid-cols-2' :
+                        canEdit || canAssign || canDel ? 'grid-cols-1' : 'grid-cols-1'
+                      }`}>
+                        {canEdit && (
+                          <button onClick={() => duzenleBas(eq)}
+                            className="bg-blue-500/15 border border-blue-500/25 text-blue-400 font-semibold py-2 rounded-xl text-xs transition-all active:scale-95 flex items-center justify-center gap-1">
+                            <Edit2 className="w-3.5 h-3.5" />Düzenle
+                          </button>
+                        )}
+                        {canAssign && (
+                          <button onClick={() => zimmetBas(eq)}
+                            className="bg-violet-500/15 border border-violet-500/25 text-violet-400 font-semibold py-2 rounded-xl text-xs transition-all active:scale-95 flex items-center justify-center gap-1">
+                            <User className="w-3.5 h-3.5" />Zimmet
+                          </button>
+                        )}
+                        {canDel && (
+                          <button onClick={() => sil(eq)}
+                            className="bg-red-500/15 border border-red-500/25 text-red-400 font-semibold py-2 rounded-xl text-xs transition-all active:scale-95 flex items-center justify-center gap-1">
+                            <Trash2 className="w-3.5 h-3.5" />Sil
+                          </button>
+                        )}
+                        {!canEdit && !canAssign && !canDel && (
+                          <div className="bg-white/5 border border-white/10 text-white/25 font-semibold py-2 rounded-xl text-xs flex items-center justify-center">
+                            Görüntüleme Modu
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -677,7 +782,9 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm"
           onClick={e => { if (e.target === e.currentTarget) modalKapat(); }}>
           <div className="w-full max-w-md bg-[#0e0826] border border-white/12 rounded-t-3xl overflow-hidden mb-16"
-            style={{ maxHeight: '90vh' }}>
+            style={{ maxHeight: '92vh' }}>
+
+            {/* Modal Header */}
             <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/10">
               <div className="flex items-center gap-2">
                 <span className="text-xl">{duzenleHedef ? '✏️' : '➕'}</span>
@@ -691,7 +798,83 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
               </button>
             </div>
 
-            <div className="overflow-y-auto p-5 space-y-4" style={{ maxHeight: 'calc(90vh - 80px)' }}>
+            <div className="overflow-y-auto p-5 space-y-4" style={{ maxHeight: 'calc(92vh - 80px)' }}>
+
+              {/* ── FOTOĞRAF SEKSİYONU ── */}
+              <div>
+                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">
+                  📷 Ekipman Fotoğrafı
+                </label>
+
+                {/* Önizleme veya mevcut fotoğraf */}
+                {(fotoPreview || mevcutFotoUrl) ? (
+                  <div className="relative w-full h-48 rounded-2xl overflow-hidden border border-white/12 bg-black/40 mb-2">
+                    <img
+                      src={fotoPreview || mevcutFotoUrl!}
+                      alt="Ekipman fotoğrafı"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+
+                    {/* Kaldır / Değiştir butonları */}
+                    <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2 px-4">
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600/80 border border-violet-400/40 text-white text-xs font-semibold backdrop-blur active:scale-95 transition-all"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                        Değiştir
+                      </button>
+                      <button
+                        onClick={handleFotoKaldir}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600/80 border border-red-400/40 text-white text-xs font-semibold backdrop-blur active:scale-95 transition-all"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Kaldır
+                      </button>
+                    </div>
+
+                    {/* Yükleniyor overlay */}
+                    {fotoYukleniyor && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Fotoğraf seç butonu */
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full h-36 rounded-2xl border-2 border-dashed border-white/15 bg-white/3 hover:border-violet-500/40 hover:bg-violet-500/5 transition-all flex flex-col items-center justify-center gap-2 active:scale-[0.98]"
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-violet-500/15 border border-violet-500/25 flex items-center justify-center">
+                      <Camera className="w-6 h-6 text-violet-400" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-white/50">Fotoğraf Ekle</p>
+                      <p className="text-[11px] text-white/25 mt-0.5">JPG, PNG · Max 5MB</p>
+                    </div>
+                  </button>
+                )}
+
+                {/* Gizli file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/heic"
+                  onChange={handleFotoSec}
+                  className="hidden"
+                  capture="environment"
+                />
+
+                {fotoSil && !fotoPreview && (
+                  <div className="flex items-center gap-2 mt-2 px-3 py-2 rounded-xl bg-red-500/8 border border-red-500/20">
+                    <ImageOff className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                    <span className="text-[11px] text-red-300">Mevcut fotoğraf kaydedince silinecek</span>
+                  </div>
+                )}
+              </div>
+
               {/* Kategori */}
               <div>
                 <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Kategori</label>
@@ -739,9 +922,9 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                 <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Durum</label>
                 <div className="grid grid-cols-3 gap-1.5">
                   {[
-                    { id: 'working',     label: 'Çalışıyor', icon: '✅' },
-                    { id: 'broken',      label: 'Arızalı',   icon: '❌' },
-                    { id: 'maintenance', label: 'Bakımda',   icon: '🔧' },
+                    { id: 'working', label: 'Çalışıyor', icon: '✅' },
+                    { id: 'broken', label: 'Arızalı', icon: '❌' },
+                    { id: 'maintenance', label: 'Bakımda', icon: '🔧' },
                   ].map(d => (
                     <button key={d.id} onClick={() => setForm(f => ({ ...f, status: d.id as any }))}
                       className={`py-2 rounded-xl text-xs font-semibold border transition-all ${
@@ -758,8 +941,6 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
               {/* Konum */}
               <div>
                 <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Konum *</label>
-
-                {/* Tip seçici */}
                 <div className="grid grid-cols-3 gap-1.5 mb-3">
                   {([
                     { id: 'mekan', label: 'Mekan', icon: '📍' },
@@ -779,7 +960,6 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                   ))}
                 </div>
 
-                {/* Mekan seçimi */}
                 {form.locationType === 'mekan' && (
                   mekanlar.length === 0 ? (
                     <div className="rounded-xl bg-amber-500/8 border border-amber-500/20 px-3 py-3 flex items-center gap-2">
@@ -806,16 +986,12 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                     </div>
                   )
                 )}
-
-                {/* Depo — otomatik, açıklama */}
                 {form.locationType === 'depo' && (
                   <div className="rounded-xl bg-cyan-500/8 border border-cyan-500/20 px-3 py-3 flex items-center gap-2">
                     <span className="text-xl">🏭</span>
                     <p className="text-xs font-semibold text-cyan-300">Depo — Merkezi depo olarak kaydedilecek</p>
                   </div>
                 )}
-
-                {/* Diğer — serbest metin */}
                 {form.locationType === 'diger' && (
                   <input type="text" value={form.locationText}
                     onChange={e => setForm(f => ({ ...f, locationText: e.target.value }))}
@@ -824,27 +1000,19 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                 )}
               </div>
 
-              {/* Flash ata (sadece kamera için) */}
+              {/* Flash ata */}
               {form.category === 'camera' && (
                 <div>
                   <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Flash Ata (opsiyonel)</label>
-
-                  {/* Flash yok seçeneği */}
                   <button
                     onClick={() => setForm(f => ({ ...f, flashId: '' }))}
                     className={`w-full px-3 py-2.5 rounded-xl border text-left flex items-center gap-2.5 mb-1.5 transition-all ${
-                      form.flashId === ''
-                        ? 'border-violet-400/50 bg-violet-500/15'
-                        : 'border-white/8 bg-white/4 active:bg-white/8'
+                      form.flashId === '' ? 'border-violet-400/50 bg-violet-500/15' : 'border-white/8 bg-white/4 active:bg-white/8'
                     }`}>
                     <span className="text-lg w-7 text-center shrink-0">🚫</span>
                     <span className={`text-sm font-semibold ${form.flashId === '' ? 'text-violet-200' : 'text-white/50'}`}>Flash yok</span>
-                    {form.flashId === '' && (
-                      <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-500/30 border border-violet-400/40 text-violet-300">✓</span>
-                    )}
+                    {form.flashId === '' && <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-500/30 border border-violet-400/40 text-violet-300">✓</span>}
                   </button>
-
-                  {/* Mevcut flashlar */}
                   {secilebilirFlashlar.length === 0 ? (
                     <div className="rounded-xl bg-white/4 border border-white/8 px-3 py-2.5 flex items-center gap-2">
                       <span className="text-sm">⚡</span>
@@ -856,9 +1024,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                         <button key={fl.id}
                           onClick={() => setForm(f => ({ ...f, flashId: fl.id }))}
                           className={`w-full px-3 py-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all ${
-                            form.flashId === fl.id
-                              ? 'border-amber-400/50 bg-amber-500/10'
-                              : 'border-white/8 bg-white/4 active:bg-white/8'
+                            form.flashId === fl.id ? 'border-amber-400/50 bg-amber-500/10' : 'border-white/8 bg-white/4 active:bg-white/8'
                           }`}>
                           <span className="text-lg w-7 text-center shrink-0">⚡</span>
                           <div className="flex-1 min-w-0">
@@ -867,18 +1033,13 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                             </p>
                             <p className="text-[10px] text-white/30 font-mono">{fl.serialNumber}</p>
                           </div>
-                          {form.flashId === fl.id && (
-                            <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/30 border border-amber-400/40 text-amber-300 shrink-0">✓</span>
-                          )}
+                          {form.flashId === fl.id && <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/30 border border-amber-400/40 text-amber-300 shrink-0">✓</span>}
                         </button>
                       ))}
                     </div>
                   )}
-
                   {form.flashId && form.locationType !== 'diger' && (
-                    <p className="text-[10px] text-amber-300/70 mt-2 px-1">
-                      ⚡ Bu flash kaydedilince kamerayla aynı konuma taşınır.
-                    </p>
+                    <p className="text-[10px] text-amber-300/70 mt-2 px-1">⚡ Bu flash kaydedilince kamerayla aynı konuma taşınır.</p>
                   )}
                 </div>
               )}
@@ -891,9 +1052,8 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                   className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-violet-400/50 placeholder-white/20" />
               </div>
 
-              {/* ─── Malzeme Geçmişi ─────────────────────────────────────────────── */}
+              {/* Malzeme Geçmişi */}
               <div className="rounded-2xl border border-white/10 bg-black/20 overflow-hidden">
-                {/* Başlık */}
                 <button
                   onClick={() => setGecmisAcik(g => !g)}
                   className="w-full flex items-center justify-between px-4 py-3 active:bg-white/5 transition-colors">
@@ -911,20 +1071,15 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
 
                 {gecmisAcik && (
                   <div className="px-4 pb-4 space-y-3 border-t border-white/8 pt-3">
-
-                    {/* Mevcut kayıtlar — yeniden eskiye */}
                     {gecmisForm.length === 0 ? (
                       <p className="text-xs text-white/25 text-center py-2">Henüz geçmiş kaydı yok.</p>
                     ) : (
                       <div className="space-y-2">
                         {[...gecmisForm].reverse().map((kayit, idx) => (
                           <div key={kayit.id} className="flex gap-3 items-start group">
-                            {/* Timeline çizgisi */}
                             <div className="flex flex-col items-center shrink-0 pt-0.5">
                               <div className="w-2 h-2 rounded-full bg-violet-400/60 shrink-0" />
-                              {idx < gecmisForm.length - 1 && (
-                                <div className="w-px flex-1 bg-white/8 mt-1 min-h-[16px]" />
-                              )}
+                              {idx < gecmisForm.length - 1 && <div className="w-px flex-1 bg-white/8 mt-1 min-h-[16px]" />}
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-0.5">
@@ -933,9 +1088,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                                 </span>
                               </div>
                               <p className="text-xs text-white/75 leading-relaxed">{kayit.not}</p>
-                              {kayit.ekleyen && (
-                                <p className="text-[9px] text-white/25 mt-0.5">— {kayit.ekleyen}</p>
-                              )}
+                              {kayit.ekleyen && <p className="text-[9px] text-white/25 mt-0.5">— {kayit.ekleyen}</p>}
                             </div>
                             <button
                               onClick={() => setGecmisForm(g => g.filter(k => k.id !== kayit.id))}
@@ -946,34 +1099,23 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                         ))}
                       </div>
                     )}
-
-                    {/* Yeni kayıt ekle */}
                     <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-3 space-y-2">
                       <p className="text-[10px] font-semibold text-violet-300/70 uppercase tracking-wider">➕ Yeni Kayıt</p>
                       <input
-                        type="date"
-                        value={yeniTarih}
-                        onChange={e => setYeniTarih(e.target.value)}
+                        type="date" value={yeniTarih} onChange={e => setYeniTarih(e.target.value)}
                         className="w-full h-9 rounded-xl bg-black/30 border border-white/12 text-white text-xs px-3 outline-none focus:border-violet-400/50"
                         style={{ colorScheme: 'dark' }}
                       />
                       <textarea
-                        value={yeniNot}
-                        onChange={e => setYeniNot(e.target.value)}
-                        placeholder="Örn: Tamire gönderildi, objektif değiştirildi, bakım yapıldı..."
+                        value={yeniNot} onChange={e => setYeniNot(e.target.value)}
+                        placeholder="Örn: Tamire gönderildi, objektif değiştirildi..."
                         rows={2}
                         className="w-full rounded-xl bg-black/30 border border-white/12 text-white text-xs px-3 py-2 outline-none focus:border-violet-400/50 placeholder-white/20 resize-none"
                       />
                       <button
                         onClick={() => {
                           if (!yeniNot.trim()) return;
-                          const kayit: GecmisKayit = {
-                            id: `gecmis_${Date.now()}`,
-                            tarih: yeniTarih,
-                            not: yeniNot.trim(),
-                            ekleyen: userName,
-                          };
-                          setGecmisForm(g => [...g, kayit]);
+                          setGecmisForm(g => [...g, { id: `gecmis_${Date.now()}`, tarih: yeniTarih, not: yeniNot.trim(), ekleyen: userName }]);
                           setYeniNot('');
                           setYeniTarih(new Date().toISOString().split('T')[0]);
                         }}
@@ -993,12 +1135,12 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                 </div>
               )}
 
-              <button onClick={kaydet} disabled={kayitYukleniyor}
+              <button onClick={kaydet} disabled={kayitYukleniyor || fotoYukleniyor}
                 className="w-full h-12 rounded-xl bg-gradient-to-r from-violet-500/80 to-purple-500/80 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40">
-                {kayitYukleniyor
-                  ? <Loader2 className="w-4 h-4 animate-spin" />
-                  : <Save className="w-4 h-4" />}
-                {duzenleHedef ? 'Güncelle' : 'Ekipman Ekle'}
+                {(kayitYukleniyor || fotoYukleniyor)
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />{fotoYukleniyor ? 'Fotoğraf yükleniyor...' : 'Kaydediliyor...'}</>
+                  : <><Save className="w-4 h-4" />{duzenleHedef ? 'Güncelle' : 'Ekipman Ekle'}</>
+                }
               </button>
             </div>
           </div>
@@ -1021,9 +1163,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                 <X className="w-4 h-4 text-white/60" />
               </button>
             </div>
-
             <div className="overflow-y-auto p-4 space-y-2" style={{ maxHeight: 'calc(70vh - 80px)' }}>
-              {/* Zimmet kaldır */}
               <button onClick={() => zimmetAta(null)}
                 className="w-full px-4 py-3 rounded-xl border border-white/8 bg-white/4 text-left active:bg-white/8 transition-colors">
                 <div className="flex items-center gap-3">
@@ -1032,13 +1172,9 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                     <p className="text-sm font-semibold text-white">Genel Havuz</p>
                     <p className="text-[10px] text-white/30">Zimmeti kaldır</p>
                   </div>
-                  {!zimmetHedef.assignedTo && (
-                    <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-md bg-violet-500/20 border border-violet-500/30 text-violet-300">Mevcut</span>
-                  )}
+                  {!zimmetHedef.assignedTo && <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-md bg-violet-500/20 border border-violet-500/30 text-violet-300">Mevcut</span>}
                 </div>
               </button>
-
-              {/* Kullanıcı listesi */}
               {kullanicilar.map(k => (
                 <button key={k.id} onClick={() => zimmetAta(k)}
                   className="w-full px-4 py-3 rounded-xl border border-white/8 bg-white/4 text-left active:bg-white/8 transition-colors">
@@ -1048,9 +1184,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                       <p className="text-sm font-semibold text-white">{k.ad}</p>
                       <p className="text-[10px] text-white/30">{k.rol}</p>
                     </div>
-                    {zimmetHedef.assignedTo === k.ad && (
-                      <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-md bg-violet-500/20 border border-violet-500/30 text-violet-300">Mevcut</span>
-                    )}
+                    {zimmetHedef.assignedTo === k.ad && <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-md bg-violet-500/20 border border-violet-500/30 text-violet-300">Mevcut</span>}
                   </div>
                 </button>
               ))}
