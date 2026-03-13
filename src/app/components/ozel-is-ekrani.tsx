@@ -12,6 +12,7 @@ import { motion } from 'motion/react';
 import { StaffTopBar } from './staff-top-bar';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
+import { localDateStr } from '../lib/date';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -46,7 +47,7 @@ interface OzelIsEkraniProps {
 }
 
 export function OzelIsEkrani({ userName, userId, userRole, task, onBack, onLogout, onNavigate }: OzelIsEkraniProps) {
-  const tarih = new Date().toISOString().split('T')[0];
+  const tarih = localDateStr();
 
   type Asama = 'yukleniyor' | 'bekliyor' | 'devamda' | 'tamamlandi';
   const [asama, setAsama] = useState<Asama>('yukleniyor');

@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { StaffTopBar } from './staff-top-bar';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
+import { localDateStr } from '../lib/date';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -137,7 +138,7 @@ function StokSatir({
 
 // ─── Ana Bileşen ──────────────────────────────────────────────────────────────
 export function EkstraIsEkrani({ userName, userId, userRole, task, onBack, onLogout, onNavigate }: EkstraIsEkraniProps) {
-  const tarih = new Date().toISOString().split('T')[0];
+  const tarih = localDateStr();
 
   // Aşama: kaynak-sec | acilis | calisiyor | kapalis | tamamlandi
   type Asama = 'yukleniyor' | 'kaynak-sec' | 'acilis' | 'calisiyor' | 'kapalis' | 'tamamlandi';
@@ -732,7 +733,7 @@ export function EkstraIsEkrani({ userName, userId, userRole, task, onBack, onLog
     );
   };
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────��───────────────────────
   const asamaBaslik: Record<string, string> = {
     'yukleniyor': 'Yükleniyor...',
     'kaynak-sec': 'Kaynak Seç',

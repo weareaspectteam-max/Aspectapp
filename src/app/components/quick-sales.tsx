@@ -14,6 +14,7 @@ import {
 } from '../services/stock-service';
 import { buildHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
+import { localDateStr } from '../lib/date';
 
 const API_BASE_QS = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -230,7 +231,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       setResolvedMekanId(realMekanId);
 
       // ── 2. Rotasyon personeli ────────────────────────────
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDateStr();
       const tasks = await getTasks();
       const todayTasks = (Array.isArray(tasks) ? tasks : []).filter(t =>
         t.date === today &&

@@ -37,6 +37,7 @@ import {
 } from '../services/rotation-service';
 import { RotationTaskModal } from './rotation-task-modal';
 import { RotationLeaveModal } from './rotation-leave-modal';
+import { localDateStr, toLocalDateStr } from '../lib/date';
 
 
 interface RotationSystemProps {
@@ -73,7 +74,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
   // STATE
   // ==========================================
   const [activeTab, setActiveTab] = useState<ActiveTab>(userRole === 'personel' ? 'assigned' : 'plan');
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(localDateStr());
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [modalType, setModalType] = useState<ModalType>('regular_location');
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -259,11 +260,11 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
   const changeDate = (offset: number) => {
     const current = new Date(selectedDate);
     current.setDate(current.getDate() + offset);
-    setSelectedDate(current.toISOString().split('T')[0]);
+    setSelectedDate(toLocalDateStr(current));
   };
 
   const goToToday = () => {
-    setSelectedDate(new Date().toISOString().split('T')[0]);
+    setSelectedDate(localDateStr());
   };
 
   // Get time period icon
@@ -1577,7 +1578,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
 
             {/* Aktif rotasyonlar üstte — İzinli+Beklemede sonra — Geçmiş Rotasyonlar en altta */}
             {(() => {
-              const todayStr = new Date().toISOString().split('T')[0];
+              const todayStr = localDateStr();
               const now = new Date();
               const currentTime = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
 

@@ -5,6 +5,7 @@
 
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
+import { localDateStr } from '../lib/date';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -106,9 +107,9 @@ export interface GunlukStokResponse {
   bekleyenAktarimlar: Aktarim[];
 }
 
-// Bugünün tarihini YYYY-MM-DD formatında döndür
+// Bugünün tarihini YYYY-MM-DD formatında döndür (lokal saat, UTC değil)
 export const bugunTarih = (): string => {
-  return new Date().toISOString().split('T')[0];
+  return localDateStr();
 };
 
 // Günlük stok verisini getir (dünün kapanışı dahil)

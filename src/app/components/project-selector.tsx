@@ -2,6 +2,7 @@ import { getTasks, getLocations } from '../services/rotation-service';
 import type { Task } from '../services/rotation-service';
 import { useState, useEffect } from 'react';
 import { MapPin, Clock, CheckCircle2, Navigation, AlertTriangle, Zap, ArrowLeft, Lock, Loader2 } from 'lucide-react';
+import { localDateStr } from '../lib/date';
 
 interface Project {
   id: string;
@@ -67,7 +68,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
       setRotasyonYukleniyor(true);
       setRotasyonDurumu('yukleniyor');
       try {
-        const today = new Date().toISOString().split('T')[0];
+        const today = localDateStr();
         const tasks = await getTasks();
 
         // Bugüne ait ve aktif (sent / revised) görevler
