@@ -192,6 +192,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
   const [katFilt, setKatFilt] = useState('all');
   const [durFilt, setDurFilt] = useState('all');
   const [zimFilt, setZimFilt] = useState('all');
+  const [mekFilt, setMekFilt] = useState('all');
   const [arama, setArama]     = useState('');
 
   // Modallar
@@ -264,7 +265,12 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
     if (zimFilt === 'unassigned') zimUygun = !eq.assignedTo;
     else if (zimFilt === 'assigned') zimUygun = !!eq.assignedTo;
     else if (zimFilt !== 'all') zimUygun = eq.assignedTo === zimFilt;
-    return aramaUygun && katUygun && durUygun && zimUygun;
+    const mekUygun = mekFilt === 'all'
+      ? true
+      : mekFilt === 'diger'
+        ? (!eq.locationType || eq.locationType !== 'mekan')
+        : eq.locationId === mekFilt;
+    return aramaUygun && katUygun && durUygun && zimUygun && mekUygun;
   });
 
   const stats = {
@@ -629,6 +635,33 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                 ))}
               </div>
             </div>
+            {mekanlar.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold text-white/35 uppercase tracking-wider mb-2">Mekan</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <button onClick={() => setMekFilt('all')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                      mekFilt === 'all' ? 'bg-white/12 border-white/25 text-white' : 'bg-white/4 border-white/8 text-white/40 active:bg-white/8'
+                    }`}>
+                    <span>🗺️</span>Tümü
+                  </button>
+                  {mekanlar.map(m => (
+                    <button key={m.id} onClick={() => setMekFilt(m.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                        mekFilt === m.id ? 'bg-white/12 border-white/25 text-white' : 'bg-white/4 border-white/8 text-white/40 active:bg-white/8'
+                      }`}>
+                      <span>{m.emoji}</span>{m.name}
+                    </button>
+                  ))}
+                  <button onClick={() => setMekFilt('diger')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                      mekFilt === 'diger' ? 'bg-white/12 border-white/25 text-white' : 'bg-white/4 border-white/8 text-white/40 active:bg-white/8'
+                    }`}>
+                    <span>📍</span>Diğer
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25" />
               <input
