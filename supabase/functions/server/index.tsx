@@ -4345,6 +4345,21 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
       }
     }
 
+    // ── 3b. Supabase user_metadata'dan güncel avatar ve isim çek ──
+    try {
+      const sb = getAdminClient();
+      const { data: { users: allUsers } } = await sb.auth.admin.listUsers({ perPage: 1000 });
+      for (const u of (allUsers || [])) {
+        const pid = u.id;
+        if (!personMap[pid]) continue;
+        const meta = u.user_metadata || {};
+        if (meta.avatar) personMap[pid].avatar = meta.avatar;
+        if (meta.full_name && personMap[pid].ad === "Bilinmiyor") personMap[pid].ad = meta.full_name;
+      }
+    } catch (avatarErr) {
+      console.log("Leaderboard avatar enrich error (non-fatal):", avatarErr);
+    }
+
     // ── 4. Rotasyon görevleri: vardiya sayısı + avatar güncelleme ──
     const allTasks: any[] = await kv.getByPrefix("rotation_task_") || [];
     const taskMap: Record<string, any[]> = {};

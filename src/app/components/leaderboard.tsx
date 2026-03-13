@@ -129,6 +129,34 @@ function MetrikBar({ label, puan, color, icon: Icon }: { label: string; puan: nu
   );
 }
 
+/** Avatar — emoji veya URL ikisini de handle eder */
+function AvatarDisplay({
+  avatar, size, borderColor, bgColor, boxShadow,
+}: {
+  avatar: string; size: number; borderColor?: string; bgColor?: string; boxShadow?: string;
+}) {
+  const isUrl = avatar.startsWith('http') || avatar.startsWith('/');
+  const style: React.CSSProperties = {
+    width: size, height: size,
+    borderRadius: '50%',
+    border: `2px solid ${borderColor || 'rgba(255,255,255,0.15)'}`,
+    background: bgColor || 'rgba(255,255,255,0.07)',
+    boxShadow: boxShadow,
+    flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
+    fontSize: size * 0.45,
+  };
+  if (isUrl) {
+    return (
+      <div style={style}>
+        <img src={avatar} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </div>
+    );
+  }
+  return <div style={style}>{avatar || '👤'}</div>;
+}
+
 /** Rank rozeti */
 function RankBadge({ sira }: { sira: number }) {
   if (sira === 1) return <Trophy className="w-4 h-4" style={{ color: C.gold }} />;
@@ -357,18 +385,14 @@ export function Leaderboard({ userName, userRole, accessToken, onLogout, onNavig
                             style={{ background: glowColor, opacity: isFirst ? 0.35 : 0.18, transform: 'scale(1.3)' }}
                           />
                           {/* Avatar dairesi */}
-                          <div
-                            className="relative flex items-center justify-center rounded-full border-2"
-                            style={{
-                              width: isFirst ? 64 : 52,
-                              height: isFirst ? 64 : 52,
-                              fontSize: isFirst ? 28 : 22,
-                              background: `${glowColor}18`,
-                              borderColor: `${glowColor}60`,
-                              boxShadow: `0 0 20px ${glowColor}25`,
-                            }}
-                          >
-                            {p.avatar}
+                          <div className="relative">
+                            <AvatarDisplay
+                              avatar={p.avatar}
+                              size={isFirst ? 64 : 52}
+                              borderColor={`${glowColor}60`}
+                              bgColor={`${glowColor}18`}
+                              boxShadow={`0 0 20px ${glowColor}25`}
+                            />
                           </div>
                           {/* Skor chip */}
                           <div
@@ -470,15 +494,12 @@ export function Leaderboard({ userName, userRole, accessToken, onLogout, onNavig
                       </div>
 
                       {/* Avatar */}
-                      <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center text-lg flex-shrink-0"
-                        style={{
-                          background: p.sira <= 3 ? `${glowColor}15` : 'rgba(255,255,255,0.07)',
-                          border: `1px solid ${p.sira <= 3 ? glowColor + '40' : 'rgba(255,255,255,0.10)'}`,
-                        }}
-                      >
-                        {p.avatar}
-                      </div>
+                      <AvatarDisplay
+                        avatar={p.avatar}
+                        size={36}
+                        borderColor={p.sira <= 3 ? `${glowColor}40` : 'rgba(255,255,255,0.10)'}
+                        bgColor={p.sira <= 3 ? `${glowColor}15` : 'rgba(255,255,255,0.07)'}
+                      />
 
                       {/* İsim + özet */}
                       <div className="flex-1 min-w-0">
