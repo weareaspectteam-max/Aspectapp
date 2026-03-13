@@ -30,6 +30,7 @@ import { StokDagilimi } from './components/stok-dagilimi';
 import { ResourceManagement } from './components/resource-management';
 import { CostManagement } from './components/cost-management';
 import { PersonelIzinCetveli } from './components/personel-izin-cetveli';
+import { KisiselIzinCetveli } from './components/kisisel-izin-cetveli';
 import { LocationVisits } from './components/location-visits';
 import { SatisRaporu } from './components/satis-raporu';
 import { ManagerReports } from './components/manager-reports';
@@ -436,6 +437,8 @@ export default function App() {
           <AspectAIPage 
             userRole={userRole}
             userName={userName}
+            userId={userId}
+            userAvatar={userAvatar}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -446,6 +449,8 @@ export default function App() {
           <AspectAIPage 
             userRole={userRole}
             userName={userName}
+            userId={userId}
+            userAvatar={userAvatar}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -541,6 +546,17 @@ export default function App() {
             userRole={userRole}
             accessToken={accessToken}
             onLogout={handleLogout}
+            onNavigate={handleNavigate}
+          />
+        );
+      
+      case 'kisisel-izin-cetveli':
+        return (
+          <KisiselIzinCetveli
+            userName={userName}
+            userId={userId}
+            userRole={userRole}
+            onBack={() => handleNavigate('aspect-ai')}
             onNavigate={handleNavigate}
           />
         );

@@ -3612,14 +3612,25 @@ app.delete("/make-server-4da0b637/users/:userId", async (c) => {
     const targetName = targetData.user.user_metadata?.full_name || targetData.user.email || userId;
     let kvTemizlendi = 0;
 
-    // ── 1. rotation_task_* — bu userId geçen görevleri sil ──
+    // ── 1. rotation_task_* — personeli görevden çıkar ──
+    // Tek kişilik görev → tamamen sil | Çok kişilik → sadece bu kişiyi çıkar
     try {
       const tasks = await kv.getByPrefix("rotation_task_");
       for (const task of (tasks || [])) {
-        if (JSON.stringify(task).includes(userId)) {
+        if (!task.id) continue;
+        const personnel: any[] = Array.isArray(task.personnel) ? task.personnel : [];
+        const buKisiVar = personnel.some((p: any) => p.id === userId);
+        if (!buKisiVar) continue;
+
+        if (personnel.length <= 1) {
           await kv.del(`rotation_task_${task.id}`);
           kvTemizlendi++;
-          console.log(`[userDelete] rotation_task_${task.id} silindi`);
+          console.log(`[userDelete] rotation_task_${task.id} silindi (tek kişilik görev)`);
+        } else {
+          const yeniPersonnel = personnel.filter((p: any) => p.id !== userId);
+          await kv.set(`rotation_task_${task.id}`, { ...task, personnel: yeniPersonnel });
+          kvTemizlendi++;
+          console.log(`[userDelete] rotation_task_${task.id} güncellendi (${personnel.length} → ${yeniPersonnel.length} kişi)`);
         }
       }
     } catch (e) {
@@ -3630,7 +3641,7 @@ app.delete("/make-server-4da0b637/users/:userId", async (c) => {
     try {
       const leaves = await kv.getByPrefix("rotation_leave_");
       for (const leave of (leaves || [])) {
-        if (leave.staffId === userId || leave.created_by === userId) {
+        if (leave.personnelId === userId || leave.staffId === userId || leave.created_by === userId) {
           await kv.del(`rotation_leave_${leave.id}`);
           kvTemizlendi++;
           console.log(`[userDelete] rotation_leave_${leave.id} silindi`);

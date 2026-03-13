@@ -9,10 +9,14 @@ import {
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 import type { VardiyaSatis } from '../services/stock-service';
-import { getLeaveRequests, type LeaveRequest } from '../services/rotation-service';
+import { getLeaveRequests, saveLeaveRequest, deleteLeaveRequest, getDailyOnLeave, getStaffMembers, type LeaveRequest } from '../services/rotation-service';
 import { AspectAISettings } from './aspect-ai-settings';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
+
+// ─── Fethiye koordinatları (altın saat hesabı için) ──────────────────────────
+const FETHIYE_LAT = 36.6552;
+const FETHIYE_LON = 29.1265;
 
 // ─── Albüm maliyet tipi ───────────────────────────────────────────────────────
 interface AlbumMaliyet {
@@ -50,13 +54,25 @@ interface Message {
 }
 
 interface ResponseCard {
-  type: 'briefing' | 'profit' | 'stock' | 'personnel' | 'anomaly' | 'tip' | 'payment' | 'golden_hour' | 'mekan_detay' | 'izin';
+  type: 'briefing' | 'profit' | 'stock' | 'personnel' | 'anomaly' | 'tip' | 'payment' | 'golden_hour' | 'mekan_detay' | 'izin' | 'leave_flow' | 'leave_confirm';
   data: any;
+}
+
+interface LeaveFlowState {
+  step: 'type' | 'duration' | 'start_date' | 'end_date' | 'notes' | 'confirm';
+  leaveType?: 'annual' | 'sick' | 'personal';
+  durationType?: 'single' | 'multiple';
+  startDate?: string;
+  endDate?: string;
+  notes?: string;
+  completed?: boolean;
 }
 
 interface AspectAIProps {
   userRole?: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   userName?: string;
+  userId?: string;
+  userAvatar?: string;
   onLogout?: () => void;
   onNavigate?: (tab: string) => void;
 }
@@ -102,11 +118,12 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
       { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
       { icon: '💰', label: 'Ciro & Kâr', q: 'Bugün toplam ciro ne kadar?' },
       { icon: '🏆', label: 'En İyi Mekan', q: 'Bugün hangi mekan en iyi performansı gösterdi?' },
-      { icon: '👤', label: 'Personel', q: 'En iyi personel kimdi bugün?' },
       { icon: '💳', label: 'Ödeme Dağılımı', q: 'Ödeme yöntemleri nasıl dağılmış?' },
       { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
       { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
       { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
+      { icon: '🏖️', label: 'İzin Talebi', q: '__LEAVE_REQUEST__' },
+      { icon: '📅', label: 'İzin Geçmişim', q: '__IZIN_GECMISIM__' },
     ],
     welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Tüm mekanların satış, kâr, stok ve personel verilerine erişimim var. Ne öğrenmek istersin?`,
     blockedKeywords: [],
@@ -121,11 +138,11 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
       { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
       { icon: '🏆', label: 'En İyi Mekan', q: 'Bugün hangi mekan en iyi performansı gösterdi?' },
       { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
-      { icon: '💳', label: 'Ödeme Dağılımı', q: 'Ödeme yöntemleri nasıl dağılmış?' },
       { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
-      { icon: '👤', label: 'Personel', q: 'En iyi personel kimdi bugün?' },
       { icon: '🌅', label: 'Altın Saat', q: 'Bugün Fethiye altın saat kaçta?' },
       { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
+      { icon: '🏖️', label: 'İzin Talebi', q: '__LEAVE_REQUEST__' },
+      { icon: '📅', label: 'İzin Geçmişim', q: '__IZIN_GECMISIM__' },
     ],
     welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Operasyon geneli, mekan performansları ve anomali takibi için buradayım.`,
     blockedKeywords: [],
@@ -140,9 +157,10 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
       { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
       { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
       { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
-      { icon: '👤', label: 'Personel', q: 'En iyi personel kimdi bugün?' },
       { icon: '🌅', label: 'Altın Saat', q: 'Bugün Fethiye altın saat kaçta?' },
       { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
+      { icon: '🏖️', label: 'İzin Talebi', q: '__LEAVE_REQUEST__' },
+      { icon: '📅', label: 'İzin Geçmişim', q: '__IZIN_GECMISIM__' },
     ],
     welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Mekan yönetimi, stok takibi ve personel performansı konularında yardımcı olabilirim.`,
     blockedKeywords: [],
@@ -156,9 +174,10 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
     chips: [
       { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
       { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
-      { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
       { icon: '🌅', label: 'Altın Saat', q: 'Bugün Fethiye altın saat kaçta?' },
-      { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
+      { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
+      { icon: '🏖️', label: 'İzin Talebi', q: '__LEAVE_REQUEST__' },
+      { icon: '📅', label: 'İzin Geçmişim', q: '__IZIN_GECMISIM__' },
     ],
     welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Saha koordinasyonu, stok durumu ve mekan anomalileri için buradayım.`,
     blockedKeywords: ['kâr marjı', 'net kâr', 'brüt kâr'],
@@ -172,9 +191,10 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
     chips: [
       { icon: '💳', label: 'Ödeme Dağılımı', q: 'Ödeme yöntemleri nasıl dağılmış?' },
       { icon: '💰', label: 'Ciro & Kâr', q: 'Bugün toplam ciro ne kadar?' },
-      { icon: '👤', label: 'Personel', q: 'En iyi personel kimdi bugün?' },
       { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
       { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
+      { icon: '🏖️', label: 'İzin Talebi', q: '__LEAVE_REQUEST__' },
+      { icon: '📅', label: 'İzin Geçmişim', q: '__IZIN_GECMISIM__' },
     ],
     welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Ödeme dağılımları, ciro takibi ve personel verileri için buradayım.`,
     blockedKeywords: [],
@@ -188,11 +208,11 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
     chips: [
       { icon: '📦', label: 'Stok Sorgula', q: 'Stok durumu nedir?' },
       { icon: '📸', label: 'Çekim İpuçları', q: 'Portre çekim ipuçları ver' },
-      { icon: '❓', label: 'Satış Kaydı', q: 'Nasıl satış kaydederim?' },
       { icon: '🌅', label: 'Altın Saat', q: 'Bugün Fethiye altın saat kaçta?' },
+      { icon: '🏖️', label: 'İzin Talebi', q: '__LEAVE_REQUEST__' },
       { icon: '📅', label: 'İzin Geçmişim', q: '__IZIN_GECMISIM__' },
     ],
-    welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Stok durumu, çekim teknikleri veya satış süreci hakkında sorularına yardımcı olabilirim!`,
+    welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Stok durumu, çekim teknikleri, izin talebi ve satış süreci hakkında sorularına yardımcı olabilirim!`,
     blockedKeywords: [
       'ciro', 'kâr', 'kar', 'kazandık', 'kazanç', 'gelir', 'para',
       'ödeme', 'nakit', 'kart', 'iban', 'döviz', 'fiyat', 'ücret',
@@ -297,62 +317,86 @@ async function fetchAltiSaat(): Promise<{ text: string; card: ResponseCard }> {
 
 // ─── İzin Geçmişi Fetch ───────────────────────────────────────────────────────
 
-async function fetchIzinGecmisi(userName: string): Promise<{ text: string; card: ResponseCard }> {
+async function fetchIzinGecmisi(userId: string, userName: string): Promise<{ text: string; card: ResponseCard }> {
   try {
-    const leaves = await getLeaveRequests();
+    const [leaves, dailyOnLeave, staffMembers] = await Promise.all([
+      getLeaveRequests(),
+      getDailyOnLeave(),
+      getStaffMembers(),
+    ]);
+
+    // Türkiye saatini (UTC+3) baz alarak bugünü hesapla
     const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const trOffset = 3 * 60;
+    const nowTR = new Date(now.getTime() + (trOffset - now.getTimezoneOffset()) * 60000);
 
-    // Kullanıcıya ait onaylı izinleri son 30 günle kesişen şekilde filtrele
-    const myLeaves = leaves.filter(l => {
-      const nameLower = l.personnelName.toLowerCase();
-      const userLower = userName.toLowerCase();
-      const nameMatch = nameLower.includes(userLower.split(' ')[0]) ||
-                        userLower.includes(nameLower.split(' ')[0]);
-      const leaveEnd = new Date(l.endDate);
-      return nameMatch && l.status === 'approved' && leaveEnd >= thirtyDaysAgo;
-    });
-
-    // İzin günlerini hesapla (30 gün penceresi ile kesişen kısım)
-    let totalLeaveDays = 0;
-    let annualDays = 0, sickDays = 0, personalDays = 0;
-
-    for (const l of myLeaves) {
-      const start = new Date(Math.max(new Date(l.startDate).getTime(), thirtyDaysAgo.getTime()));
-      const end = new Date(Math.min(new Date(l.endDate).getTime(), now.getTime()));
-      const diffDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      const clampedDays = Math.max(0, Math.min(diffDays, l.days));
-      totalLeaveDays += clampedDays;
-      if (l.type === 'annual') annualDays += clampedDays;
-      else if (l.type === 'sick') sickDays += clampedDays;
-      else personalDays += clampedDays;
+    // Son 7 gün (bugün dahil, geriye doğru) — YYYY-MM-DD
+    const last7Days: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(nowTR);
+      d.setDate(d.getDate() - i);
+      last7Days.push(d.toISOString().split('T')[0]);
     }
 
-    // Turizm işletmesi 7 gün çalışır — takvim günü baz alınır
-    const totalCalendarDays = 30;
-    const estimatedWorkDays = Math.max(0, totalCalendarDays - totalLeaveDays);
+    // Kullanıcının izin taleplerini filtrele
+    const matchLeave = (l: LeaveRequest) => {
+      if (userId && l.personnelId === userId) return true;
+      if (!userId) {
+        const nameLower = l.personnelName.toLowerCase().trim();
+        const userLower = userName.toLowerCase().trim();
+        return nameLower === userLower ||
+          (nameLower.split(' ')[0] === userLower.split(' ')[0] &&
+           nameLower.split(' ').pop() === userLower.split(' ').pop());
+      }
+      return false;
+    };
 
-    let text = '';
-    if (totalLeaveDays === 0) {
-      text = `📅 Son 30 günde onaylı izin kaydın bulunmuyor.\n\n${totalCalendarDays} günün tamamında aktif çalışıyorsun! 💪`;
-    } else {
-      text = `📅 **Son 30 gün özeti:**\n\n• 🏖️ Toplam **${totalLeaveDays} gün** izin kullandın\n• 💼 Tahminen **${estimatedWorkDays} gün** aktif çalıştın`;
-      if (annualDays > 0) text += `\n• Yıllık izin: ${annualDays} gün`;
-      if (sickDays > 0) text += `\n• Hastalık izni: ${sickDays} gün`;
-      if (personalDays > 0) text += `\n• Mazeret izni: ${personalDays} gün`;
+    const myLeaves       = leaves.filter(matchLeave);
+    const approvedLeaves = myLeaves.filter(l => l.status === 'approved');
+    const pendingLeaves  = myLeaves.filter(l => l.status === 'pending');
+
+    // Personelin sabit izin statüsü
+    const staffMember    = staffMembers.find(s => s.id === userId);
+    const isStatusOnLeave = staffMember?.status === 'on_leave';
+
+    // Her gün için izinli mi? (3 kaynak)
+    let leaveDayCount = 0;
+    for (const dateStr of last7Days) {
+      const isToday = dateStr === last7Days[0];
+
+      // Kaynak 1: Onaylı izin talebi
+      const inApproved = approvedLeaves.some(l => dateStr >= l.startDate && dateStr <= l.endDate);
+
+      // Kaynak 2: Günlük manuel izin (rotation_daily_onleave)
+      const inDaily = Array.isArray(dailyOnLeave[dateStr]) && dailyOnLeave[dateStr].includes(userId);
+
+      // Kaynak 3: status === 'on_leave' — sadece bugün için güvenilir
+      const inStatus = isToday && isStatusOnLeave;
+
+      if (inApproved || inDaily || inStatus) leaveDayCount++;
     }
+
+    const workDayCount = 7 - leaveDayCount;
+    const todayStr     = last7Days[0];
+    const todayInLeave = approvedLeaves.some(l => todayStr >= l.startDate && todayStr <= l.endDate)
+      || (Array.isArray(dailyOnLeave[todayStr]) && dailyOnLeave[todayStr].includes(userId))
+      || isStatusOnLeave;
+
+    const text = leaveDayCount === 0
+      ? `📅 Son 7 günde hiç izin kaydın yok — **${workDayCount} gün** aktif çalışma. 💪`
+      : `📅 Son 7 günde **${workDayCount} gün çalışma**, **${leaveDayCount} gün izin** kaydın var.${pendingLeaves.length > 0 ? ` ⏳ ${pendingLeaves.length} adet onay bekleyen talep var.` : ''}`;
 
     return {
       text,
       card: {
         type: 'izin',
-        data: { myLeaves, totalLeaveDays, annualDays, sickDays, personalDays, totalCalendarDays, estimatedWorkDays, userName },
+        data: { workDayCount, leaveDayCount, pendingLeaves, todayInLeave, userName, userId },
       },
     };
   } catch (e) {
     console.error('fetchIzinGecmisi error:', e);
     return {
-      text: `İzin geçmişine şu an ulaşılamadı. Rotasyon modülüne bağlanamadım.`,
+      text: `İzin geçmişine şu an ulaşılamadı. Lütfen daha sonra tekrar dene.`,
       card: { type: 'tip', data: { title: 'İzin Geçmişi', icon: '📅' } },
     };
   }
@@ -360,7 +404,7 @@ async function fetchIzinGecmisi(userName: string): Promise<{ text: string; card:
 
 // ─── AI Response Engine (gerçek KV verisi kullanır) ───────────────────────────
 
-function generateAIResponse(q: string, role: string, ozet: AIOzet | null, configMap?: Record<string, RoleConfig>): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' | 'IZIN_GECMISI' {
+function generateAIResponse(q: string, role: string, ozet: AIOzet | null, configMap?: Record<string, RoleConfig>): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' | 'IZIN_GECMISI' | 'LEAVE_REQUEST' | 'LEAVE_CONFIRM' {
   const lower = q.toLowerCase();
   const map = configMap ?? ROLE_CONFIG;
   const config = map[role] ?? ROLE_CONFIG['personel'];
@@ -369,6 +413,22 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
   // Altın saat — async flag döndür
   if (lower.includes('altın saat') || lower.includes('altin saat') || lower.includes('golden hour') || lower.includes('gün batımı saati') || lower.includes('günbatımı')) {
     return 'GOLDEN_HOUR';
+  }
+
+  // İzin talebi — chip ile direk başlat
+  if (q === '__LEAVE_REQUEST__' || q === '__LEAVE_CONFIRM_YES__') {
+    return 'LEAVE_REQUEST';
+  }
+
+  // İzin talebi — yazı ile gelirse önce onay sor
+  if (
+    lower.includes('izin almak') || lower.includes('izin talep') ||
+    lower.includes('izin istiyorum') || lower.includes('izin vermek') ||
+    lower.includes('izin başvur') || lower.includes('izin talebinde') ||
+    lower.includes('izin açmak') || lower.includes('izin almak istiyorum') ||
+    lower.includes('izin oluştur') || lower.includes('izin açmak istiyorum')
+  ) {
+    return 'LEAVE_CONFIRM';
   }
 
   // İzin geçmişi — async flag döndür
@@ -696,18 +756,27 @@ function TipCard({ data }: { data: { title: string; icon: string } }) {
   );
 }
 
-function IzinGecmisiCard({ data }: {
+function IzinGecmisiCard({ data, onNavigate }: {
   data: {
-    myLeaves: LeaveRequest[];
-    totalLeaveDays: number;
-    annualDays: number;
-    sickDays: number;
-    personalDays: number;
-    totalCalendarDays: number;
-    estimatedWorkDays: number;
+    workDayCount: number;
+    leaveDayCount: number;
+    pendingLeaves: LeaveRequest[];
+    todayInLeave: boolean;
     userName: string;
+    userId?: string;
   };
+  onNavigate?: (tab: string) => void;
 }) {
+  const [pendingLeaves, setPendingLeaves] = useState<LeaveRequest[]>(data.pendingLeaves ?? []);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+
+  const handleCancelLeave = async (leaveId: string) => {
+    setDeletingIds(prev => new Set(prev).add(leaveId));
+    const success = await deleteLeaveRequest(leaveId);
+    if (success) setPendingLeaves(prev => prev.filter(l => l.id !== leaveId));
+    setDeletingIds(prev => { const s = new Set(prev); s.delete(leaveId); return s; });
+  };
+
   const leaveTypeLabel: Record<string, string> = {
     annual: 'Yıllık İzin',
     sick: 'Hastalık İzni',
@@ -718,107 +787,346 @@ function IzinGecmisiCard({ data }: {
     sick: '🤒',
     personal: '📋',
   };
-  const leaveTypeColor: Record<string, string> = {
-    annual: 'text-blue-300 bg-blue-500/10 border-blue-500/20',
-    sick: 'text-red-300 bg-red-500/10 border-red-500/20',
-    personal: 'text-amber-300 bg-amber-500/10 border-amber-500/20',
-  };
-  const workPct = data.totalCalendarDays > 0 ? Math.round((data.estimatedWorkDays / data.totalCalendarDays) * 100) : 100;
+  const fmt = (d: string) => new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
 
   return (
     <div className="mt-3 rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-500/10 to-violet-500/5 overflow-hidden">
-      {/* Header */}
+      {/* ── Header ── */}
       <div className="px-4 py-3 border-b border-white/8 flex items-center gap-2">
-        <span className="text-lg">📅</span>
-        <span className="text-xs font-black text-white uppercase tracking-wider">Son 30 Gün — İzin & Çalışma</span>
+        <span className="text-base">📅</span>
+        <span className="text-[11px] font-black text-white uppercase tracking-widest">Son 7 Gün — İzin Özeti</span>
       </div>
 
       <div className="p-4 space-y-3">
-        {/* Özet istatistik kutuları */}
-        <div className="grid grid-cols-2 gap-2">
-          <div className="bg-white/5 rounded-xl p-3 flex flex-col items-center gap-1">
-            <span className="text-2xl font-black text-violet-300">{data.estimatedWorkDays}</span>
-            <span className="text-[10px] text-white/45 text-center">gün aktif çalıştın</span>
+
+        {/* ── Ana metin özet ── */}
+        <div className="bg-white/5 rounded-2xl px-4 py-3.5 space-y-1">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">💼</span>
+            <span className="text-sm text-white/80">
+              <span className="font-bold text-violet-300">{data.workDayCount} gün</span> çalışma
+            </span>
           </div>
-          <div className="bg-white/5 rounded-xl p-3 flex flex-col items-center gap-1">
-            <span className="text-2xl font-black text-indigo-300">{data.totalLeaveDays}</span>
-            <span className="text-[10px] text-white/45 text-center">gün izin kullandın</span>
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">🏖️</span>
+            <span className="text-sm text-white/80">
+              <span className={`font-bold ${data.leaveDayCount > 0 ? 'text-emerald-400' : 'text-white/30'}`}>{data.leaveDayCount} gün</span> izin
+            </span>
           </div>
+          {data.todayInLeave && (
+            <div className="mt-1.5 flex items-center gap-1.5 bg-emerald-500/12 border border-emerald-500/20 rounded-xl px-3 py-1.5">
+              <span className="text-[10px] text-emerald-300 font-semibold">✓ Bugün izinlisin</span>
+            </div>
+          )}
         </div>
 
-        {/* İlerleme çubuğu */}
-        <div>
-          <div className="flex justify-between items-center mb-1.5">
-            <span className="text-[10px] text-white/40">Çalışma oranı</span>
-            <span className="text-[10px] font-bold text-violet-300">%{workPct}</span>
-          </div>
-          <div className="h-2 bg-white/8 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-violet-500 to-indigo-400 rounded-full transition-all"
-              style={{ width: `${workPct}%` }}
-            />
-          </div>
-          <div className="flex justify-between mt-1">
-            <span className="text-[9px] text-white/25">0</span>
-            <span className="text-[9px] text-white/25">{data.totalCalendarDays} takvim günü</span>
-          </div>
-        </div>
-
-        {/* İzin türü dağılımı */}
-        {data.totalLeaveDays > 0 && (
+        {/* ── Bekleyen talepler ── */}
+        {pendingLeaves.length > 0 && (
           <div className="space-y-1.5">
-            {(['annual', 'sick', 'personal'] as const).map(type => {
-              const days = type === 'annual' ? data.annualDays : type === 'sick' ? data.sickDays : data.personalDays;
-              if (days === 0) return null;
+            <p className="text-[9px] text-amber-400/60 uppercase tracking-widest font-semibold px-1">⏳ Onay Bekleyen</p>
+            {pendingLeaves.slice(0, 3).map(l => {
+              const isDeleting = deletingIds.has(l.id);
               return (
-                <div key={type} className={`flex items-center justify-between px-3 py-2 rounded-xl border ${leaveTypeColor[type]}`}>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">{leaveTypeIcon[type]}</span>
-                    <span className="text-xs">{leaveTypeLabel[type]}</span>
-                  </div>
-                  <span className="text-xs font-bold">{days} gün</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* İzin listesi (varsa) */}
-        {data.myLeaves.length > 0 && (
-          <div className="space-y-1.5">
-            <p className="text-[10px] text-white/35 uppercase tracking-wider font-medium">İzin Kayıtları</p>
-            {data.myLeaves.slice(0, 4).map((l) => {
-              const fmt = (d: string) => new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
-              return (
-                <div key={l.id} className="flex items-center gap-2 bg-white/5 rounded-xl px-3 py-2">
+                <div key={l.id} className="flex items-center gap-2 bg-amber-500/8 border border-amber-500/18 rounded-xl px-3 py-2.5">
                   <span className="text-sm shrink-0">{leaveTypeIcon[l.type] || '📅'}</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-white/70 truncate">{leaveTypeLabel[l.type] || l.type}</p>
-                    <p className="text-[10px] text-white/35">{fmt(l.startDate)} – {fmt(l.endDate)}</p>
+                    <p className="text-xs text-white/65 truncate">{leaveTypeLabel[l.type] || l.type}</p>
+                    <p className="text-[9px] text-white/30">
+                      {fmt(l.startDate)}{l.startDate !== l.endDate ? ` – ${fmt(l.endDate)}` : ''} · {l.days} gün
+                    </p>
                   </div>
-                  <span className="text-xs font-bold text-white/60 shrink-0">{l.days}g</span>
+                  <button
+                    onClick={() => handleCancelLeave(l.id)}
+                    disabled={isDeleting}
+                    className="ml-0.5 shrink-0 w-6 h-6 rounded-lg bg-red-500/15 border border-red-500/25 flex items-center justify-center hover:bg-red-500/30 transition-colors disabled:opacity-40"
+                    title="Talebi iptal et"
+                  >
+                    {isDeleting
+                      ? <Loader2 className="w-3 h-3 text-red-400 animate-spin" />
+                      : <Trash2 className="w-3 h-3 text-red-400" />}
+                  </button>
                 </div>
               );
             })}
-            {data.myLeaves.length > 4 && (
-              <p className="text-[10px] text-white/30 text-center">+{data.myLeaves.length - 4} kayıt daha</p>
-            )}
           </div>
         )}
 
-        {data.totalLeaveDays === 0 && (
-          <div className="flex items-center gap-2 px-3 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
-            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-            <p className="text-xs text-emerald-300">Son 30 günde kayıtlı izin yok 💪</p>
-          </div>
-        )}
-
-        <p className="text-[9px] text-white/20 text-center">
-          * Tahmini değerler. Yalnızca onaylı izinler dahildir.
-        </p>
+        {/* ── Kişisel İzin Çizelgesi yönlendirme notu ── */}
+        <div
+          className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-violet-500/20 bg-violet-500/8 cursor-pointer hover:bg-violet-500/14 transition-colors"
+          onClick={() => onNavigate?.('kisisel-izin-cetveli')}
+        >
+          <span className="text-base shrink-0">🗓️</span>
+          <p className="text-[10px] text-violet-300/80 leading-snug flex-1">
+            Detaylı görünüm için menüden <span className="font-semibold text-violet-300">Kişisel İzin Çizelgesi</span>'ne ulaşabilirsiniz.
+          </p>
+          <span className="text-white/25 text-xs shrink-0">›</span>
+        </div>
       </div>
     </div>
   );
+}
+
+// ─── LeaveConfirmCard ─────────────────────────────────────────────────────────
+
+function LeaveConfirmCard({ onAction, isActive }: { onAction: (cmd: string) => void; isActive: boolean }) {
+  return (
+    <div className="mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden">
+      <div className="px-4 py-3 border-b border-white/8 flex items-center gap-2">
+        <span className="text-lg">🏖️</span>
+        <span className="text-xs font-black text-white uppercase tracking-wider">İzin Talebi</span>
+      </div>
+      <div className="p-4 space-y-3">
+        <p className="text-sm text-white/70">Yeni bir izin talebi oluşturmak istiyor musun?</p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => onAction('__LEAVE_CONFIRM_YES__')}
+            disabled={!isActive}
+            className="flex-1 py-2.5 rounded-xl bg-violet-500/20 border border-violet-500/30 text-violet-300 text-sm font-semibold hover:bg-violet-500/35 transition-colors disabled:opacity-40"
+          >
+            ✅ Evet, oluştur
+          </button>
+          <button
+            onClick={() => onAction('__LEAVE_CONFIRM_NO__')}
+            disabled={!isActive}
+            className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white/50 text-sm font-medium hover:bg-white/10 transition-colors disabled:opacity-40"
+          >
+            Hayır
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── LeaveFlowCard ────────────────────────────────────────────────────────────
+
+const LEAVE_TYPE_META = {
+  annual:   { label: 'Yıllık İzin',   icon: '🏖️', color: 'text-blue-300 border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20' },
+  sick:     { label: 'Hastalık İzni', icon: '🤒', color: 'text-red-300 border-red-500/30 bg-red-500/10 hover:bg-red-500/20' },
+  personal: { label: 'Mazeret İzni',  icon: '📋', color: 'text-amber-300 border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20' },
+} as const;
+
+function LeaveFlowCard({ data, onAction, isActive }: {
+  data: LeaveFlowState;
+  onAction: (command: string) => void;
+  isActive: boolean;
+}) {
+  const [dateVal, setDateVal] = useState('');
+  const [noteVal, setNoteVal] = useState('');
+
+  // Tamamlanmış kart
+  if (data.completed) {
+    return (
+      <div className="mt-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 flex items-center gap-3">
+        <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+        <span className="text-sm text-emerald-300 font-medium">Talep başarıyla gönderildi ✅</span>
+      </div>
+    );
+  }
+
+  const disabled = !isActive;
+
+  // ── Step: type ──────────────────────────────────────────────────────────────
+  if (data.step === 'type') {
+    return (
+      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        <div className="px-4 py-2.5 border-b border-white/8">
+          <span className="text-xs font-bold text-white uppercase tracking-wider">İzin Türü Seç</span>
+        </div>
+        <div className="p-3 space-y-2">
+          {(['annual', 'sick', 'personal'] as const).map(type => (
+            <button
+              key={type}
+              onClick={() => onAction(`__LEAVE_TYPE_${type}__`)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all active:scale-95 ${LEAVE_TYPE_META[type].color}`}
+            >
+              <span className="text-xl">{LEAVE_TYPE_META[type].icon}</span>
+              <span className="text-sm font-semibold">{LEAVE_TYPE_META[type].label}</span>
+            </button>
+          ))}
+          <button
+            onClick={() => onAction('__LEAVE_CANCEL__')}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-red-500/25 bg-red-500/8 text-red-400 text-sm font-medium hover:bg-red-500/18 transition-all active:scale-95 mt-1"
+          >
+            <span>✕</span>
+            <span>İptal</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Step: duration ──────────────────────────────────────────────────────────
+  if (data.step === 'duration') {
+    return (
+      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        <div className="px-4 py-2.5 border-b border-white/8">
+          <span className="text-xs font-bold text-white uppercase tracking-wider">Süre Tipi</span>
+        </div>
+        <div className="p-3 grid grid-cols-2 gap-2">
+          {[
+            { value: 'single',   label: '1 Günlük',          icon: '📅', sub: 'Tek günlük' },
+            { value: 'multiple', label: 'Birden Fazla Gün',   icon: '📆', sub: 'Aralık seç' },
+          ].map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => onAction(`__LEAVE_DURATION_${opt.value}__`)}
+              className="flex flex-col items-center gap-1.5 py-4 rounded-xl border border-violet-500/30 bg-violet-500/10 hover:bg-violet-500/20 text-violet-200 active:scale-95 transition-all"
+            >
+              <span className="text-2xl">{opt.icon}</span>
+              <span className="text-xs font-bold text-white">{opt.label}</span>
+              <span className="text-[10px] text-white/40">{opt.sub}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Step: start_date / end_date ─────────────────────────────────────────────
+  if (data.step === 'start_date' || data.step === 'end_date') {
+    const isStart  = data.step === 'start_date';
+    const label    = isStart ? 'Başlangıç Tarihi' : 'Bitiş Tarihi';
+    const minDate  = isStart
+      ? new Date().toISOString().split('T')[0]
+      : (data.startDate || new Date().toISOString().split('T')[0]);
+    const cmdPfx   = isStart ? '__LEAVE_STARTDATE_' : '__LEAVE_ENDDATE_';
+
+    return (
+      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        <div className="px-4 py-2.5 border-b border-white/8">
+          <span className="text-xs font-bold text-white uppercase tracking-wider">{label}</span>
+          {!isStart && data.startDate && (
+            <span className="text-[10px] text-violet-400 ml-2">Başlangıç: {new Date(data.startDate).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })}</span>
+          )}
+        </div>
+        <div className="p-3 space-y-2.5">
+          <input
+            type="date"
+            min={minDate}
+            value={dateVal}
+            onChange={e => setDateVal(e.target.value)}
+            className="w-full bg-white/8 border border-white/15 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-violet-500/60 transition-colors"
+            style={{ colorScheme: 'dark' }}
+          />
+          <button
+            onClick={() => { if (dateVal) onAction(`${cmdPfx}${dateVal}__`); }}
+            disabled={!dateVal}
+            className="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold disabled:opacity-30 active:scale-95 transition-all"
+          >
+            Devam Et →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Step: notes ─────────────────────────────────────────────────────────────
+  if (data.step === 'notes') {
+    return (
+      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        <div className="px-4 py-2.5 border-b border-white/8">
+          <span className="text-xs font-bold text-white uppercase tracking-wider">Not Ekle</span>
+          <span className="text-[10px] text-white/35 ml-2">— isteğe bağlı</span>
+        </div>
+        <div className="p-3 space-y-2.5">
+          <textarea
+            value={noteVal}
+            onChange={e => setNoteVal(e.target.value)}
+            placeholder="Sebebi veya açıklama yazabilirsin..."
+            className="w-full bg-white/8 border border-white/15 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-violet-500/60 resize-none transition-colors"
+            rows={3}
+            style={{ colorScheme: 'dark' }}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => onAction('__LEAVE_NOTES_SKIP__')}
+              className="py-3 rounded-xl border border-white/15 text-white/60 text-sm font-medium active:scale-95 transition-all hover:bg-white/8"
+            >
+              Geç
+            </button>
+            <button
+              onClick={() => onAction(`__LEAVE_NOTES_${encodeURIComponent(noteVal.trim() || 'SKIP')}__`)}
+              className="py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold active:scale-95 transition-all"
+            >
+              {noteVal.trim() ? 'Ekle & Devam' : 'Devam Et'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Step: confirm ───────────────────────────────────────────────────────────
+  if (data.step === 'confirm') {
+    const meta = LEAVE_TYPE_META[data.leaveType || 'annual'];
+    const fmt  = (d: string) => new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+    const isSingle = data.durationType === 'single';
+
+    return (
+      <div className={`mt-3 rounded-2xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/8 to-violet-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        <div className="px-4 py-2.5 border-b border-white/8 flex items-center gap-2">
+          <span className="text-sm">📋</span>
+          <span className="text-xs font-bold text-white uppercase tracking-wider">Talebi İncele & Gönder</span>
+        </div>
+        <div className="p-3 space-y-2.5">
+          <div className="bg-white/5 rounded-xl p-3 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-white/45">İzin Türü</span>
+              <span className="text-xs font-bold text-white">{meta.icon} {meta.label}</span>
+            </div>
+            <div className="w-full h-px bg-white/8" />
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-white/45">Tarih</span>
+              <span className="text-xs font-bold text-white text-right">
+                {isSingle
+                  ? fmt(data.startDate || '')
+                  : `${fmt(data.startDate || '')} –\n${fmt(data.endDate || '')}`
+                }
+              </span>
+            </div>
+            {!isSingle && data.startDate && data.endDate && (
+              <>
+                <div className="w-full h-px bg-white/8" />
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-white/45">Süre</span>
+                  <span className="text-xs font-bold text-violet-300">
+                    {Math.round((new Date(data.endDate).getTime() - new Date(data.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1} gün
+                  </span>
+                </div>
+              </>
+            )}
+            {data.notes && data.notes !== 'SKIP' && (
+              <>
+                <div className="w-full h-px bg-white/8" />
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-xs text-white/45 shrink-0">Not</span>
+                  <span className="text-xs text-white/70 text-right">{data.notes}</span>
+                </div>
+              </>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => onAction('__LEAVE_CANCEL__')}
+              className="py-3 rounded-xl border border-red-500/30 bg-red-500/8 text-red-400 text-sm font-semibold active:scale-95 transition-all hover:bg-red-500/15"
+            >
+              ❌ İptal
+            </button>
+            <button
+              onClick={() => onAction('__LEAVE_CONFIRM__')}
+              className="py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold active:scale-95 transition-all shadow-lg shadow-emerald-600/30"
+            >
+              ✅ Gönder
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function AnomalyCard({ data }: { data: any[] }) {
@@ -851,7 +1159,12 @@ function AnomalyCard({ data }: { data: any[] }) {
   );
 }
 
-function MessageBubble({ msg }: { msg: Message }) {
+function MessageBubble({ msg, onFlowAction, isLastMsg, onNavigate }: {
+  msg: Message;
+  onFlowAction?: (command: string) => void;
+  isLastMsg?: boolean;
+  onNavigate?: (tab: string) => void;
+}) {
   const isUser = msg.role === 'user';
   return (
     <div className={`flex items-end gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -877,7 +1190,20 @@ function MessageBubble({ msg }: { msg: Message }) {
             {msg.card.type === 'tip' && <TipCard data={msg.card.data} />}
             {msg.card.type === 'golden_hour' && <GoldenHourCard data={msg.card.data} />}
             {msg.card.type === 'mekan_detay' && <MekanDetayCard data={msg.card.data} />}
-            {msg.card.type === 'izin' && <IzinGecmisiCard data={msg.card.data} />}
+            {msg.card.type === 'izin' && <IzinGecmisiCard data={msg.card.data} onNavigate={onNavigate} />}
+            {msg.card.type === 'leave_confirm' && (
+              <LeaveConfirmCard
+                onAction={onFlowAction ?? (() => {})}
+                isActive={!!isLastMsg && !msg.card.data.answered}
+              />
+            )}
+            {msg.card.type === 'leave_flow' && (
+              <LeaveFlowCard
+                data={msg.card.data}
+                onAction={onFlowAction ?? (() => {})}
+                isActive={!!isLastMsg && !msg.card.data.completed}
+              />
+            )}
           </>
         )}
         <span className="text-[10px] text-white/25 mt-1 px-1">
@@ -1420,7 +1746,7 @@ function MekanDetayCard({ data }: { data: MekanDetayData }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', onLogout, onNavigate }: AspectAIProps) {
+export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', userId = '', userAvatar = '👤', onLogout, onNavigate }: AspectAIProps) {
   // KV'den yüklenmiş config override — başlangıçta kod sabit config'i kullanır,
   // sunucudan gelince otomatik override edilir
   const [serverConfig, setServerConfig] = useState<Record<string, RoleConfig> | null>(null);
@@ -1449,6 +1775,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const inputRef = useRef<HTMLInputElement>(null);
   const [mekanModal, setMekanModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [leaveFlow, setLeaveFlow] = useState<LeaveFlowState | null>(null);
 
   // KV'den config yükle ve ROLE_CONFIG'i override et
   useEffect(() => {
@@ -1509,18 +1836,235 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
 
   const handleRefresh = () => loadOzet();
 
+  // ── İzin flow komutlarını işle ────────────────────────────────────────────
+  const handleLeaveFlowCommand = useCallback(async (command: string): Promise<boolean> => {
+    if (!command.startsWith('__LEAVE_')) return false;
+
+    const makeId = () => Date.now().toString();
+
+    // İptal
+    if (command === '__LEAVE_CANCEL__') {
+      setLeaveFlow(null);
+      const aiMsg: Message = { id: makeId(), role: 'ai', text: 'İzin talebi iptal edildi. Başka bir konuda yardımcı olabilir miyim?', ts: new Date() };
+      setMessages(prev => [...prev, aiMsg]);
+      setIsLoading(false);
+      return true;
+    }
+
+    // Onay & Gönder
+    if (command === '__LEAVE_CONFIRM__') {
+      if (!leaveFlow) { setIsLoading(false); return true; }
+      try {
+        const isSingle   = leaveFlow.durationType === 'single';
+        const startDate  = leaveFlow.startDate || new Date().toISOString().split('T')[0];
+        const endDate    = isSingle ? startDate : (leaveFlow.endDate || startDate);
+        const start      = new Date(startDate);
+        const end        = new Date(endDate);
+        const diffDays   = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+        const leaveNotes = (leaveFlow.notes && leaveFlow.notes !== 'SKIP') ? leaveFlow.notes : '';
+
+        const leave: LeaveRequest = {
+          id: `leave-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          personnelId:     userId,
+          personnelName:   userName,
+          personnelAvatar: userAvatar,
+          personnelRole:   userRole as any,
+          startDate,
+          endDate,
+          days:      diffDays,
+          type:      leaveFlow.leaveType || 'annual',
+          notes:     leaveNotes,
+          status:    'pending',
+          createdAt: new Date().toISOString(),
+        };
+
+        await saveLeaveRequest(leave);
+
+        const meta = LEAVE_TYPE_META[leave.type];
+        const fmt  = (d: string) => new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' });
+        const completedFlow: LeaveFlowState = { ...leaveFlow, completed: true };
+        setLeaveFlow(null);
+
+        const aiMsg: Message = {
+          id: makeId(),
+          role: 'ai',
+          text: `✅ **İzin talebiniz gönderildi!**\n\n${meta.icon} ${meta.label} · ${isSingle ? fmt(startDate) : `${fmt(startDate)} – ${fmt(endDate)}`} · **${diffDays} gün**\n\nYöneticiniz onayladığında rotasyona yansıyacak.`,
+          ts: new Date(),
+          card: { type: 'leave_flow', data: completedFlow },
+        };
+        setMessages(prev => [...prev, aiMsg]);
+      } catch (e) {
+        console.error('İzin talebi gönderme hatası:', e);
+        const aiMsg: Message = { id: makeId(), role: 'ai', text: '❌ İzin talebi gönderilirken bir hata oluştu. Lütfen tekrar dene.', ts: new Date() };
+        setMessages(prev => [...prev, aiMsg]);
+      }
+      setIsLoading(false);
+      return true;
+    }
+
+    // Tür seçimi
+    if (command.startsWith('__LEAVE_TYPE_')) {
+      const type = command.replace('__LEAVE_TYPE_', '').replace(/__$/, '') as 'annual' | 'sick' | 'personal';
+      const newFlow: LeaveFlowState = { step: 'duration', leaveType: type };
+      setLeaveFlow(newFlow);
+      const meta = LEAVE_TYPE_META[type];
+      const aiMsg: Message = {
+        id: makeId(), role: 'ai',
+        text: `${meta.icon} **${meta.label}** seçildi. Kaç günlük izin olacak?`,
+        ts: new Date(),
+        card: { type: 'leave_flow', data: newFlow },
+      };
+      setMessages(prev => [...prev, aiMsg]);
+      setIsLoading(false);
+      return true;
+    }
+
+    // Süre seçimi
+    if (command.startsWith('__LEAVE_DURATION_')) {
+      const durationType = command.replace('__LEAVE_DURATION_', '').replace(/__$/, '') as 'single' | 'multiple';
+      const newFlow: LeaveFlowState = { ...leaveFlow, step: 'start_date', durationType };
+      setLeaveFlow(newFlow);
+      const aiMsg: Message = {
+        id: makeId(), role: 'ai',
+        text: durationType === 'single' ? '📅 Hangi tarihte izin alacaksın?' : '📅 Başlangıç tarihini seç:',
+        ts: new Date(),
+        card: { type: 'leave_flow', data: newFlow },
+      };
+      setMessages(prev => [...prev, aiMsg]);
+      setIsLoading(false);
+      return true;
+    }
+
+    // Başlangıç tarihi
+    if (command.startsWith('__LEAVE_STARTDATE_')) {
+      const startDate = command.replace('__LEAVE_STARTDATE_', '').replace(/__$/, '');
+      const nextStep  = leaveFlow?.durationType === 'multiple' ? 'end_date' : 'notes';
+      const newFlow: LeaveFlowState = { ...leaveFlow, step: nextStep as any, startDate };
+      setLeaveFlow(newFlow);
+      const aiMsg: Message = {
+        id: makeId(), role: 'ai',
+        text: nextStep === 'end_date' ? '📅 Bitiş tarihini seç:' : '📝 Nota eklemek ister misin? (isteğe bağlı)',
+        ts: new Date(),
+        card: { type: 'leave_flow', data: newFlow },
+      };
+      setMessages(prev => [...prev, aiMsg]);
+      setIsLoading(false);
+      return true;
+    }
+
+    // Bitiş tarihi
+    if (command.startsWith('__LEAVE_ENDDATE_')) {
+      const endDate  = command.replace('__LEAVE_ENDDATE_', '').replace(/__$/, '');
+      const newFlow: LeaveFlowState = { ...leaveFlow, step: 'notes', endDate };
+      setLeaveFlow(newFlow);
+      const aiMsg: Message = {
+        id: makeId(), role: 'ai',
+        text: '📝 Nota eklemek ister misin? (isteğe bağlı)',
+        ts: new Date(),
+        card: { type: 'leave_flow', data: newFlow },
+      };
+      setMessages(prev => [...prev, aiMsg]);
+      setIsLoading(false);
+      return true;
+    }
+
+    // Not
+    if (command.startsWith('__LEAVE_NOTES_')) {
+      const raw   = command.replace('__LEAVE_NOTES_', '').replace(/__$/, '');
+      const notes = raw === 'SKIP' ? '' : decodeURIComponent(raw);
+      const newFlow: LeaveFlowState = { ...leaveFlow, step: 'confirm', notes };
+      setLeaveFlow(newFlow);
+      const aiMsg: Message = {
+        id: makeId(), role: 'ai',
+        text: '📋 Talebini kontrol et, her şey doğruysa gönder!',
+        ts: new Date(),
+        card: { type: 'leave_flow', data: newFlow },
+      };
+      setMessages(prev => [...prev, aiMsg]);
+      setIsLoading(false);
+      return true;
+    }
+
+    return false;
+  }, [leaveFlow, userId, userName, userAvatar, userRole]);
+
+  // ── Kullanıcıya gösterilen display text map'i ────────────────────────────
+  const getDisplayText = (text: string): string => {
+    const map: Record<string, string> = {
+      '__IZIN_GECMISIM__':          '📅 İzin geçmişimi göster',
+      '__LEAVE_REQUEST__':          '🏖️ İzin talebi oluşturmak istiyorum',
+      '__LEAVE_TYPE_annual__':      '🏖️ Yıllık İzin',
+      '__LEAVE_TYPE_sick__':        '🤒 Hastalık İzni',
+      '__LEAVE_TYPE_personal__':    '📋 Mazeret İzni',
+      '__LEAVE_DURATION_single__':  '📅 1 Günlük',
+      '__LEAVE_DURATION_multiple__':'📆 Birden Fazla Gün',
+      '__LEAVE_CANCEL__':           '❌ İptal et',
+      '__LEAVE_CONFIRM__':          '✅ Talebi gönder',
+      '__LEAVE_NOTES_SKIP__':       'Geç →',
+      '__LEAVE_CONFIRM_YES__':      '✅ Evet, izin talebi oluştur',
+      '__LEAVE_CONFIRM_NO__':       '❌ Hayır, teşekkürler',
+    };
+    if (map[text]) return map[text];
+    if (text.startsWith('__LEAVE_STARTDATE_')) {
+      const d = text.replace('__LEAVE_STARTDATE_', '').replace(/__$/, '');
+      return `📅 Başlangıç: ${new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })}`;
+    }
+    if (text.startsWith('__LEAVE_ENDDATE_')) {
+      const d = text.replace('__LEAVE_ENDDATE_', '').replace(/__$/, '');
+      return `📅 Bitiş: ${new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })}`;
+    }
+    if (text.startsWith('__LEAVE_NOTES_')) {
+      const raw = text.replace('__LEAVE_NOTES_', '').replace(/__$/, '');
+      return raw === 'SKIP' ? 'Geç →' : `Not: ${decodeURIComponent(raw)}`;
+    }
+    return text;
+  };
+
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || isLoading) return;
 
-    // __IZIN_GECMISIM__ özel komut — kullanıcıya gösterilen metin farklı
-    const displayText = text.trim() === '__IZIN_GECMISIM__'
-      ? '📅 İzin geçmişimi göster'
-      : text.trim();
-
+    const displayText = getDisplayText(text.trim());
     const userMsg: Message = { id: Date.now().toString(), role: 'user', text: displayText, ts: new Date() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
+
+    // İzin onay red cevabı
+    if (text.trim() === '__LEAVE_CONFIRM_NO__') {
+      await new Promise(r => setTimeout(r, 400));
+      const aiMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'ai',
+        text: 'Tamam, başka bir konuda yardımcı olabilir miyim? 😊',
+        ts: new Date(),
+      };
+      setMessages(prev => [...prev, aiMsg]);
+      setIsLoading(false);
+      return;
+    }
+
+    // İzin onay evet — flow başlat
+    if (text.trim() === '__LEAVE_CONFIRM_YES__') {
+      await new Promise(r => setTimeout(r, 400));
+      const newFlow: LeaveFlowState = { step: 'type' };
+      setLeaveFlow(newFlow);
+      const aiMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'ai',
+        text: '🏖️ İzin talebi oluşturalım! Önce izin türünü seç:',
+        ts: new Date(),
+        card: { type: 'leave_flow', data: newFlow },
+      };
+      setMessages(prev => [...prev, aiMsg]);
+      setIsLoading(false);
+      return;
+    }
+
+    // İzin flow komutlarını önce işle
+    if (text.trim().startsWith('__LEAVE_')) {
+      await handleLeaveFlowCommand(text.trim());
+      return;
+    }
 
     // Simulate AI thinking delay
     await new Promise(r => setTimeout(r, 700 + Math.random() * 600));
@@ -1535,9 +2079,19 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       aiText = ghResult.text;
       aiCard = ghResult.card;
     } else if (result === 'IZIN_GECMISI') {
-      const izinResult = await fetchIzinGecmisi(userName);
+      const izinResult = await fetchIzinGecmisi(userId, userName);
       aiText = izinResult.text;
       aiCard = izinResult.card;
+    } else if (result === 'LEAVE_REQUEST') {
+      // İzin talebi flow başlat
+      const newFlow: LeaveFlowState = { step: 'type' };
+      setLeaveFlow(newFlow);
+      aiText = '🏖️ İzin talebi oluşturalım! Önce izin türünü seç:';
+      aiCard = { type: 'leave_flow', data: newFlow };
+    } else if (result === 'LEAVE_CONFIRM') {
+      // Onay sor
+      aiText = 'İzin talebi oluşturmak mı istiyorsunuz? 🏖️';
+      aiCard = { type: 'leave_confirm', data: { answered: false } };
     } else {
       aiText = result.text;
       aiCard = result.card;
@@ -1553,7 +2107,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
 
     setMessages(prev => [...prev, aiMsg]);
     setIsLoading(false);
-  }, [isLoading, ozet, userRole, activeROLE_CONFIG, userName]);
+  }, [isLoading, ozet, userRole, activeROLE_CONFIG, userName, userId, handleLeaveFlowCommand]);
 
   const initialMessage: Message = {
     id: '0',
@@ -1577,6 +2131,8 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     }
     sendMessage(q);
   };
+
+
   const handleSend = () => sendMessage(input);
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
@@ -1866,8 +2422,14 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
 
         {/* Chat messages */}
         <div className="space-y-4">
-          {messages.map(msg => (
-            <MessageBubble key={msg.id} msg={msg} />
+          {messages.map((msg, idx) => (
+            <MessageBubble
+              key={msg.id}
+              msg={msg}
+              onFlowAction={(cmd) => sendMessage(cmd)}
+              isLastMsg={idx === messages.length - 1}
+              onNavigate={onNavigate}
+            />
           ))}
           {isLoading && <TypingIndicator />}
         </div>

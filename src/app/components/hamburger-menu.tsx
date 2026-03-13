@@ -9,7 +9,7 @@ import {
   X, Home, Zap, Activity, MapPin, RotateCcw,
   Trophy, Sparkles, MessageCircle, Bell, GraduationCap,
   Cake, User, Settings, LogOut, ChevronRight, Package,
-  BarChart2, ClipboardList,
+  BarChart2, ClipboardList, CalendarDays,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
@@ -113,6 +113,7 @@ function getSections(
         { icon: GraduationCap, label: 'Akademi',         roles: all,  action: () => go('academy')            },
         { icon: Cake,          label: 'Doğum Günleri',   roles: mgmt, action: () => go('birthday-calendar')  },
         { icon: ClipboardList, label: 'İzin Çizelgesi',  roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[], action: () => go('personel-izin-cetveli') },
+        { icon: CalendarDays,  label: 'Kişisel İzin Çizelgesi', roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('kisisel-izin-cetveli') },
       ],
     },
     {

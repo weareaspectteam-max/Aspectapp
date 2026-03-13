@@ -281,6 +281,24 @@ export const updateLeaveRequest = async (
   }
 };
 
+export const deleteLeaveRequest = async (leaveId: string, token?: string): Promise<boolean> => {
+  try {
+    const headers = token ? buildHeaders(token) : await authHeaders();
+    const res = await fetch(`${API_BASE}/rotasyon/izinler/${leaveId}`, {
+      method: 'DELETE',
+      headers,
+    });
+    if (!res.ok) {
+      console.error('deleteLeaveRequest error:', res.status);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error('Error deleting leave request:', error);
+    return false;
+  }
+};
+
 export const cleanupExpiredLeaveRequests = async (token?: string): Promise<void> => {
   try {
     const leaves = await getLeaveRequests(token);
