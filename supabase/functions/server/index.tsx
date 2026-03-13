@@ -4318,6 +4318,7 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
             id: pid, ad: pad, avatar: "👤",
             ciro: 0, brutCiro: 0, iskonto: 0, satisAdet: 0,
             ciroByMekan: {} as Record<string, number>,
+            toplamKare: 0,
           };
         }
         personMap[pid].ciro += tutar;
@@ -4326,6 +4327,21 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
         personMap[pid].satisAdet++;
         if (!personMap[pid].ciroByMekan[mekanId]) personMap[pid].ciroByMekan[mekanId] = 0;
         personMap[pid].ciroByMekan[mekanId] += tutar;
+      }
+
+      // ── Kare kayıtları aggregation ──
+      for (const kare of (kayit.kareKayitlari || [])) {
+        const pid = kare.photographerId;
+        if (!pid) continue;
+        if (!personMap[pid]) {
+          personMap[pid] = {
+            id: pid, ad: kare.photographerName || "Bilinmiyor", avatar: "👤",
+            ciro: 0, brutCiro: 0, iskonto: 0, satisAdet: 0,
+            ciroByMekan: {} as Record<string, number>,
+            toplamKare: 0,
+          };
+        }
+        personMap[pid].toplamKare += Number(kare.frameCount) || 0;
       }
     }
 
@@ -4418,14 +4434,17 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
     normalize(liste, "ortSatis", "ortSatisPuan");
     normalize(liste, "mekanKatki", "mekanKatkiPuan");
     normalize(liste, "anomaliTemizligi", "anomaliPuan");
+    normalize(liste, "toplamKare", "karePuan");
 
     // ── 8. Ağırlıklı toplam skor ──
+    // İskonto %25 | OrtSatış %15 | MekanKatkı %25 | Anomali %20 | Kare %15
     for (const p of liste) {
       p.toplamSkor = Math.round(
-        (p.iskontoPuan   || 0) * 0.35 +
-        (p.ortSatisPuan  || 0) * 0.25 +
-        (p.mekanKatkiPuan || 0) * 0.20 +
-        (p.anomaliPuan   || 0) * 0.20
+        (p.iskontoPuan    || 0) * 0.25 +
+        (p.ortSatisPuan   || 0) * 0.15 +
+        (p.mekanKatkiPuan || 0) * 0.25 +
+        (p.anomaliPuan    || 0) * 0.20 +
+        (p.karePuan       || 0) * 0.15
       );
     }
 
@@ -4443,6 +4462,7 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
         ortSatisPuan:   p.ortSatisPuan   || 0,
         mekanKatkiPuan: p.mekanKatkiPuan || 0,
         anomaliPuan:    p.anomaliPuan    || 0,
+        karePuan:       p.karePuan       || 0,
       },
       ham: {
         ciro:           Math.round(p.ciro),
@@ -4452,6 +4472,7 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
         ortSatis:       Math.round(p.ortSatis),
         anomaliVardiya: p.anomaliVardiya,
         toplamVardiya:  p.toplamVardiya,
+        toplamKare:     p.toplamKare || 0,
       },
     }));
 

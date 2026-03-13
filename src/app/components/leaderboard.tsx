@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Trophy, Medal, Award, RefreshCw, Loader2, ChevronDown,
   Tag, TrendingUp, AlertTriangle, Users, MapPin,
-  ShieldCheck, Filter, Zap,
+  ShieldCheck, Filter, Zap, Camera,
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { projectId } from '/utils/supabase/info';
@@ -50,8 +50,8 @@ type Period = 'bu-hafta' | 'bu-ay' | 'bu-yil' | 'tum-zamanlar';
 
 interface Personel {
   id: string; ad: string; avatar: string; sira: number; toplamSkor: number;
-  metrikler: { iskontoPuan: number; ortSatisPuan: number; mekanKatkiPuan: number; anomaliPuan: number; };
-  ham: { ciro: number; satisAdet: number; iskonto: number; brutCiro: number; ortSatis: number; anomaliVardiya: number; toplamVardiya: number; };
+  metrikler: { iskontoPuan: number; ortSatisPuan: number; mekanKatkiPuan: number; anomaliPuan: number; karePuan: number; };
+  ham: { ciro: number; satisAdet: number; iskonto: number; brutCiro: number; ortSatis: number; anomaliVardiya: number; toplamVardiya: number; toplamKare: number; };
 }
 interface Mekan { id: string; name: string; emoji: string; }
 interface LeaderboardProps {
@@ -412,10 +412,11 @@ export function Leaderboard({ userName, userRole, accessToken, onLogout, onNavig
           <div className="px-4 pt-3 pb-1">
             <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
               {[
-                { label: 'İskonto Disiplini', pct: '%35', color: C.green,  icon: Tag },
-                { label: 'Ort. Satış Tutarı', pct: '%25', color: C.cyan,   icon: TrendingUp },
-                { label: 'Mekan Katkısı',     pct: '%20', color: C.gold2,  icon: MapPin },
+                { label: 'İskonto Disiplini', pct: '%25', color: C.green,  icon: Tag },
+                { label: 'Ort. Satış Tutarı', pct: '%15', color: C.cyan,   icon: TrendingUp },
+                { label: 'Mekan Katkısı',     pct: '%25', color: C.gold2,  icon: MapPin },
                 { label: 'Anomali Temizliği', pct: '%20', color: C.purple, icon: ShieldCheck },
+                { label: 'Kare Performansı',  pct: '%15', color: C.violet, icon: Camera },
               ].map(({ label, pct, color, icon: Icon }) => (
                 <div
                   key={label}
@@ -513,12 +514,13 @@ export function Leaderboard({ userName, userRole, accessToken, onLogout, onNavig
                       className="mx-1 rounded-b-3xl border-x border-b px-4 pt-3 pb-4 space-y-4"
                       style={{ background: 'rgba(10,5,30,0.75)', backdropFilter: 'blur(20px)', borderColor: 'rgba(255,255,255,0.07)' }}
                     >
-                      {/* 4 metrik bar */}
+                      {/* 5 metrik bar */}
                       <div className="space-y-2.5">
                         <MetrikBar label="İsk. Disiplini" puan={p.metrikler.iskontoPuan}    color={C.green}  icon={Tag} />
                         <MetrikBar label="Ort. Satış"     puan={p.metrikler.ortSatisPuan}   color={C.cyan}   icon={TrendingUp} />
                         <MetrikBar label="Mekan Katkı"    puan={p.metrikler.mekanKatkiPuan} color={C.gold2}  icon={MapPin} />
                         <MetrikBar label="Anomali"        puan={p.metrikler.anomaliPuan}    color={C.purple} icon={ShieldCheck} />
+                        <MetrikBar label="Kare Perf."     puan={p.metrikler.karePuan}       color={C.violet} icon={Camera} />
                       </div>
 
                       {/* Ham veri grid */}
@@ -564,6 +566,12 @@ export function Leaderboard({ userName, userRole, accessToken, onLogout, onNavig
                               : 'Temiz ✓'}
                           </p>
                         </div>
+                        <div className="rounded-2xl p-2.5" style={{ background: `${C.violet}0d`, border: `1px solid ${C.violet}25` }}>
+                          <p className="text-[9px] mb-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Toplam Kare</p>
+                          <p className="text-sm font-bold" style={{ color: C.violet }}>
+                            {p.ham.toplamKare > 0 ? `${p.ham.toplamKare.toLocaleString('tr-TR')} 📷` : '—'}
+                          </p>
+                        </div>
                       </div>
 
                       {/* İskonto disiplini chip */}
@@ -598,7 +606,7 @@ export function Leaderboard({ userName, userRole, accessToken, onLogout, onNavig
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <ShieldCheck className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: C.violet }} />
             <p className="text-[10px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.30)' }}>
-              Sıralama normalize edilmiş puan sistemiyle hesaplanır. Her metrik ekip içinde göreli olarak değerlendirilerek adil karşılaştırma sağlanır.
+              Sıralama 5 metriğin normalize edilmiş ağırlıklı ortalamasıyla hesaplanır: İskonto %25 · Ort. Satış %15 · Mekan Katkı %25 · Anomali %20 · Kare %15
             </p>
           </div>
         </div>
