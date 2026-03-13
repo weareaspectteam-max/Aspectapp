@@ -49,6 +49,8 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
   const [ekstraTasks, setEkstraTasks] = useState<Task[]>([]);
   const [ozelTasks, setOzelTasks] = useState<Task[]>([]);
   const allTasksRef = useRef<Task[]>([]); // API'den çekilen tüm görevler (filtre için)
+  // Şu an zaman penceresinde aktif olan mekanlar (tüm kullanıcılar için)
+  const [visibleVenueNames, setVisibleVenueNames] = useState<Set<string>>(new Set());
 
   // Rol bazlı davranış
   // SADECE yonetici rotasyonu bypass eder (her mekana girebilir)
@@ -101,25 +103,46 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
     yesterdayDate.setDate(yesterdayDate.getDate() - 1);
     const yesterday = toLocalDateStr(yesterdayDate);
 
-    // Bugün veya dünkü aktif görevlerden şu an görünür olanlar
-    const visible = tasks.filter(
+    // Aktif görevlerin tamamı (herhangi bir kullanıcıya ait)
+    const activeTasks = tasks.filter(
       (t) =>
         (t.date === today || t.date === yesterday) &&
-        (t.status === 'sent' || t.status === 'revised') &&
-        isTaskVisible(t)
+        (t.status === 'sent' || t.status === 'revised')
     );
 
-    if (visible.length === 0) {
-      // Bugün/dün hiç görev var mı? (pencere dışı olanlar dahil)
-      const anyToday = tasks.some(
-        (t) =>
-          (t.date === today || t.date === yesterday) &&
-          (t.status === 'sent' || t.status === 'revised')
+    // Şu an zaman penceresinde olan görevler (herhangi kullanıcı)
+    const visibleTasks = activeTasks.filter(isTaskVisible);
+
+    // Tüm görünür görevlerin mekan adları (yonetici dahil filtre için)
+    const allVisible = new Set<string>();
+    for (const t of visibleTasks) {
+      if (t.taskType === 'regular' || !t.taskType) {
+        allVisible.add(t.location);
+      }
+    }
+    setVisibleVenueNames(allVisible);
+
+    // Şimdiki kullanıcıya ait görünür görevler
+    const myVisible = visibleTasks.filter((task) =>
+      task.personnel.some(
+        (p) =>
+          (userId && p.id === userId) ||
+          (userName && p.name === userName)
+      )
+    );
+
+    if (myVisible.length === 0) {
+      const anyActive = activeTasks.some((t) =>
+        t.personnel.some(
+          (p) =>
+            (userId && p.id === userId) ||
+            (userName && p.name === userName)
+        )
       );
       setMyRotationVenues(new Set());
       setEkstraTasks([]);
       setOzelTasks([]);
-      setRotasyonDurumu(anyToday ? 'atanmamis' : 'tanimlanmamis');
+      setRotasyonDurumu(activeTasks.length === 0 ? 'tanimlanmamis' : anyActive ? 'atanmamis' : 'tanimlanmamis');
       return;
     }
 
@@ -127,14 +150,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
     const myEkstra: Task[] = [];
     const myOzel: Task[] = [];
 
-    for (const task of visible) {
-      const benimGörevim = task.personnel.some(
-        (p) =>
-          (userId && p.id === userId) ||
-          (userName && p.name === userName)
-      );
-      if (!benimGörevim) continue;
-
+    for (const task of myVisible) {
       if (task.taskType === 'regular' || !task.taskType) {
         venues.add(task.location);
       } else if (task.taskType === 'extra') {
@@ -399,169 +415,154 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
         </div>
       ) : (
         <div className="space-y-3">
-          {/* Regular mekan kartları */}
-          {projects.length === 0 && ekstraTasks.length === 0 && ozelTasks.length === 0 ? (
-            <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 rounded-2xl p-8 border-2 border-white/20 text-center">
-              <div className="text-6xl mb-4">🏖️</div>
-              <h3 className="text-xl font-bold text-white mb-2">Henüz Mekan Eklenmemiş</h3>
-              <p className="text-sm text-gray-400 mb-4">
-                Lütfen önce "Mekan Yönetimi"nden en az bir mekan ekleyin.
-              </p>
-              {onNavigate && (
+          {/* Regular mekan kartları — sadece zaman penceresinde olan görevlerin mekanları */}
+          {projects
+            .filter((project) =>
+              rotasyonYukleniyor
+                ? true // hâlâ yükleniyorsa hepsini göster
+                : visibleVenueNames.has(project.name) // yüklendi → sadece aktif penceredekiler
+            )
+            .map((project) => {
+              const isMyVenue = myRotationVenues.has(project.name);
+              // Rotasyon var ('tamam' veya 'atanmamis') ise kilit aktif
+              // 'atanmamis' = rotasyon oluşturulmuş ama kullanıcı atanmamış → tüm mekanlar kilitli
+              const hasRotationData = rotasyonDurumu === 'tamam' || rotasyonDurumu === 'atanmamis';
+              // Serbest roller (yonetici,ust-mudur,mudur) hiçbir zaman kilitlenmez
+              const locked = rotasyonZorunlu && hasRotationData && !isMyVenue;
+              return (
                 <button
-                  onClick={() => onNavigate('mekan-management')}
-                  className="bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-white px-6 py-3 rounded-xl font-semibold hover:shadow-lg transition-all active:scale-95"
+                  key={project.id}
+                  onClick={() => !locked && handleProjectSelect(project)}
+                  disabled={locked}
+                  className={`w-full rounded-2xl p-5 text-white shadow-lg transition-all text-left relative overflow-hidden ${
+                    locked
+                      ? 'opacity-35 cursor-not-allowed'
+                      : 'hover:shadow-xl active:scale-[0.98]'
+                  }`}
+                  style={{ backgroundColor: project.color }}
                 >
-                  📍 Mekan Yönetimine Git
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              {/* Regular mekan kartları */}
-              {projects.map((project) => {
-                const isMyVenue = myRotationVenues.has(project.name);
-                // Rotasyon var ('tamam' veya 'atanmamis') ise kilit aktif
-                // 'atanmamis' = rotasyon oluşturulmuş ama kullanıcı atanmamış → tüm mekanlar kilitli
-                const hasRotationData = rotasyonDurumu === 'tamam' || rotasyonDurumu === 'atanmamis';
-                // Serbest roller (yonetici,ust-mudur,mudur) hiçbir zaman kilitlenmez
-                const locked = rotasyonZorunlu && hasRotationData && !isMyVenue;
-                return (
-                  <button
-                    key={project.id}
-                    onClick={() => !locked && handleProjectSelect(project)}
-                    disabled={locked}
-                    className={`w-full rounded-2xl p-5 text-white shadow-lg transition-all text-left relative overflow-hidden ${
-                      locked
-                        ? 'opacity-35 cursor-not-allowed'
-                        : 'hover:shadow-xl active:scale-[0.98]'
-                    }`}
-                    style={{ backgroundColor: project.color }}
-                  >
-                    {locked && (
-                      <div className="absolute inset-0 flex items-center justify-end pr-5 pointer-events-none">
-                        <Lock className="w-6 h-6 text-white/60" />
-                      </div>
-                    )}
+                  {locked && (
+                    <div className="absolute inset-0 flex items-center justify-end pr-5 pointer-events-none">
+                      <Lock className="w-6 h-6 text-white/60" />
+                    </div>
+                  )}
 
-                    {/* Badge: sadece rotasyon zorunlu roller için göster */}
-                    {rotasyonZorunlu && hasRotationData && (
-                      <div className={`absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold ${
-                        isMyVenue
-                          ? 'bg-green-500/30 border border-green-400/50 text-green-100'
-                          : 'bg-black/40 border border-red-500/30 text-red-300'
-                      }`}>
-                        {isMyVenue ? (
-                          <>
-                            <CheckCircle2 className="w-3 h-3" />
-                            Rotasyonumda
-                          </>
-                        ) : (
-                          <>
-                            <Lock className="w-3 h-3" />
-                            Kilitli
-                          </>
-                        )}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-4">
-                      <div
-                        className="w-14 h-14 rounded-xl flex items-center justify-center text-3xl"
-                        style={{ backgroundColor: 'rgba(255,255,255,0.25)' }}
-                      >
-                        {project.icon}
-                      </div>
-                      <div className="flex-1 pr-24">
-                        <div className="font-bold text-lg mb-1">{project.name}</div>
-                        <div className="flex items-center gap-3 text-sm opacity-90">
-                          <span className="flex items-center gap-1">
-                            <MapPin className="w-3 h-3" />
-                            {project.location}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {project.shift}
-                          </span>
-                        </div>
-                      </div>
-                      {userLocation && !locked && (
-                        <div className="text-center">
-                          <Navigation className="w-5 h-5 mx-auto mb-1 opacity-80" />
-                          <div className="text-xs opacity-80">Yakın</div>
-                        </div>
+                  {/* Badge: sadece rotasyon zorunlu roller için göster */}
+                  {rotasyonZorunlu && hasRotationData && (
+                    <div className={`absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold ${
+                      isMyVenue
+                        ? 'bg-green-500/30 border border-green-400/50 text-green-100'
+                        : 'bg-black/40 border border-red-500/30 text-red-300'
+                    }`}>
+                      {isMyVenue ? (
+                        <>
+                          <CheckCircle2 className="w-3 h-3" />
+                          Rotasyonumda
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-3 h-3" />
+                          Kilitli
+                        </>
                       )}
                     </div>
-                  </button>
-                );
-              })}
-
-              {/* Ekstra iş kartları */}
-              {ekstraTasks.map((task) => (
-                <button
-                  key={task.id}
-                  onClick={() => onEkstraIsSelect?.(task)}
-                  className="w-full rounded-2xl p-5 text-white shadow-lg transition-all text-left relative overflow-hidden hover:shadow-xl active:scale-[0.98] border border-amber-500/30"
-                  style={{ background: 'linear-gradient(135deg, #7c4a0a 0%, #b45309 100%)' }}
-                >
-                  {/* Tip etiketi */}
-                  <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-amber-500/30 border border-amber-400/40 text-amber-200">
-                    ⚡ EKSTRA İŞ
-                  </div>
-
+                  )}
                   <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl flex items-center justify-center text-3xl bg-white/15">
-                      {task.locationIcon || '⚡'}
+                    <div
+                      className="w-14 h-14 rounded-xl flex items-center justify-center text-3xl"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.25)' }}
+                    >
+                      {project.icon}
                     </div>
-                    <div className="flex-1 pr-28">
-                      <div className="font-bold text-lg mb-1">{task.location}</div>
-                      <div className="flex items-center gap-3 text-sm opacity-80">
+                    <div className="flex-1 pr-24">
+                      <div className="font-bold text-lg mb-1">{project.name}</div>
+                      <div className="flex items-center gap-3 text-sm opacity-90">
+                        <span className="flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {project.location}
+                        </span>
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          {task.startTime} – {task.endTime}
+                          {project.shift}
                         </span>
                       </div>
-                      {task.notes && (
-                        <p className="text-xs text-amber-200/70 mt-1 truncate">{task.notes}</p>
-                      )}
                     </div>
-                  </div>
-                </button>
-              ))}
-
-              {/* Özel iş kartları */}
-              {ozelTasks.map((task) => (
-                <button
-                  key={task.id}
-                  onClick={() => onOzelIsSelect?.(task)}
-                  className="w-full rounded-2xl p-5 text-white shadow-lg transition-all text-left relative overflow-hidden hover:shadow-xl active:scale-[0.98] border border-purple-500/30"
-                  style={{ background: 'linear-gradient(135deg, #3b0764 0%, #6d28d9 100%)' }}
-                >
-                  {/* Tip etiketi */}
-                  <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-purple-500/30 border border-purple-400/40 text-purple-200">
-                    🔧 ÖZEL İŞ
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl flex items-center justify-center text-3xl bg-white/15">
-                      {task.locationIcon || '🔧'}
-                    </div>
-                    <div className="flex-1 pr-28">
-                      <div className="font-bold text-lg mb-1">{task.location}</div>
-                      <div className="flex items-center gap-3 text-sm opacity-80">
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {task.startTime} – {task.endTime}
-                        </span>
+                    {userLocation && !locked && (
+                      <div className="text-center">
+                        <Navigation className="w-5 h-5 mx-auto mb-1 opacity-80" />
+                        <div className="text-xs opacity-80">Yakın</div>
                       </div>
-                      {task.notes && (
-                        <p className="text-xs text-purple-200/70 mt-1 truncate">{task.notes}</p>
-                      )}
-                    </div>
+                    )}
                   </div>
                 </button>
-              ))}
-            </>
-          )}
+              );
+            })}
+
+          {/* Ekstra iş kartları */}
+          {ekstraTasks.map((task) => (
+            <button
+              key={task.id}
+              onClick={() => onEkstraIsSelect?.(task)}
+              className="w-full rounded-2xl p-5 text-white shadow-lg transition-all text-left relative overflow-hidden hover:shadow-xl active:scale-[0.98] border border-amber-500/30"
+              style={{ background: 'linear-gradient(135deg, #7c4a0a 0%, #b45309 100%)' }}
+            >
+              {/* Tip etiketi */}
+              <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-amber-500/30 border border-amber-400/40 text-amber-200">
+                ⚡ EKSTRA İŞ
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-xl flex items-center justify-center text-3xl bg-white/15">
+                  {task.locationIcon || '⚡'}
+                </div>
+                <div className="flex-1 pr-28">
+                  <div className="font-bold text-lg mb-1">{task.location}</div>
+                  <div className="flex items-center gap-3 text-sm opacity-80">
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {task.startTime} – {task.endTime}
+                    </span>
+                  </div>
+                  {task.notes && (
+                    <p className="text-xs text-amber-200/70 mt-1 truncate">{task.notes}</p>
+                  )}
+                </div>
+              </div>
+            </button>
+          ))}
+
+          {/* Özel iş kartları */}
+          {ozelTasks.map((task) => (
+            <button
+              key={task.id}
+              onClick={() => onOzelIsSelect?.(task)}
+              className="w-full rounded-2xl p-5 text-white shadow-lg transition-all text-left relative overflow-hidden hover:shadow-xl active:scale-[0.98] border border-purple-500/30"
+              style={{ background: 'linear-gradient(135deg, #3b0764 0%, #6d28d9 100%)' }}
+            >
+              {/* Tip etiketi */}
+              <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-purple-500/30 border border-purple-400/40 text-purple-200">
+                🔧 ÖZEL İŞ
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-xl flex items-center justify-center text-3xl bg-white/15">
+                  {task.locationIcon || '🔧'}
+                </div>
+                <div className="flex-1 pr-28">
+                  <div className="font-bold text-lg mb-1">{task.location}</div>
+                  <div className="flex items-center gap-3 text-sm opacity-80">
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {task.startTime} – {task.endTime}
+                    </span>
+                  </div>
+                  {task.notes && (
+                    <p className="text-xs text-purple-200/70 mt-1 truncate">{task.notes}</p>
+                  )}
+                </div>
+              </div>
+            </button>
+          ))}
         </div>
       )}
 
