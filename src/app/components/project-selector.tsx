@@ -1,7 +1,7 @@
+import { MapPin, Clock, CheckCircle2, Navigation, Zap, ArrowLeft, Lock, Loader2 } from 'lucide-react';
 import { getTasks, getLocations } from '../services/rotation-service';
 import type { Task } from '../services/rotation-service';
 import { useState, useEffect } from 'react';
-import { MapPin, Clock, CheckCircle2, Navigation, AlertTriangle, Zap, ArrowLeft, Lock, Loader2 } from 'lucide-react';
 import { localDateStr } from '../lib/date';
 
 interface Project {
@@ -50,7 +50,6 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
   const [ozelTasks, setOzelTasks] = useState<Task[]>([]);
 
   // Rol bazlı davranış
-  const isTopRole = userRole === 'yonetici';
   const isPersonel = userRole === 'personel';
 
   // Load locations from Mekan Yönetimi
@@ -153,22 +152,23 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
   }, []);
 
   const handleProjectSelect = (project: Project) => {
-    const offRotation = !myRotationVenues.has(project.name) && myRotationVenues.size > 0;
-    if (offRotation && !isTopRole) {
+    // Personel için: rotasyon yüklendi ve bu mekan listesinde yoksa ENGELLE
+    // myRotationVenues.size > 0 değil, rotasyonDurumu === 'tamam' kullan.
+    // Böylece sadece ekstra/özel görevi olan personel de kilitlenir.
+    const rotasyonluPersonel = isPersonel && rotasyonDurumu === 'tamam';
+    const mekanimDegil = !myRotationVenues.has(project.name);
+
+    if (rotasyonluPersonel && mekanimDegil) {
+      // Personel rotasyon dışı → sadece uyarı göster, geçişe izin verme
       setPendingProject(project);
-    } else {
-      onProjectSelect(project);
-      setShowSelector(false);
+      return;
     }
+
+    // Yöneticiler ve kendi mekanında olan personel geçebilir
+    onProjectSelect(project);
+    setShowSelector(false);
   };
 
-  const confirmOffRotation = () => {
-    if (pendingProject) {
-      onProjectSelect(pendingProject);
-      setShowSelector(false);
-      setPendingProject(null);
-    }
-  };
 
   if (!showSelector && selectedProject) {
     const isManagement = ['yonetici', 'ust-mudur', 'mudur', 'operasyon'].includes(userRole || '');
@@ -252,31 +252,26 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
       {/* Rotasyon dışı uyarı overlay */}
       {pendingProject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-6 bg-black/60 backdrop-blur-sm">
-          <div className="backdrop-blur-xl bg-[#2a2a3a]/95 border-2 border-amber-500/50 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+          <div className="backdrop-blur-xl bg-[#2a2a3a]/95 border-2 border-red-500/60 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <div className="flex flex-col items-center text-center gap-3">
-              <div className="w-16 h-16 rounded-full bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center">
-                <AlertTriangle className="w-8 h-8 text-amber-400" />
+              <div className="w-16 h-16 rounded-full bg-red-500/20 border-2 border-red-500/40 flex items-center justify-center">
+                <Lock className="w-8 h-8 text-red-400" />
               </div>
-              <h3 className="font-bold text-white text-lg">Rotasyon Dışı Mekan</h3>
+              <h3 className="font-bold text-white text-lg">Erişim Engellendi</h3>
               <p className="text-sm text-gray-300 leading-relaxed">
-                <span className="text-amber-300 font-semibold">{pendingProject.name}</span> bugünkü rotasyonunda yer almıyor.
-                Devam etmek istediğinizden emin misiniz?
+                <span className="text-red-300 font-semibold">{pendingProject.name}</span>, bugünkü rotasyonunuzda yer almıyor.
+                Bu mekana erişim yetkiniz bulunmuyor.
               </p>
-              <div className="w-full flex gap-3 mt-2">
+              <div className="mt-1 px-3 py-2 rounded-xl bg-white/5 border border-white/10 w-full">
+                <p className="text-xs text-gray-500">🔒 Yöneticinizle iletişime geçin</p>
+              </div>
+              <div className="w-full mt-1">
                 <button
                   onClick={() => setPendingProject(null)}
-                  className="flex-1 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white font-semibold hover:bg-white/20 transition-all active:scale-95"
+                  className="w-full py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white font-semibold active:scale-95 transition-all"
                 >
-                  Vazgeç
+                  Tamam
                 </button>
-                {!isPersonel && (
-                  <button
-                    onClick={confirmOffRotation}
-                    className="flex-1 py-3 bg-amber-500/40 border-2 border-amber-400/60 rounded-xl text-amber-200 font-semibold hover:bg-amber-500/60 transition-all active:scale-95"
-                  >
-                    Yine de Devam Et
-                  </button>
-                )}
               </div>
             </div>
           </div>
@@ -360,8 +355,10 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
               {/* Regular mekan kartları */}
               {projects.map((project) => {
                 const isMyVenue = myRotationVenues.has(project.name);
-                const hasRotationData = myRotationVenues.size > 0;
-                const locked = userRole !== 'yonetici' && hasRotationData && !isMyVenue;
+                // rotasyonDurumu === 'tamam' kullan: sadece venue.size'a bakma,
+                // ekstra/özel görevi olan personel de kilitlenmeli
+                const hasRotationData = rotasyonDurumu === 'tamam';
+                const locked = isPersonel && hasRotationData && !isMyVenue;
                 return (
                   <button
                     key={project.id}

@@ -1392,6 +1392,35 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
 });
 
 // ──────────────────────────────────────────
+// HELPER: Personel rotasyon kontrolü
+// Personel rolündeki kullanıcının belirli mekana bugün atanmış olup olmadığını kontrol eder.
+// Yönetici rolleri için her zaman true döner.
+// ──────────────────────────────────────────
+const checkRotasyonYetkisi = async (userId: string, role: string, mekanId: string, tarih: string): Promise<boolean> => {
+  const yoneticiRoller = ["yonetici", "ust-mudur", "mudur", "operasyon", "idari"];
+  if (yoneticiRoller.includes(role)) return true;
+  if (role !== "personel") return false;
+
+  // Mekana ait lokasyon adını al
+  const mekan: any = await kv.get(`mekan_${mekanId}`);
+  if (!mekan) return false;
+  const mekanAdi: string = mekan.name || "";
+
+  // Bugüne ait rotasyon görevlerini tara
+  const tasks: any[] = await kv.getByPrefix("rotation_task_") || [];
+  const atanmis = tasks.some((t: any) => {
+    if (t.date !== tarih) return false;
+    if (!["sent", "revised"].includes(t.status)) return false;
+    // taskType: regular/extra/special — sadece regular için mekan adıyla eşleştir
+    if ((t.taskType === "regular" || !t.taskType) && t.location !== mekanAdi) return false;
+    if (t.taskType === "extra" && t.location !== mekanAdi) return false;
+    return Array.isArray(t.personnel) && t.personnel.some((p: any) => p.id === userId);
+  });
+
+  return atanmis;
+};
+
+// ──────────────────────────────────────────
 // STOK: Açılış kaydet
 // POST /stok/acilis
 // Body: { mekanId, tarih, sayim, not? }
@@ -1406,6 +1435,13 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
     const { mekanId, tarih, sayim, not: acilisNot } = await c.req.json();
     if (!mekanId || !tarih || !sayim) {
       return c.json({ error: "mekanId, tarih ve sayim zorunludur." }, 400);
+    }
+
+    // Rotasyon yetkisi kontrolü
+    const yetkili = await checkRotasyonYetkisi(user.id, callerRole, mekanId, tarih);
+    if (!yetkili) {
+      console.log(`Rotasyon yetki reddi — acilis: user=${user.id}, role=${callerRole}, mekan=${mekanId}, tarih=${tarih}`);
+      return c.json({ error: "Bu mekana bugünkü rotasyonunuzda atanmamışsınız. Açılış yapma yetkiniz yok." }, 403);
     }
 
     const dunTarih = new Date(tarih);
@@ -1461,6 +1497,13 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     const { mekanId, tarih, sayim, not: kapanisNot, printerData } = await c.req.json();
     if (!mekanId || !tarih || !sayim) {
       return c.json({ error: "mekanId, tarih ve sayim zorunludur." }, 400);
+    }
+
+    // Rotasyon yetkisi kontrolü
+    const yetkiliKapanis = await checkRotasyonYetkisi(user.id, callerRole, mekanId, tarih);
+    if (!yetkiliKapanis) {
+      console.log(`Rotasyon yetki reddi — kapanis: user=${user.id}, role=${callerRole}, mekan=${mekanId}, tarih=${tarih}`);
+      return c.json({ error: "Bu mekana bugünkü rotasyonunuzda atanmamışsınız. Kapanış yapma yetkiniz yok." }, 403);
     }
 
     const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
@@ -3743,6 +3786,13 @@ app.post("/make-server-4da0b637/stok/satis", async (c) => {
       return c.json({ error: "mekanId, tarih, items, totalPrice, paymentMethod zorunludur." }, 400);
     }
 
+    // Rotasyon yetkisi kontrolü
+    const yetkiliSatis = await checkRotasyonYetkisi(user.id, callerRole, mekanId, tarih);
+    if (!yetkiliSatis) {
+      console.log(`Rotasyon yetki reddi — satis: user=${user.id}, role=${callerRole}, mekan=${mekanId}, tarih=${tarih}`);
+      return c.json({ error: "Bu mekana bugünkü rotasyonunuzda atanmamışsınız. Satış kaydedemezsiniz." }, 403);
+    }
+
     const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`) || { mekanId, tarih };
     const satislar: any[] = existing.satislar || [];
 
@@ -3820,6 +3870,13 @@ app.post("/make-server-4da0b637/stok/kare", async (c) => {
     }
     const count = parseInt(frameCount);
     if (isNaN(count) || count <= 0) return c.json({ error: "Geçersiz kare sayısı." }, 400);
+
+    // Rotasyon yetkisi kontrolü
+    const yetkiliKare = await checkRotasyonYetkisi(user.id, callerRole, mekanId, tarih);
+    if (!yetkiliKare) {
+      console.log(`Rotasyon yetki reddi — kare: user=${user.id}, role=${callerRole}, mekan=${mekanId}, tarih=${tarih}`);
+      return c.json({ error: "Bu mekana bugünkü rotasyonunuzda atanmamışsınız. Kare kaydı yapma yetkiniz yok." }, 403);
+    }
 
     const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`) || { mekanId, tarih };
     const kareKayitlari: any[] = existing.kareKayitlari || [];
