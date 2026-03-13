@@ -1,8 +1,8 @@
-import { MapPin, Clock, CheckCircle2, Navigation, Zap, ArrowLeft, Lock, Loader2 } from 'lucide-react';
 import { getTasks, getLocations } from '../services/rotation-service';
 import type { Task } from '../services/rotation-service';
-import { useState, useEffect } from 'react';
-import { localDateStr } from '../lib/date';
+import { MapPin, Clock, Navigation, CheckCircle2, Lock, ArrowLeft, Zap, Loader2 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { localDateStr, toLocalDateStr } from '../lib/date';
 
 interface Project {
   id: string;
@@ -48,6 +48,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
   const [rotasyonDurumu, setRotasyonDurumu] = useState<'yukleniyor' | 'tanimlanmamis' | 'atanmamis' | 'hata' | 'tamam'>('yukleniyor');
   const [ekstraTasks, setEkstraTasks] = useState<Task[]>([]);
   const [ozelTasks, setOzelTasks] = useState<Task[]>([]);
+  const allTasksRef = useRef<Task[]>([]); // API'den çekilen tüm görevler (filtre için)
 
   // Rol bazlı davranış
   // SADECE yonetici rotasyonu bypass eder (her mekana girebilir)
@@ -65,53 +66,99 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
     load();
   }, []);
 
-  // Bugünkü rotasyonda hangi mekanlar var → mevcut kullanıcı için
+  // ─── Görevin şu an görünür pencerede olup olmadığını kontrol eder ───
+  // Görünür pencere: startTime - 5 saat ≤ şimdi ≤ endTime + 5 saat
+  // Gece yarısı geçen görevler (22:00-02:00) için endTime ertesi güne taşınır.
+  const isTaskVisible = (task: Task): boolean => {
+    if (!task.startTime || !task.endTime) return true; // saat yoksa göster
+    const now = new Date();
+    const [startH, startM] = task.startTime.split(':').map(Number);
+    const [endH, endM] = task.endTime.split(':').map(Number);
+
+    const taskDate = new Date(task.date + 'T00:00:00');
+
+    const startDt = new Date(taskDate);
+    startDt.setHours(startH, startM, 0, 0);
+
+    const endDt = new Date(taskDate);
+    endDt.setHours(endH, endM, 0, 0);
+    // Gece yarısı geçen görev (örn. 22:00–02:00) → endDt ertesi gün
+    if (endH * 60 + endM <= startH * 60 + startM) {
+      endDt.setDate(endDt.getDate() + 1);
+    }
+
+    const FIVE_HOURS = 5 * 60 * 60 * 1000;
+    const visibleFrom = new Date(startDt.getTime() - FIVE_HOURS);
+    const visibleUntil = new Date(endDt.getTime() + FIVE_HOURS);
+
+    return now >= visibleFrom && now <= visibleUntil;
+  };
+
+  // ─── Zaman filtresini mevcut görevlere uygula (API çekmeden) ───
+  const applyTimeFilter = (tasks: Task[]) => {
+    const today = localDateStr();
+    const yesterdayDate = new Date();
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterday = toLocalDateStr(yesterdayDate);
+
+    // Bugün veya dünkü aktif görevlerden şu an görünür olanlar
+    const visible = tasks.filter(
+      (t) =>
+        (t.date === today || t.date === yesterday) &&
+        (t.status === 'sent' || t.status === 'revised') &&
+        isTaskVisible(t)
+    );
+
+    if (visible.length === 0) {
+      // Bugün/dün hiç görev var mı? (pencere dışı olanlar dahil)
+      const anyToday = tasks.some(
+        (t) =>
+          (t.date === today || t.date === yesterday) &&
+          (t.status === 'sent' || t.status === 'revised')
+      );
+      setMyRotationVenues(new Set());
+      setEkstraTasks([]);
+      setOzelTasks([]);
+      setRotasyonDurumu(anyToday ? 'atanmamis' : 'tanimlanmamis');
+      return;
+    }
+
+    const venues = new Set<string>();
+    const myEkstra: Task[] = [];
+    const myOzel: Task[] = [];
+
+    for (const task of visible) {
+      const benimGörevim = task.personnel.some(
+        (p) =>
+          (userId && p.id === userId) ||
+          (userName && p.name === userName)
+      );
+      if (!benimGörevim) continue;
+
+      if (task.taskType === 'regular' || !task.taskType) {
+        venues.add(task.location);
+      } else if (task.taskType === 'extra') {
+        myEkstra.push(task);
+      } else if (task.taskType === 'special') {
+        myOzel.push(task);
+      }
+    }
+
+    setMyRotationVenues(venues);
+    setEkstraTasks(myEkstra);
+    setOzelTasks(myOzel);
+    setRotasyonDurumu(venues.size > 0 || myEkstra.length > 0 || myOzel.length > 0 ? 'tamam' : 'atanmamis');
+  };
+
+  // ─── İlk yüklemede API'den görevleri çek, ref'e sakla ───
   useEffect(() => {
     const loadRotation = async () => {
       setRotasyonYukleniyor(true);
       setRotasyonDurumu('yukleniyor');
       try {
-        const today = localDateStr();
         const tasks = await getTasks();
-
-        // Bugüne ait ve aktif (sent / revised) görevler
-        const todaysTasks = tasks.filter(
-          (t) => t.date === today && (t.status === 'sent' || t.status === 'revised')
-        );
-
-        if (todaysTasks.length === 0) {
-          setMyRotationVenues(new Set());
-          setRotasyonDurumu('tanimlanmamis');
-          setRotasyonYukleniyor(false);
-          return;
-        }
-
-        // Kullanıcının dahil olduğu görevleri bul
-        const venues = new Set<string>();
-        const myEkstra: Task[] = [];
-        const myOzel: Task[] = [];
-
-        for (const task of todaysTasks) {
-          const benimGörevim = task.personnel.some(
-            (p) =>
-              (userId && p.id === userId) ||
-              (userName && p.name === userName)
-          );
-          if (!benimGörevim) continue;
-
-          if (task.taskType === 'regular' || !task.taskType) {
-            venues.add(task.location);
-          } else if (task.taskType === 'extra') {
-            myEkstra.push(task);
-          } else if (task.taskType === 'special') {
-            myOzel.push(task);
-          }
-        }
-
-        setMyRotationVenues(venues);
-        setEkstraTasks(myEkstra);
-        setOzelTasks(myOzel);
-        setRotasyonDurumu(venues.size > 0 || myEkstra.length > 0 || myOzel.length > 0 ? 'tamam' : 'atanmamis');
+        allTasksRef.current = tasks;
+        applyTimeFilter(tasks);
       } catch (err) {
         console.error('Rotasyon yüklenemedi:', err);
         setMyRotationVenues(new Set());
@@ -121,6 +168,16 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
       }
     };
     loadRotation();
+  }, [userId, userName]);
+
+  // ─── Her dakika zaman filtresini yeniden uygula (API çekmeden) ───
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (allTasksRef.current.length > 0) {
+        applyTimeFilter(allTasksRef.current);
+      }
+    }, 60 * 1000);
+    return () => clearInterval(interval);
   }, [userId, userName]);
 
   // ✅ DYNAMIC: Convert Mekan Yönetimi locations to projects
@@ -318,10 +375,10 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
           )}
           {rotasyonDurumu === 'atanmamis' && (
             <>
-              <h3 className="text-lg font-bold text-white mb-2">Rotasyona Atanmadınız</h3>
+              <h3 className="text-lg font-bold text-white mb-2">Aktif Görev Yok</h3>
               <p className="text-sm text-gray-400 leading-relaxed">
-                Bugünkü rotasyonda size atanmış bir görev bulunmuyor.<br />
-                Yöneticinizle iletişime geçin.
+                Şu an aktif bir göreviniz bulunmuyor.<br />
+                Görev saatinizde tekrar kontrol edin.
               </p>
             </>
           )}
