@@ -4266,6 +4266,207 @@ app.post("/make-server-4da0b637/mesajlar/dm/:otherUserId", async (c) => {
   }
 });
 
+// ──────────────────────────────────────────
+// LEADERBOARD: Performans Sıralaması
+// GET /make-server-4da0b637/leaderboard/performans
+// Query: ?baslangic=YYYY-MM-DD&bitis=YYYY-MM-DD&mekanId=(optional)
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const baslangic = c.req.query("baslangic") || "";
+    const bitis = c.req.query("bitis") || "";
+    const mekanIdFilter = c.req.query("mekanId") || "";
+
+    // ── 1. Mekanlar ──
+    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanById: Record<string, any> = {};
+    for (const m of mekanlarList) mekanById[m.id] = m;
+
+    // ── 2. Stok kayıtları filtrele ──
+    const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+    const filtrelenmis = tumKayitlar.filter((k: any) => {
+      if (!k.tarih) return false;
+      if (baslangic && k.tarih < baslangic) return false;
+      if (bitis && k.tarih > bitis) return false;
+      if (mekanIdFilter && k.mekanId !== mekanIdFilter) return false;
+      return true;
+    });
+
+    // ── 3. Personel satış aggregation ──
+    const personMap: Record<string, any> = {};
+    const mekanTotalCiro: Record<string, number> = {};
+
+    for (const kayit of filtrelenmis) {
+      const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
+      const mekanId = kayit.mekanId;
+      if (!mekanTotalCiro[mekanId]) mekanTotalCiro[mekanId] = 0;
+
+      for (const satis of satislar) {
+        const tutar = Number(satis.finalPrice) || 0;
+        const brut = Number(satis.totalPrice) || tutar;
+        const iskonto = Number(satis.discount) || 0;
+        const pid = satis.kaydedenId || satis.kaydeden || "bilinmeyen";
+        const pad = satis.kaydeden || "Bilinmiyor";
+
+        mekanTotalCiro[mekanId] += tutar;
+
+        if (!personMap[pid]) {
+          personMap[pid] = {
+            id: pid, ad: pad, avatar: "👤",
+            ciro: 0, brutCiro: 0, iskonto: 0, satisAdet: 0,
+            ciroByMekan: {} as Record<string, number>,
+          };
+        }
+        personMap[pid].ciro += tutar;
+        personMap[pid].brutCiro += brut;
+        personMap[pid].iskonto += iskonto;
+        personMap[pid].satisAdet++;
+        if (!personMap[pid].ciroByMekan[mekanId]) personMap[pid].ciroByMekan[mekanId] = 0;
+        personMap[pid].ciroByMekan[mekanId] += tutar;
+      }
+    }
+
+    // ── 4. Rotasyon görevleri: vardiya sayısı + avatar güncelleme ──
+    const allTasks: any[] = await kv.getByPrefix("rotation_task_") || [];
+    const taskMap: Record<string, any[]> = {};
+    const personVardiya: Record<string, Set<string>> = {};
+
+    for (const t of allTasks) {
+      if (!t.date || !t.location || t.status === "cancelled") continue;
+      if (baslangic && t.date < baslangic) continue;
+      if (bitis && t.date > bitis) continue;
+
+      const key = `${t.date}__${t.location}`;
+      if (!taskMap[key]) taskMap[key] = [];
+
+      for (const p of (t.personnel || [])) {
+        if (!p?.id) continue;
+        if (!taskMap[key].find((x: any) => x.id === p.id)) taskMap[key].push(p);
+        if (!personVardiya[p.id]) personVardiya[p.id] = new Set();
+        personVardiya[p.id].add(t.date);
+        if (personMap[p.id]) {
+          personMap[p.id].avatar = p.avatar || "👤";
+          if (personMap[p.id].ad === "Bilinmiyor" && p.name) personMap[p.id].ad = p.name;
+        }
+      }
+    }
+
+    // ── 5. Anomali vardiya sayısı per person ──
+    const prevDay = (tarih: string): string => {
+      const d = new Date(tarih + "T00:00:00Z");
+      d.setUTCDate(d.getUTCDate() - 1);
+      return d.toISOString().split("T")[0];
+    };
+
+    const personAnomalSet: Record<string, Set<string>> = {};
+
+    for (const kayit of filtrelenmis) {
+      const mekan = mekanById[kayit.mekanId] || {};
+      const mekanAdi = mekan.name || "";
+
+      if (kayit.acilisAnomali && Object.keys(kayit.acilisAnomali).length > 0) {
+        const taskKey = `${prevDay(kayit.tarih)}__${mekanAdi}`;
+        for (const p of (taskMap[taskKey] || [])) {
+          if (!personAnomalSet[p.id]) personAnomalSet[p.id] = new Set();
+          personAnomalSet[p.id].add(`${kayit.tarih}__acilis__${kayit.mekanId}`);
+        }
+      }
+
+      if (kayit.kapanisAnomali && Object.keys(kayit.kapanisAnomali).length > 0) {
+        const taskKey = `${kayit.tarih}__${mekanAdi}`;
+        for (const p of (taskMap[taskKey] || [])) {
+          if (!personAnomalSet[p.id]) personAnomalSet[p.id] = new Set();
+          personAnomalSet[p.id].add(`${kayit.tarih}__kapanis__${kayit.mekanId}`);
+        }
+      }
+    }
+
+    // ── 6. Ham metrikler ──
+    const liste: any[] = Object.values(personMap).filter((p: any) => p.satisAdet > 0);
+
+    for (const p of liste) {
+      p.ortSatis = p.satisAdet > 0 ? p.ciro / p.satisAdet : 0;
+      p.iskontoDisipling = p.brutCiro > 0 ? 1 - (p.iskonto / p.brutCiro) : 1;
+      let mekanKatkiScore = 0;
+      for (const [mid, pciro] of Object.entries(p.ciroByMekan as Record<string, number>)) {
+        const mtotal = mekanTotalCiro[mid] || 1;
+        mekanKatkiScore += (pciro / mtotal) * (pciro / p.ciro);
+      }
+      p.mekanKatki = mekanKatkiScore;
+      p.anomaliVardiya = personAnomalSet[p.id]?.size || 0;
+      p.toplamVardiya = personVardiya[p.id]?.size || 0;
+      p.anomaliOran = p.toplamVardiya > 0 ? p.anomaliVardiya / p.toplamVardiya : 0;
+      p.anomaliTemizligi = 1 - p.anomaliOran;
+    }
+
+    // ── 7. Normalizasyon (0–100) ──
+    const normalize = (arr: any[], srcKey: string, dstKey: string) => {
+      if (arr.length === 0) return;
+      const vals = arr.map(p => p[srcKey]);
+      const mn = Math.min(...vals);
+      const mx = Math.max(...vals);
+      for (const p of arr) {
+        const raw = mx === mn ? 0.7 : (p[srcKey] - mn) / (mx - mn);
+        p[dstKey] = Math.round(raw * 100);
+      }
+    };
+
+    normalize(liste, "iskontoDisipling", "iskontoPuan");
+    normalize(liste, "ortSatis", "ortSatisPuan");
+    normalize(liste, "mekanKatki", "mekanKatkiPuan");
+    normalize(liste, "anomaliTemizligi", "anomaliPuan");
+
+    // ── 8. Ağırlıklı toplam skor ──
+    for (const p of liste) {
+      p.toplamSkor = Math.round(
+        (p.iskontoPuan   || 0) * 0.35 +
+        (p.ortSatisPuan  || 0) * 0.25 +
+        (p.mekanKatkiPuan || 0) * 0.20 +
+        (p.anomaliPuan   || 0) * 0.20
+      );
+    }
+
+    liste.sort((a: any, b: any) => b.toplamSkor - a.toplamSkor);
+    liste.forEach((p: any, i: number) => { p.sira = i + 1; });
+
+    const result = liste.map((p: any) => ({
+      id:         p.id,
+      ad:         p.ad,
+      avatar:     p.avatar,
+      sira:       p.sira,
+      toplamSkor: p.toplamSkor,
+      metrikler: {
+        iskontoPuan:    p.iskontoPuan    || 0,
+        ortSatisPuan:   p.ortSatisPuan   || 0,
+        mekanKatkiPuan: p.mekanKatkiPuan || 0,
+        anomaliPuan:    p.anomaliPuan    || 0,
+      },
+      ham: {
+        ciro:           Math.round(p.ciro),
+        satisAdet:      p.satisAdet,
+        iskonto:        Math.round(p.iskonto),
+        brutCiro:       Math.round(p.brutCiro),
+        ortSatis:       Math.round(p.ortSatis),
+        anomaliVardiya: p.anomaliVardiya,
+        toplamVardiya:  p.toplamVardiya,
+      },
+    }));
+
+    console.log(`Leaderboard: ${baslangic}–${bitis} → ${result.length} personel`);
+    return c.json({
+      personeller: result,
+      mekanlar: mekanlarList.map((m: any) => ({ id: m.id, name: m.name, emoji: m.emoji || "📍" })),
+      donem: { baslangic, bitis },
+    });
+  } catch (err) {
+    console.log("Leaderboard performans error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 Deno.serve(async (req) => {
   // Supabase Edge Functions'da OPTIONS preflight istekleri gateway tarafından kesilebilir.
   // Bu nedenle OPTIONS'ı Hono'ya göndermeden önce burada açıkça handle ediyoruz.

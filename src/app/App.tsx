@@ -360,6 +360,7 @@ export default function App() {
           <Leaderboard 
             userName={userName}
             userRole={userRole}
+            accessToken={accessToken}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
