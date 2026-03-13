@@ -47,6 +47,8 @@ interface QuickSalesProps {
   onBack?: () => void;
   onLogout: () => void;
   onNavigate: (tab: string) => void;
+  onEkstraIsSelect?: (task: import('../services/rotation-service').Task) => void;
+  onOzelIsSelect?: (task: import('../services/rotation-service').Task) => void;
 }
 
 const FRAME_STORAGE_KEY = 'aspect_frame_tracking';
@@ -62,7 +64,7 @@ const albumItems = [
 ];
 
 
-export function QuickSales({ userName, userRole, accessToken, userId, onProjectSelect, preSelectedProject, onBack, onLogout, onNavigate }: QuickSalesProps) {
+export function QuickSales({ userName, userRole, accessToken, userId, onProjectSelect, preSelectedProject, onBack, onLogout, onNavigate, onEkstraIsSelect, onOzelIsSelect }: QuickSalesProps) {
   const [selectedProject, setSelectedProject] = useState<Project | null>(() => {
     if (preSelectedProject) {
       return { id: '1', name: preSelectedProject, location: 'Antalya', shift: 'Gündüz', color: 'from-[#9dd9ea] to-[#7ec8dd]', icon: '🏖️' };
@@ -663,6 +665,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
           userRole={userRole}
           userId={userId}
           userName={userName}
+          onEkstraIsSelect={onEkstraIsSelect}
+          onOzelIsSelect={onOzelIsSelect}
           onLiveFeed={
             ['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole) && selectedProject
               ? () => setShowLiveFeed(true)

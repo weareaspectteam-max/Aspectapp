@@ -351,6 +351,8 @@ export default function App() {
           preSelectedProject={isStaffRole && shiftSetupCompleted ? selectedProject : undefined}
           onLogout={handleLogout}
           onNavigate={handleNavigate}
+          onEkstraIsSelect={handleEkstraIsSelect}
+          onOzelIsSelect={handleOzelIsSelect}
         />
       );
     }

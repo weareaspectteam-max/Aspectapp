@@ -122,7 +122,28 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
     }
     setVisibleVenueNames(allVisible);
 
-    // Şimdiki kullanıcıya ait görünür görevler
+    // ─── Serbest rol (yönetici): kullanıcı atamasına bakma, tüm görevleri göster ───
+    if (serbest) {
+      const venues = new Set<string>();
+      const allEkstra: Task[] = [];
+      const allOzel: Task[] = [];
+      for (const t of visibleTasks) {
+        if (t.taskType === 'regular' || !t.taskType) {
+          venues.add(t.location);
+        } else if (t.taskType === 'extra') {
+          allEkstra.push(t);
+        } else if (t.taskType === 'special') {
+          allOzel.push(t);
+        }
+      }
+      setMyRotationVenues(venues);
+      setEkstraTasks(allEkstra);
+      setOzelTasks(allOzel);
+      setRotasyonDurumu(venues.size > 0 || allEkstra.length > 0 || allOzel.length > 0 ? 'tamam' : 'tanimlanmamis');
+      return;
+    }
+
+    // ─── Rotasyona tabi roller: sadece kullanıcıya atanmış görünür görevler ───
     const myVisible = visibleTasks.filter((task) =>
       task.personnel.some(
         (p) =>
