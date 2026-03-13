@@ -276,15 +276,28 @@ export function UserManagement({ userRole, accessToken, onNavigate }: UserManage
 
   // Delete user
   const handleDeleteUser = async (userId: string, userEmail: string, targetUserName: string) => {
-    if (!confirm(`${targetUserName} (${userEmail}) kullanıcısını silmek istediğinizden emin misiniz?`)) return;
+    if (!confirm(`${targetUserName} (${userEmail}) kullanıcısını kalıcı olarak silmek istediğinizden emin misiniz?\n\nBu işlem geri alınamaz. Kullanıcının tüm rotasyon ve izin verileri de silinecektir.`)) return;
 
-    // Bu operasyon için backend'e delete route eklenene kadar
-    // Rol'ü değiştirme yöntemiyle simüle edemeyiz, UI'dan kaldırıyoruz
-    // Gerçek silme için Supabase admin paneli kullanılabilir
-    setUsers(prev => prev.filter(u => u.id !== userId));
-    setPendingUsers(prev => prev.filter(u => u.id !== userId));
-    setSuccessMessage(`🗑️ ${targetUserName} listeden kaldırıldı`);
-    setTimeout(() => setSuccessMessage(''), 3000);
+    try {
+      const res = await fetch(`${SERVER_URL}/users/${userId}`, {
+        method: 'DELETE',
+        headers: buildHeaders(accessToken),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Kullanıcı silinemedi.');
+        setTimeout(() => setError(''), 4000);
+        return;
+      }
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      setPendingUsers(prev => prev.filter(u => u.id !== userId));
+      setSuccessMessage(`🗑️ ${data.message}`);
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err) {
+      console.error('handleDeleteUser error:', err);
+      setError('Sunucuya bağlanılamadı.');
+      setTimeout(() => setError(''), 4000);
+    }
   };
 
   // Toggle role expansion

@@ -3575,6 +3575,119 @@ app.post("/make-server-4da0b637/ai/role-config", async (c) => {
   }
 });
 
+// ──────────────────────────────────────────
+// USERS: Kullanıcı sil + KV temizliği
+// DELETE /make-server-4da0b637/users/:userId
+// Sıralama: 1) KV temizle → 2) Auth'tan sil
+// ──────────────────────────────────────────
+app.delete("/make-server-4da0b637/users/:userId", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const callerRole = callerUser.user_metadata?.role;
+    if (!["yonetici", "ust-mudur"].includes(callerRole)) {
+      return c.json({ error: "Kullanıcı silme yetkisi yalnızca Yönetici ve Üst Müdür rolüne aittir." }, 403);
+    }
+
+    const { userId } = c.req.param();
+
+    if (userId === callerUser.id) {
+      return c.json({ error: "Kendinizi silemezsiniz." }, 400);
+    }
+
+    const supabase = getAdminClient();
+
+    const { data: targetData } = await supabase.auth.admin.getUserById(userId);
+    if (!targetData?.user) return c.json({ error: "Kullanıcı bulunamadı." }, 404);
+
+    const targetRole = targetData.user.user_metadata?.role ?? "bekleyen";
+    const hierarchy: Record<string, number> = {
+      yonetici: 6, "ust-mudur": 5, mudur: 4, operasyon: 3, idari: 2, personel: 1, bekleyen: 0,
+    };
+    if (callerRole !== "yonetici" && hierarchy[targetRole] >= hierarchy[callerRole]) {
+      return c.json({ error: "Kendi seviyenizde veya üzerindeki kullanıcıları silemezsiniz." }, 403);
+    }
+
+    const targetName = targetData.user.user_metadata?.full_name || targetData.user.email || userId;
+    let kvTemizlendi = 0;
+
+    // ── 1. rotation_task_* — bu userId geçen görevleri sil ──
+    try {
+      const tasks = await kv.getByPrefix("rotation_task_");
+      for (const task of (tasks || [])) {
+        if (JSON.stringify(task).includes(userId)) {
+          await kv.del(`rotation_task_${task.id}`);
+          kvTemizlendi++;
+          console.log(`[userDelete] rotation_task_${task.id} silindi`);
+        }
+      }
+    } catch (e) {
+      console.log("[userDelete] rotation_task temizlik hatası:", e);
+    }
+
+    // ── 2. rotation_leave_* — bu kullanıcının izin talepleri ──
+    try {
+      const leaves = await kv.getByPrefix("rotation_leave_");
+      for (const leave of (leaves || [])) {
+        if (leave.staffId === userId || leave.created_by === userId) {
+          await kv.del(`rotation_leave_${leave.id}`);
+          kvTemizlendi++;
+          console.log(`[userDelete] rotation_leave_${leave.id} silindi`);
+        }
+      }
+    } catch (e) {
+      console.log("[userDelete] rotation_leave temizlik hatası:", e);
+    }
+
+    // ── 3. rotation_daily_onleave — tarih bazlı listeden userId çıkar ──
+    try {
+      const dailyOnLeave = await kv.get("rotation_daily_onleave");
+      if (dailyOnLeave && typeof dailyOnLeave === "object") {
+        let degisti = false;
+        for (const tarih of Object.keys(dailyOnLeave)) {
+          const arr: string[] = dailyOnLeave[tarih];
+          if (Array.isArray(arr) && arr.includes(userId)) {
+            dailyOnLeave[tarih] = arr.filter((id: string) => id !== userId);
+            degisti = true;
+          }
+        }
+        if (degisti) {
+          await kv.set("rotation_daily_onleave", dailyOnLeave);
+          console.log(`[userDelete] rotation_daily_onleave güncellendi`);
+          kvTemizlendi++;
+        }
+      }
+    } catch (e) {
+      console.log("[userDelete] rotation_daily_onleave temizlik hatası:", e);
+    }
+
+    // ── 4. bday_privacy_ — doğum günü gizlilik kaydını sil ──
+    try {
+      await kv.del(`bday_privacy_${userId}`);
+      console.log(`[userDelete] bday_privacy_${userId} silindi`);
+    } catch (e) {
+      console.log("[userDelete] bday_privacy temizlik hatası:", e);
+    }
+
+    // ── 5. Supabase Auth'tan kullanıcıyı sil ──
+    const { error: deleteError } = await supabase.auth.admin.deleteUser(userId);
+    if (deleteError) {
+      console.log("[userDelete] Auth silme hatası:", deleteError.message);
+      return c.json({ error: `Kullanıcı Auth'tan silinemedi: ${deleteError.message}` }, 500);
+    }
+
+    console.log(`[userDelete] ${targetName} (${userId}) silindi. KV temizlendi: ${kvTemizlendi} kayıt. Silen: ${callerUser.id}`);
+    return c.json({
+      message: `"${targetName}" kullanıcısı ve ilgili ${kvTemizlendi} KV kaydı başarıyla silindi.`,
+      kvTemizlendi,
+    });
+  } catch (err) {
+    console.log("Delete user unexpected error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 Deno.serve(async (req) => {
   // Supabase Edge Functions'da OPTIONS preflight istekleri gateway tarafından kesilebilir.
   // Bu nedenle OPTIONS'ı Hono'ya göndermeden önce burada açıkça handle ediyoruz.

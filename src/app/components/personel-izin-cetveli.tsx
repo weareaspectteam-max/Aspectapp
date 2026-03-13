@@ -8,7 +8,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   ChevronLeft, ChevronRight, X, Search, Users,
   Calendar, Clock, MapPin, AlertCircle, CheckCircle,
-  Loader2, Filter,
+  Loader2, RefreshCw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -26,7 +26,7 @@ import {
 // Types
 // ─────────────────────────────────────────
 
-type CellStatus = 'work' | 'approved_leave' | 'daily_leave' | 'pending_leave' | 'empty';
+type CellStatus = 'work' | 'approved_leave' | 'daily_leave' | 'pending_leave' | 'unassigned' | 'empty';
 
 interface CellData {
   status: CellStatus;
@@ -106,11 +106,15 @@ const abbrev = (name: string): string => {
   return words.slice(0, 2).map(w => w[0]).join('').toUpperCase();
 };
 
+const toTitleCase = (str: string): string =>
+  str.toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
 const STATUS_COLORS: Record<CellStatus, { bg: string; border: string; label: string }> = {
   work:           { bg: '#22c55e',  border: '#16a34a', label: 'Çalışıyor'    },
   approved_leave: { bg: '#ef4444',  border: '#dc2626', label: 'Onaylı İzin'  },
   daily_leave:    { bg: '#f97316',  border: '#ea580c', label: 'Günlük İzin'  },
   pending_leave:  { bg: '#eab308',  border: '#ca8a04', label: 'Bekleyen İzin'},
+  unassigned:     { bg: '#3b82f6',  border: '#2563eb', label: 'Kayıtsız'     },
   empty:          { bg: 'transparent', border: 'transparent', label: 'Veri Yok' },
 };
 
@@ -119,7 +123,7 @@ const STATUS_COLORS: Record<CellStatus, { bg: string; border: string; label: str
 // ─────────────────────────────────────────
 
 function Legend() {
-  const items: CellStatus[] = ['work', 'approved_leave', 'daily_leave', 'pending_leave'];
+  const items: CellStatus[] = ['work', 'approved_leave', 'daily_leave', 'pending_leave', 'unassigned'];
   return (
     <div className="flex flex-wrap gap-x-3 gap-y-1.5 px-4">
       {items.map(s => (
@@ -220,7 +224,7 @@ function CellPopup({
                 {staff.avatar}
               </div>
               <div>
-                <p className="text-white font-bold text-sm">{staff.name}</p>
+                <p className="text-white font-bold text-sm">{toTitleCase(staff.name)}</p>
                 <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>
                   {dayName}, {dayNum} {monthName}
                 </p>
@@ -316,6 +320,16 @@ function CellPopup({
                     {cell.leaveNotes}
                   </p>
                 )}
+              </div>
+            )}
+
+            {/* Unassigned detail */}
+            {cell.status === 'unassigned' && (
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#3b82f6' }} />
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)' }}>
+                  O gün rotasyon oluşturulmuş ancak bu personel hiçbir göreve atanmamış
+                </span>
               </div>
             )}
 
@@ -445,11 +459,7 @@ export function PersonelIzinCetveli({
   // ── Filtrelenmiş personel ────────────────
   const filteredStaff = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    const active = staffList.filter(s =>
-      s.role !== 'yonetici' && s.role !== 'ust-mudur' && s.role !== 'mudur' && s.role !== 'idari'
-        ? true  // personel & operasyon dahil
-        : true  // hepsini dahil et
-    );
+    const active = staffList.filter(s => s.role !== 'yonetici');
     if (!q) return active;
     return active.filter(s => s.name.toLowerCase().includes(q));
   }, [staffList, searchQuery]);
@@ -543,6 +553,11 @@ export function PersonelIzinCetveli({
       };
     }
 
+    // 6. O gün rotasyon oluşturulmuş ama bu kişi atanmamış → Kayıtsız
+    if (dayTasks.length > 0) {
+      return { status: 'unassigned' };
+    }
+
     return { status: 'empty' };
   }, [tasksByDate, leaveByPersonnel, dailyByDate]);
 
@@ -557,13 +572,14 @@ export function PersonelIzinCetveli({
   // ── Özet hesaplama ───────────────────────
   const summaries = useMemo(() => {
     return matrix.map(row => {
-      let work = 0, leave = 0, pending = 0;
+      let work = 0, leave = 0, pending = 0, unassigned = 0;
       row.cells.forEach(c => {
         if (c.status === 'work') work++;
         else if (c.status === 'approved_leave' || c.status === 'daily_leave') leave++;
         else if (c.status === 'pending_leave') pending++;
+        else if (c.status === 'unassigned') unassigned++;
       });
-      return { work, leave, pending };
+      return { work, leave, pending, unassigned };
     });
   }, [matrix]);
 
@@ -615,7 +631,7 @@ export function PersonelIzinCetveli({
           >
             {loading
               ? <Loader2 className="w-4 h-4 text-white/40 animate-spin" />
-              : <Filter className="w-4 h-4 text-white/50" />
+              : <RefreshCw className="w-4 h-4 text-white/50" />
             }
           </button>
         </div>
@@ -829,7 +845,7 @@ export function PersonelIzinCetveli({
                             className="truncate font-semibold text-white"
                             style={{ fontSize: 11, maxWidth: 84 }}
                           >
-                            {row.staff.name}
+                            {toTitleCase(row.staff.name)}
                           </p>
                         </div>
                       </div>
@@ -890,6 +906,14 @@ export function PersonelIzinCetveli({
                             {summary.leave}
                           </span>
                         </div>
+                        {summary.unassigned > 0 && (
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#3b82f6' }} />
+                            <span style={{ fontSize: 10, color: '#93c5fd', fontWeight: 700, minWidth: 14, textAlign: 'right' }}>
+                              {summary.unassigned}
+                            </span>
+                          </div>
+                        )}
                         {summary.pending > 0 && (
                           <div className="flex items-center justify-between gap-1">
                             <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#eab308' }} />
