@@ -2668,17 +2668,29 @@ app.get("/make-server-4da0b637/ekstra-is/kaynaklar", async (c) => {
 
     // Her mekan için bugünün günlük stok kaydını çek
     const mekanlar = await Promise.all(mekanlarList.map(async (m: any) => {
-      const gunlukKayit: any = await kv.get(`stok_gunluk_${m.id}_${bugunTR}`) || null;
+      // Önce bugünü dene, bulamazsan geriye doğru 14 güne kadar tara
+      let bulunanKayit: any = null;
+      let bulunanTarih = bugunTR;
+      for (let i = 0; i <= 14; i++) {
+        const d = new Date(Date.now() + 3 * 60 * 60 * 1000 - i * 86400000);
+        const dStr = d.toISOString().split('T')[0];
+        const kayit: any = await kv.get(`stok_gunluk_${m.id}_${dStr}`);
+        if (kayit && (kayit.kapanish || kayit.acilis)) {
+          bulunanKayit = kayit;
+          bulunanTarih = dStr;
+          break;
+        }
+      }
       const albumSayilari: Record<string, number> = {};
-      let acilisYapildi = false;
-      if (gunlukKayit) {
-        const aktifStok = gunlukKayit.kapanish || gunlukKayit.acilis || {};
-        acilisYapildi = !!gunlukKayit.acilisYapildi;
+      if (bulunanKayit) {
+        const aktifStok = bulunanKayit.kapanish || bulunanKayit.acilis || {};
         for (const alan of albumAlanlari) albumSayilari[alan] = Number(aktifStok[alan]) || 0;
       } else {
         for (const alan of albumAlanlari) albumSayilari[alan] = 0;
       }
-      return { id: m.id, name: m.name, emoji: m.emoji || "📍", color: m.color || "#9dd9ea", albumSayilari, acilisYapildi };
+      // stokTarihi: null = bugünden, string = önceki bir tarihten
+      const stokTarihi = bulunanTarih !== bugunTR ? bulunanTarih : null;
+      return { id: m.id, name: m.name, emoji: m.emoji || "📍", color: m.color || "#9dd9ea", albumSayilari, stokTarihi };
     }));
 
     const depoStok: any = await kv.get("depo_stok") || {};

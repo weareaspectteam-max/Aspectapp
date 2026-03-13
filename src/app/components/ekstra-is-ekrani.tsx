@@ -410,26 +410,22 @@ export function EkstraIsEkrani({ userName, userId, userRole, task, onBack, onLog
           <div className="backdrop-blur-xl bg-white/5 rounded-2xl border border-white/15 p-4">
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs text-white/50 font-semibold">{seciliKaynak.emoji} {seciliKaynak.name} Mevcut Stok</p>
-              {!mekan.acilisYapildi && (
-                <span className="text-[10px] text-red-400 font-semibold bg-red-500/15 px-2 py-0.5 rounded-full">Açılış Yapılmamış</span>
+              {mekan.stokTarihi && (
+                <span className="text-[10px] text-amber-400 font-semibold bg-amber-500/15 px-2 py-0.5 rounded-full">{mekan.stokTarihi} tarihli</span>
               )}
             </div>
-            {!mekan.acilisYapildi ? (
-              <p className="text-xs text-red-300/70">Bu mekan bugün henüz açılış yapmamış. Stok alımı yapılamaz.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {ALBUM_ALANLARI.map(alan => {
-                  const adet = mekan.albumSayilari[alan] || 0;
-                  return (
-                    <div key={alan} className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: ALBUM_RENK[alan] }} />
-                      <span className="flex-1 text-xs text-white/70">{ALBUM_ETIKET[alan]}</span>
-                      <span className={`text-xs font-bold ${adet === 0 ? 'text-red-400' : 'text-white'}`}>{adet}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <div className="space-y-1.5">
+              {ALBUM_ALANLARI.map((alan: string) => {
+                const adet = mekan.albumSayilari[alan] || 0;
+                return (
+                  <div key={alan} className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: ALBUM_RENK[alan] }} />
+                    <span className="flex-1 text-xs text-white/70">{ALBUM_ETIKET[alan]}</span>
+                    <span className={`text-xs font-bold ${adet === 0 ? 'text-red-400' : 'text-white'}`}>{adet}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         );
       })()}
