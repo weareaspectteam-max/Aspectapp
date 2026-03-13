@@ -98,7 +98,7 @@ function getSections(
       color: '#fb923c',
       items: [
         { icon: Zap,          label: 'Hızlı Satış',       roles: all,  action: () => go('quick-sales')     },
-        { icon: Activity,     label: 'Canlı Feed',         roles: mgmt, action: () => go('live-feed')       },
+        { icon: Activity,     label: 'Canlı Feed',         roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[], action: () => go('live-feed')       },
         { icon: RotateCcw,    label: 'Rotasyon',           roles: all,  action: () => go('rotation')        },
         { icon: Package,      label: 'Malzeme Yönetimi',   roles: all,  action: () => go('equipment-page')  },
         { icon: BarChart2,    label: 'Stok Dağılımı',      roles: all,  action: () => go('stock-distribution')   },
@@ -108,7 +108,7 @@ function getSections(
       title: 'YÖNETİM',
       color: '#34d399',
       items: [
-        { icon: MapPin,        label: 'İşletme Genel Yönetim Paneli', roles: mgmt, action: () => go('business-panel')     },
+        { icon: MapPin,        label: 'İşletme Genel Yönetim Paneli', roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[], action: () => go('business-panel')     },
         { icon: Bell,          label: 'Duyurular',       roles: all,  action: () => go('announcements')      },
         { icon: GraduationCap, label: 'Akademi',         roles: all,  action: () => go('academy')            },
         { icon: Cake,          label: 'Doğum Günleri',   roles: mgmt, action: () => go('birthday-calendar')  },

@@ -457,6 +457,23 @@ export default function App() {
         );
       
       case 'business-panel':
+        if (['operasyon', 'personel'].includes(userRole)) {
+          return (
+            <div className="flex items-center justify-center min-h-[60vh] px-8 text-center">
+              <div style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,100,100,0.25)',
+                backdropFilter: 'blur(20px)',
+                borderRadius: 20,
+                padding: 32,
+              }}>
+                <div className="text-4xl mb-4">🔒</div>
+                <p className="text-white font-bold text-lg mb-2">Erişim Kısıtlı</p>
+                <p className="text-white/40 text-sm">Bu sayfa yalnızca yönetici rollerine açıktır.</p>
+              </div>
+            </div>
+          );
+        }
         return (
           <BusinessPanel 
             userName={userName}

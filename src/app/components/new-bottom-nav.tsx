@@ -51,7 +51,7 @@ const ROLE_TABS: Record<string, Tab[]> = {
   'operasyon': [
     { key: 'dashboard',   icon: Home,          color: '#a78bfa' },
     { key: 'quick-sales', icon: Zap,           color: '#fb923c' },
-    { key: 'live-feed',   icon: Activity,      color: '#34d399' },
+    { key: 'aspect-ai',   icon: Sparkles,      color: '#f472b6' },
     { key: 'messaging',   icon: MessageCircle, color: '#60a5fa', badge: true },
     { key: 'rotation',    icon: Users,         color: '#fb923c' },
   ],
