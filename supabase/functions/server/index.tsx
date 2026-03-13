@@ -559,8 +559,15 @@ app.get("/make-server-4da0b637/doviz/canli", async (c) => {
       return c.json({ rates: cached.rates, source: "cache", fetchedAt: cached.fetchedAt });
     }
 
-    // Canlı çek: USD baz alarak TRY, EUR, GBP
-    const res = await fetch("https://open.er-api.com/v6/latest/USD");
+    // Canlı çek: USD baz alarak TRY, EUR, GBP (5 sn timeout)
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    let res: Response;
+    try {
+      res = await fetch("https://open.er-api.com/v6/latest/USD", { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
     if (!res.ok) throw new Error(`Exchange API HTTP ${res.status}`);
     const data = await res.json();
 
@@ -2099,6 +2106,19 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
     const kayitMap: Record<string, any> = {};
     for (const k of bugunKayitlar) kayitMap[k.mekanId] = k;
 
+    // Bugün kaydı olmayan mekanlar için en son kapanış kaydını fallback olarak kullan
+    const kapanisliKayitlar = tumKayitlar.filter((k: any) => k.kapanisYapildi && k.kapanish);
+    for (const mekan of mekanlarList) {
+      if (!kayitMap[mekan.id]) {
+        const mekanKayitlari = kapanisliKayitlar
+          .filter((k: any) => k.mekanId === mekan.id)
+          .sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
+        if (mekanKayitlari.length > 0) {
+          kayitMap[mekan.id] = { ...mekanKayitlari[0], _fallback: true };
+        }
+      }
+    }
+
     const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15","paspartu","ribon"];
     const albumEtiketleri: Record<string, string> = {
       album3:"3 Kare", album5:"5 Kare", album7:"7 Kare",
@@ -2113,10 +2133,16 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
 
     const mekanOzetleri: any[] = mekanlarList.map((mekan: any) => {
       const kayit = kayitMap[mekan.id];
-      const stok = kayit?.kapanish || kayit?.acilis || null;
-      const vardiyaDurumu = kayit
-        ? kayit.kapanisYapildi ? "kapandi" : kayit.acilisYapildi ? "acik" : "yok"
-        : "yok";
+      const isFallback = kayit?._fallback === true;
+      // Fallback durumunda sadece kapanış stokunu kullan (açılışı değil)
+      const stok = isFallback
+        ? (kayit?.kapanish || null)
+        : (kayit?.kapanish || kayit?.acilis || null);
+      const vardiyaDurumu = isFallback
+        ? "onceki_kapanis"
+        : kayit
+          ? kayit.kapanisYapildi ? "kapandi" : kayit.acilisYapildi ? "acik" : "yok"
+          : "yok";
 
       const albumSayilari: Record<string, number> = {};
       for (const alan of albumAlanlari) {
@@ -2147,7 +2173,8 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
         makinaKalan,
         toplamRibonKapasite,
         veriVar: stok !== null,
-        tarih: today,
+        tarih: isFallback ? (kayit?.tarih || today) : today,
+        fallbackTarih: isFallback ? (kayit?.tarih || null) : null,
       };
     });
 
@@ -2234,7 +2261,7 @@ app.post("/make-server-4da0b637/depo/giris", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role;
-    if (!["admin", "yonetici"].includes(role)) return c.json({ error: "Yalnızca admin ve yönetici işlem yapabilir." }, 403);
+    if (!["admin", "yonetici", "ust-mudur", "mudur"].includes(role)) return c.json({ error: "Yalnızca yönetici ve müdür işlem yapabilir." }, 403);
 
     const { alan, miktar, not: notText } = await c.req.json();
     if (!alan || !miktar || miktar <= 0) return c.json({ error: "Alan ve pozitif miktar zorunludur." }, 400);
@@ -2277,7 +2304,7 @@ app.post("/make-server-4da0b637/depo/cikis", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role;
-    if (!["admin", "yonetici"].includes(role)) return c.json({ error: "Yalnızca admin ve yönetici işlem yapabilir." }, 403);
+    if (!["admin", "yonetici", "ust-mudur", "mudur"].includes(role)) return c.json({ error: "Yalnızca yönetici ve müdür işlem yapabilir." }, 403);
 
     const { alan, miktar, hedefMekan, not: notText } = await c.req.json();
     if (!alan || !miktar || miktar <= 0) return c.json({ error: "Alan ve pozitif miktar zorunludur." }, 400);
@@ -2322,7 +2349,7 @@ app.get("/make-server-4da0b637/depo/hareketler", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role;
-    if (!["admin", "yonetici"].includes(role)) return c.json({ error: "Yetki yok." }, 403);
+    if (!["admin", "yonetici", "ust-mudur", "mudur"].includes(role)) return c.json({ error: "Yetki yok." }, 403);
 
     const tumHareketler: any[] = await kv.getByPrefix("depo_hareket_") || [];
     const sirali = tumHareketler.sort((a: any, b: any) =>
@@ -2346,7 +2373,7 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role;
-    if (role !== "yonetici") return c.json({ error: "Yalnızca yönetici stok güncelleyebilir." }, 403);
+    if (!["yonetici", "ust-mudur", "mudur"].includes(role)) return c.json({ error: "Yalnızca yönetici ve müdür stok güncelleyebilir." }, 403);
 
     const { mekanId, albumSayilari, ribonTakim } = await c.req.json();
     if (!mekanId) return c.json({ error: "mekanId zorunludur." }, 400);
@@ -2392,7 +2419,7 @@ app.post("/make-server-4da0b637/stok/mekan/sifirla", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role;
-    if (role !== "yonetici") return c.json({ error: "Yalnızca yönetici stok sıfırlayabilir." }, 403);
+    if (!["yonetici", "ust-mudur", "mudur"].includes(role)) return c.json({ error: "Yalnızca yönetici ve müdür stok sıfırlayabilir." }, 403);
 
     const { mekanId } = await c.req.json();
     if (!mekanId) return c.json({ error: "mekanId zorunludur." }, 400);
@@ -2421,6 +2448,160 @@ app.post("/make-server-4da0b637/stok/mekan/sifirla", async (c) => {
     return c.json({ basarili: true });
   } catch (err) {
     console.log("Stok mekan sıfırla error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// STOK: Mekan / Depo arası aktarım
+// POST /make-server-4da0b637/stok/transfer
+// Body: { kaynakId, hedefId, alan, miktar, not? }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/stok/transfer", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur", "mudur"].includes(role)) {
+      return c.json({ error: "Aktarım için yetkiniz yok." }, 403);
+    }
+
+    const { kaynakId, hedefId, alan, miktar, not: notText } = await c.req.json();
+    if (!kaynakId || !hedefId || !alan || !miktar || miktar <= 0) {
+      return c.json({ error: "Kaynak, hedef, alan ve pozitif miktar zorunludur." }, 400);
+    }
+    if (kaynakId === hedefId) {
+      return c.json({ error: "Kaynak ve hedef aynı olamaz." }, 400);
+    }
+    const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15","ribon"];
+    if (!albumAlanlari.includes(alan)) {
+      return c.json({ error: "Geçersiz alan." }, 400);
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+    const kullaniciAdi = user.user_metadata?.full_name || user.email || "Bilinmeyen";
+
+    // Helper: mekan stok oku (bugün veya fallback)
+    const getMekanStok = async (mekanId: string) => {
+      const kvKey = `stok_gunluk_${mekanId}_${today}`;
+      const kayit: any = await kv.get(kvKey);
+      if (kayit) {
+        const aktifField = kayit.kapanisYapildi ? "kapanish" : "acilis";
+        const aktif = kayit[aktifField] || {};
+        return { kayit, kvKey, aktif, alan_deger: Number(aktif[alan]) || 0, aktifField };
+      }
+      // Fallback: en son kapanış kaydı
+      const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+      const mekanKayitlari = tumKayitlar
+        .filter((k: any) => k.mekanId === mekanId && k.kapanisYapildi && k.kapanish)
+        .sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
+      const fallbackAktif = mekanKayitlari[0]?.kapanish || {};
+      return { kayit: null, kvKey, aktif: fallbackAktif, alan_deger: Number(fallbackAktif[alan]) || 0, aktifField: "acilis" };
+    };
+
+    // Helper: mekan stok yaz
+    const setMekanStok = async (mekanId: string, kvKey: string, kayit: any, aktifField: string, aktif: any, yeniDeger: number) => {
+      const yeniKayit: any = kayit ? { ...kayit } : { mekanId, tarih: today };
+      yeniKayit[aktifField] = { ...aktif, [alan]: yeniDeger };
+      if (aktifField === "acilis") yeniKayit.acilisYapildi = true;
+      yeniKayit.stokTransferGuncelleme = new Date().toISOString();
+      await kv.set(kvKey, yeniKayit);
+    };
+
+    // Mekan isimlerini al (log için)
+    let kaynakAdi = "Depo", hedefAdi = "Depo";
+    let kaynakEmoji = "🏪", hedefEmoji = "🏪";
+    if (kaynakId !== "depo") {
+      const m: any = await kv.get(`mekan_${kaynakId}`);
+      if (m) { kaynakAdi = m.name; kaynakEmoji = m.emoji || "📍"; }
+    }
+    if (hedefId !== "depo") {
+      const m: any = await kv.get(`mekan_${hedefId}`);
+      if (m) { hedefAdi = m.name; hedefEmoji = m.emoji || "📍"; }
+    }
+
+    let eskiKaynakDeger = 0, yeniKaynakDeger = 0;
+    let eskiHedefDeger = 0, yeniHedefDeger = 0;
+
+    // Kaynak: stok azalt
+    if (kaynakId === "depo") {
+      const depoStok: any = await kv.get("depo_stok") || {};
+      eskiKaynakDeger = Number(depoStok[alan]) || 0;
+      if (eskiKaynakDeger < miktar) {
+        return c.json({ error: `Depo stoğu yetersiz. Mevcut: ${eskiKaynakDeger}, İstenen: ${miktar}` }, 400);
+      }
+      yeniKaynakDeger = eskiKaynakDeger - miktar;
+      depoStok[alan] = yeniKaynakDeger;
+      depoStok.guncellenmeTarihi = new Date().toISOString();
+      await kv.set("depo_stok", depoStok);
+    } else {
+      const { kayit, kvKey, aktif, alan_deger, aktifField } = await getMekanStok(kaynakId);
+      eskiKaynakDeger = alan_deger;
+      if (eskiKaynakDeger < miktar) {
+        return c.json({ error: `${kaynakAdi} stoğu yetersiz. Mevcut: ${eskiKaynakDeger}, İstenen: ${miktar}` }, 400);
+      }
+      yeniKaynakDeger = eskiKaynakDeger - miktar;
+      await setMekanStok(kaynakId, kvKey, kayit, aktifField, aktif, yeniKaynakDeger);
+    }
+
+    // Hedef: stok artır
+    if (hedefId === "depo") {
+      const depoStok: any = await kv.get("depo_stok") || {};
+      eskiHedefDeger = Number(depoStok[alan]) || 0;
+      yeniHedefDeger = eskiHedefDeger + miktar;
+      depoStok[alan] = yeniHedefDeger;
+      depoStok.guncellenmeTarihi = new Date().toISOString();
+      await kv.set("depo_stok", depoStok);
+    } else {
+      const { kayit, kvKey, aktif, alan_deger, aktifField } = await getMekanStok(hedefId);
+      eskiHedefDeger = alan_deger;
+      yeniHedefDeger = eskiHedefDeger + miktar;
+      await setMekanStok(hedefId, kvKey, kayit, aktifField, aktif, yeniHedefDeger);
+    }
+
+    // Transfer logu kaydet
+    const transferId = `stok_transfer_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const transferLog = {
+      id: transferId,
+      kaynakId, kaynakAdi, kaynakEmoji,
+      hedefId, hedefAdi, hedefEmoji,
+      alan, miktar,
+      not: notText || "",
+      tarih: new Date().toISOString(),
+      kullaniciId: user.id,
+      kullaniciAdi,
+      eskiKaynakDeger, yeniKaynakDeger,
+      eskiHedefDeger, yeniHedefDeger,
+    };
+    await kv.set(transferId, transferLog);
+
+    console.log(`Stok transfer: ${alan} x${miktar} | ${kaynakEmoji}${kaynakAdi} → ${hedefEmoji}${hedefAdi} | ${kullaniciAdi}`);
+    return c.json({ basarili: true, transfer: transferLog });
+  } catch (err) {
+    console.log("Stok transfer error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// STOK: Transfer geçmişi (son 50)
+// GET /make-server-4da0b637/stok/transferler
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/stok/transferler", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur", "mudur"].includes(role)) {
+      return c.json({ error: "Yetki yok." }, 403);
+    }
+    const tumTransferler: any[] = await kv.getByPrefix("stok_transfer_") || [];
+    const sirali = tumTransferler.sort((a: any, b: any) =>
+      new Date(b.tarih).getTime() - new Date(a.tarih).getTime()
+    );
+    return c.json({ transferler: sirali.slice(0, 50) });
+  } catch (err) {
+    console.log("Stok transferler error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { X, MapPin, Clock, Users, Check, AlertCircle, Zap, Sparkles, Loader2 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, MapPin, Clock, Users, Check, AlertCircle, Zap, Sparkles, Loader2, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   saveTask,
@@ -23,6 +23,7 @@ interface RotationTaskModalProps {
   dailyOnLeave: Record<string, string[]>;
   preselectedLocation?: string;
   accessToken: string;
+  existingTasks?: Task[]; // çift atama kontrolü için
   onClose: () => void;
   onTaskSaved?: (task: Task) => void; // optimistik güncelleme için
   onRemoveDailyOnLeave?: (personnelIds: string[]) => void; // günlük izinden çıkar
@@ -40,6 +41,7 @@ export function RotationTaskModal({
   dailyOnLeave,
   preselectedLocation = '',
   accessToken,
+  existingTasks,
   onClose,
   onTaskSaved,
   onRemoveDailyOnLeave,
@@ -52,6 +54,7 @@ export function RotationTaskModal({
   const [selectedPersonnel, setSelectedPersonnel] = useState<string[]>([]);
   const [notes, setNotes] = useState<string>('');
   const [showWarning, setShowWarning] = useState<string>('');
+  const [doubleAssignWarning, setDoubleAssignWarning] = useState<string>(''); // amber, kaydetmeyi engellemez
   const [taskType, setTaskType] = useState<'extra' | 'special'>('special');
   const [isSaving, setIsSaving] = useState(false);
   const [showDailyLeaveConfirm, setShowDailyLeaveConfirm] = useState<{
@@ -60,6 +63,8 @@ export function RotationTaskModal({
     personnelName: string;
   }>({ show: false, personnelId: '', personnelName: '' });
   const [confirmedDailyLeaveIds, setConfirmedDailyLeaveIds] = useState<string[]>([]);
+  const [showLegend, setShowLegend] = useState(false);
+  const legendRef = useRef<HTMLDivElement>(null);
 
   // ==========================================
   // INITIALIZATION
@@ -115,6 +120,7 @@ export function RotationTaskModal({
       setTaskType('special');
     }
     setShowWarning('');
+    setDoubleAssignWarning('');
     setIsSaving(false);
     setConfirmedDailyLeaveIds([]);
   }, [editingTask, modalType, isOpen, preselectedLocation]);
@@ -151,6 +157,15 @@ export function RotationTaskModal({
     return dailyOnLeaveList.includes(staff.id);
   };
 
+  // Çakışan görevleri döndür (personel zaten başka göreve atanmış mı?)
+  const getConflictingTasks = (staffId: string): Task[] => {
+    if (!existingTasks) return [];
+    return existingTasks.filter(task => {
+      if (editingTask && task.id === editingTask.id) return false;
+      return task.date === selectedDate && task.personnel.some(p => p.id === staffId);
+    });
+  };
+
   // ==========================================
   // HANDLERS
   // ==========================================
@@ -168,8 +183,43 @@ export function RotationTaskModal({
       return;
     }
 
+    const isAlreadySelected = selectedPersonnel.includes(personnelId);
+
+    // Çift atama kontrolü: ekleme yaparken mevcut task'lara bak
+    if (!isAlreadySelected && existingTasks) {
+      const conflictTask = existingTasks.find(task => {
+        if (editingTask && task.id === editingTask.id) return false; // kendi task'ı hariç
+        return (
+          task.date === selectedDate &&
+          task.personnel.some(p => p.id === personnelId)
+        );
+      });
+      if (conflictTask) {
+        setDoubleAssignWarning(
+          `⚠️ ${staff.name} bugün zaten "${conflictTask.location}" görevinde — yine de eklenebilir`
+        );
+      } else {
+        // Başka çakışma yoksa uyarıyı temizle
+        setDoubleAssignWarning('');
+      }
+    }
+
+    if (isAlreadySelected) {
+      // Seçimi kaldırırken, kalan seçimlerde hâlâ çakışan var mı kontrol et
+      const remaining = selectedPersonnel.filter(id => id !== personnelId);
+      if (existingTasks && remaining.length > 0) {
+        const stillConflict = existingTasks.some(task => {
+          if (editingTask && task.id === editingTask.id) return false;
+          return task.date === selectedDate && task.personnel.some(p => remaining.includes(p.id));
+        });
+        if (!stillConflict) setDoubleAssignWarning('');
+      } else {
+        setDoubleAssignWarning('');
+      }
+    }
+
     setSelectedPersonnel(prev =>
-      prev.includes(personnelId)
+      isAlreadySelected
         ? prev.filter(id => id !== personnelId)
         : [...prev, personnelId]
     );
@@ -188,6 +238,7 @@ export function RotationTaskModal({
 
   const handleSave = async () => {
     setShowWarning('');
+    setDoubleAssignWarning('');
 
     // ── Validation ──────────────────────────────────────────────
     if (selectedPersonnel.length === 0) {
@@ -210,6 +261,9 @@ export function RotationTaskModal({
       setSelectedPersonnel(prev => prev.filter(id => !onLeaveInSelection.includes(id)));
       return;
     }
+
+    // ── Çift görev kontrolü ─────────────────────────────────────
+    // (Sadece anlık uyarı, kaydetmeyi engellemez — handleTogglePersonnel'da gösterilir)
 
     // ── Prepare data ────────────────────────────────────────────
     let personnel: Personnel[];
@@ -330,13 +384,65 @@ export function RotationTaskModal({
             <h2 className="text-2xl font-bold text-white">
               {editingTask ? '✏️ Görevi Düzenle' : '➕ Yeni Görev Ekle'}
             </h2>
-            <button
-              onClick={onClose}
-              disabled={isSaving}
-              className="text-gray-400 hover:text-white transition-colors disabled:opacity-50"
-            >
-              <X className="w-6 h-6" />
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Legend Info Button */}
+              <div className="relative" ref={legendRef}>
+                <button
+                  onMouseEnter={() => setShowLegend(true)}
+                  onMouseLeave={() => setShowLegend(false)}
+                  onClick={() => setShowLegend(v => !v)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all"
+                  title="Renk Açıklamaları"
+                >
+                  <Info className="w-4 h-4" />
+                </button>
+                <AnimatePresence>
+                  {showLegend && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 top-10 z-50 w-72 bg-[rgba(20,14,40,0.97)] border border-white/20 rounded-xl shadow-2xl p-3 backdrop-blur-xl"
+                      onMouseEnter={() => setShowLegend(true)}
+                      onMouseLeave={() => setShowLegend(false)}
+                    >
+                      <p className="text-xs font-bold text-gray-300 mb-2.5 uppercase tracking-wider">Renk Açıklamaları</p>
+                      <div className="space-y-2">
+                        <div className="flex items-start gap-2.5">
+                          <span className="mt-0.5 w-3 h-3 rounded-full bg-red-500 flex-shrink-0 ring-1 ring-red-400/50" />
+                          <div>
+                            <p className="text-sm text-white font-semibold leading-tight">Onaylı / Sabit İzin</p>
+                            <p className="text-xs text-gray-400 mt-0.5">Seçilemez, göreve atanamaz</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2.5">
+                          <span className="mt-0.5 w-3 h-3 rounded-full bg-amber-400 flex-shrink-0 ring-1 ring-amber-400/50" />
+                          <div>
+                            <p className="text-sm text-white font-semibold leading-tight">Günlük İzin</p>
+                            <p className="text-xs text-gray-400 mt-0.5">Seçilirse izni geri alınır, onay gerekir</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2.5">
+                          <span className="mt-0.5 w-3 h-3 rounded-full bg-orange-500 flex-shrink-0 ring-1 ring-orange-500/50" />
+                          <div>
+                            <p className="text-sm text-white font-semibold leading-tight">Çift Atama</p>
+                            <p className="text-xs text-gray-400 mt-0.5">Başka göreve zaten atanmış — yine de eklenebilir</p>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+              <button
+                onClick={onClose}
+                disabled={isSaving}
+                className="text-gray-400 hover:text-white transition-colors disabled:opacity-50"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
           </div>
 
           {/* Warning Message */}
@@ -350,6 +456,21 @@ export function RotationTaskModal({
               >
                 <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
                 <span className="text-sm font-semibold text-red-300">{showWarning}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Double Assign Warning Message */}
+          <AnimatePresence>
+            {doubleAssignWarning && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="mx-4 mt-3 p-2.5 bg-amber-500/20 border-2 border-amber-500/40 rounded-xl flex items-center gap-2"
+              >
+                <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0" />
+                <span className="text-sm font-semibold text-amber-300">{doubleAssignWarning}</span>
               </motion.div>
             )}
           </AnimatePresence>
@@ -402,6 +523,8 @@ export function RotationTaskModal({
                     const isSelected = selectedPersonnel.includes(staff.id);
                     const isFixedOnLeave = isPersonnelFixedOnLeave(staff);
                     const isDailyOnLeave = isPersonnelDailyOnLeave(staff);
+                    const conflictTasks = getConflictingTasks(staff.id);
+                    const hasConflict = conflictTasks.length > 0;
                     return (
                       <button
                         key={staff.id}
@@ -410,20 +533,33 @@ export function RotationTaskModal({
                           handleTogglePersonnel(staff.id, isDailyOnLeave);
                         }}
                         disabled={isFixedOnLeave || isSaving}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all ${
+                        className={`flex flex-col items-start gap-0.5 px-3 py-2 rounded-xl transition-all ${
                           isFixedOnLeave
                             ? 'bg-red-500/40 text-gray-300 cursor-not-allowed opacity-70'
                             : isDailyOnLeave
                               ? isSelected
                                 ? 'bg-amber-500 text-white active:scale-95'
                                 : 'bg-amber-500/40 text-gray-200 hover:bg-amber-500/60 active:scale-95'
-                              : isSelected
-                                ? 'bg-[#9dd9ea] text-[#2d3748] font-semibold active:scale-95'
-                                : 'bg-white/10 text-gray-300 hover:bg-white/20 active:scale-95'
+                              : hasConflict
+                                ? isSelected
+                                  ? 'bg-orange-500/70 text-white ring-1 ring-orange-400/60 active:scale-95'
+                                  : 'bg-orange-500/30 text-gray-200 hover:bg-orange-500/45 active:scale-95'
+                                : isSelected
+                                  ? 'bg-[#9dd9ea] text-[#2d3748] font-semibold active:scale-95'
+                                  : 'bg-white/10 text-gray-300 hover:bg-white/20 active:scale-95'
                         }`}
                       >
-                        {isSelected && !isFixedOnLeave && <Check className="w-4 h-4 flex-shrink-0" />}
-                        <span className="text-sm truncate flex-1 text-left">{staff.name}</span>
+                        <div className="flex items-center gap-2 w-full">
+                          {isSelected && !isFixedOnLeave && <Check className="w-4 h-4 flex-shrink-0" />}
+                          <span className="text-sm truncate flex-1 text-left">{staff.name}</span>
+                        </div>
+                        {hasConflict && (
+                          <div className="w-full pl-0">
+                            <p className="text-[10px] leading-tight text-orange-200/90 truncate">
+                              {conflictTasks.map(t => t.location).join(', ')}
+                            </p>
+                          </div>
+                        )}
                       </button>
                     );
                   })}

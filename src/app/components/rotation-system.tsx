@@ -188,6 +188,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
   const getOnLeavePersonnel = (): StaffMember[] => {
     const onLeaveIds = dailyOnLeave[selectedDate] || [];
     return staffMembers.filter(s => {
+      if (s.role === 'yonetici') return false; // yönetici izin listesinde görünmez
       // 1. Onaylı izin (status kalıcı veya rotation_leave_ onaylı — ikisi aynı kavram)
       if (s.status === 'on_leave') return true;
       const hasApprovedLeave = leaveRequests.some(
@@ -216,6 +217,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
     const onLeaveIds = new Set(onLeavePersonnel.map(p => p.id));
 
     return staffMembers.filter(s => 
+      s.role !== 'yonetici' &&
       s.status === 'active' && 
       !taskPersonnelIds.has(s.id) && 
       !onLeaveIds.has(s.id)
@@ -2261,12 +2263,13 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
           editingTask={editingTask}
           selectedDate={selectedDate}
           locations={locations}
-          staffMembers={staffMembers}
+          staffMembers={staffMembers.filter(s => s.role !== 'yonetici')}
           onLeavePersonnel={onLeavePersonnel}
           leaveRequests={leaveRequests}
           dailyOnLeave={dailyOnLeave}
           preselectedLocation={preselectedLocation}
           accessToken={accessToken}
+          existingTasks={tasks}
           onClose={handleCloseTaskModal}
           onTaskSaved={handleTaskSaved}
           onRemoveDailyOnLeave={handleTaskConfirmedDailyLeave}

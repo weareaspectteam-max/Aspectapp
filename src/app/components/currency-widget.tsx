@@ -24,7 +24,14 @@ export function CurrencyWidget() {
     if (!silent) setLoading(true);
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${SERVER_URL}/doviz/canli`, { headers });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+      let res: Response;
+      try {
+        res = await fetch(`${SERVER_URL}/doviz/canli`, { headers, signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
       if (res.ok) {
         const data = await res.json();
         if (data.rates) {
