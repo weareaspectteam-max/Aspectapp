@@ -1397,9 +1397,10 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
 // Yönetici rolleri için her zaman true döner.
 // ──────────────────────────────────────────
 const checkRotasyonYetkisi = async (userId: string, role: string, mekanId: string, tarih: string): Promise<boolean> => {
-  const yoneticiRoller = ["yonetici", "ust-mudur", "mudur", "operasyon", "idari"];
-  if (yoneticiRoller.includes(role)) return true;
-  if (role !== "personel") return false;
+  // Sadece bu üç rol rotasyonu bypass eder (her mekana girebilir)
+  const serbestRoller = ["yonetici", "ust-mudur", "mudur"];
+  if (serbestRoller.includes(role)) return true;
+  // Diğer tüm roller (personel, operasyon, idari, vb.) rotasyona tabi
 
   // Mekana ait lokasyon adını al
   const mekan: any = await kv.get(`mekan_${mekanId}`);

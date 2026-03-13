@@ -50,7 +50,11 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
   const [ozelTasks, setOzelTasks] = useState<Task[]>([]);
 
   // Rol bazlı davranış
-  const isPersonel = userRole === 'personel';
+  // Rotasyona TAMAMEN BAĞLI roller: personel, operasyon, idari ve diğerleri
+  // Rotasyonu BYPASS eden roller (her mekana girebilir): yonetici, ust-mudur, mudur
+  const serbest = ['yonetici', 'ust-mudur', 'mudur'].includes(userRole || '');
+  const isPersonel = userRole === 'personel'; // tam kilit ekranı sadece personel için
+  const rotasyonZorunlu = !serbest; // operasyon, idari, personel vb. hepsi rotasyona tabi
 
   // Load locations from Mekan Yönetimi
   useEffect(() => {
@@ -152,19 +156,24 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
   }, []);
 
   const handleProjectSelect = (project: Project) => {
-    // Personel için: rotasyon yüklendi ve bu mekan listesinde yoksa ENGELLE
-    // myRotationVenues.size > 0 değil, rotasyonDurumu === 'tamam' kullan.
-    // Böylece sadece ekstra/özel görevi olan personel de kilitlenir.
-    const rotasyonluPersonel = isPersonel && rotasyonDurumu === 'tamam';
+    // Serbest roller (yonetici, ust-mudur, mudur) her mekana girebilir.
+    if (serbest) {
+      onProjectSelect(project);
+      setShowSelector(false);
+      return;
+    }
+
+    // Rotasyon zorunlu roller (personel, operasyon, idari vb.):
+    // Rotasyon tanımlanmış VE bu mekan listesinde yoksa ENGELLE.
+    // 'atanmamis' = rotasyon var ama bu kullanıcı hiçbir göreve dahil değil → tüm mekanlar kilitli
+    const rotasyonAktif = rotasyonDurumu === 'tamam' || rotasyonDurumu === 'atanmamis';
     const mekanimDegil = !myRotationVenues.has(project.name);
 
-    if (rotasyonluPersonel && mekanimDegil) {
-      // Personel rotasyon dışı → sadece uyarı göster, geçişe izin verme
+    if (rotasyonAktif && mekanimDegil) {
       setPendingProject(project);
       return;
     }
 
-    // Yöneticiler ve kendi mekanında olan personel geçebilir
     onProjectSelect(project);
     setShowSelector(false);
   };
@@ -286,8 +295,8 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
         <p className="text-sm text-gray-400">Hangi projede çalışıyorsunuz?</p>
       </div>
 
-      {/* Personel: rotasyon yükleniyorsa beklet */}
-      {isPersonel && rotasyonYukleniyor ? (
+      {/* Rotasyon zorunlu roller: yükleniyorsa beklet */}
+      {rotasyonZorunlu && rotasyonYukleniyor ? (
         <div className="flex flex-col items-center justify-center py-16 gap-4">
           <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
           <p className="text-gray-400 text-sm">Rotasyon bilgisi kontrol ediliyor...</p>
@@ -355,10 +364,11 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
               {/* Regular mekan kartları */}
               {projects.map((project) => {
                 const isMyVenue = myRotationVenues.has(project.name);
-                // rotasyonDurumu === 'tamam' kullan: sadece venue.size'a bakma,
-                // ekstra/özel görevi olan personel de kilitlenmeli
-                const hasRotationData = rotasyonDurumu === 'tamam';
-                const locked = isPersonel && hasRotationData && !isMyVenue;
+                // Rotasyon var ('tamam' veya 'atanmamis') ise kilit aktif
+                // 'atanmamis' = rotasyon oluşturulmuş ama kullanıcı atanmamış → tüm mekanlar kilitli
+                const hasRotationData = rotasyonDurumu === 'tamam' || rotasyonDurumu === 'atanmamis';
+                // Serbest roller (yonetici,ust-mudur,mudur) hiçbir zaman kilitlenmez
+                const locked = rotasyonZorunlu && hasRotationData && !isMyVenue;
                 return (
                   <button
                     key={project.id}
@@ -377,11 +387,12 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                       </div>
                     )}
 
-                    {hasRotationData && (
+                    {/* Badge: sadece rotasyon zorunlu roller için göster */}
+                    {rotasyonZorunlu && hasRotationData && (
                       <div className={`absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold ${
                         isMyVenue
                           ? 'bg-green-500/30 border border-green-400/50 text-green-100'
-                          : 'bg-black/30 border border-white/20 text-white/70'
+                          : 'bg-black/40 border border-red-500/30 text-red-300'
                       }`}>
                         {isMyVenue ? (
                           <>
