@@ -39,6 +39,7 @@ import { IndirimIstatistik } from './components/indirim-istatistik';
 import { BirthdayCalendar } from './components/birthday-calendar';
 import { BirthdayNotifications } from './components/birthday-notifications';
 import { Announcements } from './components/announcements';
+import { VardiyaRaporlari } from './components/vardiya-raporlari';
 import { OperationsDemo } from './components/operations-demo';
 import { ShiftSetup } from './components/shift-setup';
 import { ShiftChoice } from './components/shift-choice';
@@ -745,6 +746,16 @@ export default function App() {
       case 'announcements':
         return (
           <Announcements 
+            userName={userName}
+            userRole={userRole}
+            onLogout={handleLogout}
+            onNavigate={handleNavigate}
+          />
+        );
+      
+      case 'vardiya-raporlari':
+        return (
+          <VardiyaRaporlari
             userName={userName}
             userRole={userRole}
             onLogout={handleLogout}

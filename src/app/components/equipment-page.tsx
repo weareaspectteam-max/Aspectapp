@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ArrowLeft, Search, Plus, Edit2, Trash2, User, X,
   Save, Loader2, WifiOff, RefreshCw, AlertCircle,
-  Camera, ImageOff, Maximize2,
+  Camera, ImageOff, Maximize2, Film,
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { UserRole } from './login';
@@ -38,6 +38,8 @@ interface Equipment {
   imageUrl?: string;    // Sunucudan gelen imzalı URL (geçici)
   olusturulmaTarihi?: string;
   guncellemeTarihi?: string;
+  // Yazıcıya özgü alanlar
+  ribonMevcut?: number;        // şu an içinde kaç ribon takımı var (manuel giriş)
 }
 
 interface Mekan {
@@ -89,6 +91,7 @@ const BOŞ_FORM = {
   locationText: '',
   flashId:      '',
   notes:        '',
+  ribonMevcut:  '',
 };
 
 // ─── Yardımcılar ──────────────────────────────────────────────────────────────
@@ -318,6 +321,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
       locationText: (!eq.locationType || eq.locationType === 'diger') ? eq.location : '',
       flashId:      eq.flashId || '',
       notes:        eq.notes || '',
+      ribonMevcut:  eq.ribonMevcut !== undefined ? String(eq.ribonMevcut) : '',
     });
     setGecmisForm(eq.gecmis || []);
     setGecmisAcik(false);
@@ -420,6 +424,9 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
         notes:        form.notes || undefined,
         gecmis:       gecmisForm,
         imagePath,
+        // Yazıcıya özgü alan
+        ribonMevcut: form.category === 'printer' && form.ribonMevcut !== ''
+          ? Number(form.ribonMevcut) : undefined,
         ...(duzenleHedef ? { id: duzenleHedef.id } : {}),
       };
 
@@ -804,6 +811,25 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                         );
                       })()}
 
+                      {/* Yazıcı: Ribon & Sayaç bilgisi */}
+                      {eq.category === 'printer' && (
+                        <div className="rounded-xl bg-[#d4b5f7]/8 border border-[#d4b5f7]/20 px-3 py-2.5 mb-3">
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <Film className="w-3 h-3 text-[#d4b5f7]" />
+                            <p className="text-[10px] font-bold text-[#d4b5f7]/70 uppercase tracking-wider">Ribon & Sayaç</p>
+                          </div>
+                          <div className="grid grid-cols-1 gap-2">
+                            <div className="bg-black/30 rounded-lg px-2.5 py-2 text-center">
+                              <p className="text-[9px] text-white/30 mb-0.5">İçindeki Ribon</p>
+                              <p className="text-base font-black text-[#d4b5f7]">
+                                {eq.ribonMevcut !== undefined ? eq.ribonMevcut : '—'}
+                              </p>
+                              <p className="text-[8px] text-white/20">adet</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Notlar */}
                       {eq.notes && (
                         <div className="rounded-xl bg-amber-500/10 border border-amber-500/25 px-3 py-2 mb-3">
@@ -1120,6 +1146,31 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                   {form.flashId && form.locationType !== 'diger' && (
                     <p className="text-[10px] text-amber-300/70 mt-2 px-1">⚡ Bu flash kaydedilince kamerayla aynı konuma taşınır.</p>
                   )}
+                </div>
+              )}
+
+              {/* Yazıcıya özgü: İçindeki Ribon */}
+              {form.category === 'printer' && (
+                <div className="rounded-2xl border border-[#d4b5f7]/25 bg-[#d4b5f7]/8 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Film className="w-4 h-4 text-[#d4b5f7]" />
+                    <label className="text-[11px] font-semibold text-[#d4b5f7]/80 uppercase tracking-wider">
+                      Şu An İçindeki Ribon
+                    </label>
+                  </div>
+                  <p className="text-[10px] text-white/30 -mt-1">
+                    Yazıcının kasasındaki kullanılmaya hazır ribon sayısı. Kapanış sırasında otomatik güncellenir, buradan elle de girilebilir.
+                  </p>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    value={form.ribonMevcut}
+                    onChange={e => setForm(f => ({ ...f, ribonMevcut: e.target.value }))}
+                    placeholder="0"
+                    className="w-full h-11 rounded-xl bg-[#d4b5f7]/10 border border-[#d4b5f7]/25 text-white text-center text-lg font-bold px-3 outline-none focus:border-[#d4b5f7]/60 placeholder-white/20"
+                  />
+
                 </div>
               )}
 

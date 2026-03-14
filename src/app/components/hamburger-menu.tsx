@@ -9,7 +9,7 @@ import {
   X, Home, Zap, Activity, MapPin, RotateCcw,
   Trophy, Sparkles, MessageCircle, Bell, GraduationCap,
   Cake, User, Settings, LogOut, ChevronRight, Package,
-  BarChart2, ClipboardList, CalendarDays,
+  BarChart2, ClipboardList, CalendarDays, FileBarChart,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
@@ -91,6 +91,7 @@ function getSections(
         { icon: MessageCircle, label: 'Mesajlar',          roles: all,  action: () => go('messaging')   },
         { icon: Trophy,        label: 'Liderlik Tablosu',  roles: all,  action: () => go('leaderboard') },
         { icon: Sparkles,      label: 'Aspect AI',         roles: all,  action: () => go('aspect-ai')   },
+        { icon: FileBarChart,  label: 'Vardiya Raporları', roles: ['yonetici'] as UserRole[], action: () => go('vardiya-raporlari') },
       ],
     },
     {

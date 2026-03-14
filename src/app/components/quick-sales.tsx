@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Send, Clock, ShoppingCart, X, Plus, Trash2, Tag, XCircle, CheckCircle, ArrowLeft, AlertCircle, Camera, ChevronRight, UserPlus, Package, Printer, Grid3x3, Film, AlertTriangle, TrendingDown, TrendingUp, Maximize2, Minimize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ProjectSelector } from './project-selector';
@@ -121,10 +121,23 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [stokEklemeler, setStokEklemeler] = useState<StokEkleme[]>([]);
   const [showAcilisAnomaliUyari, setShowAcilisAnomaliUyari] = useState(false);
   const [showKapanisAnomaliUyari, setShowKapanisAnomaliUyari] = useState(false);
+  const [yaziciAcilisAnomali, setYaziciAcilisAnomali] = useState<any[]>([]);
   const [showAcilisSifirlaModal, setShowAcilisSifirlaModal] = useState(false);
   const [acilisSifirlaYukleniyor, setAcilisSifirlaYukleniyor] = useState(false);
-  const [printers, setPrinters] = useState([{ id: '1', label: 'Yazıcı 1', startCounter: '' }]);
+  // Ekipman kaydından gelen yazıcılar (mekan bazlı)
+  const [mekanYazicilari, setMekanYazicilari] = useState<any[]>([]);
+  // Aktif yazıcı listesi (ekipmanId bazlı, otomatik yüklenir)
+  const [printers, setPrinters] = useState<Array<{
+    ekipmanId: string;
+    label: string;
+    brand: string;
+    model: string;
+    serialNumber: string;
+    startCounter: string;
+    beklenenStartCounter: number | null;
+  }>>([]);
   const [printerEndCounters, setPrinterEndCounters] = useState<Record<string, string>>({});
+  // ribonMevcut artık ayrı alan değil — endCounter değeri ribonMevcut olarak kullanılır
   const [shiftShelves, setShiftShelves] = useState<Record<string, number>>({
     album3: 0, album5: 0, album7: 0, album9: 0, album11: 0, album13: 0, album15: 0, passepartout: 0
   });
@@ -138,6 +151,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [kapanisAnomali, setKapanisAnomali] = useState<Partial<StokSayim>>({});
   const [kapanisBeklenen, setKapanisBeklenen] = useState<StokSayim | null>(null);
   const [kapanisAnomaliNeden, setKapanisAnomaliNeden] = useState('');
+  const [kapanisYaziciAnomali, setKapanisYaziciAnomali] = useState<{ netSatilan: number; satisToplam: number; fark: number } | null>(null);
   const [printerRibbonChanges, setPrinterRibbonChanges] = useState<Record<string, string>>({});
   const [printerIadePhotos, setPrinterIadePhotos] = useState<Record<string, string>>({});
   const [showClosingCount, setShowClosingCount] = useState(false);
@@ -154,6 +168,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [mekanKapasite, setMekanKapasite] = useState(0);         // pcsPerBox / setsPerBox
   const [mekanPrintType, setMekanPrintType] = useState<'tam' | 'yarim'>('yarim');
   const [mekanCurrency, setMekanCurrency] = useState('TRY');
+  const [mekanPhotoPrice, setMekanPhotoPrice] = useState(200);   // mekan bazlı 1 fotoğraf fiyatı
   // ── Manuel fallback (kapasite alınamadığında kullanıcı girer) ──
   const [availablePapers, setAvailablePapers] = useState<any[]>([]);
   const [manualPaperId, setManualPaperId] = useState<string>('');
@@ -210,6 +225,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
           );
           if (mekan) {
             realMekanId = mekan.id;
+            if (mekan.photoPrice && mekan.photoPrice > 0) setMekanPhotoPrice(mekan.photoPrice);
             setMekanPrintType(mekan.printType === 'tam' ? 'tam' : 'yarim');
             const paperRes = await fetch(`${API_BASE_QS}/maliyetler`, { headers: hdr });
             if (paperRes.ok) {
@@ -259,17 +275,81 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       setDunKapanis(stokData.dunKapanis);
       setStokEklemeler(stokData.eklemeler || []);
 
+      // ── Yazıcı listesi: ekipman kaydından otomatik yükle ──
+      const yaziciHelper = (yazicilar: any[]) =>
+        (yazicilar || []).map((y: any) => ({
+          ekipmanId: y.ekipmanId,
+          label: `${y.brand || ''} ${y.model || ''}`.trim() || y.ekipmanId,
+          brand: y.brand || '',
+          model: y.model || '',
+          serialNumber: y.serialNumber || '',
+          startCounter: '',
+          beklenenStartCounter: (y.ribonMevcut !== null && y.ribonMevcut !== undefined)
+            ? Number(y.ribonMevcut)
+            : null,
+        }));
+
+      if (stokData.mekanYazicilari) {
+        setMekanYazicilari(stokData.mekanYazicilari);
+      }
+
       if (stokData.bugun?.acilisYapildi) {
-        setAcilisSayim(stokData.bugun.acilis as StokSayim);
+        setAcilisSayim({ ...bosStok(), ...(stokData.bugun.acilis as Partial<StokSayim>) });
         setShiftStartDone(true);
+        // Açılış yapılmışsa acilisYazicilar'dan yükle (ekipmanId bağlantılı)
+        const acilisYazicilar = (stokData.bugun as any)?.acilisYazicilar;
+        if (acilisYazicilar && acilisYazicilar.length > 0) {
+          setPrinters(acilisYazicilar.map((y: any) => {
+            // beklenenStartCounter için ekipman kaydını bul
+            const ekipmanRec = (stokData.mekanYazicilari || []).find((m: any) => m.ekipmanId === (y.ekipmanId || y.id));
+            return {
+              ekipmanId: y.ekipmanId || y.id || '',
+              label: y.label || `${y.brand || ''} ${y.model || ''}`.trim() || y.ekipmanId,
+              brand: y.brand || '',
+              model: y.model || '',
+              serialNumber: y.serialNumber || '',
+              startCounter: String(y.startCounter || ''),
+              beklenenStartCounter: ekipmanRec?.ribonMevcut !== undefined && ekipmanRec?.ribonMevcut !== null
+                ? Number(ekipmanRec.ribonMevcut)
+                : null,
+            };
+          }));
+        } else if (stokData.mekanYazicilari) {
+          // Eski kayıt — mekan yazıcılarını kullan
+          setPrinters(yaziciHelper(stokData.mekanYazicilari));
+        }
         if (stokData.bugun.kapanisYapildi) {
-          setKapanisSayim(stokData.bugun.kapanish as StokSayim);
+          setKapanisSayim({ ...bosStok(), ...(stokData.bugun.kapanish as Partial<StokSayim>) });
           setKapanisAnomali(stokData.bugun.kapanisAnomali || {});
           setKapanisBeklenen(stokData.bugun.kapanisBeklenen || null);
+          setKapanisYaziciAnomali((stokData.bugun as any).kapanisYaziciAnomali || null);
           setShiftEndDone(true);
+          // Kapanış printerData'yı geri yükle (bitiş sayaçları ve ribonMevcut)
+          const kapanisPrinterData = (stokData.bugun as any)?.printerData;
+          if (kapanisPrinterData && Array.isArray(kapanisPrinterData)) {
+            const endCounters: Record<string, string> = {};
+            const ribonChanges: Record<string, string> = {};
+            const iadePhotos: Record<string, string> = {};
+            for (const pr of kapanisPrinterData) {
+              const eid = pr.ekipmanId || pr.id;
+              if (!eid) continue;
+              if (pr.endCounter !== undefined) endCounters[eid] = String(pr.endCounter);
+              if (pr.ribonDegisim !== undefined) ribonChanges[eid] = String(pr.ribonDegisim);
+              if (pr.iadeFotograf !== undefined) iadePhotos[eid] = String(pr.iadeFotograf);
+            }
+            setPrinterEndCounters(endCounters);
+            setPrinterRibbonChanges(ribonChanges);
+            setPrinterIadePhotos(iadePhotos);
+          }
         }
-      } else if (stokData.dunKapanis) {
-        setAcilisSayim({ ...stokData.dunKapanis });
+      } else {
+        // Açılış yapılmamış — mekan yazıcılarından otomatik doldur (son endCounter ile)
+        if (stokData.mekanYazicilari) {
+          setPrinters(yaziciHelper(stokData.mekanYazicilari));
+        }
+        if (stokData.dunKapanis) {
+          setAcilisSayim({ ...bosStok(), ...stokData.dunKapanis });
+        }
       }
       setStokYukleniyor(false);
 
@@ -282,14 +362,14 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   }, [selectedProject]);
 
   const products = [
-    { name: "1 Fotoğraf", price: 200, color: 'from-[#9dd9ea] to-[#7ec8dd]', icon: '📸' },
-    { name: "3'lü", price: 600, color: 'from-[#b8d4f1] to-[#9cc0e8]', icon: '🎨' },
-    { name: "5'li", price: 1000, color: 'from-[#d4b5f7] to-[#c79ff0]', icon: '🖼️' },
-    { name: "7'li", price: 1400, color: 'from-[#ffb3d9] to-[#ff99cc]', icon: '✨' },
-    { name: "9'lu", price: 1800, color: 'from-[#ffe5b4] to-[#ffd89b]', icon: '🌟' },
-    { name: "11'li", price: 2200, color: 'from-[#a8e6cf] to-[#8dd9b8]', icon: '💎' },
-    { name: "15'li", price: 3000, color: 'from-[#ffd4a3] to-[#ffc78f]', icon: '🎯' },
-    { name: 'Paspartu', price: 200, color: 'from-[#a8e6e1] to-[#8fd9d1]', icon: '🖼️' },
+    { name: "1 Fotoğraf", price: mekanPhotoPrice,      color: 'from-[#9dd9ea] to-[#7ec8dd]', icon: '📸' },
+    { name: "3'lü",       price: mekanPhotoPrice * 3,  color: 'from-[#b8d4f1] to-[#9cc0e8]', icon: '🎨' },
+    { name: "5'li",       price: mekanPhotoPrice * 5,  color: 'from-[#d4b5f7] to-[#c79ff0]', icon: '🖼️' },
+    { name: "7'li",       price: mekanPhotoPrice * 7,  color: 'from-[#ffb3d9] to-[#ff99cc]', icon: '✨' },
+    { name: "9'lu",       price: mekanPhotoPrice * 9,  color: 'from-[#ffe5b4] to-[#ffd89b]', icon: '🌟' },
+    { name: "11'li",      price: mekanPhotoPrice * 11, color: 'from-[#a8e6cf] to-[#8dd9b8]', icon: '💎' },
+    { name: "13'lü",      price: mekanPhotoPrice * 13, color: 'from-[#c5a8f5] to-[#b490ed]', icon: '🏆' },
+    { name: "15'li",      price: mekanPhotoPrice * 15, color: 'from-[#ffd4a3] to-[#ffc78f]', icon: '🎯' },
   ];
 
   const calculateTotal = () => cart.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
@@ -443,20 +523,15 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   // ── Shift Start helpers ──
   const updateShiftStock = (key: string, val: number) => setShiftStock(p => ({ ...p, [key]: Math.max(0, val) }));
   const updateShiftShelves = (key: string, val: number) => setShiftShelves(p => ({ ...p, [key]: Math.max(0, val) }));
-  const addPrinter = () => {
-    if (printers.length >= 5) return;
-    const newId = Date.now().toString();
-    setPrinters(p => [...p, { id: newId, label: `Yazıcı ${p.length + 1}`, startCounter: '' }]);
-  };
-  const removePrinter = (id: string) => {
-    if (printers.length <= 1) return;
-    setPrinters(p => p.filter(pr => pr.id !== id));
-  };
-  const updatePrinterStart = (id: string, val: string) => setPrinters(p => p.map(pr => pr.id === id ? { ...pr, startCounter: val } : pr));
-  const updatePrinterLabel = (id: string, val: string) => setPrinters(p => p.map(pr => pr.id === id ? { ...pr, label: val } : pr));
-  const updatePrinterEnd = (id: string, val: string) => setPrinterEndCounters(p => ({ ...p, [id]: val }));
-  const updatePrinterRibbon = (id: string, val: string) => setPrinterRibbonChanges(p => ({ ...p, [id]: val }));
-  const updatePrinterIade = (id: string, val: string) => setPrinterIadePhotos(p => ({ ...p, [id]: val }));
+  // Yazıcı state fonksiyonları (ekipmanId bazlı — manual ekleme kaldırıldı)
+  const updatePrinterStart = (ekipmanId: string, val: string) =>
+    setPrinters(p => p.map(pr => pr.ekipmanId === ekipmanId ? { ...pr, startCounter: val } : pr));
+  const updatePrinterEnd = (ekipmanId: string, val: string) =>
+    setPrinterEndCounters(p => ({ ...p, [ekipmanId]: val }));
+  const updatePrinterRibbon = (ekipmanId: string, val: string) =>
+    setPrinterRibbonChanges(p => ({ ...p, [ekipmanId]: val }));
+  const updatePrinterIade = (ekipmanId: string, val: string) =>
+    setPrinterIadePhotos(p => ({ ...p, [ekipmanId]: val }));
   const handleTeamPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -484,10 +559,25 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const effectivePrintType = mekanKapasite > 0 ? mekanPrintType : manualPrintType;
   const needsManualInput = mekanKapasite === 0; // mekan'dan veri alınamadı
 
+  // ── Satışlardan albüm düşümü — backend stok/kapanis ile tutarlı ──
+  const kapanisSatisAlbumDusum = useMemo(() => {
+    const result: Record<string, number> = {};
+    for (const satis of recentSales) {
+      for (const item of (satis.items || [])) {
+        const match = String(item.product || '').match(/^(\d+)/);
+        if (match) {
+          const alan = `album${match[1]}`;
+          result[alan] = (result[alan] || 0) + (Number(item.quantity) || 0);
+        }
+      }
+    }
+    return result;
+  }, [recentSales]);
+
   const kapanisAnomaliDetect = (): Record<string, number> => {
     if (!stokGunluk?.acilis) return {};
     const toplamRibonDegisim = printers.reduce(
-      (sum, pr) => sum + (Number(printerRibbonChanges[pr.id] || 0)), 0
+      (sum, pr) => sum + (Number(printerRibbonChanges[pr.ekipmanId] || 0)), 0
     );
     const result: Record<string, number> = {};
     (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).forEach(alan => {
@@ -495,7 +585,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       for (const ek of stokEklemeler) {
         beklenen += (ek.miktar as Record<string, number>)[alan] || 0;
       }
-      // Ribon: değiştirilen takım adedi stoktan düşer
+      // Satışlardan albüm düşümü (backend ile tutarlı: album3..album15 etkilenir)
+      beklenen -= kapanisSatisAlbumDusum[alan] || 0;
+      // Ribon: değiştirilen takım adedi stoktan düşer (10 - 1 = 9)
       if (alan === 'ribon') beklenen -= toplamRibonDegisim;
       beklenen = Math.max(0, beklenen);
       const fark = (kapanisSayim[alan] ?? 0) - beklenen;
@@ -555,12 +647,25 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         setKapanisAnomali({});
         setKapanisBeklenen(null);
         setKapanisAnomaliNeden('');
+        setKapanisYaziciAnomali(null);
         setTeamPhotoTaken(false);
         setTeamPhotoPreview(null);
-        setPrinters([{ id: '1', label: 'Yazıcı 1', startCounter: '' }]);
+        // Yazıcıları ekipman listesinden sıfırla — alan boş, beklenen ayrıca gösterilir
+        setPrinters(mekanYazicilari.map((y: any) => ({
+          ekipmanId: y.ekipmanId,
+          label: `${y.brand || ''} ${y.model || ''}`.trim() || y.ekipmanId,
+          brand: y.brand || '',
+          model: y.model || '',
+          serialNumber: y.serialNumber || '',
+          startCounter: '',
+          beklenenStartCounter: (y.ribonMevcut !== null && y.ribonMevcut !== undefined)
+            ? Number(y.ribonMevcut)
+            : null,
+        })));
         setPrinterEndCounters({});
         setPrinterRibbonChanges({});
         setPrinterIadePhotos({});
+        setYaziciAcilisAnomali([]);
         setReyonAcik(false);
         setReyonKapanisSayim(bosStok());
         setActiveMode('shift-start');
@@ -579,11 +684,26 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     setStokKaydediliyor(true);
     const tarih = bugunTarih();
     const mekanId = resolvedMekanId || selectedProject.id;
-    const result = await postAcilis(mekanId, tarih, acilisSayim, acilisNot);
+    // Yazıcı açılış verilerini topla (ekipmanId bağlantılı)
+    const acilisYazicilar = printers
+      .filter(pr => pr.ekipmanId)
+      .map(pr => ({
+        ekipmanId: pr.ekipmanId,
+        label: pr.label,
+        brand: pr.brand,
+        model: pr.model,
+        serialNumber: pr.serialNumber,
+        startCounter: Number(pr.startCounter) || 0,
+      }));
+    const result = await postAcilis(mekanId, tarih, acilisSayim, acilisNot, acilisYazicilar);
     setStokKaydediliyor(false);
     if (result) {
       setStokGunluk(result.kayit);
       setShiftStartDone(true);
+      // Yazıcı sayaç anomalisi varsa kaydet (uyarı olarak gösterilecek)
+      if ((result as any).printerAnomali && (result as any).printerAnomali.length > 0) {
+        setYaziciAcilisAnomali((result as any).printerAnomali);
+      }
       setActiveMode('sales');
     } else {
       alert('Açılış kaydedilirken hata oluştu. Lütfen tekrar deneyin.');
@@ -619,14 +739,19 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       finalKapanisSayim = computed;
     }
 
-    // Yazıcı verilerini topla (sayaç azalıyor: start - end)
+    // Yazıcı verilerini topla (ekipmanId bağlantılı, ribonMevcut dahil)
     const printerData = printers.map(pr => ({
-      id: pr.id,
+      id: pr.ekipmanId,
+      ekipmanId: pr.ekipmanId,
       label: pr.label,
+      brand: pr.brand,
+      model: pr.model,
+      serialNumber: pr.serialNumber,
       startCounter: Number(pr.startCounter) || 0,
-      endCounter: Number(printerEndCounters[pr.id] || 0),
-      ribonDegisim: Number(printerRibbonChanges[pr.id] || 0),
-      iadeFotograf: Number(printerIadePhotos[pr.id] || 0),
+      endCounter: Number(printerEndCounters[pr.ekipmanId] || 0),
+      ribonDegisim: Number(printerRibbonChanges[pr.ekipmanId] || 0),
+      iadeFotograf: Number(printerIadePhotos[pr.ekipmanId] || 0),
+      ribonMevcut: Number(printerEndCounters[pr.ekipmanId] || 0),
     }));
 
     const mekanId = resolvedMekanId || selectedProject.id;
@@ -635,6 +760,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     if (result) {
       setKapanisAnomali(result.anomali || {});
       setKapanisBeklenen(result.beklenen || null);
+      setKapanisYaziciAnomali((result as any).kapanisYaziciAnomali || null);
       setStokGunluk(result.kayit);
       setShiftEndDone(true);
       setShowShiftEndSuccess(true);
@@ -868,58 +994,91 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                 </div>
               )}
 
-              {/* 2 — Yazıcı Sayaçları */}
-              <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#ffd4a3] to-[#ffc78f] flex items-center justify-center shadow-lg">
-                      <Printer className="w-5 h-5 text-[#744210]" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-white text-sm">Yazıcı Başlangıç Sayaçları</h3>
-                      <p className="text-xs text-gray-400">{printers.length} yazıcı aktif • maks. 5</p>
-                    </div>
+              {/* Yazıcı Sayaç Anomali Uyarısı */}
+              {yaziciAcilisAnomali.length > 0 && (
+                <div className="backdrop-blur-xl bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <p className="text-xs font-bold text-amber-300">Yazıcı Sayaç Anomalisi Tespit Edildi</p>
                   </div>
-                  {printers.length < 5 && (
-                    <button
-                      onClick={addPrinter}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffd4a3]/20 hover:bg-[#ffd4a3]/30 border border-[#ffd4a3]/40 rounded-xl text-[#ffd4a3] text-xs font-bold transition-all active:scale-95"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Yazıcı Ekle
-                    </button>
-                  )}
-                </div>
-                <div className="space-y-3">
-                  {printers.map((printer, idx) => (
-                    <div key={printer.id} className="bg-black/30 border border-white/10 rounded-xl p-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-base">🖨️</span>
-                        <input
-                          type="text"
-                          value={printer.label}
-                          onChange={e => updatePrinterLabel(printer.id, e.target.value)}
-                          className="flex-1 bg-transparent text-white text-sm font-bold outline-none border-b border-white/20 focus:border-[#ffd4a3]/60 pb-0.5 transition-all"
-                        />
-                        {printers.length > 1 && (
-                          <button
-                            onClick={() => removePrinter(printer.id)}
-                            className="w-6 h-6 rounded-lg bg-[#ffb3ba]/20 text-[#ffb3ba] flex items-center justify-center active:scale-95"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
+                  <div className="space-y-2">
+                    {yaziciAcilisAnomali.map((a: any, i: number) => (
+                      <div key={i} className="bg-black/30 border border-amber-500/20 rounded-xl px-3 py-2">
+                        <p className="text-xs font-semibold text-white mb-1">{a.label || `${a.ekipmanId}`}</p>
+                        <p className="text-[10px] text-gray-400 font-mono">SN: {a.serialNumber || '—'}</p>
+                        <div className="flex items-center gap-3 mt-1.5 text-xs">
+                          <span className="hidden">Son bitiş: <span className="text-white font-done-final">{null}</span></span>
+                          <span className="text-gray-400">Açılış: <span className="text-[#ffd4a3] font-bold">{a.startCounter}</span></span>
+                          <span className={`font-bold ${a.fark > 0 ? 'text-green-400' : 'text-red-400'}`}>{a.fark > 0 ? '+' : ''}{a.fark}</span>
+                        </div>
+
                       </div>
-                      <input
-                        type="number"
-                        value={printer.startCounter}
-                        onChange={e => updatePrinterStart(printer.id, e.target.value)}
-                        placeholder="Başlangıç sayacı (örn: 10482)"
-                        className="w-full px-3 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#ffd4a3]/50 text-center font-bold"
-                      />
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setYaziciAcilisAnomali([])}
+                    className="mt-2 w-full text-[10px] text-amber-300/50 text-center"
+                  >
+                    Uyarıyı kapat
+                  </button>
                 </div>
-                <p className="text-xs text-gray-600 text-center mt-3">LCD ekrandaki toplam baskı sayısını girin</p>
+              )}
+
+              {/* 2 — Yazıcı Sayaçları (ekipman kaydından otomatik) */}
+              <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#ffd4a3] to-[#ffc78f] flex items-center justify-center shadow-lg">
+                    <Printer className="w-5 h-5 text-[#744210]" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white text-sm">Yazıcı Başlangıç Sayacı</h3>
+                    <p className="text-xs text-gray-400">
+                      {printers.length > 0
+                        ? `${printers.length} yazıcı • ekipman kaydından`
+                        : 'Kayıtlı yazıcı yok'}
+                    </p>
+                  </div>
+                </div>
+                {printers.length === 0 ? (
+                  <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl px-4 py-3 flex items-center gap-3">
+                    <span className="text-lg">🖨️</span>
+                    <p className="text-xs text-amber-300">
+                      Bu mekana henüz yazıcı atanmamış. Malzeme Yönetimi'nden bu mekana yazıcı ekleyin.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {printers.map((printer) => (
+                      <div key={printer.ekipmanId} className="bg-black/30 border border-white/10 rounded-xl p-3">
+                        {/* Yazıcı kimlik bilgisi */}
+                        <div className="flex items-center gap-2 mb-2.5">
+                          <span className="text-base">🖨️</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-white truncate">{printer.brand} {printer.model}</p>
+                            <p className="text-[10px] text-gray-500 font-mono">SN: {printer.serialNumber || '—'}</p>
+                          </div>
+
+                        </div>
+                        {printer.beklenenStartCounter !== null && !stokGunluk?.acilisYapildi && (
+                          <p className="text-[10px] text-[#ffd4a3]/70 mb-1.5 text-center">
+                            Beklenen: <span className="font-bold text-[#ffd4a3]">{printer.beklenenStartCounter}</span>
+                          </p>
+                        )}
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={printer.startCounter}
+                          onChange={e => updatePrinterStart(printer.ekipmanId, e.target.value)}
+                          disabled={!!stokGunluk?.acilisYapildi}
+                          placeholder="Yazıcıdan okuyun, girin"
+                          className="w-full px-3 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-[#ffd4a3]/50 focus:outline-none focus:ring-2 focus:ring-[#ffd4a3]/50 text-center font-bold disabled:opacity-60"
+                        />
+
+                      </div>
+                    ))}
+                  </div>
+                )}
+
               </div>
 
               {/* 3 — Reyon Albümleri */}
@@ -1462,7 +1621,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                   <div className="flex-1">
                     <h3 className="font-bold text-white text-sm">Yazıcı Kapanış</h3>
                     <p className="text-xs text-gray-400">
-                      {printers.length} yazıcı • bitiş sayacı & ribon değişimi
+                      {printers.length > 0 ? `${printers.length} yazıcı` : 'Kayıtlı yazıcı yok'} • bitiş sayacı & ribon
                       {effectiveKapasite > 0 && (
                         <span className="text-[#a8e6cf]/70 ml-1">• kapasite: {effectiveKapasite}/takım</span>
                       )}
@@ -1536,25 +1695,28 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                 <div className="space-y-3">
                   {printers.map(printer => {
                     const start = Number(printer.startCounter) || 0;
-                    const end = Number(printerEndCounters[printer.id] || 0);
-                    const ribbonCount = Number(printerRibbonChanges[printer.id] || 0);
-                    const iade = Number(printerIadePhotos[printer.id] || 0);
+                    const end = Number(printerEndCounters[printer.ekipmanId] || 0);
+                    const ribbonCount = Number(printerRibbonChanges[printer.ekipmanId] || 0);
+                    const iade = Number(printerIadePhotos[printer.ekipmanId] || 0);
                     // Canlı hesaplama: kullanilanBaskı = açılış + degisim×kapasite - kapanış
                     const kullanilanBaskı = effectiveKapasite > 0
                       ? Math.max(0, start + (ribbonCount * effectiveKapasite) - end)
-                      : Math.max(0, start - end); // kapasite bilinmiyorsa sadece fark
+                      : Math.max(0, start - end);
                     const carpan = effectivePrintType === 'tam' ? 1 : 2;
                     const cikisAdedi = Math.round(kullanilanBaskı * carpan);
                     const satılan = Math.max(0, cikisAdedi - iade);
-                    const hasEndInput = !!printerEndCounters[printer.id] && start > 0;
+                    const hasEndInput = !!printerEndCounters[printer.ekipmanId] && start > 0;
                     return (
-                      <div key={printer.id} className="bg-black/30 border border-white/10 rounded-xl p-3 space-y-3">
-                        {/* Başlık */}
+                      <div key={printer.ekipmanId} className="bg-black/30 border border-white/10 rounded-xl p-3 space-y-3">
+                        {/* Başlık — ekipman bilgisi */}
                         <div className="flex items-center gap-2">
                           <span className="text-base">🖨️</span>
-                          <span className="text-sm font-bold text-white flex-1">{printer.label}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-white truncate">{printer.brand} {printer.model}</p>
+                            <p className="text-[10px] text-gray-500 font-mono">SN: {printer.serialNumber || '—'}</p>
+                          </div>
                           {printer.startCounter && (
-                            <span className="text-xs text-gray-400">Açılış: <span className="text-[#ffd4a3] font-bold">{printer.startCounter}</span></span>
+                            <span className="text-xs text-gray-400 shrink-0">Açılış: <span className="text-[#ffd4a3] font-bold">{printer.startCounter}</span></span>
                           )}
                         </div>
                         {/* Bitiş Sayacı */}
@@ -1563,8 +1725,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                           <input
                             type="number"
                             inputMode="numeric"
-                            value={printerEndCounters[printer.id] || ''}
-                            onChange={e => updatePrinterEnd(printer.id, e.target.value)}
+                            value={printerEndCounters[printer.ekipmanId] || ''}
+                            onChange={e => updatePrinterEnd(printer.ekipmanId, e.target.value)}
                             placeholder="0"
                             className="w-full px-3 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#ffd4a3]/50 text-center font-bold text-lg"
                           />
@@ -1583,8 +1745,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                           <input
                             type="number"
                             inputMode="numeric"
-                            value={printerRibbonChanges[printer.id] || ''}
-                            onChange={e => updatePrinterRibbon(printer.id, e.target.value)}
+                            value={printerRibbonChanges[printer.ekipmanId] || ''}
+                            onChange={e => updatePrinterRibbon(printer.ekipmanId, e.target.value)}
                             placeholder="0"
                             className="w-full px-3 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#9dd9ea]/50 text-center font-bold text-lg"
                           />
@@ -1606,8 +1768,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                           <input
                             type="number"
                             inputMode="numeric"
-                            value={printerIadePhotos[printer.id] || ''}
-                            onChange={e => updatePrinterIade(printer.id, e.target.value)}
+                            value={printerIadePhotos[printer.ekipmanId] || ''}
+                            onChange={e => updatePrinterIade(printer.ekipmanId, e.target.value)}
                             placeholder="0"
                             disabled={shiftEndDone}
                             className="w-full px-3 py-2.5 bg-[#ffb3ba]/10 border border-[#ffb3ba]/20 rounded-lg text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#ffb3ba]/40 text-center font-bold text-lg disabled:opacity-60"
@@ -1666,8 +1828,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                       <span className="text-sm font-black text-[#a8e6cf]">
                         {printers.reduce((sum, pr) => {
                           const s = Number(pr.startCounter) || 0;
-                          const e = Number(printerEndCounters[pr.id] || 0);
-                          const r = Number(printerRibbonChanges[pr.id] || 0);
+                          const e = Number(printerEndCounters[pr.ekipmanId] || 0);
+                          const r = Number(printerRibbonChanges[pr.ekipmanId] || 0);
                           return sum + (effectiveKapasite > 0
                             ? Math.max(0, s + r * effectiveKapasite - e)
                             : Math.max(0, s - e));
@@ -1681,8 +1843,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                       <span className="text-sm font-black text-[#9dd9ea]">
                         {printers.reduce((sum, pr) => {
                           const s = Number(pr.startCounter) || 0;
-                          const e = Number(printerEndCounters[pr.id] || 0);
-                          const r = Number(printerRibbonChanges[pr.id] || 0);
+                          const e = Number(printerEndCounters[pr.ekipmanId] || 0);
+                          const r = Number(printerRibbonChanges[pr.ekipmanId] || 0);
                           const kb = effectiveKapasite > 0
                             ? Math.max(0, s + r * effectiveKapasite - e)
                             : Math.max(0, s - e);
@@ -1690,19 +1852,27 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                         }, 0)} adet
                       </span>
                     </div>
-                    {printers.some(pr => Number(printerRibbonChanges[pr.id] || 0) > 0) && (
+                    {printers.some(pr => Number(printerRibbonChanges[pr.ekipmanId] || 0) > 0) && (
                       <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 flex items-center justify-between">
                         <span className="text-xs text-gray-400">Toplam ribon değişimi:</span>
                         <span className="text-sm font-black text-[#9dd9ea]">
-                          {printers.reduce((sum, pr) => sum + Number(printerRibbonChanges[pr.id] || 0), 0)} adet
+                          {printers.reduce((sum, pr) => sum + Number(printerRibbonChanges[pr.ekipmanId] || 0), 0)} adet
                         </span>
                       </div>
                     )}
-                    {printers.some(pr => Number(printerIadePhotos[pr.id] || 0) > 0) && (
+                    {printers.some(pr => Number(printerIadePhotos[pr.ekipmanId] || 0) > 0) && (
                       <div className="bg-[#ffb3ba]/10 border border-[#ffb3ba]/20 rounded-xl px-4 py-2.5 flex items-center justify-between">
                         <span className="text-xs text-gray-400">Toplam iade fotoğraf:</span>
                         <span className="text-sm font-black text-[#ffb3ba]">
-                          −{printers.reduce((sum, pr) => sum + Number(printerIadePhotos[pr.id] || 0), 0)} adet
+                          −{printers.reduce((sum, pr) => sum + Number(printerIadePhotos[pr.ekipmanId] || 0), 0)} adet
+                        </span>
+                      </div>
+                    )}
+                    {printers.some(pr => Number(printerEndCounters[pr.ekipmanId] || 0) > 0) && (
+                      <div className="bg-[#d4b5f7]/10 border border-[#d4b5f7]/20 rounded-xl px-4 py-2.5 flex items-center justify-between">
+                        <span className="text-xs text-gray-400">Yazıcılarda kalan ribon:</span>
+                        <span className="text-sm font-black text-[#d4b5f7]">
+                          {printers.reduce((sum, pr) => sum + Number(printerEndCounters[pr.ekipmanId] || 0), 0)} adet
                         </span>
                       </div>
                     )}
@@ -1711,9 +1881,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                       <span className="text-sm font-black text-[#a8e6cf]">
                         {printers.reduce((sum, pr) => {
                           const s = Number(pr.startCounter) || 0;
-                          const e = Number(printerEndCounters[pr.id] || 0);
-                          const r = Number(printerRibbonChanges[pr.id] || 0);
-                          const ia = Number(printerIadePhotos[pr.id] || 0);
+                          const e = Number(printerEndCounters[pr.ekipmanId] || 0);
+                          const r = Number(printerRibbonChanges[pr.ekipmanId] || 0);
+                          const ia = Number(printerIadePhotos[pr.ekipmanId] || 0);
                           const kb = effectiveKapasite > 0
                             ? Math.max(0, s + r * effectiveKapasite - e)
                             : Math.max(0, s - e);
@@ -1814,23 +1984,56 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                                       />
                                     </div>
                                     {/* Kalan */}
-                                    <div className="text-center">
-                                      <p className="text-[10px] text-[#9dd9ea] mb-1">Kalan</p>
-                                      <input
-                                        type="number"
-                                        inputMode="numeric"
-                                        value={reyonKapanisSayim[key as keyof StokSayim] || ''}
-                                        onChange={e => setReyonKapanisSayim(p => ({ ...p, [key]: parseInt(e.target.value) || 0 }))}
-                                        placeholder="0"
-                                        disabled={shiftEndDone}
-                                        className="w-full px-2 py-2 bg-[#9dd9ea]/10 border border-[#9dd9ea]/30 rounded-xl text-[#9dd9ea] placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#9dd9ea]/50 text-center font-bold text-base disabled:opacity-60"
-                                      />
-                                    </div>
+                                    {(() => {
+                                      const satisDusum = kapanisSatisAlbumDusum[key] || 0;
+                                      const absoluteMax = acilis + gunIciEkleme;
+                                      const beklenenKalan = Math.max(0, absoluteMax - satisDusum);
+                                      const imkansiz = kapanis > absoluteMax;
+                                      const fazla = !imkansiz && kapanis > beklenenKalan && absoluteMax > 0;
+                                      return (
+                                        <div className="text-center">
+                                          <p className="text-[10px] text-[#9dd9ea] mb-1">
+                                            Kalan
+                                            {absoluteMax > 0 && (
+                                              <span className={fazla || imkansiz ? 'text-red-400' : 'text-gray-500'}>
+                                                {' '}(bkl.{beklenenKalan})
+                                              </span>
+                                            )}
+                                          </p>
+                                          <input
+                                            type="number"
+                                            inputMode="numeric"
+                                            value={reyonKapanisSayim[key as keyof StokSayim] || ''}
+                                            onChange={e => setReyonKapanisSayim(p => ({ ...p, [key]: parseInt(e.target.value) || 0 }))}
+                                            placeholder="0"
+                                            disabled={shiftEndDone}
+                                            className={`w-full px-2 py-2 border rounded-xl placeholder:text-gray-600 focus:outline-none focus:ring-2 text-center font-bold text-base disabled:opacity-60 ${
+                                              imkansiz
+                                                ? 'bg-red-500/10 border-red-500/50 text-red-400 focus:ring-red-500/50'
+                                                : fazla
+                                                  ? 'bg-amber-500/10 border-amber-500/40 text-amber-300 focus:ring-amber-500/50'
+                                                  : 'bg-[#9dd9ea]/10 border-[#9dd9ea]/30 text-[#9dd9ea] focus:ring-[#9dd9ea]/50'
+                                            }`}
+                                          />
+                                          {imkansiz && (
+                                            <p className="text-[9px] text-red-400 mt-0.5">⚠ Açılıştan fazla!</p>
+                                          )}
+                                          {!imkansiz && fazla && (
+                                            <p className="text-[9px] text-amber-400 mt-0.5">⚠ Satıştan fazla kalan!</p>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
                                   </div>
                                   {/* Özet satır */}
                                   {(acilis > 0 || gunIciEkleme > 0) && (
                                     <div className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-1.5 text-xs text-gray-400">
-                                      <span>{acilis} + {gunIciEkleme} − {kapanis}</span>
+                                      <span>
+                                        <span className="text-white">{acilis}</span>
+                                        {gunIciEkleme > 0 && <span className="text-[#ffd4a3]"> +{gunIciEkleme}</span>}
+                                        {' − '}
+                                        <span className="text-[#9dd9ea]">{kapanis}</span>
+                                      </span>
                                       <span className={`font-bold ${satilan > 0 ? 'text-[#a8e6cf]' : 'text-gray-500'}`}>
                                         = {satilan} satıldı
                                       </span>
@@ -1839,6 +2042,48 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                                 </div>
                               );
                             })}
+
+                            {/* ── Ribon Takımı (reyon modunda ayrı satır) ── */}
+                            {(() => {
+                              const toplamRibonDegisim = printers.reduce(
+                                (sum, pr) => sum + Number(printerRibbonChanges[pr.ekipmanId] || 0), 0
+                              );
+                              const ribonAcilis = acilisSayim.ribon || 0;
+                              const ribonBeklenen = Math.max(0, ribonAcilis - toplamRibonDegisim);
+                              const ribonKapanis = reyonKapanisSayim.ribon || 0;
+                              const ribonFark = ribonKapanis - ribonBeklenen;
+                              const ribonSapma = ribonFark !== 0;
+                              return (
+                                <div className="bg-black/30 border border-white/10 rounded-xl px-4 py-3 space-y-2">
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-xl">🎞️</span>
+                                    <span className="text-sm font-semibold text-white flex-1">Ribon Takımı</span>
+                                    {ribonSapma && (
+                                      <span className={`text-xs font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 ${ribonFark > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                        {ribonFark > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                        {ribonFark > 0 ? '+' : ''}{ribonFark}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-[#9dd9ea]/80">
+                                    Açılış <span className="font-bold text-white">{ribonAcilis}</span>
+                                    {' − '}Değişim <span className="font-bold text-[#ffd4a3]">{toplamRibonDegisim}</span>
+                                    {' = '}Beklenen <span className="font-bold text-[#9dd9ea]">{ribonBeklenen}</span>
+                                  </p>
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    value={reyonKapanisSayim.ribon || ''}
+                                    onChange={e => setReyonKapanisSayim(p => ({ ...p, ribon: parseInt(e.target.value) || 0 }))}
+                                    placeholder="0"
+                                    disabled={shiftEndDone}
+                                    className={`w-full px-3 py-2.5 border rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#9dd9ea]/50 text-center font-bold text-lg disabled:opacity-60 ${
+                                      ribonSapma ? (ribonFark < 0 ? 'bg-red-500/10 border-red-500/40' : 'bg-green-500/10 border-green-500/40') : 'bg-white/10 border-white/20'
+                                    }`}
+                                  />
+                                </div>
+                              );
+                            })()}
 
                             {/* Toplam satış özeti */}
                             {albumItems.some(({ key }) => (shiftShelves[key] || 0) > 0 || (reyonGunIciEkleme[key] || 0) > 0) && (
@@ -1878,13 +2123,23 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
 
                             {(Object.keys(stokAlanAdi) as Array<keyof StokSayim>).map((alan) => {
                               // Ribon için yazıcı değişim verilerinden client-side beklenen hesapla
-                              const toplamRibonDegisim = printers.reduce((sum, pr) => sum + Number(printerRibbonChanges[pr.id] || 0), 0);
+                              const toplamRibonDegisim = printers.reduce((sum, pr) => sum + Number(printerRibbonChanges[pr.ekipmanId] || 0), 0);
                               const clientBeklenenRibon = Math.max(0, (acilisSayim.ribon || 0) - toplamRibonDegisim);
 
-                              // Kapanış öncesi ribon için client hesabını göster, sonrası için server değerini
-                              let beklenen = kapanisBeklenen?.[alan] ?? null;
-                              if (alan === 'ribon' && !shiftEndDone) {
-                                beklenen = clientBeklenenRibon;
+                              // Albümler için client-side beklenen: açılış + eklemeler − satılan
+                              const albumAcilis = (acilisSayim[alan] || 0);
+                              const albumEkleme = stokEklemeler.reduce((s, ek) => s + ((ek.miktar as Record<string, number>)[alan] || 0), 0);
+                              const albumSatilan = kapanisSatisAlbumDusum[alan] || 0;
+                              const clientBeklenenAlbum = Math.max(0, albumAcilis + albumEkleme - albumSatilan);
+
+                              // Kapanış öncesi: her zaman client hesabını göster; sonrası: server değeri
+                              let beklenen: number | null = kapanisBeklenen?.[alan] ?? null;
+                              if (!shiftEndDone) {
+                                if (alan === 'ribon') {
+                                  beklenen = clientBeklenenRibon;
+                                } else {
+                                  beklenen = stokGunluk?.acilisYapildi ? clientBeklenenAlbum : null;
+                                }
                               }
 
                               const gercek = kapanisSayim[alan] ?? 0;
@@ -1903,9 +2158,14 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                                             {' − '}Değişim <span className="font-bold text-[#ffd4a3]">{toplamRibonDegisim}</span>
                                             {' = '}Beklenen <span className="font-bold text-[#9dd9ea]">{clientBeklenenRibon}</span>
                                           </p>
-                                        ) : (
-                                          beklenen !== null && <p className="text-xs text-gray-500">Beklenen: {beklenen}</p>
-                                        )}
+                                        ) : beklenen !== null ? (
+                                          <p className="text-xs text-[#9dd9ea]/70 mt-0.5">
+                                            <span className="text-white">{albumAcilis}</span>
+                                            {albumEkleme > 0 && <span className="text-[#ffd4a3]"> +{albumEkleme}</span>}
+                                            {albumSatilan > 0 && <span className="text-[#ffb3ba]"> −{albumSatilan} satıldı</span>}
+                                            {' = '}Beklenen <span className="font-bold text-[#9dd9ea]">{beklenen}</span>
+                                          </p>
+                                        ) : null}
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -1936,7 +2196,10 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                               (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).some(a => {
                                 let bek = (stokGunluk!.acilis as StokSayim)[a] || 0;
                                 for (const ek of stokEklemeler) bek += (ek.miktar as Record<string, number>)[a] || 0;
-                                if (a === 'ribon') bek -= printers.reduce((s, pr) => s + (Number(printerRibbonChanges[pr.id] || 0)), 0);
+                                // Satışlardan albüm düşümü (backend ile tutarlı)
+                                bek -= kapanisSatisAlbumDusum[a] || 0;
+                                // Ribon: değiştirilen takım adedi (10 - 1 = 9)
+                                if (a === 'ribon') bek -= printers.reduce((s, pr) => s + (Number(printerRibbonChanges[pr.ekipmanId] || 0)), 0);
                                 return (kapanisSayim[a] ?? 0) !== Math.max(0, bek);
                               }) && (
                               <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center gap-2">
@@ -1973,6 +2236,21 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                                 {stokAlanEmoji[alan]} {stokAlanAdi[alan]}: {fark > 0 ? '+' : ''}{fark}
                               </p>
                             ))}
+                          </div>
+                        )}
+
+                        {shiftEndDone && kapanisYaziciAnomali && (
+                          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                            <p className="text-xs font-bold text-red-400 mb-1">🖨️ Bitiş Sayacı Anomalisi Kaydedildi</p>
+                            <p className="text-xs text-gray-300">
+                              Yazıcı net satılan: <span className="text-white font-bold">{kapanisYaziciAnomali.netSatilan}</span>
+                            </p>
+                            <p className="text-xs text-gray-300">
+                              Satış toplamı: <span className="text-white font-bold">{kapanisYaziciAnomali.satisToplam}</span>
+                            </p>
+                            <p className="text-xs text-red-300 font-semibold mt-1">
+                              Fark: {kapanisYaziciAnomali.fark > 0 ? '+' : ''}{kapanisYaziciAnomali.fark} fotoğraf → Vardiya ekibine 1'er puan yazıldı
+                            </p>
                           </div>
                         )}
 

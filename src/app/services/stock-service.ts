@@ -105,6 +105,19 @@ export interface GunlukStokResponse {
   dunKapanis: StokSayim | null;
   eklemeler: StokEkleme[];
   bekleyenAktarimlar: Aktarim[];
+  mekanYazicilari?: MekanYazici[];
+}
+
+// Ekipman kaydındaki yazıcı (GET /stok/gunluk cevabında gelir)
+export interface MekanYazici {
+  ekipmanId: string;
+  brand: string;
+  model: string;
+  serialNumber: string;
+  status: string;
+  lastEndCounter: number | null;
+  lastEndTarih: string | null;
+  lastEndRibonMevcut: number | null;
 }
 
 // Bugünün tarihini YYYY-MM-DD formatında döndür (lokal saat, UTC değil)
@@ -134,13 +147,21 @@ export const postAcilis = async (
   mekanId: string,
   tarih: string,
   sayim: StokSayim,
-  not?: string
-): Promise<{ kayit: StokGunluk; anomali: Partial<StokSayim> } | null> => {
+  not?: string,
+  printerData?: Array<{
+    ekipmanId: string;
+    label: string;
+    brand?: string;
+    model?: string;
+    serialNumber?: string;
+    startCounter: number;
+  }>
+): Promise<{ kayit: StokGunluk; anomali: Partial<StokSayim>; printerAnomali?: any[] } | null> => {
   try {
     const res = await fetch(`${API_BASE}/stok/acilis`, {
       method: 'POST',
       headers: await authHeaders(),
-      body: JSON.stringify({ mekanId, tarih, sayim, not }),
+      body: JSON.stringify({ mekanId, tarih, sayim, not, printerData: printerData || [] }),
     });
     if (!res.ok) {
       console.error('postAcilis error:', res.status, await res.text());
@@ -156,11 +177,16 @@ export const postAcilis = async (
 // Kapanış kaydı yap
 export interface PrinterKapanis {
   id: string;
+  ekipmanId?: string;
   label: string;
+  brand?: string;
+  model?: string;
+  serialNumber?: string;
   startCounter: number;
   endCounter: number;
   ribonDegisim: number;
   iadeFotograf: number;
+  ribonMevcut?: number;
 }
 
 export const postKapanis = async (
