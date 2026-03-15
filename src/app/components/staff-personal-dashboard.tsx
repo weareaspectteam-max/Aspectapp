@@ -1,4 +1,4 @@
-import { TrendingUp, Zap, Target, Award, DollarSign, Percent, ChevronRight, Flame, Star, ShoppingBag } from 'lucide-react';
+import { TrendingUp, Zap, Target, Award, DollarSign, Percent, ChevronRight, Flame, Star, ShoppingBag, Trophy } from 'lucide-react';
 import { CurrencyWidget } from './currency-widget';
 
 interface StaffPersonalDashboardProps {
@@ -325,6 +325,25 @@ export function StaffPersonalDashboard({ userName, onLogout = () => {}, onNaviga
             <div className="flex-1 min-w-0">
               <div className="text-sm font-bold text-white">Liderlik Tablosu</div>
               <div className="text-xs text-gray-400">Sıralamanı gör</div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-500 flex-shrink-0" />
+          </button>
+          <button
+            onClick={() => onNavigate('personel-prim-takip')}
+            className="w-full flex items-center gap-3 p-3.5 rounded-2xl border active:scale-[0.98] transition-all text-left"
+            style={{
+              background: 'rgba(251,191,36,0.07)',
+              border: '1px solid rgba(251,191,36,0.2)',
+              backdropFilter: 'blur(20px)',
+            }}
+          >
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.25)' }}>
+              <Trophy className="w-4 h-4" style={{ color: '#fbbf24' }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold text-white">Primlerim</div>
+              <div className="text-xs" style={{ color: 'rgba(251,191,36,0.6)' }}>Kazançlarını ve alacaklarını gör</div>
             </div>
             <ChevronRight className="w-4 h-4 text-gray-500 flex-shrink-0" />
           </button>

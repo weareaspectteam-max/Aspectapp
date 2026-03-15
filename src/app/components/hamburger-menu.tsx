@@ -9,7 +9,7 @@ import {
   X, Home, Zap, Activity, MapPin, RotateCcw,
   Trophy, Sparkles, MessageCircle, Bell, GraduationCap,
   Cake, User, Settings, LogOut, ChevronRight, Package,
-  BarChart2, ClipboardList, CalendarDays, FileBarChart,
+  BarChart2, ClipboardList, CalendarDays, FileBarChart, Wallet,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
@@ -103,6 +103,14 @@ function getSections(
         { icon: RotateCcw,    label: 'Rotasyon',           roles: all,  action: () => go('rotation')        },
         { icon: Package,      label: 'Malzeme Yönetimi',   roles: all,  action: () => go('equipment-page')  },
         { icon: BarChart2,    label: 'Stok Dağılımı',      roles: all,  action: () => go('stock-distribution')   },
+      ],
+    },
+    {
+      title: 'PRİM',
+      color: '#fbbf24',
+      items: [
+        { icon: Wallet, label: 'Primlerim',  roles: all, action: () => go('personel-prim-takip') },
+        { icon: Trophy, label: 'Prim Takip', roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[], action: () => go('prim-takip') },
       ],
     },
     {

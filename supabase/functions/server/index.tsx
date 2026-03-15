@@ -2413,6 +2413,120 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
 });
 
 // ══════════════════════════════════════════
+// PRİM: Personel kendi prim geçmişi
+// GET /primler/kendi-rapor?ay=2026-03
+// Auth: tüm roller (kendi kaydını görür)
+// ══════════════════════════════════════════
+app.get("/make-server-4da0b637/primler/kendi-rapor", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const callerAdi: string = user.user_metadata?.full_name || "";
+    if (!callerAdi) return c.json({ error: "Kullanıcı adı bulunamadı." }, 400);
+
+    const ay = c.req.query("ay") || new Date().toISOString().slice(0, 7);
+    const [yil, ayNo] = ay.split("-").map(Number);
+
+    // Paralel veri çekimi
+    const [mekanlarList, tumKayitlar, tumOdemeler, tumRotasyonlar] = await Promise.all([
+      kv.getByPrefix("mekan_").catch(() => []),
+      kv.getByPrefix("stok_gunluk_").catch(() => []),
+      kv.getByPrefix("prim_odendi_").catch(() => []),
+      kv.getByPrefix("rotation_task_").catch(() => []),
+    ]);
+
+    const mekanMap: Record<string, any> = {};
+    for (const m of (mekanlarList || [])) mekanMap[m.id] = m;
+
+    const odemeMap: Record<string, { odendi: boolean; odemeTarihi?: string }> = {};
+    for (const o of (tumOdemeler || [])) {
+      if (o.key) odemeMap[o.key] = { odendi: o.odendi || false, odemeTarihi: o.odemeTarihi };
+    }
+
+    const ayKayitlari = (tumKayitlar || []).filter((k: any) => {
+      if (!k.tarih) return false;
+      const [ky, ka] = k.tarih.split("-").map(Number);
+      return ky === yil && ka === ayNo;
+    });
+
+    const primKayitlari: any[] = [];
+
+    for (const kayit of ayKayitlari) {
+      const mekan = mekanMap[kayit.mekanId];
+      if (!mekan || !mekan.kotaKademeleri || mekan.kotaKademeleri.length === 0) continue;
+
+      // O gün o mekandaki personel listesini rotasyondan al
+      const mekanAdi: string = mekan.name || "";
+      const rotasyonPersonelMap = new Map<string, string>();
+      for (const task of (tumRotasyonlar || [])) {
+        if (task.date !== kayit.tarih) continue;
+        if (!["sent", "revised"].includes(task.status)) continue;
+        if (task.location !== mekanAdi) continue;
+        if (!Array.isArray(task.personnel)) continue;
+        for (const p of task.personnel) {
+          if (p.id && p.name) rotasyonPersonelMap.set(p.id, p.name);
+        }
+      }
+
+      // Çağıran kişi bu mekana o gün atanmış mı?
+      const personelListesi = Array.from(rotasyonPersonelMap.values());
+      const buradaVar = personelListesi.some(
+        (ad) => ad.toLowerCase().trim() === callerAdi.toLowerCase().trim()
+      );
+      if (!buradaVar) continue;
+
+      const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
+      const ciro = satislar.reduce((sum: number, s: any) => sum + (s.finalPrice || 0), 0);
+      const personelSayisi = personelListesi.length;
+      const coklu = personelSayisi > 1;
+
+      const sortedKademeler = [...mekan.kotaKademeleri].sort((a: any, b: any) => Number(a.hedef) - Number(b.hedef));
+
+      for (let ki = 0; ki < sortedKademeler.length; ki++) {
+        const kademe = sortedKademeler[ki];
+        if (ciro >= Number(kademe.hedef)) {
+          const primMiktar = (coklu ? Number(kademe.primCoklu) : Number(kademe.primTek)) || 0;
+          const safeAd = encodeURIComponent(callerAdi);
+          const odemeKey = `prim_odendi_${kayit.mekanId}_${kayit.tarih}_${ki}_${safeAd}`;
+          const odemeData = odemeMap[odemeKey] || null;
+
+          primKayitlari.push({
+            mekanId: kayit.mekanId,
+            mekanName: mekan.name,
+            mekanEmoji: mekan.emoji || "📍",
+            mekanColor: mekan.color || "#9dd9ea",
+            tarih: kayit.tarih,
+            ciro: Math.round(ciro),
+            kademeIndex: ki,
+            kademeHedef: Number(kademe.hedef),
+            primMiktar,
+            personelAdi: callerAdi,
+            personelSayisi,
+            coklu,
+            odendi: odemeData?.odendi || false,
+            odemeTarihi: odemeData?.odemeTarihi || null,
+            odemeKey,
+          });
+        }
+      }
+    }
+
+    primKayitlari.sort((a, b) => b.tarih.localeCompare(a.tarih) || a.kademeIndex - b.kademeIndex);
+
+    const toplamPrim = primKayitlari.reduce((s, p) => s + p.primMiktar, 0);
+    const odenenPrim = primKayitlari.filter((p) => p.odendi).reduce((s, p) => s + p.primMiktar, 0);
+    const bekleyenPrim = toplamPrim - odenenPrim;
+
+    console.log(`Kendi prim raporu ${ay} / ${callerAdi}: ${primKayitlari.length} kayıt, ₺${toplamPrim}`);
+    return c.json({ ay, callerAdi, primKayitlari, toplamPrim, odenenPrim, bekleyenPrim });
+  } catch (err) {
+    console.log("Kendi prim rapor error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
 // PRİM: Anlık vardiya prim bilgisi (personel için)
 // GET /shift/prim-bilgi?mekanAdi=...
 // Auth: tüm roller

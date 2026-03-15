@@ -1,6 +1,7 @@
 import HeaderBarDemo from './components/header-bar-demo';
 import { KotaProgressDemo } from './components/kota-progress-demo';
 import { PrimTakip } from './components/prim-takip';
+import { PersonelPrimTakip } from './components/personel-prim-takip';
 import { useState, useEffect, useRef } from 'react';
 import { AppHeader } from './components/app-header';
 import { AspectLogo } from './components/aspect-logo';
@@ -783,6 +784,9 @@ export default function App() {
       
       case 'prim-takip':
         return <PrimTakip userRole={userRole} onBack={() => handleNavigate('dashboard')} />;
+      
+      case 'personel-prim-takip':
+        return <PersonelPrimTakip userRole={userRole} userName={userName} onBack={() => handleNavigate('dashboard')} />;
       
       default:
         return renderDashboard();
