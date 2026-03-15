@@ -361,7 +361,7 @@ export function AdminDashboard({ userName, userRole, onNavigate }: AdminDashboar
                     </div>
                     {/* En yüksek kazanılan kota rozeti */}
                     {mekan.kotaKademeleri && (() => {
-                      const sorted = [...mekan.kotaKademeleri].sort((a, b) => a.hedef - b.hedef);
+                      const sorted = [...mekan.kotaKademeleri].sort((a, b) => Number(a.hedef) - Number(b.hedef));
                       const idx = [...sorted].map((k, i) => ({ k, i })).reverse().find(({ k }) => mekan.ciro >= k.hedef)?.i;
                       if (idx === undefined) return null;
                       const colors = ['#60a5fa', '#a855f7', '#fbbf24'];
@@ -647,7 +647,7 @@ export function AdminDashboard({ userName, userRole, onNavigate }: AdminDashboar
 // ── Çok kademeli kota progress bar ──────────────────────────
 function KotaBar({ ciro, kademeler }: { ciro: number; kademeler: { hedef: number; primTek: number; primCoklu: number }[] }) {
   if (!kademeler || kademeler.length === 0) return null;
-  const sorted = [...kademeler].sort((a, b) => a.hedef - b.hedef);
+  const sorted = [...kademeler].sort((a, b) => Number(a.hedef) - Number(b.hedef));
   const maxHedef = sorted[sorted.length - 1].hedef;
   const barFill = Math.min(ciro / maxHedef, 1.0);
 

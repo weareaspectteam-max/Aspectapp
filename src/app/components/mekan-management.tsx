@@ -998,7 +998,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                             {location.kotaKademeleri && location.kotaKademeleri.length > 0 && (
                               <div className="flex items-center gap-1 flex-wrap mt-0.5">
                                 <span className="text-yellow-400">🏆</span>
-                                {location.kotaKademeleri.map((k, i) => (
+                                {[...location.kotaKademeleri].sort((a, b) => Number(a.hedef) - Number(b.hedef)).map((k, i) => (
                                   <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-md font-bold"
                                     style={{
                                       background: i === 0 ? 'rgba(96,165,250,0.15)' : i === 1 ? 'rgba(168,85,247,0.15)' : 'rgba(251,191,36,0.15)',

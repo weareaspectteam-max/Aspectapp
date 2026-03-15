@@ -2347,10 +2347,13 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
       const personelSayisi = fotografcilar.length;
       const coklu = personelSayisi > 1;
 
-      for (let ki = 0; ki < mekan.kotaKademeleri.length; ki++) {
-        const kademe = mekan.kotaKademeleri[ki];
-        if (ciro >= kademe.hedef) {
-          const primMiktar = (coklu ? kademe.primCoklu : kademe.primTek) || 0;
+      // Kademeleri hedef'e göre sırala — ki indeksi görsel sırayla eşleşsin
+      const sortedKademeler = [...mekan.kotaKademeleri].sort((a: any, b: any) => Number(a.hedef) - Number(b.hedef));
+
+      for (let ki = 0; ki < sortedKademeler.length; ki++) {
+        const kademe = sortedKademeler[ki];
+        if (ciro >= Number(kademe.hedef)) {
+          const primMiktar = (coklu ? Number(kademe.primCoklu) : Number(kademe.primTek)) || 0;
 
           // Her personel için ayrı kayıt
           for (const personelAdi of fotografcilar) {
@@ -2366,7 +2369,7 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
               tarih: kayit.tarih,
               ciro: Math.round(ciro),
               kademeIndex: ki,
-              kademeHedef: kademe.hedef,
+              kademeHedef: Number(kademe.hedef),
               primMiktar,
               personelAdi,
               personelSayisi,
@@ -2420,8 +2423,11 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
     );
     if (!mekan) return c.json({ primBilgi: null, sebep: "Mekan bulunamadı." });
 
-    const kotaKademeleri: any[] = mekan.kotaKademeleri || [];
-    if (kotaKademeleri.length === 0) return c.json({ primBilgi: null, sebep: "Bu mekanda kota tanımlı değil." });
+    const kotaKademeleriRaw: any[] = mekan.kotaKademeleri || [];
+    if (kotaKademeleriRaw.length === 0) return c.json({ primBilgi: null, sebep: "Bu mekanda kota tanımlı değil." });
+
+    // Kademeleri hedef'e göre sırala (backend'de tutarlı sıralama)
+    const kotaKademeleri = [...kotaKademeleriRaw].sort((a: any, b: any) => Number(a.hedef) - Number(b.hedef));
 
     // Bugünkü stok kaydını al
     const stokKey = `stok_gunluk_${mekan.id}_${today}`;
@@ -2436,32 +2442,37 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
     const personelSayisi = fotografcilar.size || 1;
     const coklu = personelSayisi > 1;
 
+    // Sıralı dizi üzerinden geçilen kademeler (index = sıralı pozisyon)
     const gecilenKademeler = kotaKademeleri
       .map((k: any, i: number) => ({ ...k, index: i }))
-      .filter((k: any) => ciro >= k.hedef);
+      .filter((k: any) => ciro >= Number(k.hedef));
 
-    const kotaKademeOzet = kotaKademeleri.map((k: any) => ({ hedef: k.hedef, primTek: k.primTek, primCoklu: k.primCoklu }));
+    const kotaKademeOzet = kotaKademeleri.map((k: any) => ({
+      hedef: Number(k.hedef),
+      primTek: Number(k.primTek) || 0,
+      primCoklu: Number(k.primCoklu) || 0,
+    }));
 
     if (gecilenKademeler.length === 0) {
       const ilk = kotaKademeleri[0];
       return c.json({
         primBilgi: null,
         ciro,
-        ilkHedef: ilk.hedef,
-        fark: ilk.hedef - ciro,
+        ilkHedef: Number(ilk.hedef),
+        fark: Number(ilk.hedef) - ciro,
         sebep: "Henüz kota geçilmedi.",
         kotaKademeleri: kotaKademeOzet,
       });
     }
 
     const topKademe = gecilenKademeler[gecilenKademeler.length - 1];
-    const toplamPrim = gecilenKademeler.reduce((s: number, k: any) => s + ((coklu ? k.primCoklu : k.primTek) || 0), 0);
+    const toplamPrim = gecilenKademeler.reduce((s: number, k: any) => s + ((coklu ? Number(k.primCoklu) : Number(k.primTek)) || 0), 0);
 
     return c.json({
       primBilgi: {
         kademeIndex: topKademe.index,
-        kademeHedef: topKademe.hedef,
-        topKademePrim: (coklu ? topKademe.primCoklu : topKademe.primTek) || 0,
+        kademeHedef: Number(topKademe.hedef),
+        topKademePrim: (coklu ? Number(topKademe.primCoklu) : Number(topKademe.primTek)) || 0,
         toplamPrim,
         toplamKademe: gecilenKademeler.length,
         toplamKademeAdet: kotaKademeleri.length,
@@ -2470,7 +2481,7 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
         ciro,
       },
       ciro,
-      ilkHedef: kotaKademeleri[0].hedef,
+      ilkHedef: Number(kotaKademeleri[0].hedef),
       fark: 0,
       kotaKademeleri: kotaKademeOzet,
     });

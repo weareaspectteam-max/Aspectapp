@@ -401,20 +401,19 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
             {/* ── Kota Progress Bar ── */}
             {kotaData && kotaData.kademeler.length > 0 && (() => {
               const { ciro, kademeler, primBilgi, fark } = kotaData;
-              const sorted = [...kademeler].sort((a, b) => a.hedef - b.hedef);
-              const maxHedef = sorted[sorted.length - 1].hedef;
+              const sorted = [...kademeler].sort((a, b) => Number(a.hedef) - Number(b.hedef));
+              const maxHedef = Number(sorted[sorted.length - 1].hedef);
               const barFill = Math.min(ciro / maxHedef, 1.0);
+              const formatTLc = (v: number) => v >= 1000 ? `₺${(v / 1000).toFixed(0)}B` : `₺${v}`;
               const COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399', '#f87171'];
 
-              const enYuksekAsildi = [...sorted].map((k, i) => ({ k, i })).reverse().find(({ k }) => ciro >= k.hedef);
+              const enYuksekAsildi = [...sorted].map((k, i) => ({ k, i })).reverse().find(({ k }) => ciro >= Number(k.hedef));
               const barGrad = enYuksekAsildi
                 ? (enYuksekAsildi.i >= 2 ? 'linear-gradient(90deg,#60a5fa,#a855f7,#fbbf24)'
                   : enYuksekAsildi.i >= 1 ? 'linear-gradient(90deg,#60a5fa,#a855f7)'
                   : '#60a5fa')
                 : 'rgba(255,255,255,0.15)';
               const glowColor = enYuksekAsildi ? COLORS[Math.min(enYuksekAsildi.i, 4)] : null;
-
-              const formatTLc = (v: number) => v >= 1000 ? `₺${(v / 1000).toFixed(0)}B` : `₺${v}`;
 
               // Kademe sayısından bağımsız: son kademe daima en iyi kupa
               const TROPHY_POOL = ['🎖️', '🥉', '🥈', '🏆', '💎', '👑'];
@@ -455,8 +454,8 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                   {/* Checkpoint etiketleri — bar'ın ÜSTÜNDE */}
                   <div style={{ position: 'relative', height: 44, marginBottom: 2 }}>
                     {sorted.map((k, i) => {
-                      const pos = k.hedef / maxHedef;
-                      const achieved = ciro >= k.hedef;
+                      const pos = Number(k.hedef) / maxHedef;
+                      const achieved = ciro >= Number(k.hedef);
                       const c = COLORS[Math.min(i, 4)];
                       const trophy = getTrophy(i, sorted.length);
                       const leftPct = Math.min(Math.max(pos * 100, 6), 94);
@@ -529,12 +528,13 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                       transition: 'width 0.6s ease',
                     }} />
                     {sorted.map((k, i) => {
-                      const pos = k.hedef / maxHedef;
-                      const achieved = ciro >= k.hedef;
+                      const pos = Number(k.hedef) / maxHedef;
+                      const dotLeftPct = Math.min(Math.max(pos * 100, 6), 94);
+                      const achieved = ciro >= Number(k.hedef);
                       const c = COLORS[Math.min(i, 4)];
                       return (
                         <div key={i} style={{
-                          position: 'absolute', top: '50%', left: `${pos * 100}%`,
+                          position: 'absolute', top: '50%', left: `${dotLeftPct}%`,
                           transform: 'translate(-50%,-50%)',
                           width: 10, height: 10, borderRadius: '50%',
                           background: achieved ? c : 'rgba(255,255,255,0.12)',
