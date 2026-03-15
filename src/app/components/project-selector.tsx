@@ -1,7 +1,7 @@
 import { getTasks, getLocations } from '../services/rotation-service';
 import type { Task } from '../services/rotation-service';
 import { MapPin, Clock, Navigation, CheckCircle2, Lock, ArrowLeft, Zap, Loader2, Trophy } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { localDateStr, toLocalDateStr } from '../lib/date';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
@@ -40,9 +40,10 @@ interface ProjectSelectorProps {
   userName?: string;
   onEkstraIsSelect?: (task: Task) => void;
   onOzelIsSelect?: (task: Task) => void;
+  refreshTrigger?: number;
 }
 
-export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, onBack, userRole, onLiveFeed, userId, userName, onEkstraIsSelect, onOzelIsSelect }: ProjectSelectorProps) {
+export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, onBack, userRole, onLiveFeed, userId, userName, onEkstraIsSelect, onOzelIsSelect, refreshTrigger }: ProjectSelectorProps) {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [showSelector, setShowSelector] = useState(!selectedProject);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -64,6 +65,46 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
     fark: number | null;
   } | null>(null);
 
+  // ── Kota fetch fonksiyonu (callback, birden fazla yerden çağrılabilir) ──
+  const fetchKota = useCallback(async () => {
+    if (!selectedProject) { setKotaData(null); return; }
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(
+        `${API_BASE_PS}/shift/prim-bilgi?mekanAdi=${encodeURIComponent(selectedProject.name)}`,
+        { headers }
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.kotaKademeleri && data.kotaKademeleri.length > 0) {
+        setKotaData({
+          ciro: data.ciro ?? 0,
+          kademeler: data.kotaKademeleri,
+          primBilgi: data.primBilgi ?? null,
+          fark: data.fark ?? null,
+        });
+      } else {
+        setKotaData(null);
+      }
+    } catch {
+      setKotaData(null);
+    }
+  }, [selectedProject?.name]);
+
+  // ── İlk yükleme + mekan değişince çek ──
+  useEffect(() => {
+    fetchKota();
+    const interval = setInterval(fetchKota, 60_000);
+    return () => clearInterval(interval);
+  }, [fetchKota]);
+
+  // ── Satış yapılınca dışarıdan tetikleme ──
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0) {
+      fetchKota();
+    }
+  }, [refreshTrigger]);
+
   // Rol bazlı davranış
   // SADECE yonetici rotasyonu bypass eder (her mekana girebilir)
   // Diğer herkes (ust-mudur, mudur, operasyon, personel, idari vb.) rotasyona tabi
@@ -79,39 +120,6 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
     };
     load();
   }, []);
-
-  // ── Kota/Prim bilgisini çek (seçili mekan değişince) ──
-  useEffect(() => {
-    if (!selectedProject) { setKotaData(null); return; }
-    let cancelled = false;
-    const fetchKota = async () => {
-      try {
-        const headers = await authHeaders();
-        const res = await fetch(
-          `${API_BASE_PS}/shift/prim-bilgi?mekanAdi=${encodeURIComponent(selectedProject.name)}`,
-          { headers }
-        );
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        if (!cancelled && data.kotaKademeleri && data.kotaKademeleri.length > 0) {
-          setKotaData({
-            ciro: data.ciro ?? 0,
-            kademeler: data.kotaKademeleri,
-            primBilgi: data.primBilgi ?? null,
-            fark: data.fark ?? null,
-          });
-        } else {
-          setKotaData(null);
-        }
-      } catch {
-        setKotaData(null);
-      }
-    };
-    fetchKota();
-    // Her 60 sn. güncelle
-    const interval = setInterval(fetchKota, 60_000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [selectedProject?.name]);
 
   // ─── Görevin şu an görünür pencerede olup olmadığını kontrol eder ───
   // Görünür pencere: startTime - 5 saat ≤ şimdi ≤ endTime + 5 saat
@@ -396,7 +404,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
               const sorted = [...kademeler].sort((a, b) => a.hedef - b.hedef);
               const maxHedef = sorted[sorted.length - 1].hedef;
               const barFill = Math.min(ciro / maxHedef, 1.0);
-              const COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399'];
+              const COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399', '#f87171'];
 
               const enYuksekAsildi = [...sorted].map((k, i) => ({ k, i })).reverse().find(({ k }) => ciro >= k.hedef);
               const barGrad = enYuksekAsildi
@@ -404,14 +412,14 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                   : enYuksekAsildi.i >= 1 ? 'linear-gradient(90deg,#60a5fa,#a855f7)'
                   : '#60a5fa')
                 : 'rgba(255,255,255,0.15)';
-              const glowColor = enYuksekAsildi ? COLORS[Math.min(enYuksekAsildi.i, 3)] : null;
+              const glowColor = enYuksekAsildi ? COLORS[Math.min(enYuksekAsildi.i, 4)] : null;
 
               const formatTLc = (v: number) => v >= 1000 ? `₺${(v / 1000).toFixed(0)}B` : `₺${v}`;
 
               return (
                 <div style={{ marginTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10 }}>
                   {/* Üst satır: ciro + prim rozeti */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                     <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
                       Günlük Ciro
                     </span>
@@ -436,8 +444,50 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                     </div>
                   </div>
 
+                  {/* Checkpoint etiketleri — bar'ın ÜSTÜNDE */}
+                  <div style={{ position: 'relative', height: 30, marginBottom: 2 }}>
+                    {sorted.map((k, i) => {
+                      const pos = k.hedef / maxHedef;
+                      const achieved = ciro >= k.hedef;
+                      const c = COLORS[Math.min(i, 4)];
+                      // Kenar boşluğu: ilk ve son eleman taşmasın
+                      const leftPct = Math.min(Math.max(pos * 100, 6), 94);
+                      return (
+                        <div key={i} style={{
+                          position: 'absolute',
+                          left: `${leftPct}%`,
+                          transform: 'translateX(-50%)',
+                          bottom: 4,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: 1,
+                        }}>
+                          <span style={{
+                            fontSize: 7.5,
+                            fontWeight: 800,
+                            color: achieved ? c : 'rgba(255,255,255,0.30)',
+                            whiteSpace: 'nowrap',
+                            lineHeight: 1.1,
+                          }}>
+                            {i + 1}. Kot
+                          </span>
+                          <span style={{
+                            fontSize: 7,
+                            fontWeight: 700,
+                            color: achieved ? c : 'rgba(255,255,255,0.18)',
+                            whiteSpace: 'nowrap',
+                            lineHeight: 1.1,
+                          }}>
+                            {achieved ? `+${formatTLc(k.primTek)}` : formatTLc(k.hedef)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
                   {/* Bar */}
-                  <div style={{ position: 'relative', height: 4, borderRadius: 99, background: 'rgba(255,255,255,0.07)' }}>
+                  <div style={{ position: 'relative', height: 5, borderRadius: 99, background: 'rgba(255,255,255,0.07)' }}>
                     <div style={{
                       position: 'absolute', top: 0, left: 0,
                       height: '100%', borderRadius: 99,
@@ -449,38 +499,18 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                     {sorted.map((k, i) => {
                       const pos = k.hedef / maxHedef;
                       const achieved = ciro >= k.hedef;
-                      const c = COLORS[Math.min(i, 3)];
+                      const c = COLORS[Math.min(i, 4)];
                       return (
                         <div key={i} style={{
                           position: 'absolute', top: '50%', left: `${pos * 100}%`,
                           transform: 'translate(-50%,-50%)',
-                          width: 9, height: 9, borderRadius: '50%',
+                          width: 10, height: 10, borderRadius: '50%',
                           background: achieved ? c : 'rgba(255,255,255,0.12)',
-                          border: `1.5px solid ${achieved ? c : 'rgba(255,255,255,0.18)'}`,
-                          boxShadow: achieved ? `0 0 7px ${c}90` : 'none',
+                          border: `2px solid ${achieved ? c : 'rgba(255,255,255,0.18)'}`,
+                          boxShadow: achieved ? `0 0 8px ${c}90` : 'none',
                           transition: 'all 0.4s ease',
                           zIndex: 2,
                         }} />
-                      );
-                    })}
-                  </div>
-
-                  {/* Alt etiketler */}
-                  <div style={{ position: 'relative', height: 13, marginTop: 2 }}>
-                    {sorted.map((k, i) => {
-                      const pos = k.hedef / maxHedef;
-                      const achieved = ciro >= k.hedef;
-                      const c = COLORS[Math.min(i, 3)];
-                      return (
-                        <span key={i} style={{
-                          position: 'absolute', left: `${pos * 100}%`,
-                          transform: 'translateX(-50%)',
-                          fontSize: 8, fontWeight: 800,
-                          color: achieved ? c : 'rgba(255,255,255,0.2)',
-                          whiteSpace: 'nowrap',
-                        }}>
-                          {achieved ? '✓' : formatTLc(k.hedef)}
-                        </span>
                       );
                     })}
                   </div>

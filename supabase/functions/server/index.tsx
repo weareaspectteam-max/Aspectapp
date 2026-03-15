@@ -2,6 +2,7 @@ import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js";
+import { jwtVerify } from "npm:jose@5";
 import * as kv from "./kv_store.tsx";
 
 const app = new Hono();
@@ -49,35 +50,52 @@ async function ensureEquipmentBucket() {
 }
 
 // Helper: verify caller and return user
-// Supabase projesi ES256 (asimetrik) JWT kullandığından gateway bunu reddedebilir.
-// Çözüm: gateway için Authorization: Bearer <anonKey> (HS256), kullanıcı için X-Access-Token: <userJWT> (ES256).
-// Sadece X-Access-Token'a bakar — Authorization'daki anonKey bir kullanıcı JWT'si değildir.
+// Önce JWT'yi SUPABASE_JWT_SECRET ile yerel doğrular (ağ çağrısı yok).
+// Yerel doğrulama başarısız olursa network fallback (3 deneme).
 const verifyToken = async (c: any) => {
   const xToken = c.req.header("X-Access-Token");
 
-  // Sadece X-Access-Token kullan; Authorization header'ı Supabase gateway içindir,
-  // anonKey ile auth.getUser() her zaman başarısız olur.
   if (!xToken) {
     console.log("[verifyToken] X-Access-Token header eksik — 401");
     return null;
   }
 
-  try {
-    const supabase = getAdminClient();
-    const { data: { user }, error } = await supabase.auth.getUser(xToken);
-    if (error) {
-      console.log("[verifyToken] getUser hatası:", error.message);
-      return null;
+  // ── 1. Yerel JWT doğrulaması (ağ çağrısı yok, connection reset riski sıfır) ──
+  const jwtSecret = Deno.env.get("SUPABASE_JWT_SECRET");
+  if (jwtSecret) {
+    try {
+      const secret = new TextEncoder().encode(jwtSecret);
+      const { payload } = await jwtVerify(xToken, secret);
+      if (payload?.sub) {
+        return { id: payload.sub, email: payload.email ?? "", role: payload.role ?? "" };
+      }
+    } catch (jwtErr) {
+      console.log("[verifyToken] yerel JWT başarısız, network fallback:", String(jwtErr).slice(0, 120));
     }
-    if (!user) {
-      console.log("[verifyToken] getUser: kullanıcı bulunamadı");
-      return null;
-    }
-    return user;
-  } catch (err) {
-    console.log("[verifyToken] beklenmeyen hata:", err);
-    return null;
   }
+
+  // ── 2. Network fallback (3 deneme, üstel geri çekilme) ──
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const supabase = getAdminClient();
+      const { data: { user }, error } = await supabase.auth.getUser(xToken);
+      if (error) {
+        console.log(`[verifyToken] getUser hatası (deneme ${attempt}):`, error.message);
+        if (attempt < 3) await new Promise(r => setTimeout(r, 300 * attempt));
+        continue;
+      }
+      if (!user) {
+        console.log("[verifyToken] getUser: kullanıcı bulunamadı");
+        return null;
+      }
+      return user;
+    } catch (err) {
+      console.log(`[verifyToken] network hatası (deneme ${attempt}):`, String(err).slice(0, 120));
+      if (attempt < 3) await new Promise(r => setTimeout(r, 300 * attempt));
+    }
+  }
+  console.log("[verifyToken] tüm denemeler başarısız — 401 döndürülüyor");
+  return null;
 };
 
 // ──────────────────────────────────────────

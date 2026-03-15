@@ -99,6 +99,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   // Operasyon paneli tam ekran
   const [operasyonFullscreen, setOperasyonFullscreen] = useState(false);
 
+  // Satış yapılınca ProjectSelector kota bar'ını tetiklemek için sayaç
+  const [saleRefreshTrigger, setSaleRefreshTrigger] = useState(0);
+
   // Frame tracking state
   const [framePhotographer, setFramePhotographer] = useState<StaffMember | null>(null);
   const [frameCount, setFrameCount] = useState('');
@@ -441,6 +444,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       }
       // Listeye ekle (aktif satışlar, iptal edilmemiş)
       setRecentSales(prev => [{ ...data.satis, project: selectedProject.name }, ...prev]);
+      // Kota bar'ını anlık güncelle
+      setSaleRefreshTrigger(prev => prev + 1);
     } catch (err) {
       console.error('handleCompleteSale error:', err);
       alert('Bağlantı hatası. Satış kaydedilemedi.');
@@ -794,6 +799,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
           userName={userName}
           onEkstraIsSelect={onEkstraIsSelect}
           onOzelIsSelect={onOzelIsSelect}
+          refreshTrigger={saleRefreshTrigger}
           onLiveFeed={
             ['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole) && selectedProject
               ? () => setShowLiveFeed(true)
