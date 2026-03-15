@@ -2313,6 +2313,9 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
       if (o.key) odemeMap[o.key] = { odendi: o.odendi || false, odemeTarihi: o.odemeTarihi };
     }
 
+    // Tüm rotasyon görevlerini çek — personeli buradan alacağız
+    const tumRotasyonlar: any[] = await kv.getByPrefix("rotation_task_") || [];
+
     // Her gün × her mekan × her kademe × her personel için AYRI prim kaydı
     const primKayitlari: any[] = [];
 
@@ -2323,12 +2326,22 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
       const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
       const ciro = satislar.reduce((sum: number, s: any) => sum + (s.finalPrice || 0), 0);
 
-      // Personel listesi: kareKayitlari'ndaki farklı isimler
-      const fotografcilarSet = new Set<string>(
-        (kayit.kareKayitlari || []).map((k: any) => k.photographerName).filter(Boolean)
-      );
-      const fotografcilar: string[] = fotografcilarSet.size > 0
-        ? Array.from(fotografcilarSet)
+      // Personel listesi: o gün o mekana atanmış rotasyon personeli (id → ad Map ile tekilleştir)
+      const mekanAdi: string = mekan.name || "";
+      const rotasyonPersonelMap = new Map<string, string>(); // id → ad
+
+      for (const task of tumRotasyonlar) {
+        if (task.date !== kayit.tarih) continue;
+        if (!["sent", "revised"].includes(task.status)) continue;
+        if (task.location !== mekanAdi) continue;
+        if (!Array.isArray(task.personnel)) continue;
+        for (const p of task.personnel) {
+          if (p.id && p.name) rotasyonPersonelMap.set(p.id, p.name);
+        }
+      }
+
+      const fotografcilar: string[] = rotasyonPersonelMap.size > 0
+        ? Array.from(rotasyonPersonelMap.values())
         : ["Bilinmiyor"];
 
       const personelSayisi = fotografcilar.length;
