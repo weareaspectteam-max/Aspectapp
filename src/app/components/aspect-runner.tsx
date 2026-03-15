@@ -1,14 +1,16 @@
 /**
- * ASPECT RUNNER — Infinite side-scrolling runner game
- * 5 themes · Double jump · 3 lives · Coins · Combo · Shield · Milestones · Scoreboard
+ * ASPECT RUNNER — v2 Refactored
+ * Better physics · Asymmetric gravity · Coyote time · Jump buffer
+ * 2 themes · 3 obstacle types · Photo moments · ASPECT branding
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronLeft, Trophy, Play, Heart, Shield as ShieldIcon, Star } from 'lucide-react';
+import { ChevronLeft, Trophy, Play, RotateCcw, Star } from 'lucide-react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import type { UserRole } from './login';
 
+// ─────────────────────────── PROPS ───────────────────────────────────────────
 interface AspectRunnerProps {
   userName: string;
   userRole: UserRole;
@@ -16,1023 +18,1015 @@ interface AspectRunnerProps {
   onBack: () => void;
 }
 
-// ── Canvas dimensions ────────────────────────────────────────────────────────
+// ─────────────────────────── CONSTANTS ───────────────────────────────────────
 const CW = 480;
-const CH = 420;
-const GROUND_Y = 345;
-const PLAYER_X = 85;
-const PLAYER_W = 26;
-const PLAYER_H = 44;
-const GRAVITY = 0.58;
-const JUMP_FORCE = -13.5;
-const DBL_JUMP_FORCE = -11.5;
-const THEME_DIST = 2000;
+const CH = 370;
+const GY = 302;        // top of ground strip
+const PX = 80;         // player fixed x
+const PW = 24;
+const PH = 40;
 
-// ── Photography tips ─────────────────────────────────────────────────────────
-const PHOTO_TIPS = [
-  { title: 'Kural Üçleri', tip: 'Konuyu merkeze koyma! 3×3 çizgi kesişimlerine yerleştir.' },
-  { title: 'Altın Saat ✨', tip: 'Gün doğumundan 1 saat sonra en sıcak, yumuşak ışık.' },
-  { title: 'ISO Değeri', tip: 'ISO düşük = az gürültü. Gündüz ISO 100-400 ideal.' },
-  { title: 'Diyafram (f/)', tip: 'f/1.8 → bulanık arka plan. f/11 → her şey net.' },
-  { title: 'Enstantane Hızı', tip: '1/1000s hareketi dondurur, 1/30s akış hissi verir.' },
-  { title: 'Beyaz Denge', tip: 'Günışığı 5600K, gölge 7000K, tungsten 3200K.' },
-  { title: 'Doğal Çerçeve', tip: 'Dallar, kapılar, pencereler… derinlik ve anlam katar.' },
-  { title: 'Işık Yönü', tip: 'Yan ışık dramatik gölge. Arka ışık güzel silüet yaratır.' },
-  { title: 'Alan Derinliği', tip: 'Bulanıklık için: geniş diyafram + konuya yaklaş.' },
-  { title: 'Histogram', tip: 'Sağa kayık = aşırı pozlama. Sola kayık = az pozlama.' },
-  { title: 'Bakış Açısı', tip: 'Çömel, yüksel, yana eğil! Sıradan açıyı değiştir.' },
-  { title: 'Kompozisyon', tip: 'Öne yakın element + arkada konu → harika derinlik!' },
-];
+// Physics — asymmetric gravity for snappy feel
+const GRAV_UP   = 0.52;   // lighter rising
+const GRAV_DOWN = 0.84;   // heavier falling → lands fast
+const J1        = -14.2;  // first jump
+const J2        = -11.8;  // double jump
+const FALL_MAX  = 16;
+const COYOTE_T  = 7;      // frames after leaving ground where jump still works
+const JBUF_T    = 10;     // jump pressed up to N frames early → execute on land
 
-// ── Character speeches ───────────────────────────────────────────────────────
-const CHAR_SPEECHES = [
-  'Dur biraz... nefes... 😮‍💨',
-  'Ben fotoğrafçıyım, atlet değil!',
-  'Bacaklarım grevde artık!',
-  'Bu kamera neden bu kadar ağır?!',
-  'Bir mola yeter mi?',
-  'Aspect beni görse böyle koşturmaz!',
-  'Oksijen... oksijen lütfen...',
-  'Neden manzara bize gelmez ki?!',
-  'Ayakkabı bağım çözüldü! 👟',
-  'Kameramı bırakalım mı?! 😤',
-  'Fotoğraf mı, maraton mu bu?!',
-];
+// Game speed
+const SPD_INIT  = 4.0;
+const SPD_MAX   = 9.0;
+const SPD_DIST  = 2200;   // distance ramp
 
-const COACH_SPEECHES = [
-  'Hadi bakalım, koş koş!',
-  'Dur durma, devam!',
-  'Az kaldı az kaldı, çabuk!',
-  'Bırakma şimdi, devam et!',
-  'Aspect seni izliyor, hadi!',
-  'Bu kadar mı?! Koş artık!',
-  'Haydi haydi haydi! 🏃',
-  'Ses çıkmasın, hız çıksın!',
-  'Güzel, devam et öyle!',
-  'Coinleri topla, kaçma!',
-];
+// Spawn gaps (in speed-distance units)
+const OBS_GAP_BASE  = 195;
+const OBS_GAP_RAND  = 230;
+const PHOTO_GAP     = 950;
+const PHOTO_RAND    = 700;
+const SIGN_GAP      = 500;
+const SIGN_RAND     = 450;
+const SPEECH_GAP    = 2000;
+const SPEECH_RAND   = 1400;
 
-const MILESTONE_MSGS: Record<number, string> = {
-  100:  '🎯 100 PUAN!',
-  300:  '🔥 ALEV ALEV!',
-  500:  '⚡ 500 PUAN!',
-  1000: '🏆 BİN PUAN!',
-  2000: '🚀 EFSANE!',
-  3000: '👑 ASPECT RUNNER!',
-  5000: '💎 ULTRA RUNNER!',
-};
+// Theme switch distance
+const THEME_DIST = 8000;
 
-// ── Themes ───────────────────────────────────────────────────────────────────
+// ─────────────────────────── THEMES ──────────────────────────────────────────
 const THEMES = [
   {
+    id: 'golden' as const,
     name: 'Altın Saat', emoji: '🌅',
-    sky1: '#FF6B35', sky2: '#FFB347',
-    groundSurface: '#A0522D', groundDeep: '#8B4513',
-    obstacleA: '#5C3317', obstacleB: '#3D2010',
-    playerBody: '#FF9F1C', playerHead: '#FFCF77',
-    accent: '#FFE66D', groundTxt: '#FFD70099',
-    neon: false, pixel: false, lightning: false,
-    cloudColor: 'rgba(255,255,255,0.3)',
-    treeTrunk: '#6B4423', treeLeaf: '#228B22',
-    mountainColor: 'rgba(180,100,60,0.35)',
+    sky1: '#E8521A', sky2: '#F5A623',
+    gnd1: '#9B6522', gnd2: '#7A4E1A',
+    obs1: '#5C3317', obs2: '#3D2010',
+    accent: '#FFE066',
+    bgAlpha: 'rgba(255,210,60,0.065)',
+    gndTxt: 'rgba(255,195,40,0.20)',
+    mtCol: 'rgba(165,85,45,0.30)',
+    cloudCol: 'rgba(255,255,255,0.20)',
+    treeCol: '#2E7D32',
+    trunkCol: '#6D4C41',
+    neon: false,
   },
   {
+    id: 'night' as const,
     name: 'Gece Şehri', emoji: '🌃',
-    sky1: '#0D0D2B', sky2: '#1A1A4F',
-    groundSurface: '#1A1A2E', groundDeep: '#0D0D1A',
-    obstacleA: '#0F3460', obstacleB: '#072240',
-    playerBody: '#E94560', playerHead: '#F07070',
-    accent: '#00F5FF', groundTxt: '#FF00FFAA',
-    neon: true, pixel: false, lightning: false,
-    cloudColor: 'rgba(0,245,255,0.08)',
-    treeTrunk: '#1A3A5C', treeLeaf: '#0F3460',
-    mountainColor: 'rgba(15,52,96,0.6)',
+    sky1: '#06061A', sky2: '#0F0F38',
+    gnd1: '#13132A', gnd2: '#08081A',
+    obs1: '#1a3a6a', obs2: '#0d2248',
+    accent: '#00E5FF',
+    bgAlpha: 'rgba(0,229,255,0.048)',
+    gndTxt: 'rgba(0,229,255,0.22)',
+    mtCol: 'rgba(8,25,75,0.72)',
+    cloudCol: 'rgba(0,200,255,0.05)',
+    treeCol: '#0F3460',
+    trunkCol: '#1A3A5C',
+    neon: true,
   },
-  {
-    name: 'Retro Piksel', emoji: '🎮',
-    sky1: '#2D004B', sky2: '#4A0080',
-    groundSurface: '#006400', groundDeep: '#004000',
-    obstacleA: '#8B0000', obstacleB: '#600000',
-    playerBody: '#FF00FF', playerHead: '#FF88FF',
-    accent: '#00FF00', groundTxt: '#00FF0099',
-    neon: false, pixel: true, lightning: false,
-    cloudColor: 'rgba(0,255,0,0.08)',
-    treeTrunk: '#8B4513', treeLeaf: '#00AA00',
-    mountainColor: 'rgba(80,0,80,0.5)',
-  },
-  {
-    name: 'Mavi Saat', emoji: '🌊',
-    sky1: '#001233', sky2: '#023E8A',
-    groundSurface: '#012159', groundDeep: '#001845',
-    obstacleA: '#0077B6', obstacleB: '#005A87',
-    playerBody: '#48CAE4', playerHead: '#90E0EF',
-    accent: '#ADE8F4', groundTxt: '#48CAE488',
-    neon: false, pixel: false, lightning: false,
-    cloudColor: 'rgba(173,232,244,0.08)',
-    treeTrunk: '#023E8A', treeLeaf: '#0077B6',
-    mountainColor: 'rgba(0,119,182,0.3)',
-  },
-  {
-    name: 'Fırtına', emoji: '⚡',
-    sky1: '#0A0A0A', sky2: '#1C1C1C',
-    groundSurface: '#2D2D2D', groundDeep: '#1A1A1A',
-    obstacleA: '#555555', obstacleB: '#333333',
-    playerBody: '#FFD700', playerHead: '#FFE878',
-    accent: '#FFFFFF', groundTxt: '#FFFF0088',
-    neon: false, pixel: false, lightning: true,
-    cloudColor: 'rgba(255,255,255,0.05)',
-    treeTrunk: '#444444', treeLeaf: '#333333',
-    mountainColor: 'rgba(80,80,80,0.4)',
-  },
+] as const;
+
+type Theme = typeof THEMES[number];
+
+// ─────────────────────────── CONTENT ─────────────────────────────────────────
+const SIGN_LINES = [
+  ['ASPECT', 'PHOTOGRAPHY'],
+  ['ASPECT', 'OPS'],
+  ['ASPECT', 'TEAM'],
+  ['CAPTURE', 'THE MOMENT'],
+  ['ASPECT', 'STUDIO'],
+  ['ASPECT', 'PRO'],
+  ['ASPECT', 'RUNNER'],
+  ['ASPECT', 'ALL RIGHTS'],
+  ['ASPECT', 'WORLD'],
+  ['STAY', 'IN FRAME'],
 ];
 
-const BRAND_TEXTS = [
-  'ASPECT', 'ASPECT PHOTOGRAPHY', 'ASPECT TEAM', 'ASPECT OPS',
-  'ASPECT RUNNER', 'ASPECT STUDIO', 'ASPECT ✦',
+const SPEECHES: { who: 'char' | 'coach'; text: string }[] = [
+  { who: 'char',  text: 'Dur biraz... nefes... 😮‍💨' },
+  { who: 'char',  text: 'Ben fotoğrafçıyım, atlet değil!' },
+  { who: 'char',  text: 'Bu kamera neden bu kadar ağır?!' },
+  { who: 'char',  text: 'Ayakkabı bağım çözüldü! 👟' },
+  { who: 'char',  text: 'Aspect beni görse böyle koşturmaz!' },
+  { who: 'coach', text: 'Hadi bakalım, koş koş!' },
+  { who: 'coach', text: 'Aspect seni izliyor, hadi!' },
+  { who: 'coach', text: 'Güzel, devam et öyle!' },
+  { who: 'coach', text: 'Az kaldı az kaldı, çabuk!' },
 ];
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+const MILESTONES: [number, string][] = [
+  [100,  '📸 FLASH ANINDA!'],
+  [300,  '🔥 ALEV ALEV!'],
+  [600,  '⚡ 600 PUAN!'],
+  [1000, '🏆 BİN PUAN!'],
+  [2000, '🚀 EFSANE!'],
+  [3500, '👑 ASPECT RUNNER!'],
+  [5500, '💎 ULTRA RUNNER!'],
+];
+
+// ─────────────────────────── TYPES ───────────────────────────────────────────
 interface Player {
-  x: number; y: number; vy: number;
-  jumpsLeft: number; walkFrame: number;
-  dead: boolean; deadTimer: number;
+  y: number; vy: number;
+  jumpsLeft: number;
+  coyoteT: number;
+  jbufT: number;
+  onGround: boolean;
+  squashT: number;
+  walkFrame: number;
+  dead: boolean;
+  deadTimer: number;
+  deadAngle: number;
 }
+
+type ObsType = 'box' | 'bird' | 'rock';
+
 interface Obstacle {
-  x: number; y: number; w: number; h: number;
-  type: 'cactus' | 'bird' | 'rock' | 'flash';
   id: number;
+  x: number; y: number; w: number; h: number;
+  type: ObsType;
   passed: boolean;
 }
-interface Photo {
+
+interface PhotoMoment {
+  id: number;
   x: number; y: number;
-  collected: boolean; collectTimer: number;
-  tipIdx: number;
+  collected: boolean;
+  collectT: number;
 }
-interface Coin {
-  x: number; y: number; baseY: number;
-  collected: boolean; collectTimer: number;
-  bobPhase: number;
-}
-interface ShieldPU {
-  x: number; y: number;
-  collected: boolean; collectTimer: number;
-}
+
 interface Particle {
-  x: number; y: number; vx: number; vy: number;
+  x: number; y: number;
+  vx: number; vy: number;
   life: number; maxLife: number;
   color: string; r: number;
 }
-interface BrandText { x: number; text: string; }
+
+interface Sign { x: number; lineIdx: number; h: number; }
+
 interface BgEl {
-  x: number; y: number; speed: number;
-  type: 'cloud' | 'building' | 'mountain' | 'tree';
-  w: number; h: number; layer: number;
+  x: number; y: number; w: number; h: number;
+  type: 'mountain' | 'cloud' | 'tree';
+  spd: number;
 }
-interface Speech { text: string; timer: number; }
+
+interface Speech { who: 'char' | 'coach'; text: string; timer: number; }
 
 interface G {
   status: 'playing' | 'dead';
   player: Player;
   obstacles: Obstacle[];
-  photos: Photo[];
-  coins: Coin[];
-  shields: ShieldPU[];
+  photos: PhotoMoment[];
   particles: Particle[];
-  brandTexts: BrandText[];
+  signs: Sign[];
   bgEls: BgEl[];
+  speech: Speech | null;
+  milestone: { text: string; timer: number } | null;
   score: number;
   distance: number;
   speed: number;
   frame: number;
   themeIdx: number;
-  // lives
   lives: number;
-  invTimer: number;         // invincibility frames after hit
-  // combo
+  invTimer: number;
   combo: number;
-  comboTimer: number;
-  // shield
-  shieldActive: boolean;
-  shieldTimer: number;
-  // speeches
-  charSpeech: Speech | null;
-  coachSpeech: Speech | null;
-  activeTip: { title: string; tip: string; timer: number } | null;
-  milestone: { text: string; timer: number } | null;
-  lastMilestoneScore: number;
-  // spawn countdowns
-  lastObstX: number;
-  nextObstGap: number;
-  lastPhotoX: number;
-  nextPhotoGap: number;
-  lastCoinX: number;
-  nextCoinGap: number;
-  lastShieldX: number;
-  nextShieldGap: number;
-  lastBrandX: number;
-  lightningTimer: number;
-  lastCharDist: number;
-  lastCoachDist: number;
-  obstacleIdCounter: number;
+  comboT: number;
+  nextObsIn: number;
+  nextPhotoIn: number;
+  nextSignIn: number;
+  nextSpeechIn: number;
+  lastMilestone: number;
+  obsIdCtr: number;
+  photoIdCtr: number;
+  // brand watermark positions (slow parallax)
+  wm1x: number;
+  wm2x: number;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function rnd(min: number, max: number) { return Math.random() * (max - min) + min; }
-function rndInt(min: number, max: number) { return Math.floor(rnd(min, max)); }
-function pick<T>(arr: T[]): T { return arr[rndInt(0, arr.length)]; }
+// ─────────────────────────── HELPERS ─────────────────────────────────────────
+const rnd  = (a: number, b: number) => Math.random() * (b - a) + a;
+const rndI = (a: number, b: number) => Math.floor(rnd(a, b));
+const pick = <T,>(arr: readonly T[]): T => arr[rndI(0, arr.length)];
 
-function spawnParticles(g: G, x: number, y: number, color: string, count = 8) {
-  for (let i = 0; i < count; i++) {
-    const angle = (i / count) * Math.PI * 2 + rnd(-0.3, 0.3);
-    const speed = rnd(1.5, 4);
+function spawnParticles(g: G, x: number, y: number, color: string, n = 8) {
+  for (let i = 0; i < n; i++) {
+    const a = rnd(0, Math.PI * 2);
+    const s = rnd(1.5, 4.5);
     g.particles.push({
       x, y,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed - rnd(1, 3),
-      life: 40, maxLife: 40,
-      color, r: rnd(2, 5),
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s - rnd(0.5, 2.5),
+      life: 38, maxLife: 38,
+      color, r: rnd(2, 4.5),
     });
   }
 }
 
+// ─────────────────────────── INIT ─────────────────────────────────────────────
+function mkBgEls(): BgEl[] {
+  const els: BgEl[] = [];
+  for (let i = 0; i < 5; i++)
+    els.push({ x: rnd(0, CW), y: rnd(135, 215), w: rnd(130, 240), h: rnd(80, 145), type: 'mountain', spd: 0.11 });
+  for (let i = 0; i < 7; i++)
+    els.push({ x: rnd(0, CW), y: rnd(55, 165), w: rnd(80, 155), h: rnd(28, 60), type: 'cloud', spd: 0.27 });
+  for (let i = 0; i < 5; i++)
+    els.push({ x: rnd(0, CW), y: GY - rnd(48, 100), w: rnd(17, 28), h: rnd(48, 100), type: 'tree', spd: 0.54 });
+  return els;
+}
+
 function initG(): G {
-  const bgEls: BgEl[] = [];
-  // Layer 1: distant mountains
-  for (let i = 0; i < 6; i++) {
-    bgEls.push({ x: rnd(0, CW), y: rnd(150, 220), speed: 0.15, type: 'mountain', w: rnd(120, 220), h: rnd(80, 140), layer: 1 });
-  }
-  // Layer 2: mid clouds/buildings
-  for (let i = 0; i < 8; i++) {
-    bgEls.push({ x: rnd(0, CW), y: rnd(80, 180), speed: 0.35, type: 'cloud', w: rnd(70, 140), h: rnd(28, 55), layer: 2 });
-  }
-  // Layer 3: near trees
-  for (let i = 0; i < 6; i++) {
-    bgEls.push({ x: rnd(0, CW), y: GROUND_Y - rnd(60, 110), speed: 0.6, type: 'tree', w: rnd(18, 30), h: rnd(60, 110), layer: 3 });
-  }
   return {
     status: 'playing',
-    player: { x: PLAYER_X, y: GROUND_Y - PLAYER_H, vy: 0, jumpsLeft: 2, walkFrame: 0, dead: false, deadTimer: 0 },
-    obstacles: [], photos: [], coins: [], shields: [], particles: [],
-    brandTexts: [], bgEls,
-    score: 0, distance: 0, speed: 5, frame: 0, themeIdx: 0,
-    lives: 3, invTimer: 0,
-    combo: 0, comboTimer: 0,
-    shieldActive: false, shieldTimer: 0,
-    charSpeech: null, coachSpeech: null, activeTip: null,
-    milestone: null, lastMilestoneScore: 0,
-    lastObstX: rnd(350, 500),
-    nextObstGap: rnd(300, 450),
-    lastPhotoX: rnd(700, 1000),
-    nextPhotoGap: rnd(700, 1000),
-    lastCoinX: rnd(200, 350),
-    nextCoinGap: rnd(180, 280),
-    lastShieldX: rnd(2000, 3000),
-    nextShieldGap: rnd(2000, 3500),
-    lastBrandX: 200,
-    lightningTimer: 0,
-    lastCharDist: 0,
-    lastCoachDist: 500,
-    obstacleIdCounter: 0,
+    player: {
+      y: GY - PH, vy: 0,
+      jumpsLeft: 2, coyoteT: 0, jbufT: 0,
+      onGround: true, squashT: 0,
+      walkFrame: 0,
+      dead: false, deadTimer: 0, deadAngle: 0,
+    },
+    obstacles: [], photos: [], particles: [], signs: [],
+    bgEls: mkBgEls(),
+    speech: null, milestone: null,
+    score: 0, distance: 0, speed: SPD_INIT, frame: 0, themeIdx: 0,
+    lives: 3, invTimer: 0, combo: 0, comboT: 0,
+    nextObsIn: rnd(280, 460),
+    nextPhotoIn: rnd(800, 1400),
+    nextSignIn: rnd(400, 720),
+    nextSpeechIn: rnd(SPEECH_GAP, SPEECH_GAP + SPEECH_RAND),
+    lastMilestone: 0, obsIdCtr: 0, photoIdCtr: 0,
+    wm1x: CW * 0.25,
+    wm2x: CW * 1.05,
   };
 }
 
+// ─────────────────────────── JUMP ─────────────────────────────────────────────
+function doJump(p: Player) {
+  if (p.dead) return;
+  if (p.coyoteT > 0 || p.jumpsLeft === 2) {
+    p.vy = J1;
+    p.jumpsLeft = p.jumpsLeft === 2 ? 1 : p.jumpsLeft;
+    p.coyoteT = 0;
+    p.jbufT = 0;
+  } else if (p.jumpsLeft === 1) {
+    p.vy = J2;
+    p.jumpsLeft = 0;
+    p.jbufT = 0;
+  } else {
+    p.jbufT = JBUF_T; // buffer the jump
+  }
+}
+
+// ─────────────────────────── UPDATE ──────────────────────────────────────────
 function update(g: G) {
   if (g.status !== 'playing') return;
   g.frame++;
 
-  const theme = THEMES[g.themeIdx];
+  const p = g.player;
 
-  // Speed ramp
-  g.speed = 5 + Math.min(8, g.distance / 700);
-
-  // Distance & base score
+  // Speed ramp (smooth, capped)
+  g.speed = SPD_INIT + (SPD_MAX - SPD_INIT) * Math.min(1, g.distance / SPD_DIST);
   g.distance += g.speed;
-  const comboMult = g.combo >= 10 ? 3 : g.combo >= 5 ? 2 : g.combo >= 3 ? 1.5 : 1;
-  g.score = Math.round(g.distance / 5 * comboMult);
 
-  // Theme switch
-  const newTheme = Math.floor(g.distance / THEME_DIST) % THEMES.length;
-  if (newTheme !== g.themeIdx) g.themeIdx = newTheme;
+  // Score
+  const cm = g.combo >= 10 ? 3 : g.combo >= 5 ? 2 : g.combo >= 3 ? 1.5 : 1;
+  g.score = Math.round(g.distance / 5 * cm);
 
-  // Milestone check
-  const milestones = Object.keys(MILESTONE_MSGS).map(Number);
-  for (const m of milestones) {
-    if (g.score >= m && g.lastMilestoneScore < m) {
-      g.milestone = { text: MILESTONE_MSGS[m], timer: 150 };
-      g.lastMilestoneScore = m;
+  // Theme
+  g.themeIdx = Math.floor(g.distance / THEME_DIST) % THEMES.length;
+
+  // Milestones
+  for (const [thr, msg] of MILESTONES) {
+    if (g.score >= thr && g.lastMilestone < thr) {
+      g.milestone = { text: msg, timer: 165 };
+      g.lastMilestone = thr;
     }
   }
-  if (g.milestone) {
-    g.milestone.timer--;
-    if (g.milestone.timer <= 0) g.milestone = null;
-  }
+  if (g.milestone) { g.milestone.timer--; if (g.milestone.timer <= 0) g.milestone = null; }
 
-  // Combo timer decay
-  if (g.combo > 0) {
-    g.comboTimer--;
-    if (g.comboTimer <= 0) g.combo = 0;
-  }
-
-  // Shield timer
-  if (g.shieldActive) {
-    g.shieldTimer--;
-    if (g.shieldTimer <= 0) g.shieldActive = false;
-  }
-
-  // Invincibility frames
+  // Timers
+  if (g.comboT > 0) { g.comboT--; if (g.comboT === 0) g.combo = 0; }
   if (g.invTimer > 0) g.invTimer--;
 
-  // BG parallax
+  // ── BG parallax ──
   for (const el of g.bgEls) {
-    el.x -= el.speed * g.speed * 0.22;
+    el.x -= el.spd * g.speed * 0.24;
     if (el.x + el.w < 0) {
-      el.x = CW + rnd(0, 80);
-      el.y = el.type === 'tree' ? GROUND_Y - rnd(60, 110) : el.type === 'mountain' ? rnd(150, 220) : rnd(80, 180);
-      el.w = el.type === 'tree' ? rnd(18, 30) : el.type === 'mountain' ? rnd(120, 220) : rnd(70, 140);
-      el.h = el.type === 'tree' ? rnd(60, 110) : el.type === 'mountain' ? rnd(80, 140) : rnd(28, 55);
+      el.x = CW + rnd(0, 60);
+      if (el.type === 'mountain') { el.y = rnd(135, 215); el.w = rnd(130, 240); el.h = rnd(80, 145); }
+      else if (el.type === 'cloud') { el.y = rnd(55, 165); el.w = rnd(80, 155); el.h = rnd(28, 60); }
+      else { el.y = GY - rnd(48, 100); el.w = rnd(17, 28); el.h = rnd(48, 100); }
     }
   }
 
-  // Player walk animation
-  if (g.frame % 8 === 0) g.player.walkFrame = (g.player.walkFrame + 1) % 4;
+  // ── Brand watermarks (very slow) ──
+  g.wm1x -= g.speed * 0.075;
+  g.wm2x -= g.speed * 0.075;
+  if (g.wm1x < -220) g.wm1x = CW + 55;
+  if (g.wm2x < -220) g.wm2x = CW + 55;
 
-  // Player physics
-  const p = g.player;
+  // ── Player physics ──
   if (!p.dead) {
-    p.vy += GRAVITY;
-    p.y += p.vy;
-    if (p.y >= GROUND_Y - PLAYER_H) {
-      p.y = GROUND_Y - PLAYER_H;
+    // Asymmetric gravity
+    p.vy += p.vy <= 0 ? GRAV_UP : GRAV_DOWN;
+    p.vy = Math.min(p.vy, FALL_MAX);
+    p.y  += p.vy;
+
+    const wasOnGround = p.onGround;
+    p.onGround = false;
+
+    if (p.y >= GY - PH) {
+      p.y = GY - PH;
       p.vy = 0;
       p.jumpsLeft = 2;
+      p.onGround = true;
+      p.coyoteT = COYOTE_T;
+      if (!wasOnGround) {
+        p.squashT = 9; // landing squash
+        if (p.jbufT > 0) { // buffered jump fires on landing
+          p.jbufT = 0;
+          p.vy = J1;
+          p.jumpsLeft = 1;
+          p.onGround = false;
+        }
+      }
+    } else {
+      p.coyoteT = Math.max(0, p.coyoteT - 1);
+      if (p.jbufT > 0) p.jbufT--;
     }
+
+    if (p.squashT > 0) p.squashT--;
+    if (p.onGround && g.frame % 7 === 0) p.walkFrame = (p.walkFrame + 1) % 4;
   } else {
     p.deadTimer++;
-    p.vy += GRAVITY * 0.5;
-    p.y += p.vy;
-    p.x -= 1.5;
-    if (p.deadTimer > 80) { g.status = 'dead'; return; }
+    p.deadAngle += 0.09;
+    p.vy += 0.55;
+    p.y  += p.vy;
+    if (p.deadTimer > 82) { g.status = 'dead'; return; }
   }
 
-  // ── Obstacles ──
-  const minGap = Math.max(160, 380 - g.speed * 15);
-  g.lastObstX -= g.speed;
-  if (g.lastObstX <= 0) {
-    const types: Obstacle['type'][] = ['cactus', 'cactus', 'rock', 'bird'];
+  // ── Obstacle spawn ──
+  g.nextObsIn -= g.speed;
+  if (g.nextObsIn <= 0) {
+    const types: ObsType[] = ['box', 'box', 'bird', 'rock'];
     const type = pick(types);
     let oy: number, ow: number, oh: number;
-    if (type === 'bird') { oh = 22; ow = 36; oy = GROUND_Y - PLAYER_H - rnd(40, 100); }
-    else if (type === 'rock') { oh = rndInt(22, 36); ow = rndInt(30, 44); oy = GROUND_Y - oh; }
-    else { oh = rndInt(36, 56); ow = rndInt(18, 28); oy = GROUND_Y - oh; }
-    g.obstacles.push({ x: CW + 30, y: oy, w: ow, h: oh, type, id: g.obstacleIdCounter++, passed: false });
-    g.nextObstGap = rnd(minGap, minGap + 220);
-    g.lastObstX = g.nextObstGap;
+    if (type === 'box') {
+      oh = rndI(32, 54); ow = rndI(25, 38); oy = GY - oh;
+    } else if (type === 'bird') {
+      oh = 22; ow = 38;
+      oy = GY - PH - rndI(25, 78);
+    } else {
+      oh = rndI(20, 34); ow = rndI(32, 48); oy = GY - oh;
+    }
+    g.obstacles.push({ id: g.obsIdCtr++, x: CW + 30, y: oy, w: ow, h: oh, type, passed: false });
+    const minGap = Math.max(OBS_GAP_BASE, OBS_GAP_BASE + 130 - g.speed * 7);
+    g.nextObsIn = rnd(minGap, minGap + OBS_GAP_RAND);
   }
   for (const o of g.obstacles) {
     o.x -= g.speed;
-    // Combo: obstacle cleared
-    if (!o.passed && o.x + o.w < PLAYER_X - 10) {
+    if (!o.passed && o.x + o.w < PX - 8) {
       o.passed = true;
       g.combo++;
-      g.comboTimer = 120;
+      g.comboT = 115;
     }
   }
   g.obstacles = g.obstacles.filter(o => o.x + o.w > -40);
 
-  // ── Coins ──
-  g.lastCoinX -= g.speed;
-  if (g.lastCoinX <= 0) {
-    const clusterSize = rndInt(1, 4);
-    for (let i = 0; i < clusterSize; i++) {
-      const baseY = GROUND_Y - rnd(30, 90);
-      g.coins.push({
-        x: CW + 30 + i * 28,
-        y: baseY, baseY,
-        collected: false, collectTimer: 0,
-        bobPhase: rnd(0, Math.PI * 2),
-      });
-    }
-    g.nextCoinGap = rnd(150, 280);
-    g.lastCoinX = g.nextCoinGap;
-  }
-  for (const c of g.coins) {
-    c.x -= g.speed;
-    c.y = c.baseY + Math.sin(g.frame * 0.1 + c.bobPhase) * 5;
-    if (c.collected) c.collectTimer++;
-  }
-  g.coins = g.coins.filter(c => c.x > -40 && c.collectTimer < 35);
-
-  // ── Shield power-up ──
-  g.lastShieldX -= g.speed;
-  if (g.lastShieldX <= 0) {
-    g.shields.push({ x: CW + 30, y: GROUND_Y - PLAYER_H - 20, collected: false, collectTimer: 0 });
-    g.nextShieldGap = rnd(2000, 3500);
-    g.lastShieldX = g.nextShieldGap;
-  }
-  for (const s of g.shields) {
-    s.x -= g.speed;
-    if (s.collected) s.collectTimer++;
-  }
-  g.shields = g.shields.filter(s => s.x > -40 && s.collectTimer < 40);
-
-  // ── Photos ──
-  g.lastPhotoX -= g.speed;
-  if (g.lastPhotoX <= 0) {
-    g.photos.push({ x: CW + 40, y: GROUND_Y - PLAYER_H - rnd(20, 80), collected: false, collectTimer: 0, tipIdx: rndInt(0, PHOTO_TIPS.length) });
-    g.nextPhotoGap = rnd(800, 1200);
-    g.lastPhotoX = g.nextPhotoGap;
+  // ── Photo moment spawn ──
+  g.nextPhotoIn -= g.speed;
+  if (g.nextPhotoIn <= 0) {
+    g.photos.push({
+      id: g.photoIdCtr++,
+      x: CW + 40,
+      y: GY - PH - rnd(8, 72),
+      collected: false,
+      collectT: 0,
+    });
+    g.nextPhotoIn = rnd(PHOTO_GAP, PHOTO_GAP + PHOTO_RAND);
   }
   for (const ph of g.photos) {
     ph.x -= g.speed;
-    if (ph.collected) ph.collectTimer++;
+    if (ph.collected) ph.collectT++;
   }
-  g.photos = g.photos.filter(ph => ph.x > -50 && ph.collectTimer < 40);
+  g.photos = g.photos.filter(ph => ph.x > -60 && ph.collectT < 40);
 
-  // ── Brand texts ──
-  const lastBT = g.brandTexts[g.brandTexts.length - 1];
-  if (!lastBT || (lastBT.x < CW - rnd(700, 1200))) {
-    g.brandTexts.push({ x: CW + 50, text: pick(BRAND_TEXTS) });
+  // ── Sign spawn ──
+  g.nextSignIn -= g.speed;
+  if (g.nextSignIn <= 0) {
+    g.signs.push({ x: CW + 40, lineIdx: rndI(0, SIGN_LINES.length), h: rndI(62, 118) });
+    g.nextSignIn = rnd(SIGN_GAP, SIGN_GAP + SIGN_RAND);
   }
-  for (const bt of g.brandTexts) bt.x -= g.speed * 0.85;
-  g.brandTexts = g.brandTexts.filter(bt => bt.x > -400);
+  for (const sg of g.signs) sg.x -= g.speed * 0.86;
+  g.signs = g.signs.filter(sg => sg.x > -165);
 
   // ── Particles ──
   for (const pt of g.particles) {
     pt.x += pt.vx; pt.y += pt.vy;
-    pt.vy += 0.18;
+    pt.vy += 0.22;
     pt.life--;
   }
   g.particles = g.particles.filter(pt => pt.life > 0);
 
-  // ── Collision detection ──
+  // ── Speech (rare) ──
+  if (g.speech) { g.speech.timer--; if (g.speech.timer <= 0) g.speech = null; }
+  g.nextSpeechIn -= g.speed;
+  if (g.nextSpeechIn <= 0 && !g.speech && !p.dead) {
+    const sp = pick(SPEECHES);
+    g.speech = { who: sp.who, text: sp.text, timer: 175 };
+    g.nextSpeechIn = rnd(SPEECH_GAP, SPEECH_GAP + SPEECH_RAND);
+  }
+
+  // ── Collision (fair hitboxes) ──
   if (!p.dead && g.invTimer === 0) {
-    const px1 = p.x + 4, px2 = p.x + PLAYER_W - 4;
-    const py1 = p.y + 4, py2 = p.y + PLAYER_H - 4;
+    const px1 = PX + 6,    px2 = PX + PW - 6;
+    const py1 = p.y + 5,   py2 = p.y + PH - 3;
 
     for (const o of g.obstacles) {
-      const ox1 = o.x + 3, ox2 = o.x + o.w - 3;
-      const oy1 = o.y + 3, oy2 = o.y + o.h - 3;
+      const ox1 = o.x + 5,     ox2 = o.x + o.w - 5;
+      const oy1 = o.y + 4,     oy2 = o.y + o.h - 4;
       if (px1 < ox2 && px2 > ox1 && py1 < oy2 && py2 > oy1) {
-        spawnParticles(g, p.x + PLAYER_W / 2, p.y + PLAYER_H / 2, '#f87171', 10);
-        if (g.shieldActive) {
-          // Shield absorbs hit
-          g.shieldActive = false;
-          g.shieldTimer = 0;
-          g.combo = 0;
-          g.invTimer = 90;
-          spawnParticles(g, p.x + PLAYER_W / 2, p.y + PLAYER_H / 2, '#60a5fa', 14);
-          // push obstacle away
-          o.x = px2 + 10;
+        spawnParticles(g, PX + PW / 2, p.y + PH / 2, '#f87171', 10);
+        g.lives--;
+        g.combo = 0; g.comboT = 0;
+        g.invTimer = 115;
+        if (g.lives <= 0) {
+          p.dead = true; p.vy = -9;
         } else {
-          g.lives--;
-          g.combo = 0;
-          g.invTimer = 120;
-          if (g.lives <= 0) {
-            p.dead = true;
-            p.vy = -8;
-          } else {
-            p.vy = -6; // small hop on hit
-          }
+          p.vy = -5.5; // small bounce-back
         }
         break;
       }
     }
 
-    // Coin collection
-    for (const c of g.coins) {
-      if (!c.collected) {
-        if (px1 < c.x + 10 && px2 > c.x - 10 && py1 < c.y + 10 && py2 > c.y - 10) {
-          c.collected = true;
-          g.score += Math.round(10 * comboMult);
-          g.combo++;
-          g.comboTimer = 120;
-          spawnParticles(g, c.x, c.y, '#FFD700', 6);
-        }
-      }
-    }
-
-    // Shield collection
-    for (const s of g.shields) {
-      if (!s.collected) {
-        if (px1 < s.x + 14 && px2 > s.x - 14 && py1 < s.y + 14 && py2 > s.y - 14) {
-          s.collected = true;
-          g.shieldActive = true;
-          g.shieldTimer = 600;
-          spawnParticles(g, s.x, s.y, '#60a5fa', 10);
-        }
-      }
-    }
-
-    // Photo collection
+    // Photo collection (generous hitbox)
     for (const ph of g.photos) {
       if (!ph.collected) {
-        if (px1 < ph.x + 16 && px2 > ph.x - 16 && py1 < ph.y + 16 && py2 > ph.y - 16) {
+        if (PX + PW > ph.x - 14 && PX < ph.x + 14 && p.y + PH > ph.y - 14 && p.y < ph.y + 14) {
           ph.collected = true;
-          g.score += Math.round(50 * comboMult);
-          if (!g.activeTip) g.activeTip = { ...PHOTO_TIPS[ph.tipIdx], timer: 220 };
-          spawnParticles(g, ph.x, ph.y, '#FFD700', 8);
+          const bonus = 30 + g.combo * 6;
+          g.score += bonus;
+          g.combo += 2;
+          g.comboT = 145;
+          spawnParticles(g, ph.x, ph.y, '#FFD700', 14);
+          spawnParticles(g, ph.x, ph.y, '#ffffff', 5);
         }
       }
     }
-  }
-
-  // ── Tip timer ──
-  if (g.activeTip) { g.activeTip.timer--; if (g.activeTip.timer <= 0) g.activeTip = null; }
-
-  // ── Speeches ──
-  if (g.charSpeech) { g.charSpeech.timer--; if (g.charSpeech.timer <= 0) g.charSpeech = null; }
-  if (!g.charSpeech && g.distance - g.lastCharDist > rnd(900, 1400) && !p.dead) {
-    g.charSpeech = { text: pick(CHAR_SPEECHES), timer: 160 };
-    g.lastCharDist = g.distance;
-  }
-  if (g.coachSpeech) { g.coachSpeech.timer--; if (g.coachSpeech.timer <= 0) g.coachSpeech = null; }
-  if (!g.coachSpeech && g.distance - g.lastCoachDist > rnd(1300, 1900) && !p.dead) {
-    g.coachSpeech = { text: pick(COACH_SPEECHES), timer: 140 };
-    g.lastCoachDist = g.distance;
-  }
-
-  // ── Lightning ──
-  if (theme.lightning) {
-    g.lightningTimer--;
-    if (g.lightningTimer <= 0) g.lightningTimer = rndInt(-200, -60);
   }
 }
 
-// ── Drawing ───────────────────────────────────────────────────────────────────
+// ─────────────────────────── DRAW ────────────────────────────────────────────
 function draw(ctx: CanvasRenderingContext2D, g: G) {
-  const theme = THEMES[g.themeIdx];
-  const p = g.player;
+  const th = THEMES[g.themeIdx];
+  const p  = g.player;
+  const f  = g.frame;
 
-  // Sky
-  const skyGrad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-  skyGrad.addColorStop(0, theme.sky1);
-  skyGrad.addColorStop(1, theme.sky2);
-  ctx.fillStyle = skyGrad;
+  // ── Sky ──
+  const sky = ctx.createLinearGradient(0, 0, 0, GY);
+  sky.addColorStop(0, th.sky1);
+  sky.addColorStop(1, th.sky2);
+  ctx.fillStyle = sky;
   ctx.fillRect(0, 0, CW, CH);
 
-  // Milestone flash
-  if (g.milestone && g.milestone.timer > 130) {
-    const alpha = ((g.milestone.timer - 130) / 20) * 0.25;
-    ctx.fillStyle = `rgba(255,215,0,${alpha})`;
-    ctx.fillRect(0, 0, CW, CH);
+  // ── Stars (night only) ──
+  if (th.neon) {
+    const STARS = [
+      [0.07,0.04],[0.19,0.11],[0.31,0.03],[0.44,0.07],[0.59,0.02],
+      [0.71,0.10],[0.83,0.05],[0.92,0.14],[0.14,0.19],[0.54,0.17],
+      [0.77,0.21],[0.37,0.24],[0.63,0.27],[0.24,0.29],[0.89,0.29],
+      [0.48,0.32],[0.68,0.13],[0.05,0.22],[0.96,0.08],[0.40,0.06],
+    ];
+    for (const [sx, sy] of STARS) {
+      const blink = 0.3 + 0.6 * Math.max(0, Math.sin(f * 0.05 + sx * 22 + sy * 15));
+      ctx.globalAlpha = blink;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(sx * CW, sy * GY, 1.5, 1.5);
+    }
+    ctx.globalAlpha = 1;
   }
 
-  // Lightning
-  if (theme.lightning && g.lightningTimer > -5 && g.lightningTimer <= 0) {
-    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.fillRect(0, 0, CW, CH);
-    ctx.strokeStyle = 'rgba(255,255,200,0.9)';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    const lx = rnd(80, 400);
-    ctx.moveTo(lx, 0); ctx.lineTo(lx - 20, 80); ctx.lineTo(lx + 15, 100); ctx.lineTo(lx - 30, 180);
-    ctx.stroke();
-  }
-
-  // BG elements (sorted by layer)
-  const sorted = [...g.bgEls].sort((a, b) => a.layer - b.layer);
-  drawBgEls(ctx, sorted, theme);
-
-  // Ground brand texts
+  // ── ASPECT watermark (huge, very faint) ──
   ctx.save();
-  ctx.font = 'bold 13px monospace';
-  ctx.fillStyle = theme.groundTxt;
-  for (const bt of g.brandTexts) ctx.fillText(bt.text, bt.x, GROUND_Y + 12);
+  ctx.globalAlpha = 0.052;
+  ctx.fillStyle = th.neon ? '#00E5FF' : '#FFE066';
+  ctx.font = 'bold 92px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('ASPECT', g.wm1x, 185);
+  ctx.fillText('ASPECT', g.wm2x, 185);
   ctx.restore();
 
-  // Ground
-  ctx.fillStyle = theme.groundSurface;
-  ctx.fillRect(0, GROUND_Y, CW, 18);
-  ctx.fillStyle = theme.groundDeep;
-  ctx.fillRect(0, GROUND_Y + 18, CW, CH - GROUND_Y - 18);
+  // ── BG elements (sorted by speed = depth) ──
+  const sorted = [...g.bgEls].sort((a, b) => a.spd - b.spd);
+  for (const el of sorted) drawBgEl(ctx, el, th, f);
 
-  // Ground pixel grid
-  if (theme.pixel) {
-    ctx.fillStyle = 'rgba(0,255,0,0.15)';
-    for (let gx = 0; gx < CW; gx += 16) ctx.fillRect(gx, GROUND_Y, 1, 18);
+  // ── Ground brand text (scrolling) ──
+  ctx.save();
+  ctx.fillStyle = th.gndTxt;
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'left';
+  const gtOff = (g.frame * g.speed * 0.5) % 330;
+  for (let i = -1; i < 3; i++) {
+    ctx.fillText('▸ ASPECT PHOTOGRAPHY ◂', i * 330 - gtOff, GY + 10);
   }
-  // Ground neon line
-  if (theme.neon) {
-    ctx.fillStyle = `rgba(0,245,255,0.18)`;
-    ctx.fillRect(0, GROUND_Y, CW, 2);
+  ctx.restore();
+
+  // ── Ground ──
+  ctx.fillStyle = th.gnd1;
+  ctx.fillRect(0, GY, CW, 13);
+  ctx.fillStyle = th.gnd2;
+  ctx.fillRect(0, GY + 13, CW, CH - GY - 13);
+
+  // Neon ground accent
+  if (th.neon) {
+    ctx.fillStyle = 'rgba(0,229,255,0.22)';
+    ctx.fillRect(0, GY, CW, 2);
+    ctx.fillStyle = 'rgba(0,229,255,0.06)';
+    ctx.fillRect(0, GY + 2, CW, 4);
   }
-  // Ground dashes (all themes)
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  for (let dx = (g.frame * g.speed * 0.5) % 80; dx < CW; dx += 80) {
-    ctx.fillRect(dx, GROUND_Y + 8, 40, 2);
-  }
 
-  // Obstacles
-  for (const o of g.obstacles) drawObstacle(ctx, o, theme);
+  // ── Signs (behind obstacles) ──
+  for (const sg of g.signs) drawSign(ctx, sg, th, f);
 
-  // Coins
-  for (const c of g.coins) drawCoin(ctx, c, theme);
+  // ── Obstacles ──
+  for (const o of g.obstacles) drawObstacle(ctx, o, th, f);
 
-  // Shields
-  for (const s of g.shields) drawShield(ctx, s, g.frame);
+  // ── Photos ──
+  for (const ph of g.photos) drawPhoto(ctx, ph, f);
 
-  // Photos
-  for (const ph of g.photos) drawPhoto(ctx, ph, g.frame);
-
-  // Particles
+  // ── Particles ──
   for (const pt of g.particles) {
-    const alpha = pt.life / pt.maxLife;
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = pt.color;
+    ctx.globalAlpha = pt.life / pt.maxLife;
+    ctx.fillStyle   = pt.color;
     ctx.beginPath();
     ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
 
-  // Player (blink if invincible)
-  const showPlayer = g.invTimer === 0 || Math.floor(g.invTimer / 6) % 2 === 0;
-  if (showPlayer) {
-    // Shield glow
-    if (g.shieldActive) {
-      ctx.save();
-      ctx.shadowColor = '#60a5fa';
-      ctx.shadowBlur = 20;
-      ctx.strokeStyle = 'rgba(96,165,250,0.7)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.ellipse(p.x + PLAYER_W / 2, p.y + PLAYER_H / 2, PLAYER_W * 0.85, PLAYER_H * 0.65, 0, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-    drawPlayer(ctx, p, theme, g.frame);
-  }
+  // ── Player ──
+  const showPlayer = g.invTimer === 0 || Math.floor(g.invTimer / 5) % 2 === 0;
+  if (showPlayer) drawPlayer(ctx, p, th, f);
 
-  // HUD
-  drawHUD(ctx, g, theme);
+  // ── HUD ──
+  drawHUD(ctx, g, th);
 }
 
-function drawBgEls(ctx: CanvasRenderingContext2D, els: BgEl[], theme: typeof THEMES[0]) {
-  for (const el of els) {
-    if (el.type === 'mountain') {
-      ctx.fillStyle = theme.mountainColor;
+// ─────────────────────────── BG ELEMENTS ─────────────────────────────────────
+function drawBgEl(ctx: CanvasRenderingContext2D, el: BgEl, th: Theme, f: number) {
+  if (el.type === 'mountain') {
+    ctx.fillStyle = th.mtCol;
+    ctx.beginPath();
+    ctx.moveTo(el.x,            GY - 6);
+    ctx.lineTo(el.x + el.w * .5, el.y);
+    ctx.lineTo(el.x + el.w,     GY - 6);
+    ctx.closePath();
+    ctx.fill();
+    if (!th.neon) {
+      ctx.fillStyle = 'rgba(255,255,255,0.13)';
       ctx.beginPath();
-      ctx.moveTo(el.x, GROUND_Y - 10);
-      ctx.lineTo(el.x + el.w * 0.5, el.y);
-      ctx.lineTo(el.x + el.w, GROUND_Y - 10);
+      ctx.moveTo(el.x + el.w * .50, el.y);
+      ctx.lineTo(el.x + el.w * .38, el.y + 20);
+      ctx.lineTo(el.x + el.w * .62, el.y + 20);
       ctx.closePath();
       ctx.fill();
-      // Snow cap
-      if (!theme.neon) {
-        ctx.fillStyle = 'rgba(255,255,255,0.18)';
-        ctx.beginPath();
-        ctx.moveTo(el.x + el.w * 0.5, el.y);
-        ctx.lineTo(el.x + el.w * 0.38, el.y + 24);
-        ctx.lineTo(el.x + el.w * 0.62, el.y + 24);
-        ctx.closePath();
-        ctx.fill();
+    }
+
+  } else if (el.type === 'cloud') {
+    if (th.neon) {
+      // City building
+      const bh = el.h * 1.9;
+      ctx.fillStyle = 'rgba(8,18,55,0.88)';
+      ctx.fillRect(el.x, GY - bh, el.w * 0.65, bh);
+      // Windows
+      for (let wy = 10; wy < bh - 6; wy += 14) {
+        for (let wx = 5; wx < el.w * 0.65 - 6; wx += 12) {
+          if (Math.sin(el.x * 0.7 + wy * 0.6) > -0.1) {
+            ctx.fillStyle = `rgba(0,229,255,${0.15 + Math.abs(Math.sin(el.x + wy + f * 0.03)) * 0.18})`;
+            ctx.fillRect(el.x + wx, GY - bh + wy, 6, 7);
+          }
+        }
       }
-    } else if (el.type === 'tree') {
-      // Trunk
-      ctx.fillStyle = theme.treeTrunk;
-      ctx.fillRect(el.x + el.w * 0.35, el.y + el.h * 0.55, el.w * 0.3, el.h * 0.45);
-      // Canopy layers
-      ctx.fillStyle = theme.treeLeaf;
+      // ASPECT on tall buildings
+      if (el.w > 105 && bh > 80) {
+        ctx.save();
+        ctx.globalAlpha = 0.32;
+        ctx.fillStyle = '#00E5FF';
+        ctx.font = 'bold 7px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('ASPECT', el.x + el.w * 0.325, GY - bh + 18);
+        ctx.restore();
+      }
+    } else {
+      ctx.fillStyle = th.cloudCol;
+      ctx.beginPath();
+      ctx.ellipse(el.x + el.w * .5,  el.y + el.h * .5,  el.w * .5,  el.h * .4,  0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(el.x + el.w * .28, el.y + el.h * .4,  el.w * .3,  el.h * .3,  0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(el.x + el.w * .72, el.y + el.h * .45, el.w * .24, el.h * .28, 0, 0, Math.PI * 2); ctx.fill();
+    }
+
+  } else { // tree
+    if (th.neon) {
+      // Lamppost
+      ctx.fillStyle = '#2a3a55';
+      ctx.fillRect(el.x + el.w * .4, el.y, el.w * .2, el.h);
+      ctx.fillRect(el.x + el.w * .1, el.y, el.w * .7, el.h * .08);
+      const glow = 0.55 + Math.sin(f * 0.06 + el.x) * 0.2;
+      ctx.fillStyle = `rgba(0,229,255,${glow})`;
+      ctx.beginPath(); ctx.arc(el.x + el.w * .5, el.y + el.h * .04, 5.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(0,229,255,0.08)';
+      ctx.beginPath(); ctx.arc(el.x + el.w * .5, el.y + el.h * .04, 18, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.fillStyle = th.trunkCol;
+      ctx.fillRect(el.x + el.w * .35, el.y + el.h * .55, el.w * .3, el.h * .45);
+      ctx.fillStyle = th.treeCol;
       ctx.beginPath();
       ctx.moveTo(el.x + el.w / 2, el.y);
-      ctx.lineTo(el.x, el.y + el.h * 0.45);
-      ctx.lineTo(el.x + el.w, el.y + el.h * 0.45);
-      ctx.closePath();
-      ctx.fill();
+      ctx.lineTo(el.x,            el.y + el.h * .52);
+      ctx.lineTo(el.x + el.w,     el.y + el.h * .52);
+      ctx.closePath(); ctx.fill();
       ctx.beginPath();
-      ctx.moveTo(el.x + el.w / 2, el.y + el.h * 0.2);
-      ctx.lineTo(el.x - el.w * 0.1, el.y + el.h * 0.65);
-      ctx.lineTo(el.x + el.w * 1.1, el.y + el.h * 0.65);
-      ctx.closePath();
-      ctx.fill();
-      if (theme.neon) {
-        ctx.strokeStyle = theme.accent + '44';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(el.x + el.w * 0.35, el.y + el.h * 0.55, el.w * 0.3, el.h * 0.45);
-      }
-    } else if (el.type === 'building' || theme.neon) {
-      ctx.fillStyle = `rgba(15,52,96,0.9)`;
-      ctx.fillRect(el.x, el.y, el.w * 0.5, el.h * 2);
-      ctx.fillStyle = `rgba(233,69,96,0.4)`;
-      ctx.fillRect(el.x + 5, el.y + 10, 6, 6);
-      ctx.fillRect(el.x + 18, el.y + 25, 6, 6);
-      ctx.fillRect(el.x + 5, el.y + 40, 6, 6);
-    } else {
-      // Cloud
-      ctx.fillStyle = theme.cloudColor;
-      ctx.beginPath();
-      ctx.ellipse(el.x + el.w * 0.5, el.y + el.h * 0.5, el.w * 0.5, el.h * 0.4, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(el.x + el.w * 0.28, el.y + el.h * 0.4, el.w * 0.3, el.h * 0.3, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(el.x + el.w * 0.72, el.y + el.h * 0.45, el.w * 0.25, el.h * 0.28, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    // Stars
-    if (theme.sky1 === THEMES[1].sky1 || theme.sky1 === THEMES[3].sky1 || theme.sky1 === THEMES[4].sky1) {
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.fillRect(el.x % CW, (el.y * 0.4) % 80 + 10, 2, 2);
-      ctx.fillRect((el.x + 30) % CW, (el.y * 0.3) % 80 + 5, 1, 1);
-      ctx.fillRect((el.x + 60) % CW, (el.y * 0.5) % 70 + 20, 1.5, 1.5);
+      ctx.moveTo(el.x + el.w / 2, el.y + el.h * .18);
+      ctx.lineTo(el.x - el.w * .12, el.y + el.h * .7);
+      ctx.lineTo(el.x + el.w * 1.12, el.y + el.h * .7);
+      ctx.closePath(); ctx.fill();
     }
   }
 }
 
-function drawObstacle(ctx: CanvasRenderingContext2D, o: Obstacle, theme: typeof THEMES[0]) {
-  ctx.fillStyle = theme.obstacleA;
+// ─────────────────────────── SIGNS ───────────────────────────────────────────
+function drawSign(ctx: CanvasRenderingContext2D, sg: Sign, th: Theme, f: number) {
+  const lines   = SIGN_LINES[sg.lineIdx];
+  const poleX   = sg.x + 6;
+  const poleTop = GY - sg.h;
+  const bw = 92, bh = 46;
+  const bx = sg.x - 14, by = poleTop - bh - 2;
 
-  if (o.type === 'bird') {
-    const wingFlap = Math.sin(Date.now() * 0.01) * 0.4;
-    ctx.save();
-    ctx.translate(o.x + o.w * 0.5, o.y + o.h * 0.5);
-    // Wings
-    ctx.fillStyle = theme.obstacleB;
-    ctx.beginPath();
-    ctx.ellipse(-o.w * 0.35, wingFlap * 8, o.w * 0.3, o.h * 0.3, -0.3 + wingFlap, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(o.w * 0.35, wingFlap * 8, o.w * 0.3, o.h * 0.3, 0.3 - wingFlap, 0, Math.PI * 2);
-    ctx.fill();
-    // Body
-    ctx.fillStyle = theme.obstacleA;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, o.w * 0.22, o.h * 0.42, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // Eye
-    ctx.fillStyle = '#fff'; ctx.fillRect(3, -o.h * 0.2, 4, 4);
-    ctx.fillStyle = '#000'; ctx.fillRect(4, -o.h * 0.18, 2, 2);
-    ctx.restore();
-    if (theme.neon) {
-      ctx.strokeStyle = theme.accent + '60'; ctx.lineWidth = 1;
+  // Pole
+  ctx.fillStyle = 'rgba(95,100,120,0.75)';
+  ctx.fillRect(poleX, poleTop, 4, sg.h);
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.fillRect(bx + 3, by + 3, bw, bh);
+
+  // Board body
+  const bg = ctx.createLinearGradient(bx, by, bx, by + bh);
+  bg.addColorStop(0, '#130828');
+  bg.addColorStop(1, '#080318');
+  ctx.fillStyle = bg;
+  ctx.fillRect(bx, by, bw, bh);
+
+  // Glowing border
+  const pulse = 0.6 + Math.sin(f * 0.065 + sg.x * 0.012) * 0.32;
+  ctx.strokeStyle = th.accent;
+  ctx.lineWidth   = 1.5;
+  ctx.globalAlpha = pulse;
+  ctx.strokeRect(bx + 1, by + 1, bw - 2, bh - 2);
+  ctx.globalAlpha = 1;
+
+  // Inner border
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  ctx.lineWidth   = 1;
+  ctx.strokeRect(bx + 3, by + 3, bw - 6, bh - 6);
+
+  // Text
+  ctx.textAlign = 'center';
+  ctx.font      = 'bold 12px monospace';
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = th.accent; ctx.shadowBlur = 5;
+  ctx.fillText(lines[0], bx + bw / 2, by + 18);
+  ctx.shadowBlur = 0;
+
+  ctx.strokeStyle = th.accent + '55';
+  ctx.lineWidth   = 1;
+  ctx.beginPath();
+  ctx.moveTo(bx + 8,      by + 24);
+  ctx.lineTo(bx + bw - 8, by + 24);
+  ctx.stroke();
+
+  ctx.font      = 'bold 9px monospace';
+  ctx.fillStyle = th.accent;
+  ctx.fillText(lines[1], bx + bw / 2, by + 37);
+
+  // Corner bolts
+  ctx.fillStyle = 'rgba(175,180,200,0.5)';
+  for (const [bx2, by2] of [[bx+4,by+4],[bx+bw-4,by+4],[bx+4,by+bh-4],[bx+bw-4,by+bh-4]]) {
+    ctx.beginPath(); ctx.arc(bx2, by2, 1.5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.textAlign = 'left';
+}
+
+// ─────────────────────────── OBSTACLES ───────────────────────────────────────
+function drawObstacle(ctx: CanvasRenderingContext2D, o: Obstacle, th: Theme, f: number) {
+  if (o.type === 'box') {
+    // Equipment case with ASPECT label
+    const gr = ctx.createLinearGradient(o.x, o.y, o.x + o.w, o.y + o.h);
+    gr.addColorStop(0, th.obs1);
+    gr.addColorStop(1, th.obs2);
+    ctx.fillStyle = gr;
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    // Lid highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.fillRect(o.x, o.y, o.w, 5);
+    // Edge strips
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(o.x, o.y, 3, o.h);
+    ctx.fillRect(o.x + o.w - 3, o.y, 3, o.h);
+    // Clasp
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fillRect(o.x + o.w / 2 - 4, o.y + o.h * .42, 8, 5);
+    // ASPECT brand on case
+    ctx.fillStyle = th.accent + 'bb';
+    ctx.font      = 'bold 6px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('ASPECT', o.x + o.w / 2, o.y + o.h - 5);
+    ctx.textAlign = 'left';
+    if (th.neon) {
+      ctx.strokeStyle = th.accent + '50'; ctx.lineWidth = 1;
       ctx.strokeRect(o.x, o.y, o.w, o.h);
     }
-  } else if (o.type === 'cactus') {
-    // Trunk
-    const grad = ctx.createLinearGradient(o.x, 0, o.x + o.w, 0);
-    grad.addColorStop(0, theme.obstacleB);
-    grad.addColorStop(0.5, theme.obstacleA);
-    grad.addColorStop(1, theme.obstacleB);
-    ctx.fillStyle = grad;
-    ctx.fillRect(o.x + o.w * 0.3, o.y, o.w * 0.4, o.h);
-    // Arms
-    ctx.fillRect(o.x, o.y + o.h * 0.3, o.w * 0.35, o.h * 0.12);
-    ctx.fillRect(o.x, o.y + o.h * 0.15, o.w * 0.12, o.h * 0.2);
-    ctx.fillRect(o.x + o.w * 0.65, o.y + o.h * 0.45, o.w * 0.35, o.h * 0.12);
-    ctx.fillRect(o.x + o.w * 0.88, o.y + o.h * 0.3, o.w * 0.12, o.h * 0.2);
-    if (theme.neon) { ctx.fillStyle = `rgba(0,245,255,0.25)`; ctx.fillRect(o.x + o.w * 0.3, o.y, o.w * 0.4, o.h); }
-    if (theme.pixel) {
-      ctx.fillStyle = theme.accent + '33';
-      ctx.fillRect(o.x + o.w * 0.28, o.y - 2, o.w * 0.44, o.h + 4);
-    }
-  } else if (o.type === 'rock') {
-    const grad = ctx.createRadialGradient(o.x + o.w * 0.4, o.y + o.h * 0.4, 2, o.x + o.w * 0.5, o.y + o.h * 0.5, o.w * 0.6);
-    grad.addColorStop(0, theme.obstacleA);
-    grad.addColorStop(1, theme.obstacleB);
-    ctx.fillStyle = grad;
+
+  } else if (o.type === 'bird') {
+    const flap = Math.sin(f * 0.23) * 0.55;
+    ctx.save();
+    ctx.translate(o.x + o.w * .5, o.y + o.h * .5);
+    // Wings
+    ctx.fillStyle = th.obs1;
     ctx.beginPath();
-    ctx.moveTo(o.x + o.w * 0.15, o.y + o.h * 0.85);
-    ctx.lineTo(o.x + o.w * 0.0, o.y + o.h * 0.6);
-    ctx.lineTo(o.x + o.w * 0.2, o.y + o.h * 0.2);
-    ctx.lineTo(o.x + o.w * 0.55, o.y);
-    ctx.lineTo(o.x + o.w * 0.85, o.y + o.h * 0.15);
-    ctx.lineTo(o.x + o.w, o.y + o.h * 0.55);
-    ctx.lineTo(o.x + o.w * 0.8, o.y + o.h);
-    ctx.lineTo(o.x + o.w * 0.1, o.y + o.h);
+    ctx.ellipse(-o.w * .30, flap * 9, o.w * .27, o.h * .36, -0.3 + flap * .4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(o.w * .30, flap * 9, o.w * .27, o.h * .36, 0.3 - flap * .4, 0, Math.PI * 2);
+    ctx.fill();
+    // Body
+    ctx.fillStyle = th.obs2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, o.w * .19, o.h * .40, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Beak
+    ctx.fillStyle = '#FF9800';
+    ctx.beginPath();
+    ctx.moveTo(o.w * .18, -2);
+    ctx.lineTo(o.w * .34,  0);
+    ctx.lineTo(o.w * .18,  3);
+    ctx.closePath(); ctx.fill();
+    // Eye
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(4, -o.h * .24, 4, 4);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(5, -o.h * .22, 2, 2);
+    if (th.neon) {
+      ctx.strokeStyle = th.accent + '55'; ctx.lineWidth = 1;
+      ctx.strokeRect(-o.w/2, -o.h/2, o.w, o.h);
+    }
+    ctx.restore();
+
+  } else {
+    // Rock / stone
+    const gr = ctx.createRadialGradient(
+      o.x + o.w * .38, o.y + o.h * .35, 2,
+      o.x + o.w * .5,  o.y + o.h * .5,  o.w * .58,
+    );
+    gr.addColorStop(0, th.obs1);
+    gr.addColorStop(1, th.obs2);
+    ctx.fillStyle = gr;
+    ctx.beginPath();
+    ctx.moveTo(o.x + o.w * .12, o.y + o.h * .88);
+    ctx.lineTo(o.x,              o.y + o.h * .55);
+    ctx.lineTo(o.x + o.w * .18, o.y + o.h * .18);
+    ctx.lineTo(o.x + o.w * .52, o.y);
+    ctx.lineTo(o.x + o.w * .85, o.y + o.h * .14);
+    ctx.lineTo(o.x + o.w,       o.y + o.h * .52);
+    ctx.lineTo(o.x + o.w * .82, o.y + o.h);
     ctx.closePath();
     ctx.fill();
     // Shine
-    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillStyle = 'rgba(255,255,255,0.11)';
     ctx.beginPath();
-    ctx.ellipse(o.x + o.w * 0.3, o.y + o.h * 0.3, o.w * 0.15, o.h * 0.12, -0.5, 0, Math.PI * 2);
+    ctx.ellipse(o.x + o.w * .3, o.y + o.h * .3, o.w * .13, o.h * .09, -0.4, 0, Math.PI * 2);
     ctx.fill();
-  } else {
-    // Flash / camera obstacle
-    ctx.fillStyle = theme.accent;
-    ctx.fillRect(o.x + o.w * 0.2, o.y + o.h * 0.1, o.w * 0.6, o.h * 0.6);
-    ctx.fillStyle = theme.obstacleA;
-    ctx.fillRect(o.x, o.y + o.h * 0.4, o.w, o.h * 0.4);
-    ctx.strokeStyle = theme.accent; ctx.lineWidth = 2;
-    for (let i = 0; i < 6; i++) {
-      const angle = (i / 6) * Math.PI * 2;
-      ctx.beginPath();
-      ctx.moveTo(o.x + o.w * 0.5, o.y + o.h * 0.4);
-      ctx.lineTo(o.x + o.w * 0.5 + Math.cos(angle) * 18, o.y + o.h * 0.4 + Math.sin(angle) * 18);
-      ctx.stroke();
-    }
   }
 }
 
-function drawCoin(ctx: CanvasRenderingContext2D, c: Coin, theme: typeof THEMES[0]) {
-  if (c.collected) {
-    const alpha = 1 - c.collectTimer / 35;
+// ─────────────────────────── PHOTO ───────────────────────────────────────────
+function drawPhoto(ctx: CanvasRenderingContext2D, ph: PhotoMoment, f: number) {
+  if (ph.collected) {
     ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.fillText('+' + 10, c.x - 8, c.y - c.collectTimer * 1.2);
+    ctx.globalAlpha = 1 - ph.collectT / 40;
+    ctx.fillStyle   = '#FFD700';
+    ctx.font        = 'bold 13px monospace';
+    ctx.textAlign   = 'center';
+    ctx.fillText('+FLASH!', ph.x, ph.y - ph.collectT * 0.95);
+    ctx.font = '19px sans-serif';
+    ctx.fillText('📸', ph.x, ph.y - 14 - ph.collectT * 0.42);
+    ctx.textAlign = 'left';
     ctx.restore();
     return;
   }
+  const pulse = 0.88 + Math.sin(f * 0.19) * 0.12;
   ctx.save();
-  ctx.shadowColor = '#FFD700';
-  ctx.shadowBlur = 10;
-  // Coin body
-  const grad = ctx.createRadialGradient(c.x - 3, c.y - 3, 1, c.x, c.y, 9);
-  grad.addColorStop(0, '#FFF176');
-  grad.addColorStop(0.5, '#FFD700');
-  grad.addColorStop(1, '#F57F17');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(c.x, c.y, 9, 0, Math.PI * 2);
-  ctx.fill();
-  // Inner ring
-  ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(c.x, c.y, 6, 0, Math.PI * 2); ctx.stroke();
-  // Symbol
-  ctx.fillStyle = 'rgba(180,100,0,0.7)';
-  ctx.font = 'bold 9px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('✦', c.x, c.y + 3);
-  ctx.textAlign = 'left';
-  ctx.restore();
-}
-
-function drawShield(ctx: CanvasRenderingContext2D, s: ShieldPU, frame: number) {
-  if (s.collected) return;
-  const pulse = 0.9 + Math.sin(frame * 0.12) * 0.1;
-  ctx.save();
-  ctx.translate(s.x, s.y);
+  ctx.translate(ph.x, ph.y);
   ctx.scale(pulse, pulse);
-  ctx.shadowColor = '#60a5fa';
-  ctx.shadowBlur = 18;
-  // Shield shape
-  ctx.fillStyle = 'rgba(96,165,250,0.25)';
-  ctx.strokeStyle = '#60a5fa';
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.moveTo(0, -14);
-  ctx.lineTo(12, -6);
-  ctx.lineTo(12, 4);
-  ctx.quadraticCurveTo(12, 14, 0, 18);
-  ctx.quadraticCurveTo(-12, 14, -12, 4);
-  ctx.lineTo(-12, -6);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = '#93c5fd';
-  ctx.font = 'bold 12px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('🛡', 0, 6);
+  ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 14;
+  ctx.font = '23px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('📸', 0, 10);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle  = 'rgba(255,215,0,0.9)';
+  ctx.font       = 'bold 8px monospace';
+  ctx.fillText('FLASH!', 0, 26);
   ctx.textAlign = 'left';
   ctx.restore();
 }
 
-function drawPhoto(ctx: CanvasRenderingContext2D, ph: Photo, frame: number) {
-  if (ph.collected) {
-    const alpha = 1 - ph.collectTimer / 40;
-    ctx.save(); ctx.globalAlpha = alpha;
-    ctx.fillStyle = '#FFD700'; ctx.font = 'bold 16px sans-serif';
-    ctx.fillText('+50', ph.x - 15, ph.y - ph.collectTimer * 0.8);
-    ctx.font = '22px sans-serif';
-    ctx.fillText('📸', ph.x - 11, ph.y - 5 - ph.collectTimer * 0.3);
-    ctx.restore(); return;
-  }
-  const pulse = 0.92 + Math.sin(frame * 0.15) * 0.08;
+// ─────────────────────────── PLAYER ──────────────────────────────────────────
+function drawPlayer(ctx: CanvasRenderingContext2D, p: Player, th: Theme, f: number) {
+  const x = PX, y = p.y;
   ctx.save();
-  ctx.translate(ph.x, ph.y); ctx.scale(pulse, pulse);
-  ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 12;
-  ctx.font = '26px sans-serif'; ctx.fillText('📸', -13, 10);
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = 'rgba(255,215,0,0.85)'; ctx.font = 'bold 9px sans-serif';
-  ctx.textAlign = 'center'; ctx.fillText('ÇEKÜM!', 0, 28); ctx.textAlign = 'left';
-  ctx.restore();
-}
 
-function drawPlayer(ctx: CanvasRenderingContext2D, p: Player, theme: typeof THEMES[0], frame: number) {
-  const x = p.x, y = p.y, wf = p.walkFrame;
-  ctx.save();
   if (p.dead) {
-    const angle = Math.min(p.deadTimer * 0.05, Math.PI * 0.5);
-    ctx.translate(x + PLAYER_W / 2, y + PLAYER_H / 2);
-    ctx.rotate(angle);
-    ctx.translate(-PLAYER_W / 2, -PLAYER_H / 2);
+    ctx.translate(x + PW / 2, y + PH / 2);
+    ctx.rotate(p.deadAngle);
+    ctx.translate(-PW / 2, -PH / 2);
   }
-  const isAir = p.y < GROUND_Y - PLAYER_H - 2;
+
+  // Squash / stretch
+  let scaleX = 1, scaleY = 1;
+  if (p.squashT > 0) {
+    const sq = p.squashT / 9;
+    scaleY = 1 - sq * 0.26;
+    scaleX = 1 + sq * 0.18;
+  }
+  if (p.vy < -5) { scaleY = 1.10; scaleX = 0.91; }
+
+  // Apply transform around bottom-center
+  if (!p.dead) {
+    ctx.translate(x + PW / 2, y + PH);
+    ctx.scale(scaleX, scaleY);
+    ctx.translate(-(x + PW / 2), -(y + PH));
+  }
+
+  // Ground shadow
+  if (!p.dead) {
+    const dist     = GY - (p.y + PH);
+    const shadowA  = p.onGround ? 0.22 : Math.max(0.04, 0.22 - dist * 0.0015);
+    const shadowW  = p.onGround ? PW * 0.58 : PW * 0.45;
+    ctx.fillStyle  = `rgba(0,0,0,${shadowA})`;
+    ctx.beginPath();
+    ctx.ellipse(x + PW / 2, GY + 3, shadowW, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // Legs
-  ctx.fillStyle = theme.pixel ? '#8800FF' : '#333';
-  const legH = 14, legW = 7;
-  if (isAir) {
-    ctx.fillRect(x + 4, y + PLAYER_H - legH, legW, legH - 4);
-    ctx.fillRect(x + PLAYER_W - legW - 4, y + PLAYER_H - legH, legW, legH - 4);
+  ctx.fillStyle = p.dead ? '#444' : '#2a1a08';
+  const legH = 13, legW = 6;
+  if (!p.onGround) {
+    // Airborne pose
+    ctx.fillRect(x + 3,        y + PH - legH + 4, legW, legH - 5);
+    ctx.fillRect(x + PW - 9,   y + PH - legH - 1, legW, legH - 3);
   } else {
-    const lo0 = wf === 0 || wf === 3 ? -4 : 4;
-    const lo1 = wf === 0 || wf === 3 ? 4 : -4;
-    ctx.fillRect(x + 4 + lo0, y + PLAYER_H - legH, legW, legH);
-    ctx.fillRect(x + PLAYER_W - legW - 4 + lo1, y + PLAYER_H - legH, legW, legH);
+    const lo = (p.walkFrame === 0 || p.walkFrame === 3) ? -4 : 4;
+    ctx.fillRect(x + 3 + lo,   y + PH - legH, legW, legH);
+    ctx.fillRect(x + PW - 9 - lo, y + PH - legH, legW, legH);
   }
-  // Body
-  ctx.fillStyle = theme.playerBody;
-  ctx.fillRect(x + 3, y + 16, PLAYER_W - 6, 22);
-  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.font = 'bold 5px monospace';
-  ctx.fillText('ASPECT', x + 4, y + 30);
-  // Camera
-  ctx.fillStyle = '#222'; ctx.fillRect(x + PLAYER_W - 10, y + 18, 10, 7);
-  ctx.fillStyle = '#555'; ctx.beginPath(); ctx.arc(x + PLAYER_W - 4, y + 22, 3, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#888'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(x + PLAYER_W - 8, y + 18); ctx.lineTo(x + 8, y + 20); ctx.stroke();
+  // Shoes
+  ctx.fillStyle = '#1a1a1a';
+  if (!p.onGround) {
+    ctx.fillRect(x + 2,      y + PH - 3, legW + 2, 3);
+    ctx.fillRect(x + PW - 9, y + PH - 7, legW + 2, 3);
+  } else {
+    const lo = (p.walkFrame === 0 || p.walkFrame === 3) ? -4 : 4;
+    ctx.fillRect(x + 2 + lo,       y + PH - 3, legW + 3, 3);
+    ctx.fillRect(x + PW - 10 - lo, y + PH - 3, legW + 3, 3);
+  }
+
+  // Body (shirt)
+  const shirtCol = p.dead ? '#555' : (th.id === 'golden' ? '#C0392B' : '#922B21');
+  ctx.fillStyle  = shirtCol;
+  ctx.fillRect(x + 2, y + 14, PW - 4, 21);
+  // ASPECT on shirt
+  ctx.fillStyle  = 'rgba(255,255,255,0.32)';
+  ctx.font       = 'bold 5px monospace';
+  ctx.textAlign  = 'center';
+  ctx.fillText('ASPECT', x + PW / 2, y + 26);
+  ctx.textAlign  = 'left';
+
+  // Camera body (strapped to side)
+  ctx.fillStyle = '#111';
+  ctx.fillRect(x + PW - 7, y + 16, 7, 6);
+  ctx.fillStyle = '#333';
+  ctx.beginPath();
+  ctx.arc(x + PW - 3, y + 19, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  // Strap
+  ctx.strokeStyle = 'rgba(180,140,100,0.6)';
+  ctx.lineWidth   = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(x + PW - 7, y + 16);
+  ctx.lineTo(x + 8,       y + 18);
+  ctx.stroke();
+
   // Head
-  ctx.fillStyle = theme.playerHead;
-  ctx.fillRect(x + 5, y + 2, PLAYER_W - 10, 16);
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.fillRect(x + 9, y + 6, 3, 3); ctx.fillRect(x + PLAYER_W - 12, y + 6, 3, 3);
-  ctx.fillRect(x + 9, p.dead ? y + 14 : y + 13, PLAYER_W - 18, 2);
-  // Pixel hat
-  if (theme.pixel) {
-    ctx.fillStyle = theme.accent;
-    ctx.fillRect(x + 5, y, PLAYER_W - 10, 4);
-    ctx.fillRect(x + 8, y - 4, PLAYER_W - 16, 5);
+  ctx.fillStyle = '#FDBCB4';
+  ctx.fillRect(x + 4, y + 2, PW - 8, 14);
+  // Hair
+  ctx.fillStyle = '#3a2510';
+  ctx.fillRect(x + 4, y + 2, PW - 8, 5);
+  ctx.fillRect(x + 4, y + 4, 3, 5);
+  // Eyes
+  ctx.fillStyle = '#111';
+  ctx.fillRect(x + 8,       y + 8, 3, 3);
+  ctx.fillRect(x + PW - 11, y + 8, 3, 3);
+  // Mouth
+  if (p.dead) {
+    ctx.fillStyle = '#7a2a2a';
+    ctx.fillRect(x + 9, y + 13, PW - 18, 1);
   }
+
+  // Double-jump particle trail
+  if (!p.onGround && p.jumpsLeft === 0) {
+    ctx.fillStyle = th.accent + '70';
+    const trail = 5 + Math.sin(f * 0.35) * 2.5;
+    ctx.beginPath();
+    ctx.arc(x + PW / 2, y + PH + 3, trail, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   ctx.restore();
 }
 
-function drawHUD(ctx: CanvasRenderingContext2D, g: G, theme: typeof THEMES[0]) {
-  const comboMult = g.combo >= 10 ? 3 : g.combo >= 5 ? 2 : g.combo >= 3 ? 1.5 : 1;
+// ─────────────────────────── HUD ─────────────────────────────────────────────
+function drawHUD(ctx: CanvasRenderingContext2D, g: G, th: Theme) {
+  // Semi-transparent top strip
+  ctx.fillStyle = 'rgba(0,0,0,0.40)';
+  ctx.fillRect(0, 0, CW, 32);
 
-  // Score
-  ctx.font = 'bold 20px monospace';
-  ctx.fillStyle = '#fff';
-  ctx.shadowColor = theme.accent; ctx.shadowBlur = 10;
-  ctx.fillText(`${g.score}`, CW - 94, 30);
-  ctx.shadowBlur = 0;
-  ctx.font = '9px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.45)';
-  ctx.fillText('SKOR', CW - 94, 44);
+  // ── Left: theme name + speed bar ──
+  ctx.font      = 'bold 9px monospace';
+  ctx.fillStyle = th.accent;
+  ctx.textAlign = 'left';
+  ctx.fillText(`${th.emoji} ${th.name.toUpperCase()}`, 9, 13);
 
-  // Theme name
-  ctx.font = 'bold 11px sans-serif'; ctx.fillStyle = theme.accent;
-  ctx.fillText(`${theme.emoji} ${theme.name}`, 14, 26);
+  const spPct = (g.speed - SPD_INIT) / (SPD_MAX - SPD_INIT);
+  ctx.fillStyle = 'rgba(255,255,255,0.09)';
+  ctx.fillRect(9, 18, 62, 3);
+  ctx.fillStyle = th.accent;
+  ctx.fillRect(9, 18, 62 * spPct, 3);
+  ctx.fillStyle = 'rgba(255,255,255,0.22)';
+  ctx.font      = '7px monospace';
+  ctx.fillText('HIZ', 9, 29);
 
-  // Speed bar
-  const speedPct = (g.speed - 5) / 8;
-  ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(14, 32, 70, 4);
-  ctx.fillStyle = theme.accent; ctx.fillRect(14, 32, 70 * speedPct, 4);
-  ctx.font = '8px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.fillText('HIZ', 14, 46);
-
-  // Theme dots
-  for (let i = 0; i < THEMES.length; i++) {
-    ctx.fillStyle = i === g.themeIdx ? theme.accent : 'rgba(255,255,255,0.2)';
-    ctx.beginPath(); ctx.arc(CW / 2 - THEMES.length * 8 + i * 16, 14, 4, 0, Math.PI * 2); ctx.fill();
+  // ── Center: combo (only when active) ──
+  if (g.combo >= 3) {
+    const cm  = g.combo >= 10 ? 3 : g.combo >= 5 ? 2 : 1.5;
+    const col = cm >= 2 ? '#FF4500' : '#FFD700';
+    ctx.textAlign   = 'center';
+    ctx.font        = 'bold 11px monospace';
+    ctx.fillStyle   = col;
+    ctx.shadowColor = col; ctx.shadowBlur = 10;
+    ctx.fillText(`×${cm.toFixed(1)} KOMBO`, CW / 2, 14);
+    ctx.shadowBlur = 0;
+    ctx.font      = '7px monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.38)';
+    ctx.fillText(`x${g.combo} engel`, CW / 2, 25);
   }
+
+  // ── Right: score + lives ──
+  ctx.textAlign   = 'right';
+  ctx.font        = 'bold 22px monospace';
+  ctx.fillStyle   = '#ffffff';
+  ctx.shadowColor = th.accent; ctx.shadowBlur = 8;
+  ctx.fillText(`${g.score}`, CW - 9, 21);
+  ctx.shadowBlur  = 0;
+  ctx.font        = '7px monospace';
+  ctx.fillStyle   = 'rgba(255,255,255,0.32)';
+  ctx.fillText('PUAN', CW - 9, 30);
 
   // Lives (hearts)
   for (let i = 0; i < 3; i++) {
-    ctx.font = '14px sans-serif';
-    ctx.globalAlpha = i < g.lives ? 1 : 0.2;
-    ctx.fillText('❤️', CW - 100 + i * 18, 58);
+    ctx.globalAlpha = i < g.lives ? 1 : 0.18;
+    ctx.font        = '12px sans-serif';
+    ctx.fillText('❤', CW - 9 - i * 17, 48);
   }
   ctx.globalAlpha = 1;
-
-  // Shield indicator
-  if (g.shieldActive) {
-    ctx.font = 'bold 10px sans-serif';
-    ctx.fillStyle = '#60a5fa';
-    ctx.shadowColor = '#60a5fa'; ctx.shadowBlur = 8;
-    ctx.fillText('🛡 KALKAN', 14, 58);
-    ctx.shadowBlur = 0;
-    // Shield timer bar
-    ctx.fillStyle = 'rgba(96,165,250,0.2)'; ctx.fillRect(14, 62, 70, 3);
-    ctx.fillStyle = '#60a5fa'; ctx.fillRect(14, 62, 70 * (g.shieldTimer / 600), 3);
-  }
-
-  // Combo multiplier
-  if (g.combo >= 3) {
-    const multLabel = comboMult === 3 ? '×3 🔥🔥🔥' : comboMult === 2 ? '×2 🔥🔥' : '×1.5 🔥';
-    ctx.font = 'bold 13px monospace';
-    ctx.fillStyle = comboMult >= 2 ? '#FF4500' : '#FFD700';
-    ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 12;
-    ctx.textAlign = 'center';
-    ctx.fillText(multLabel, CW / 2, 44);
-    ctx.textAlign = 'left';
-    ctx.shadowBlur = 0;
-    // Combo count
-    ctx.font = '9px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.textAlign = 'center';
-    ctx.fillText(`KOMBO x${g.combo}`, CW / 2, 56);
-    ctx.textAlign = 'left';
-  }
+  ctx.textAlign   = 'left';
 }
 
-// ── Score API ─────────────────────────────────────────────────────────────────
+// ─────────────────────────── API ──────────────────────────────────────────────
 interface ScoreEntry { sira: number; isim: string; skor: number; tarih: string; }
 
-async function saveScore(score: number, accessToken: string, temaSayisi: number) {
+async function saveScore(score: number, accessToken: string, themeCount: number) {
   try {
     await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-4da0b637/game/skor`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}`, 'X-Access-Token': accessToken },
-      body: JSON.stringify({ skor: score, temaSayisi }),
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${publicAnonKey}`,
+        'X-Access-Token': accessToken,
+      },
+      body: JSON.stringify({ skor: score, temaSayisi: themeCount }),
     });
   } catch (e) { console.error('Score save error:', e); }
 }
@@ -1045,139 +1039,150 @@ async function fetchScores(tip: 'haftalik' | 'tumzamanlar', accessToken: string)
     );
     const data = await res.json();
     return data.skorlar || [];
-  } catch (e) { console.error('Score fetch error:', e); return []; }
+  } catch { return []; }
 }
 
-// ── Main Component ────────────────────────────────────────────────────────────
+// ─────────────────────────── COMPONENT ───────────────────────────────────────
 export function AspectRunner({ userName, userRole, accessToken, onBack }: AspectRunnerProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const gameRef = useRef<G | null>(null);
-  const rafRef = useRef<number>(0);
+  const canvasRef    = useRef<HTMLCanvasElement>(null);
+  const gameRef      = useRef<G | null>(null);
+  const rafRef       = useRef<number>(0);
+  const scoreSaved   = useRef(false);
+  const jumpHeld     = useRef(false); // prevent held-spacebar spam
 
-  const [uiState, setUiState] = useState<'menu' | 'playing' | 'dead' | 'scoreboard'>('menu');
-  const [displayScore, setDisplayScore] = useState(0);
-  const [lives, setLives] = useState(3);
-  const [combo, setCombo] = useState(0);
-  const [shieldActive, setShieldActive] = useState(false);
-  const [charSpeech, setCharSpeech] = useState<string | null>(null);
-  const [coachSpeech, setCoachSpeech] = useState<string | null>(null);
-  const [activeTip, setActiveTip] = useState<{ title: string; tip: string } | null>(null);
-  const [milestone, setMilestone] = useState<string | null>(null);
-  const [scores, setScores] = useState<ScoreEntry[]>([]);
-  const [scoreTab, setScoreTab] = useState<'haftalik' | 'tumzamanlar'>('haftalik');
-  const [scoreLoading, setScoreLoading] = useState(false);
-  const [scoresSaved, setScoresSaved] = useState(false);
-  const [themeEmoji, setThemeEmoji] = useState('🌅');
+  // UI state — kept minimal to avoid per-frame re-renders
+  const [uiState,    setUiState]    = useState<'menu' | 'playing' | 'dead' | 'scores'>('menu');
+  const [score,      setScore]      = useState(0);
+  const [combo,      setCombo]      = useState(0);
+  const [speech,     setSpeech]     = useState<{ who: 'char' | 'coach'; text: string } | null>(null);
+  const [milestone,  setMilestone]  = useState<string | null>(null);
+  const [scores,     setScores]     = useState<ScoreEntry[]>([]);
+  const [scoresTab,  setScoresTab]  = useState<'haftalik' | 'tumzamanlar'>('haftalik');
+  const [scoresLoad, setScoresLoad] = useState(false);
 
-  // ── Game loop ──────────────────────────────────────────────────────────────
+  // Refs for avoiding stale closures in loop
+  const speechRef    = useRef<string | null>(null);
+  const milestoneRef = useRef<string | null>(null);
+
+  // ── Loop ────────────────────────────────────────────────────────────────────
   const loop = useCallback(() => {
-    const g = gameRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!g || !canvas || !ctx) return;
+    const g   = gameRef.current;
+    const cvs = canvasRef.current;
+    const ctx = cvs?.getContext('2d');
+    if (!g || !cvs || !ctx) return;
 
     update(g);
     draw(ctx, g);
 
-    setDisplayScore(g.score);
-    setLives(g.lives);
-    setCombo(g.combo);
-    setShieldActive(g.shieldActive);
-    if (g.charSpeech?.text !== charSpeech) setCharSpeech(g.charSpeech?.text ?? null);
-    if (g.coachSpeech?.text !== coachSpeech) setCoachSpeech(g.coachSpeech?.text ?? null);
-    if (g.activeTip) setActiveTip({ title: g.activeTip.title, tip: g.activeTip.tip });
-    else setActiveTip(null);
-    if (g.milestone) setMilestone(g.milestone.text);
-    else setMilestone(null);
-    setThemeEmoji(THEMES[g.themeIdx].emoji);
+    // Minimal state sync — only on change
+    if (g.frame % 8 === 0) {
+      setScore(g.score);
+      setCombo(g.combo);
+    }
+    const sText = g.speech?.text ?? null;
+    if (sText !== speechRef.current) {
+      speechRef.current = sText;
+      setSpeech(g.speech ? { who: g.speech.who, text: g.speech.text } : null);
+    }
+    const mText = g.milestone?.text ?? null;
+    if (mText !== milestoneRef.current) {
+      milestoneRef.current = mText;
+      setMilestone(mText);
+    }
 
     if (g.status === 'playing') {
       rafRef.current = requestAnimationFrame(loop);
-    } else if (g.status === 'dead') {
+    } else {
       setUiState('dead');
-      if (!scoresSaved) {
-        setScoresSaved(true);
+      if (!scoreSaved.current) {
+        scoreSaved.current = true;
         saveScore(g.score, accessToken, g.themeIdx + 1);
       }
     }
-  }, [accessToken, charSpeech, coachSpeech, scoresSaved]);
+  }, [accessToken]); // stable — accessToken never changes mid-session
 
-  // ── Start game ─────────────────────────────────────────────────────────────
+  // ── Start ────────────────────────────────────────────────────────────────
   const startGame = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
-    const g = initG();
-    gameRef.current = g;
-    setScoresSaved(false);
+    scoreSaved.current = false;
+    speechRef.current = null;
+    milestoneRef.current = null;
+    gameRef.current = initG();
+    setSpeech(null);
+    setMilestone(null);
     setUiState('playing');
-    setCharSpeech(null); setCoachSpeech(null);
-    setActiveTip(null); setMilestone(null);
     rafRef.current = requestAnimationFrame(loop);
   }, [loop]);
 
-  // ── Jump ──────────────────────────────────────────────────────────────────
+  // ── Jump ─────────────────────────────────────────────────────────────────
   const handleJump = useCallback(() => {
     const g = gameRef.current;
     if (!g || g.status !== 'playing') return;
-    const p = g.player;
-    if (p.dead) return;
-    if (p.jumpsLeft > 0) {
-      p.vy = p.jumpsLeft === 2 ? JUMP_FORCE : DBL_JUMP_FORCE;
-      p.jumpsLeft--;
-    }
+    doJump(g.player);
   }, []);
 
-  // ── Keyboard / Touch ──────────────────────────────────────────────────────
+  // ── Keyboard ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); handleJump(); }
+    const down = (e: KeyboardEvent) => {
+      if (e.code === 'Space' || e.code === 'ArrowUp') {
+        e.preventDefault();
+        if (!jumpHeld.current) { jumpHeld.current = true; handleJump(); }
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const up = (e: KeyboardEvent) => {
+      if (e.code === 'Space' || e.code === 'ArrowUp') jumpHeld.current = false;
+    };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup',   up);
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
   }, [handleJump]);
 
-  useEffect(() => { return () => cancelAnimationFrame(rafRef.current); }, []);
+  // ── Cleanup ───────────────────────────────────────────────────────────────
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
-  // ── Scores ─────────────────────────────────────────────────────────────────
+  // ── Load scores ───────────────────────────────────────────────────────────
   const loadScores = useCallback(async (tab: 'haftalik' | 'tumzamanlar') => {
-    setScoreLoading(true);
-    const data = await fetchScores(tab, accessToken);
-    setScores(data); setScoreLoading(false);
+    setScoresLoad(true);
+    setScores(await fetchScores(tab, accessToken));
+    setScoresLoad(false);
   }, [accessToken]);
 
   useEffect(() => {
-    if (uiState === 'scoreboard' || uiState === 'dead') loadScores(scoreTab);
-  }, [uiState, scoreTab, loadScores]);
+    if (uiState === 'scores' || uiState === 'dead') loadScores(scoresTab);
+  }, [uiState, scoresTab, loadScores]);
 
-  // ── Menu preview ──────────────────────────────────────────────────────────
+  // ── Menu canvas preview ───────────────────────────────────────────────────
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
-    const theme = THEMES[0];
-    const skyGrad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-    skyGrad.addColorStop(0, theme.sky1); skyGrad.addColorStop(1, theme.sky2);
-    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, CW, CH);
-    // Mountains preview
-    ctx.fillStyle = theme.mountainColor;
-    ctx.beginPath(); ctx.moveTo(50, GROUND_Y - 10); ctx.lineTo(170, 160); ctx.lineTo(290, GROUND_Y - 10); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(200, GROUND_Y - 10); ctx.lineTo(310, 140); ctx.lineTo(420, GROUND_Y - 10); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = theme.groundSurface; ctx.fillRect(0, GROUND_Y, CW, 18);
-    ctx.fillStyle = theme.groundDeep; ctx.fillRect(0, GROUND_Y + 18, CW, CH - GROUND_Y - 18);
+    const cvs = canvasRef.current;
+    const ctx = cvs?.getContext('2d');
+    if (!cvs || !ctx) return;
+    const th = THEMES[0];
+    const sky = ctx.createLinearGradient(0, 0, 0, GY);
+    sky.addColorStop(0, th.sky1); sky.addColorStop(1, th.sky2);
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, CW, CH);
+    ctx.fillStyle = th.mtCol;
+    ctx.beginPath(); ctx.moveTo(55,  GY-8); ctx.lineTo(180, 150); ctx.lineTo(305, GY-8); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(205, GY-8); ctx.lineTo(315, 132); ctx.lineTo(425, GY-8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = th.gnd1; ctx.fillRect(0, GY, CW, 13);
+    ctx.fillStyle = th.gnd2; ctx.fillRect(0, GY + 13, CW, CH - GY - 13);
+    ctx.globalAlpha = 0.058;
+    ctx.fillStyle = '#FFE066';
+    ctx.font = 'bold 92px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('ASPECT', CW / 2, 200);
+    ctx.globalAlpha = 1; ctx.textAlign = 'left';
   }, []);
 
-  const comboMult = combo >= 10 ? 3 : combo >= 5 ? 2 : combo >= 3 ? 1.5 : 1;
-
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div
-      style={{ position: 'relative', width: '100%', background: 'linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%)', minHeight: '100%' }}
+      style={{ position: 'relative', width: '100%', background: 'linear-gradient(135deg,#08041c 0%,#160836 50%,#0b0620 100%)', minHeight: '100%' }}
       onTouchStart={uiState === 'playing' ? handleJump : undefined}
     >
-      {/* Back button */}
+      {/* Back */}
       <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 20 }}>
         <button
           onClick={onBack}
-          style={{ background: 'rgba(10,5,30,0.85)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 10, padding: '6px 10px', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}
+          style={{ background: 'rgba(8,4,28,0.88)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 10, padding: '6px 10px', color: 'rgba(255,255,255,0.65)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}
         >
           <ChevronLeft size={14} /> Geri
         </button>
@@ -1186,173 +1191,137 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
       {/* Canvas */}
       <div style={{ position: 'relative', width: '100%', overflow: 'hidden' }}>
         <canvas
-          ref={canvasRef} width={CW} height={CH}
+          ref={canvasRef}
+          width={CW} height={CH}
           onClick={uiState === 'playing' ? handleJump : undefined}
           style={{ width: '100%', height: 'auto', display: 'block', cursor: 'pointer' }}
         />
 
-        {/* Playing overlays */}
+        {/* Milestone popup */}
         {uiState === 'playing' && (
-          <>
-            {/* Milestone flash */}
-            <AnimatePresence>
-              {milestone && (
-                <motion.div
-                  key={milestone}
-                  initial={{ opacity: 0, scale: 0.5, y: 20 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 1.3, y: -20 }}
-                  style={{
-                    position: 'absolute', top: '35%', left: '50%', transform: 'translateX(-50%)',
-                    background: 'linear-gradient(135deg, rgba(255,215,0,0.95), rgba(255,140,0,0.95))',
-                    border: '2px solid rgba(255,255,255,0.4)',
-                    borderRadius: 20, padding: '10px 24px',
-                    pointerEvents: 'none', zIndex: 15,
-                    boxShadow: '0 0 40px rgba(255,215,0,0.6)',
-                  }}
-                >
-                  <p style={{ color: '#1a0a3c', fontSize: 18, fontWeight: 900, margin: 0, letterSpacing: '0.05em', textAlign: 'center' }}>
-                    {milestone}
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Coach speech */}
-            <AnimatePresence>
-              {coachSpeech && (
-                <motion.div
-                  key={coachSpeech}
-                  initial={{ opacity: 0, y: -20, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -10, scale: 0.9 }}
-                  style={{
-                    position: 'absolute', top: 56, left: '50%', transform: 'translateX(-50%)',
-                    background: 'rgba(124,58,237,0.92)', border: '1px solid rgba(255,255,255,0.25)',
-                    borderRadius: 20, padding: '6px 14px', backdropFilter: 'blur(8px)',
-                    pointerEvents: 'none', zIndex: 10,
-                  }}
-                >
-                  <p style={{ color: '#fff', fontSize: 12, fontWeight: 700, margin: 0, whiteSpace: 'nowrap' }}>
-                    🧑‍💼 Özgür: {coachSpeech}
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Character speech */}
-            <AnimatePresence>
-              {charSpeech && (
-                <motion.div
-                  key={charSpeech}
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.8 }}
-                  style={{
-                    position: 'absolute', bottom: `${CH - GROUND_Y + 60}px`,
-                    left: `${(PLAYER_X / CW) * 100}%`, transform: 'translateX(-10px)',
-                    background: 'rgba(255,255,255,0.95)', border: '2px solid rgba(168,85,247,0.6)',
-                    borderRadius: 12, padding: '5px 10px', maxWidth: 160,
-                    pointerEvents: 'none', zIndex: 10,
-                  }}
-                >
-                  <p style={{ color: '#1a0a3c', fontSize: 10, fontWeight: 600, margin: 0 }}>{charSpeech}</p>
-                  <div style={{ position: 'absolute', bottom: -8, left: 16, width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '8px solid rgba(255,255,255,0.95)' }} />
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Photography tip */}
-            <AnimatePresence>
-              {activeTip && (
-                <motion.div
-                  key={activeTip.title}
-                  initial={{ opacity: 0, y: 20, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 20 }}
-                  style={{
-                    position: 'absolute', bottom: 16, left: 12, right: 12,
-                    background: 'rgba(10,5,30,0.92)', border: '1px solid rgba(255,215,0,0.4)',
-                    borderRadius: 14, padding: '10px 14px', backdropFilter: 'blur(12px)',
-                    pointerEvents: 'none', zIndex: 10,
-                  }}
-                >
-                  <p style={{ color: '#FFD700', fontSize: 11, fontWeight: 800, margin: '0 0 3px', letterSpacing: '0.05em' }}>📸 {activeTip.title}</p>
-                  <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, margin: 0, lineHeight: 1.5 }}>{activeTip.tip}</p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Hint */}
-            <div style={{ position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none' }}>
-              <p style={{ color: 'rgba(255,255,255,0.15)', fontSize: 9, margin: 0, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>
-                DOKUN / SPACE / ↑ → ZIPLA · ÇİFT ZIPLAMA · KOİN & KALKAN TOPLA
-              </p>
-            </div>
-          </>
+          <AnimatePresence>
+            {milestone && (
+              <motion.div
+                key={milestone}
+                initial={{ opacity: 0, scale: 0.62, y: 10 }}
+                animate={{ opacity: 1, scale: 1,    y: 0 }}
+                exit={{ opacity: 0,   scale: 1.18,  y: -14 }}
+                style={{
+                  position: 'absolute', top: '28%', left: '50%', transform: 'translateX(-50%)',
+                  background: 'linear-gradient(135deg,rgba(255,215,0,0.97),rgba(255,140,0,0.97))',
+                  border: '2px solid rgba(255,255,255,0.35)', borderRadius: 18,
+                  padding: '8px 24px', pointerEvents: 'none', zIndex: 15,
+                  boxShadow: '0 0 38px rgba(255,215,0,0.58)',
+                }}
+              >
+                <p style={{ color: '#1a0a3c', fontSize: 16, fontWeight: 900, margin: 0, letterSpacing: '0.05em', textAlign: 'center', fontFamily: 'monospace' }}>
+                  {milestone}
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
         )}
 
-        {/* MENU overlay */}
+        {/* ── MENU ── */}
         <AnimatePresence>
           {uiState === 'menu' && (
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(180deg, rgba(10,5,30,0.88) 0%, rgba(26,10,60,0.93) 100%)' }}
+              style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(180deg,rgba(6,3,20,0.90) 0%,rgba(18,7,46,0.95) 100%)' }}
             >
-              <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }} style={{ textAlign: 'center', marginBottom: 6 }}>
-                <div style={{ fontSize: 30, fontFamily: 'monospace', fontWeight: 900, letterSpacing: '0.25em', color: '#fff', textShadow: '0 0 30px #a855f7, 0 0 60px #7c3aed' }}>ASPECT</div>
-                <div style={{ fontSize: 14, fontFamily: 'monospace', fontWeight: 700, letterSpacing: '0.4em', color: '#a78bfa', marginTop: 2 }}>RUNNER</div>
+              <motion.div
+                animate={{ y: [0, -7, 0] }}
+                transition={{ duration: 3.4, repeat: Infinity, ease: 'easeInOut' }}
+                style={{ textAlign: 'center', marginBottom: 12 }}
+              >
+                <div style={{ fontSize: 33, fontFamily: 'monospace', fontWeight: 900, letterSpacing: '0.28em', color: '#fff', textShadow: '0 0 32px #a855f7, 0 0 64px #7c3aed50' }}>
+                  ASPECT
+                </div>
+                <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 700, letterSpacing: '0.55em', color: '#a78bfa', marginTop: 3 }}>
+                  RUNNER
+                </div>
               </motion.div>
 
               {/* Theme pills */}
-              <div style={{ display: 'flex', gap: 6, margin: '8px 0 10px' }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
                 {THEMES.map((t, i) => (
-                  <div key={i} style={{ width: 30, height: 30, borderRadius: 8, background: `linear-gradient(135deg, ${t.sky1}, ${t.sky2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, border: '1px solid rgba(255,255,255,0.2)' }}>{t.emoji}</div>
+                  <div key={i} style={{ padding: '5px 16px', borderRadius: 20, background: `linear-gradient(135deg,${t.sky1},${t.sky2})`, fontSize: 12, border: '1px solid rgba(255,255,255,0.2)', color: '#fff', fontWeight: 700, letterSpacing: '0.04em' }}>
+                    {t.emoji} {t.name}
+                  </div>
                 ))}
               </div>
 
               {/* Feature pills */}
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 280, marginBottom: 16 }}>
-                {['❤️ 3 Can', '🪙 Coin', '🔥 Kombo', '🛡 Kalkan', '🎯 Milestone', '📸 Fotoğraf İpuçları'].map(f => (
-                  <span key={f} style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 20, padding: '3px 10px', color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: 600 }}>{f}</span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 300, marginBottom: 18 }}>
+                {['❤️ 3 Can', '📸 Flash Anlar', '🔥 Kombo', '🌅→🌃 Tema Geçişi'].map(feat => (
+                  <span key={feat} style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.11)', borderRadius: 20, padding: '3px 11px', color: 'rgba(255,255,255,0.52)', fontSize: 10, fontWeight: 600 }}>
+                    {feat}
+                  </span>
                 ))}
               </div>
 
-              <motion.button whileTap={{ scale: 0.94 }} onClick={startGame} style={{ background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 16, padding: '12px 40px', color: '#fff', fontSize: 16, fontWeight: 800, letterSpacing: '0.08em', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 0 30px rgba(168,85,247,0.5)', marginBottom: 10 }}>
+              <motion.button
+                whileTap={{ scale: 0.92 }}
+                onClick={startGame}
+                style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 16, padding: '13px 46px', color: '#fff', fontSize: 15, fontWeight: 800, letterSpacing: '0.1em', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 0 30px rgba(168,85,247,0.52)', marginBottom: 10 }}
+              >
                 <Play size={16} /> OYNA
               </motion.button>
 
-              <button onClick={() => setUiState('scoreboard')} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, padding: '8px 22px', color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Trophy size={13} /> Skor Tablosu
+              <button
+                onClick={() => setUiState('scores')}
+                style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.13)', borderRadius: 12, padding: '7px 22px', color: 'rgba(255,255,255,0.42)', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <Trophy size={12} /> Skor Tablosu
               </button>
+
+              <div style={{ marginTop: 18, color: 'rgba(255,255,255,0.18)', fontSize: 9, fontFamily: 'monospace', letterSpacing: '0.12em' }}>
+                DOKUN / SPACE → ZIPLA &nbsp;·&nbsp; İKİ KEZ → ÇİFT ZIPLAMA
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* DEAD overlay */}
+        {/* ── DEAD ── */}
         <AnimatePresence>
           {uiState === 'dead' && (
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(10,5,30,0.9)', backdropFilter: 'blur(4px)' }}
+              style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(6,3,18,0.92)', backdropFilter: 'blur(4px)' }}
             >
-              <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', damping: 16 }} style={{ textAlign: 'center', marginBottom: 20 }}>
-                <div style={{ fontSize: 44, marginBottom: 4 }}>💥</div>
-                <p style={{ color: '#f87171', fontFamily: 'monospace', fontWeight: 900, fontSize: 18, letterSpacing: '0.1em', margin: 0 }}>OYUN BİTTİ</p>
-                <p style={{ color: '#FFD700', fontFamily: 'monospace', fontWeight: 800, fontSize: 32, margin: '6px 0 0' }}>{displayScore}</p>
-                <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, margin: '2px 0 8px', letterSpacing: '0.1em' }}>PUAN</p>
+              <motion.div
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: 'spring', damping: 14 }}
+                style={{ textAlign: 'center', marginBottom: 22 }}
+              >
+                <div style={{ fontSize: 42, marginBottom: 8 }}>📷</div>
+                <p style={{ color: '#f87171', fontFamily: 'monospace', fontWeight: 900, fontSize: 16, letterSpacing: '0.12em', margin: 0 }}>
+                  OYUN BİTTİ
+                </p>
+                <p style={{ color: '#FFD700', fontFamily: 'monospace', fontWeight: 900, fontSize: 36, margin: '8px 0 2px' }}>
+                  {score.toLocaleString()}
+                </p>
+                <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: 9, margin: 0, letterSpacing: '0.14em' }}>PUAN</p>
                 {combo >= 3 && (
-                  <div style={{ background: 'rgba(255,69,0,0.15)', border: '1px solid rgba(255,69,0,0.3)', borderRadius: 10, padding: '4px 12px', display: 'inline-block' }}>
+                  <div style={{ marginTop: 10, background: 'rgba(255,69,0,0.11)', border: '1px solid rgba(255,69,0,0.26)', borderRadius: 10, padding: '4px 14px', display: 'inline-block' }}>
                     <span style={{ color: '#FF6B35', fontSize: 11, fontWeight: 700 }}>🔥 En yüksek kombo: x{combo}</span>
                   </div>
                 )}
               </motion.div>
 
               <div style={{ display: 'flex', gap: 10 }}>
-                <motion.button whileTap={{ scale: 0.94 }} onClick={startGame} style={{ background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 14, padding: '11px 28px', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 0 20px rgba(168,85,247,0.4)' }}>
-                  <Play size={14} /> Tekrar
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={startGame}
+                  style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', border: 'none', borderRadius: 14, padding: '11px 28px', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 0 22px rgba(168,85,247,0.42)' }}
+                >
+                  <RotateCcw size={14} /> Tekrar
                 </motion.button>
-                <button onClick={() => setUiState('scoreboard')} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 14, padding: '11px 20px', color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  onClick={() => setUiState('scores')}
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.13)', borderRadius: 14, padding: '11px 20px', color: 'rgba(255,255,255,0.62)', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                >
                   <Trophy size={14} /> Skor
                 </button>
               </div>
@@ -1361,66 +1330,105 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
         </AnimatePresence>
       </div>
 
-      {/* Scoreboard */}
+      {/* ── Chat ticker ── */}
+      {uiState === 'playing' && (
+        <div style={{ width: '100%', maxWidth: CW, minHeight: 32, background: 'rgba(6,3,18,0.74)', backdropFilter: 'blur(8px)', borderTop: '1px solid rgba(168,85,247,0.16)', borderRadius: '0 0 16px 16px', display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', overflow: 'hidden' }}>
+          <AnimatePresence mode="wait">
+            {speech ? (
+              <motion.div
+                key={speech.text}
+                initial={{ opacity: 0, x: 22 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -18 }}
+                transition={{ duration: 0.26 }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <span style={{ fontSize: 13 }}>{speech.who === 'char' ? '🏃' : '🧑‍💼'}</span>
+                <span style={{ color: speech.who === 'coach' ? '#a78bfa' : 'rgba(255,255,255,0.45)', fontSize: 9, fontWeight: 700, letterSpacing: '0.06em', flexShrink: 0 }}>
+                  {speech.who === 'char' ? 'KARAKTER' : 'ÖZGÜR'}
+                </span>
+                <span style={{ color: 'rgba(255,255,255,0.88)', fontSize: 11, fontWeight: 600 }}>{speech.text}</span>
+              </motion.div>
+            ) : (
+              <motion.span
+                key="idle"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                style={{ color: 'rgba(255,255,255,0.15)', fontSize: 9, letterSpacing: '0.12em', fontFamily: 'monospace' }}
+              >
+                DOKUN / SPACE / ↑ → ZIPLA &nbsp;·&nbsp; ÇİFT ZIPLAMA &nbsp;·&nbsp; 📸 FLASH TOPLA
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* ── Scoreboard ── */}
       <AnimatePresence>
-        {uiState === 'scoreboard' && (
+        {uiState === 'scores' && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%)', overflowY: 'auto', padding: '16px 16px 100px' }}
+            initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg,#08041c,#160836,#0b0620)', overflowY: 'auto', padding: '16px 16px 80px' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <button onClick={() => setUiState('menu')} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '6px 10px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+              <button
+                onClick={() => setUiState('menu')}
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '6px 10px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}
+              >
                 <ChevronLeft size={14} /> Menü
               </button>
-              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, fontWeight: 700 }}>
-                <Trophy size={14} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} /> Skor Tablosu
+              <span style={{ color: 'rgba(255,255,255,0.55)', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Trophy size={14} style={{ display: 'inline' }} /> Skor Tablosu
               </span>
             </div>
 
             <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
               {(['haftalik', 'tumzamanlar'] as const).map(tab => (
-                <button key={tab} onClick={() => setScoreTab(tab)} style={{ flex: 1, background: scoreTab === tab ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : 'rgba(255,255,255,0.05)', border: `1px solid ${scoreTab === tab ? 'transparent' : 'rgba(255,255,255,0.1)'}`, borderRadius: 10, padding: '8px', color: scoreTab === tab ? '#fff' : 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                <button
+                  key={tab}
+                  onClick={() => setScoresTab(tab)}
+                  style={{ flex: 1, background: scoresTab === tab ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : 'rgba(255,255,255,0.05)', border: `1px solid ${scoresTab === tab ? 'transparent' : 'rgba(255,255,255,0.1)'}`, borderRadius: 10, padding: '8px', color: scoresTab === tab ? '#fff' : 'rgba(255,255,255,0.42)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                >
                   {tab === 'haftalik' ? '🗓 Bu Hafta' : '🏆 Tüm Zamanlar'}
                 </button>
               ))}
             </div>
 
-            {scoreLoading ? (
+            {scoresLoad ? (
               <div style={{ textAlign: 'center', padding: 40 }}>
                 <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
                   <Star size={24} style={{ color: '#a855f7' }} />
                 </motion.div>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 10 }}>Yükleniyor...</p>
+                <p style={{ color: 'rgba(255,255,255,0.32)', fontSize: 12, marginTop: 10 }}>Yükleniyor...</p>
               </div>
             ) : scores.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 40 }}>
-                <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>Henüz skor yok. İlk sen ol! 🚀</p>
-              </div>
+              <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.28)', fontSize: 13, padding: 40 }}>
+                Henüz skor yok. İlk sen ol! 🚀
+              </p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {scores.map((s, idx) => (
+                {scores.map((s, i) => (
                   <motion.div
-                    key={idx}
-                    initial={{ opacity: 0, x: -20 }}
+                    key={i}
+                    initial={{ opacity: 0, x: -14 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.05 }}
+                    transition={{ delay: i * 0.04 }}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 12,
-                      background: idx === 0 ? 'rgba(255,215,0,0.08)' : idx === 1 ? 'rgba(192,192,192,0.06)' : idx === 2 ? 'rgba(205,127,50,0.06)' : 'rgba(255,255,255,0.04)',
-                      border: `1px solid ${idx === 0 ? 'rgba(255,215,0,0.25)' : idx === 1 ? 'rgba(192,192,192,0.18)' : idx === 2 ? 'rgba(205,127,50,0.18)' : 'rgba(255,255,255,0.07)'}`,
+                      background: i === 0 ? 'rgba(255,215,0,0.08)' : 'rgba(255,255,255,0.04)',
+                      border: `1px solid ${i === 0 ? 'rgba(255,215,0,0.22)' : 'rgba(255,255,255,0.07)'}`,
                       borderRadius: 14, padding: '12px 14px',
                     }}
                   >
-                    <div style={{ width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: idx === 0 ? 'rgba(255,215,0,0.2)' : 'rgba(255,255,255,0.06)', fontSize: idx < 3 ? 16 : 13, fontWeight: 800, color: idx === 0 ? '#FFD700' : idx === 1 ? '#C0C0C0' : idx === 2 ? '#CD7F32' : 'rgba(255,255,255,0.4)' }}>
-                      {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                    <div style={{ width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: i === 0 ? 'rgba(255,215,0,0.18)' : 'rgba(255,255,255,0.05)', fontSize: i < 3 ? 16 : 12, fontWeight: 800, color: i === 0 ? '#FFD700' : i === 1 ? '#C0C0C0' : i === 2 ? '#CD7F32' : 'rgba(255,255,255,0.32)' }}>
+                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
                     </div>
                     <div style={{ flex: 1 }}>
                       <p style={{ color: '#fff', fontSize: 13, fontWeight: 700, margin: 0 }}>{s.isim}</p>
-                      <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, margin: '2px 0 0' }}>{s.tarih}</p>
+                      <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: 10, margin: '2px 0 0' }}>{s.tarih}</p>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <p style={{ color: idx === 0 ? '#FFD700' : '#a78bfa', fontSize: 18, fontWeight: 900, margin: 0, fontFamily: 'monospace' }}>{s.skor.toLocaleString()}</p>
-                      <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 9, margin: 0 }}>PUAN</p>
+                      <p style={{ color: i === 0 ? '#FFD700' : '#a78bfa', fontSize: 18, fontWeight: 900, margin: 0, fontFamily: 'monospace' }}>
+                        {s.skor.toLocaleString()}
+                      </p>
+                      <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, margin: 0 }}>PUAN</p>
                     </div>
                   </motion.div>
                 ))}
