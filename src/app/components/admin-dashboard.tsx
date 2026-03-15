@@ -96,15 +96,21 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     return (
       <div style={{ background: 'rgba(10,5,30,0.95)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, padding: '10px 14px' }}>
         <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, marginBottom: 6 }}>{label}</p>
-        {payload.map((p: any, i: number) => (
-          <div key={i} className="flex items-center gap-2 text-xs">
-            <div className="w-2 h-2 rounded-full" style={{ background: p.color }} />
-            <span style={{ color: 'rgba(255,255,255,0.5)' }}>{p.name}:</span>
-            <span className="font-bold text-white">
-              {p.name === 'Ciro' ? `₺${p.value.toLocaleString('tr-TR')}` : p.value}
-            </span>
-          </div>
-        ))}
+        {payload.map((p: any, i: number) => {
+          // ciroNorm is a normalized value — show real ciro from the data point instead
+          const isCiro = p.dataKey === 'ciroNorm';
+          const displayVal = isCiro
+            ? `₺${(p.payload?.ciro ?? 0).toLocaleString('tr-TR')}`
+            : p.value;
+          const displayName = isCiro ? 'Ciro' : p.name;
+          return (
+            <div key={i} className="flex items-center gap-2 text-xs">
+              <div className="w-2 h-2 rounded-full" style={{ background: p.color }} />
+              <span style={{ color: 'rgba(255,255,255,0.5)' }}>{displayName}:</span>
+              <span className="font-bold text-white">{displayVal}</span>
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -149,6 +155,28 @@ export function AdminDashboard({ userName, userRole, onNavigate }: AdminDashboar
   const anomali    = data?.anomaliSayisi ?? 0;
   const hasAnomali = anomali > 0;
   const totalAlbums = (data?.albumDagilimi || []).reduce((s, i) => s + i.adet, 0);
+
+  // Deduplicate saatlikData by saat — duplicate saat values cause recharts to render
+  // multiple SVG children with the same key, triggering the "duplicate key" warning.
+  const saatlikData = (data?.saatlikData ?? []).reduce<{ saat: string; adet: number; ciro: number }[]>(
+    (acc, item) => {
+      const existing = acc.find(x => x.saat === item.saat);
+      if (existing) { existing.adet += item.adet; existing.ciro += item.ciro; }
+      else acc.push({ ...item });
+      return acc;
+    },
+    [],
+  );
+
+  // Normalize ciro onto the same scale as adet so both series can share ONE YAxis.
+  // A dual YAxis causes recharts to render two sets of tick <text> elements with the
+  // same numeric key (e.g. "0") inside the same SVG, producing the duplicate-key warning.
+  const maxAdet = Math.max(...saatlikData.map(d => d.adet), 1);
+  const maxCiro = Math.max(...saatlikData.map(d => d.ciro), 1);
+  const chartData = saatlikData.map(item => ({
+    ...item,
+    ciroNorm: (item.ciro / maxCiro) * maxAdet, // scaled to adet range for single axis
+  }));
 
   return (
     <div className="min-h-screen pb-28">
@@ -457,7 +485,7 @@ export function AdminDashboard({ userName, userRole, onNavigate }: AdminDashboar
                 <div key={i} className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
               ))}
             </div>
-          ) : !data?.saatlikData || data.saatlikData.length === 0 ? (
+          ) : !saatlikData || saatlikData.length === 0 ? (
             <div className="h-44 flex flex-col items-center justify-center gap-2">
               <BarChart3 className="w-8 h-8 text-white/20" />
               <p className="text-white/30 text-sm">Henüz satış verisi yok</p>
@@ -465,14 +493,13 @@ export function AdminDashboard({ userName, userRole, onNavigate }: AdminDashboar
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={180} minWidth={0}>
-              <ComposedChart data={data.saatlikData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+              <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
                 <XAxis dataKey="saat" stroke="rgba(255,255,255,0.2)" tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis yAxisId="left" stroke="rgba(255,255,255,0.2)" tick={{ fill: 'rgba(167,139,250,0.7)', fontSize: 10 }} axisLine={false} tickLine={false} width={28} />
-                <YAxis yAxisId="right" orientation="right" stroke="rgba(255,255,255,0.2)" tick={{ fill: 'rgba(52,211,153,0.7)', fontSize: 10 }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}B` : v} />
+                <YAxis stroke="rgba(255,255,255,0.2)" tick={{ fill: 'rgba(167,139,250,0.7)', fontSize: 10 }} axisLine={false} tickLine={false} width={28} allowDecimals={false} tickCount={5} />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar yAxisId="left" dataKey="adet" name="Satış" fill="rgba(167,139,250,0.4)" stroke="rgba(167,139,250,0.8)" strokeWidth={1} radius={[3, 3, 0, 0]} />
-                <Line yAxisId="right" type="monotone" dataKey="ciro" name="Ciro" stroke={COLORS.emerald} strokeWidth={2.5} dot={{ fill: COLORS.emerald, r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                <Bar key="bar-adet" dataKey="adet" name="Satış" fill="rgba(167,139,250,0.4)" stroke="rgba(167,139,250,0.8)" strokeWidth={1} radius={[3, 3, 0, 0]} />
+                <Line key="line-ciro" type="monotone" dataKey="ciroNorm" name="Ciro" stroke={COLORS.emerald} strokeWidth={2.5} dot={{ fill: COLORS.emerald, r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
               </ComposedChart>
             </ResponsiveContainer>
           )}
@@ -543,7 +570,7 @@ export function AdminDashboard({ userName, userRole, onNavigate }: AdminDashboar
                   const pct = totalAlbums > 0 ? Math.round((item.adet / totalAlbums) * 100) : 0;
                   const color = ALBUM_COLORS[idx % ALBUM_COLORS.length];
                   return (
-                    <div key={item.tip} className="flex items-center gap-2">
+                    <div key={idx} className="flex items-center gap-2">
                       <span className="text-xs font-semibold w-16 shrink-0" style={{ color: 'rgba(255,255,255,0.5)' }}>{item.tip}</span>
                       <div className="flex-1 rounded-full overflow-hidden" style={{ height: 6, background: 'rgba(255,255,255,0.07)' }}>
                         <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />

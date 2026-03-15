@@ -437,11 +437,12 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
   }
 
   // ── Spawn sparks ─────────────────────────────────────────────────────────
+  // wx/wy must be in WORLD space — renderer subtracts camX at draw time
   function spawnSparks(gs: GS, wx: number, wy: number, col: string, n = 10) {
     for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const spd = Math.random() * 4 + 1;
-      gs.sparks.push({ x: wx - gs.camX, y: wy, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd, life: 35, maxl: 35, col, sz: Math.random() * 4 + 1 });
+      gs.sparks.push({ x: wx, y: wy, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd, life: 35, maxl: 35, col, sz: Math.random() * 4 + 1 });
     }
   }
 
@@ -471,7 +472,6 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
           if (soundRef.current) SFX.gameOver();
           return;
         }
-        const ld = LEVELS[gs.lvl];
         gs.px = 80; gs.py = GY - PH; gs.pvx = 0; gs.pvy = 0;
         gs.pjumps = 2; gs.ponG = false; gs.camX = 0;
         gs.pdead = false; gs.pdeadT = 0; gs.pinv = 120;
@@ -527,68 +527,83 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
         gs.score += bonus;
         gs.slowMo = 55; gs.flash = 10;
         if (soundRef.current) SFX.photo();
-        spawnSparks(gs, activeShot.wx - gs.camX, activeShot.wy, '#FFD700', 20);
-        gs.floats.push({ x: activeShot.wx - gs.camX, y: activeShot.wy - 20, text: `+${bonus} 📸`, life: 80, col: '#FFD700' });
+        // World-space coords — spawnSparks & floats now store world space
+        spawnSparks(gs, activeShot.wx, activeShot.wy, '#FFD700', 20);
+        gs.floats.push({ x: activeShot.wx, y: activeShot.wy - 20, text: `+${bonus} 📸`, life: 80, col: '#FFD700' });
       }
     }
 
-    // Photo moments trigger
-    const worldPlayerX = gs.px + gs.camX;
+    // Photo moments trigger — gs.px is world space, s.tx is world space
     gs.shots.forEach(s => {
-      if (!s.done && !s.active && worldPlayerX > s.tx) { s.active = true; s.timer = 180; }
+      if (!s.done && !s.active && gs.px > s.tx) { s.active = true; s.timer = 180; }
       if (s.active && !s.done) { s.timer -= dt; if (s.timer <= 0) { s.active = false; s.done = true; } }
     });
 
     // Gravity
     gs.pvy = Math.min(gs.pvy + GRAV * dt, MAXVY);
 
-    // Move horizontal first
+    // ── Move X ──
     gs.px += gs.pvx * dt;
     if (gs.px < 0) { gs.px = 0; gs.pvx = 0; }
 
-    // Horizontal platform collision
+    // ── Horizontal platform collision ──
+    // Only push sideways when player is NOT dropping onto the platform from above.
+    // If player feet (py + PH) are still at/above platform top, skip — the vertical
+    // pass will land them correctly. This prevents invisible-floor side-pushes.
     gs.plats.forEach(p => {
       if (!aabb(gs.px, gs.py, PW, PH, p.x, p.y, p.w, p.h)) return;
-      if (gs.pvx > 0) { gs.px = p.x - PW; gs.pvx = 0; }
-      else if (gs.pvx < 0) { gs.px = p.x + p.w; gs.pvx = 0; }
+      if (gs.py + PH <= p.y + 3) return; // approaching from above — vertical pass handles this
+      const overlapL = (gs.px + PW) - p.x;
+      const overlapR = (p.x + p.w) - gs.px;
+      if (overlapL < overlapR) { gs.px = p.x - PW; gs.pvx = 0; }
+      else                     { gs.px = p.x + p.w; gs.pvx = 0; }
     });
 
-    // Move vertical
+    // ── Move Y ──
+    const prevPy = gs.py; // snapshot pre-move Y to detect landing direction
     gs.py += gs.pvy * dt;
     gs.ponG = false;
 
+    // ── Vertical platform collision ──
     gs.plats.forEach(p => {
       if (!aabb(gs.px, gs.py, PW, PH, p.x, p.y, p.w, p.h)) return;
-      if (gs.pvy >= 0) {
-        // Landing on top
+      if (gs.pvy >= 0 && prevPy + PH <= p.y + 5) {
+        // Landing from above: feet were at/above platform top before Y move
         gs.py = p.y - PH;
         gs.pvy = 0;
         gs.pjumps = 2;
         gs.ponG = true;
-      } else if (gs.pvy < 0) {
-        // Hit head
+      } else if (gs.pvy < 0 && prevPy >= p.y + p.h - 5) {
+        // Hitting head: top was at/below platform bottom before Y move
         gs.py = p.y + p.h;
         gs.pvy = 0;
       }
+      // Side entry in Y pass → no-op (horizontal already resolved it)
     });
 
-    // Death by falling
-    if (gs.py > CH + 40) {
+    // Death by falling — GY is ground, fall below screen bottom triggers death
+    if (gs.py > GY + 120) {
       gs.pdead = true; gs.pdeadT = 0;
       if (soundRef.current) SFX.hit();
-      spawnSparks(gs, gs.px + PW / 2, gs.py, '#FF4444', 12);
+      // World-space position for sparks
+      spawnSparks(gs, gs.px + PW / 2, GY, '#FF4444', 12);
       return;
     }
 
-    // Camera
-    const targetCam = gs.px - CW / 3;
+    // ── Camera — deadzone follow with hard edge clamps ──
+    // gs.px is world space. Camera keeps player roughly at 36% from left.
     const maxCam = LEVELS[gs.lvl].ww - CW;
-    gs.camX = Math.max(0, Math.min(maxCam, gs.camX + (targetCam - gs.camX) * 0.12));
+    const screenPx = gs.px - gs.camX;        // where player currently appears on screen
+    const targetCam = gs.px - CW * 0.36;
+    let newCamX = gs.camX + (targetCam - gs.camX) * 0.16;
+    // Hard clamps: player must never go off screen
+    if (screenPx < CW * 0.10) newCamX = gs.px - CW * 0.10;
+    if (screenPx > CW * 0.88) newCamX = gs.px - CW * 0.88;
+    gs.camX = Math.max(0, Math.min(maxCam, newCamX));
 
     // Enemy update
     gs.enemies.forEach(e => {
       if (!e.alive) return;
-      const ox = e.x; // current world x
       e.x += e.vx * dt;
       if (e.x < e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); }
       if (e.x + e.w > e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); }
@@ -598,15 +613,15 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       }
       if (e.hitTimer !== undefined && e.hitTimer > 0) e.hitTimer--;
 
-      // Player collision
+      // Player collision — all coords are world space, compare directly
       if (gs.pinv > 0) return;
-      const ex = e.x - gs.camX;
-      if (aabb(gs.px, gs.py, PW, PH, ex, e.y, e.w, e.h)) {
+      if (aabb(gs.px, gs.py, PW, PH, e.x, e.y, e.w, e.h)) {
         gs.pinv = 100;
         gs.lives--;
         gs.combo = 0; gs.comboT = 0;
         if (soundRef.current) SFX.hit();
         spawnSparks(gs, gs.px + PW / 2, gs.py + PH / 2, '#FF4444', 8);
+        // Float stored in world space — renderer subtracts camX
         gs.floats.push({ x: gs.px, y: gs.py - 15, text: '-1 💔', life: 60, col: '#FF4444' });
         if (gs.lives <= 0) {
           gs.screen = 'over'; setScreen('over');
@@ -615,25 +630,26 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       }
     });
 
-    // Collectible check
-    const worldPX = gs.px + gs.camX;
+    // Collectible check — all world space
     gs.items.forEach(it => {
       if (it.got) return;
-      if (aabb(worldPX, gs.py, PW, PH, it.x, it.y, it.w, it.h)) {
+      if (aabb(gs.px, gs.py, PW, PH, it.x, it.y, it.w, it.h)) {
         it.got = true;
         gs.combo++; gs.comboT = 120;
         const bonus = it.pts * (1 + Math.floor(gs.combo / 3) * 0.5);
         gs.score += Math.floor(bonus);
         gs.gotCollect++;
         if (soundRef.current) it.type === 'star' ? SFX.star() : SFX.collect();
-        spawnSparks(gs, it.x - gs.camX, it.y, it.type === 'star' ? '#FFD700' : '#88EEFF', 6);
-        gs.floats.push({ x: it.x - gs.camX, y: it.y - 16, text: `+${Math.floor(bonus)}`, life: 50, col: it.type === 'star' ? '#FFD700' : '#88EEFF' });
+        // World-space coords — spawnSparks & floats store world space
+        spawnSparks(gs, it.x, it.y, it.type === 'star' ? '#FFD700' : '#88EEFF', 6);
+        gs.floats.push({ x: it.x, y: it.y - 16, text: `+${Math.floor(bonus)}`, life: 50, col: it.type === 'star' ? '#FFD700' : '#88EEFF' });
       }
     });
 
     // Finish check
+    // Finish check — gs.px is world space, ld.fx is world space
     const ld = LEVELS[gs.lvl];
-    if (worldPX > ld.fx - CW / 2 && gs.px + gs.camX > ld.fx) {
+    if (gs.px > ld.fx) {
       if (!gs.levelComplete) {
         gs.levelComplete = true;
         const timeBonus = Math.max(0, 3000 - Math.floor(gs.levelT / 60) * 10);
@@ -1026,7 +1042,8 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
 
     // ── Player ────────────────────────────────────────────────────────────────
     if (!gs.pdead || gs.pdeadT % 6 < 3) {
-      const px6 = gs.px;
+      // gs.px is WORLD space — subtract camX to get screen position
+      const px6 = gs.px - camX;
       const py6 = gs.py;
       const flipped = gs.pface < 0;
       const isInv = gs.pinv > 0 && (gs.t % 6 < 3);
@@ -1081,15 +1098,15 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       }
     }
 
-    // ── Sparks ────────────────────────────────────────────────────────────────
+    // ── Sparks — stored world space, subtract camX to render ─────────────────
     gs.sparks.forEach(s => {
       ctx.globalAlpha = s.life / s.maxl;
       ctx.fillStyle = s.col;
-      ctx.fillRect(s.x - s.sz / 2, s.y - s.sz / 2, s.sz, s.sz);
+      ctx.fillRect(s.x - camX - s.sz / 2, s.y - s.sz / 2, s.sz, s.sz);
     });
     ctx.globalAlpha = 1;
 
-    // ── Float texts ───────────────────────────────────────────────────────────
+    // ── Float texts — stored world space, subtract camX to render ─────────────
     gs.floats.forEach(f => {
       ctx.save();
       ctx.globalAlpha = Math.min(1, f.life / 30);
@@ -1097,7 +1114,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       ctx.fillStyle = f.col;
       ctx.textAlign = 'center';
       ctx.shadowColor = f.col; ctx.shadowBlur = 6;
-      ctx.fillText(f.text, f.x + PW / 2, f.y);
+      ctx.fillText(f.text, f.x - camX + PW / 2, f.y);
       ctx.restore();
     });
 
@@ -1145,8 +1162,8 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       ctx.restore();
     }
 
-    // Progress bar
-    const progress2 = Math.min(1, (gs.px + gs.camX) / ld.fx);
+    // Progress bar — gs.px is world space, ld.fx is world space
+    const progress2 = Math.min(1, gs.px / ld.fx);
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.fillRect(8, 26, CW - 16, 4);
     ctx.fillStyle = ld.acc;

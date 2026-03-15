@@ -117,8 +117,8 @@ function getSections(
       title: 'OYUN',
       color: '#22d3ee',
       items: [
-        { icon: Gamepad2, label: 'Aspect Runner 🏃', roles: ['yonetici'] as UserRole[], action: () => go('aspect-runner') },
-        { icon: Gamepad2, label: 'Aspect Quest 🗺️',  roles: ['yonetici'] as UserRole[], action: () => go('aspect-quest')  },
+        { icon: Gamepad2, label: 'Aspect Runner 🏃', roles: ['yonetici', 'ust-mudur'] as UserRole[], action: () => go('aspect-runner') },
+        { icon: Gamepad2, label: 'Aspect Quest 🗺️',  roles: ['yonetici', 'ust-mudur'] as UserRole[], action: () => go('aspect-quest')  },
       ],
     },
     {
