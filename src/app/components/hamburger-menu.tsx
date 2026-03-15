@@ -9,7 +9,7 @@ import {
   X, Home, Zap, Activity, MapPin, RotateCcw,
   Trophy, Sparkles, MessageCircle, Bell, GraduationCap,
   Cake, User, Settings, LogOut, ChevronRight, Package,
-  BarChart2, ClipboardList, CalendarDays, FileBarChart, Wallet,
+  BarChart2, ClipboardList, CalendarDays, FileBarChart, Wallet, Gamepad2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
@@ -111,6 +111,13 @@ function getSections(
       items: [
         { icon: Wallet, label: 'Primlerim',  roles: all, action: () => go('personel-prim-takip') },
         { icon: Trophy, label: 'Prim Takip', roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[], action: () => go('prim-takip') },
+      ],
+    },
+    {
+      title: 'OYUN',
+      color: '#22d3ee',
+      items: [
+        { icon: Gamepad2, label: 'Aspect Runner 🎮', roles: all, action: () => go('aspect-runner') },
       ],
     },
     {

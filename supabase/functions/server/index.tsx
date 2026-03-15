@@ -2647,6 +2647,13 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
     const todayStr = now.slice(0, 10);
     const results = [];
     let giderSayisi = 0;
+    let giderSilinen = 0;
+
+    // İptal durumunda silinecek gider kayıtlarını önceden tek seferde çek
+    let tumGiderler: any[] = [];
+    if (!odendiMi) {
+      tumGiderler = await kv.getByPrefix("isletme_gider_").catch(() => []) || [];
+    }
 
     for (const key of odemeKeys) {
       const detay = (odemeDetaylari as any[]).find((d: any) => d.key === key);
@@ -2662,8 +2669,8 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
       await kv.set(key, record);
       results.push(key);
 
-      // Ödeme yapılıyorsa → otomatik işletme gider kalemi oluştur
       if (odendiMi && detay) {
+        // Ödeme → otomatik işletme gider kalemi oluştur
         const kademeLabel = `${(detay.kademeIndex ?? 0) + 1}. Kademe`;
         const giderId = `prim_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
         const gider = {
@@ -2682,11 +2689,18 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
         };
         await kv.set(`isletme_gider_${giderId}`, gider);
         giderSayisi++;
+      } else if (!odendiMi) {
+        // İptal → bu prime ait işletme gider kaydını/kayıtlarını sil
+        const eslesen = tumGiderler.filter((g: any) => g.primKey === key);
+        for (const g of eslesen) {
+          await kv.del(`isletme_gider_${g.id}`);
+          giderSilinen++;
+        }
       }
     }
 
-    console.log(`Prim ödeme: ${results.length} kayıt ${odendiMi ? "ödendi" : "geri alındı"}, ${giderSayisi} gider kalemi oluşturuldu — by ${user.email}`);
-    return c.json({ success: true, guncellenen: results.length, giderOlusturulan: giderSayisi });
+    console.log(`Prim ödeme: ${results.length} kayıt ${odendiMi ? "ödendi" : "geri alındı"}, ${giderSayisi} gider oluşturuldu, ${giderSilinen} gider silindi — by ${user.email}`);
+    return c.json({ success: true, guncellenen: results.length, giderOlusturulan: giderSayisi, giderSilinen });
   } catch (err) {
     console.log("Prim ode error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -6170,6 +6184,83 @@ app.delete("/make-server-4da0b637/vardiya/sil", async (c) => {
   } catch (err) {
     console.log("Vardiya sil error:", err);
     return c.json({ error: `Sunucu hatasi: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// OYUN: Aspect Runner Skor Sistemi
+// GET  /game/skorlar?tip=haftalik|tumzamanlar
+// POST /game/skor   { skor, temaSayisi }
+// ══════════════════════════════════════════
+
+app.get("/make-server-4da0b637/game/skorlar", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const tip = c.req.query("tip") || "haftalik";
+
+    const tumSkorlar: any[] = await kv.getByPrefix("game_skor_") || [];
+
+    let filtrelenmis = tumSkorlar;
+    if (tip === "haftalik") {
+      const gecenHafta = new Date();
+      gecenHafta.setDate(gecenHafta.getDate() - 7);
+      filtrelenmis = tumSkorlar.filter((s: any) =>
+        s.tarih && new Date(s.tarih) >= gecenHafta
+      );
+    }
+
+    // Kişi başına en yüksek skoru al
+    const kisiSkoru: Record<string, any> = {};
+    for (const skor of filtrelenmis) {
+      const key = skor.userId || skor.isim;
+      if (!kisiSkoru[key] || kisiSkoru[key].skor < skor.skor) {
+        kisiSkoru[key] = skor;
+      }
+    }
+
+    const sirali = Object.values(kisiSkoru)
+      .sort((a: any, b: any) => b.skor - a.skor)
+      .slice(0, 20)
+      .map((s: any, i: number) => ({ ...s, sira: i + 1 }));
+
+    return c.json({ skorlar: sirali });
+  } catch (err) {
+    console.log("Game skorlar error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+app.post("/make-server-4da0b637/game/skor", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const { skor, temaSayisi } = await c.req.json();
+
+    if (typeof skor !== "number" || skor < 0) {
+      return c.json({ error: "Geçersiz skor." }, 400);
+    }
+
+    const isim = user.user_metadata?.full_name || user.email || "Bilinmeyen";
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+    const kayit = {
+      id,
+      userId: user.id,
+      isim,
+      skor: Math.round(skor),
+      temaSayisi: temaSayisi || 0,
+      tarih: new Date().toISOString(),
+    };
+
+    await kv.set(`game_skor_${id}`, kayit);
+    console.log(`Game skor: ${isim} → ${skor}`);
+    return c.json({ kayit });
+  } catch (err) {
+    console.log("Game skor error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
 

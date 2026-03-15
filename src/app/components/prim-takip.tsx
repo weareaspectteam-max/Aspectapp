@@ -241,7 +241,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
       if (!res.ok) throw new Error(data.error || 'Kayıt hatası');
       const msg = odendiMi
         ? `✅ ${data.guncellenen} ödeme işlendi, ${data.giderOlusturulan ?? 0} gider kalemi oluşturuldu.`
-        : `↩️ ${data.guncellenen} ödeme iptali gerçekleşti.`;
+        : `↩️ ${data.guncellenen} ödeme iptali gerçekleşti${data.giderSilinen ? `, ${data.giderSilinen} gider kalemi silindi` : ''}.`;
       setSuccessMsg(msg);
       setTimeout(() => setSuccessMsg(''), 4000);
       setSeciliMap(new Map());
