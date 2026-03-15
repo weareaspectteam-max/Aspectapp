@@ -28,8 +28,15 @@ export interface Location {
     start: string;
     end: string;
   };
+  kotaKademeleri?: KotaKademe[];
   created_at?: string;
   updated_at?: string;
+}
+
+export interface KotaKademe {
+  hedef: number;
+  primTek: number;
+  primCoklu: number;
 }
 
 type UserRole =
@@ -76,6 +83,9 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
 
   // Price editing states
   const [editingPrices, setEditingPrices] = useState<{ [key: string]: string }>({});
+
+  // Kota kademeleri form state
+  const [formKotaKademeleri, setFormKotaKademeleri] = useState<KotaKademe[]>([]);
 
   // Access control
   const currentUserRole = userRole as UserRole;
@@ -194,6 +204,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           paperType: formPaperType,
           printType: formPrintType,
           workingHours: { start: formWorkingHoursStart, end: formWorkingHoursEnd },
+          kotaKademeleri: formKotaKademeleri,
         }),
       });
       const data = await res.json();
@@ -228,6 +239,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           paperType: formPaperType,
           printType: formPrintType,
           workingHours: { start: formWorkingHoursStart, end: formWorkingHoursEnd },
+          kotaKademeleri: formKotaKademeleri,
         }),
       });
       const data = await res.json();
@@ -304,6 +316,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     setFormPrintType(location.printType || 'yarim');
     setFormWorkingHoursStart(location.workingHours?.start || '09:00');
     setFormWorkingHoursEnd(location.workingHours?.end || '18:00');
+    setFormKotaKademeleri(location.kotaKademeleri || []);
     setShowAddForm(false);
   };
 
@@ -321,6 +334,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     setFormPrintType('yarim');
     setFormWorkingHoursStart('09:00');
     setFormWorkingHoursEnd('18:00');
+    setFormKotaKademeleri([]);
   };
 
   const calculateDailyExpectation = (yearlyRent: number, dailyCost: number, profit: number): number => {
@@ -682,6 +696,98 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                 </div>
               </div>
 
+              {/* ── Kota Kademeleri ── */}
+              <div className="p-4 bg-gradient-to-br from-yellow-600/10 to-purple-600/10 border-2 border-yellow-500/30 rounded-xl">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg">🏆</span>
+                  <h5 className="text-sm font-bold text-yellow-300">Prim Kota Kademeleri</h5>
+                  {formKotaKademeleri.length > 0 && (
+                    <span className="text-xs bg-yellow-500/20 border border-yellow-500/40 text-yellow-200 px-2 py-0.5 rounded-full">
+                      {formKotaKademeleri.length} kademe
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 mb-3">
+                  Günlük ciro bu hedefleri geçince personele prim kazandırılır.
+                </p>
+
+                {formKotaKademeleri.length > 0 && (
+                  <div className="grid grid-cols-3 gap-1 mb-2 px-1">
+                    <span className="text-[10px] text-gray-500 font-bold uppercase">Ciro Hedefi</span>
+                    <span className="text-[10px] text-gray-500 font-bold uppercase">1 Kişi Primi</span>
+                    <span className="text-[10px] text-gray-500 font-bold uppercase">Çoklu Prim</span>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  {formKotaKademeleri.map((kota, index) => {
+                    const kadeEmoji = index === 0 ? '🥉' : index === 1 ? '🥈' : index === 2 ? '🥇' : '🏅';
+                    return (
+                      <div key={index} className="flex items-center gap-2">
+                        <span className="text-base flex-shrink-0">{kadeEmoji}</span>
+                        <input
+                          type="number"
+                          value={kota.hedef || ''}
+                          onChange={(e) => {
+                            const arr = [...formKotaKademeleri];
+                            arr[index] = { ...arr[index], hedef: parseFloat(e.target.value) || 0 };
+                            setFormKotaKademeleri(arr);
+                          }}
+                          className="flex-1 px-3 py-2 bg-white/10 border-2 border-yellow-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-yellow-400 transition-all text-sm"
+                          placeholder="₺ Hedef"
+                        />
+                        <input
+                          type="number"
+                          value={kota.primTek || ''}
+                          onChange={(e) => {
+                            const arr = [...formKotaKademeleri];
+                            arr[index] = { ...arr[index], primTek: parseFloat(e.target.value) || 0 };
+                            setFormKotaKademeleri(arr);
+                          }}
+                          className="flex-1 px-3 py-2 bg-white/10 border-2 border-blue-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-400 transition-all text-sm"
+                          placeholder="₺ Tek"
+                        />
+                        <input
+                          type="number"
+                          value={kota.primCoklu || ''}
+                          onChange={(e) => {
+                            const arr = [...formKotaKademeleri];
+                            arr[index] = { ...arr[index], primCoklu: parseFloat(e.target.value) || 0 };
+                            setFormKotaKademeleri(arr);
+                          }}
+                          className="flex-1 px-3 py-2 bg-white/10 border-2 border-purple-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-400 transition-all text-sm"
+                          placeholder="₺ Çoklu"
+                        />
+                        <button
+                          onClick={() => {
+                            const arr = [...formKotaKademeleri];
+                            arr.splice(index, 1);
+                            setFormKotaKademeleri(arr);
+                          }}
+                          className="p-2 bg-red-600/40 border border-red-500/40 rounded-lg text-red-300 hover:scale-110 transition-all active:scale-95 flex-shrink-0"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={() => setFormKotaKademeleri([...formKotaKademeleri, { hedef: 0, primTek: 0, primCoklu: 0 }])}
+                  className="mt-3 flex items-center gap-2 px-4 py-2 bg-yellow-600/30 border border-yellow-500/40 rounded-xl text-yellow-200 text-sm font-semibold hover:bg-yellow-600/50 transition-all active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  {formKotaKademeleri.length === 0 ? 'İlk Kademeyi Ekle' : `${formKotaKademeleri.length + 1}. Kademe Ekle`}
+                </button>
+
+                {formKotaKademeleri.length > 0 && (
+                  <p className="text-[10px] text-gray-500 mt-2">
+                    💡 Çoklu prim: mekanda birden fazla personel varken kişi başı ödenir
+                  </p>
+                )}
+              </div>
+
               {/* Fiyat Önizleme */}
               {parseFloat(formPhotoPrice) > 0 && (
                 <div className="p-4 bg-gradient-to-br from-pink-600/20 to-purple-600/20 border-2 border-pink-500/40 rounded-xl">
@@ -866,6 +972,23 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                                   ? ` · ${availablePapers.find(p => p.id === location.paperType)?.name || location.paperType}`
                                   : ''}
                               </span>
+                            )}
+                            {/* Kota özeti */}
+                            {location.kotaKademeleri && location.kotaKademeleri.length > 0 && (
+                              <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                                <span className="text-yellow-400">🏆</span>
+                                {location.kotaKademeleri.map((k, i) => (
+                                  <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-md font-bold"
+                                    style={{
+                                      background: i === 0 ? 'rgba(96,165,250,0.15)' : i === 1 ? 'rgba(168,85,247,0.15)' : 'rgba(251,191,36,0.15)',
+                                      color: i === 0 ? '#93c5fd' : i === 1 ? '#c4b5fd' : '#fde68a',
+                                      border: `1px solid ${i === 0 ? 'rgba(96,165,250,0.3)' : i === 1 ? 'rgba(168,85,247,0.3)' : 'rgba(251,191,36,0.3)'}`,
+                                    }}
+                                  >
+                                    {i + 1}. {k.hedef >= 1000 ? `₺${(k.hedef / 1000).toFixed(0)}B` : `₺${k.hedef}`}
+                                  </span>
+                                ))}
+                              </div>
                             )}
                           </div>
                         ) : (

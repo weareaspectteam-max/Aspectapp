@@ -421,6 +421,7 @@ app.post("/make-server-4da0b637/mekanlar", async (c) => {
       paperType: paperType || "",
       printType: printType || "yarim",
       workingHours: workingHours || { start: "09:00", end: "18:00" },
+      kotaKademeleri: Array.isArray(body.kotaKademeleri) ? body.kotaKademeleri : [],
       created_at: new Date().toISOString(),
       created_by: user.id,
     };
@@ -471,6 +472,7 @@ app.put("/make-server-4da0b637/mekanlar/:id", async (c) => {
       paperType: paperType ?? existing.paperType,
       printType: printType ?? existing.printType,
       workingHours: workingHours ?? existing.workingHours,
+      kotaKademeleri: Array.isArray(body.kotaKademeleri) ? body.kotaKademeleri : (existing.kotaKademeleri || []),
       updated_at: new Date().toISOString(),
       updated_by: user.id,
     };
@@ -2103,6 +2105,375 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
     return c.json({ feed, satislar: tumSatislar, kareler: tumKareler, mekanlar: mekanlarList || [] });
   } catch (err) {
     console.log("Get canli satis error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// YÖNETİCİ DASHBOARD ÖZET
+// GET /manager/dashboard-summary
+// ══════════════════════════════════════════
+app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur", "mudur"].includes(callerRole)) {
+      return c.json({ error: "Yetki yok." }, 403);
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+
+    // Mekan haritası
+    const mekanlarList = await kv.getByPrefix("mekan_");
+    const mekanMap: Record<string, any> = {};
+    for (const m of (mekanlarList || [])) {
+      mekanMap[m.id] = m;
+    }
+
+    // Bugünkü stok kayıtları
+    const tumKayitlar = await kv.getByPrefix("stok_gunluk_");
+    const bugunKayitlar = (tumKayitlar || []).filter((k: any) => k.tarih === today);
+
+    let toplamCiro = 0;
+    let toplamAdet = 0;
+    let toplamKare = 0;
+    let anomaliSayisi = 0;
+    const aktifMekanlar: any[] = [];
+    const saatlikData: Record<number, { saat: number; adet: number; ciro: number }> = {};
+
+    for (let h = 8; h <= 22; h++) {
+      saatlikData[h] = { saat: h, adet: 0, ciro: 0 };
+    }
+
+    for (const kayit of bugunKayitlar) {
+      const mekan = mekanMap[kayit.mekanId] || { name: kayit.mekanId, emoji: "📍", color: "#9dd9ea" };
+      const acikMi = !!kayit.acilis && !kayit.kapanish;
+
+      const acilisAnomali = kayit.acilisAnomali && Object.keys(kayit.acilisAnomali).length > 0;
+      const kapanisAnomali = kayit.kapanisAnomali && Object.keys(kayit.kapanisAnomali).length > 0;
+      if (acilisAnomali || kapanisAnomali) anomaliSayisi++;
+
+      const kareKayitlari = kayit.kareKayitlari || [];
+      const mekanKare = kareKayitlari.reduce((s: number, k: any) => s + (k.frameCount || 0), 0);
+      toplamKare += mekanKare;
+
+      const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
+      let mekanCiro = 0;
+      let mekanAdet = 0;
+
+      for (const s of satislar) {
+        const finalPrice = s.finalPrice || 0;
+        const adet = (s.items || []).reduce((sum: number, item: any) => sum + (item.quantity || 1), 0) || 1;
+        mekanCiro += finalPrice;
+        mekanAdet += adet;
+
+        if (s.timestamp) {
+          const h = new Date(s.timestamp).getHours();
+          if (saatlikData[h]) {
+            saatlikData[h].adet += adet;
+            saatlikData[h].ciro += finalPrice;
+          }
+        }
+      }
+
+      toplamCiro += mekanCiro;
+      toplamAdet += mekanAdet;
+
+      if (acikMi) {
+        aktifMekanlar.push({
+          id: kayit.mekanId,
+          name: mekan.name,
+          emoji: mekan.emoji || "📍",
+          color: mekan.color || "#9dd9ea",
+          satisAdet: mekanAdet,
+          ciro: mekanCiro,
+          kare: mekanKare,
+          acilisZamani: kayit.acilis,
+          kotaKademeleri: mekan.kotaKademeleri || [],
+        });
+      }
+    }
+
+    const saatlikArray = Object.values(saatlikData)
+      .filter(d => d.adet > 0 || d.ciro > 0)
+      .sort((a, b) => a.saat - b.saat)
+      .map(d => ({
+        saat: `${String(d.saat).padStart(2, "0")}:00`,
+        adet: d.adet,
+        ciro: Math.round(d.ciro),
+      }));
+
+    // ── Albüm dağılımı ──────────────────────────────────────────────────────
+    const albumSayac: Record<string, number> = {};
+    for (const kayit of bugunKayitlar) {
+      for (const s of (kayit.satislar || []).filter((s: any) => !s.iptal)) {
+        for (const item of (s.items || [])) {
+          const tip = item.product || "Diğer";
+          albumSayac[tip] = (albumSayac[tip] || 0) + (item.quantity || 1);
+        }
+      }
+    }
+    const albumDagilimi = Object.entries(albumSayac)
+      .map(([tip, adet]) => ({ tip, adet }))
+      .sort((a, b) => b.adet - a.adet);
+
+    // ── Mekan bazlı ciro sıralaması ──────────────────────────────────────────
+    const mekanCiroList = bugunKayitlar.map((kayit: any) => {
+      const mekan = mekanMap[kayit.mekanId] || { name: kayit.mekanId, emoji: "📍", color: "#9dd9ea" };
+      const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
+      const ciro = satislar.reduce((sum: number, s: any) => sum + (s.finalPrice || 0), 0);
+      const adet = satislar.reduce((sum: number, s: any) => {
+        return sum + ((s.items || []).reduce((a: number, i: any) => a + (i.quantity || 1), 0) || 1);
+      }, 0);
+      return {
+        id: kayit.mekanId,
+        name: mekan.name,
+        emoji: mekan.emoji || "📍",
+        color: mekan.color || "#9dd9ea",
+        ciro: Math.round(ciro),
+        adet,
+      };
+    }).sort((a: any, b: any) => b.ciro - a.ciro).slice(0, 5);
+
+    console.log(`Manager dashboard: ${today} — ciro:${toplamCiro} adet:${toplamAdet} kare:${toplamKare} anomali:${anomaliSayisi}`);
+
+    return c.json({
+      tarih: today,
+      toplamCiro: Math.round(toplamCiro),
+      toplamAdet,
+      toplamKare,
+      anomaliSayisi,
+      aktifMekanSayisi: aktifMekanlar.length,
+      toplamMekanSayisi: bugunKayitlar.length,
+      aktifMekanlar,
+      saatlikData: saatlikArray,
+      albumDagilimi,
+      mekanCiroList,
+    });
+  } catch (err) {
+    console.log("Manager dashboard-summary error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// PRİM: Aylık rapor — mekanlardaki kota geçmelerini hesapla
+// GET /primler/rapor?ay=2026-03
+// ══════════════════════════════════════════
+app.get("/make-server-4da0b637/primler/rapor", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur", "mudur", "idari"].includes(callerRole)) {
+      return c.json({ error: "Yetki yok." }, 403);
+    }
+
+    // ay parametresi: "2026-03" formatında
+    const ay = c.req.query("ay") || new Date().toISOString().slice(0, 7);
+    const [yil, ayNo] = ay.split("-").map(Number);
+
+    // Tüm mekanları çek
+    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanMap: Record<string, any> = {};
+    for (const m of mekanlarList) mekanMap[m.id] = m;
+
+    // O aya ait tüm stok kayıtlarını çek
+    const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+    const ayKayitlari = tumKayitlar.filter((k: any) => {
+      if (!k.tarih) return false;
+      const [ky, ka] = k.tarih.split("-").map(Number);
+      return ky === yil && ka === ayNo;
+    });
+
+    // Ödendi kayıtlarını çek
+    const odemePrefix = `prim_odendi_`;
+    const tumOdemeler: any[] = await kv.getByPrefix(odemePrefix) || [];
+    // odeme key: prim_odendi_{mekanId}_{tarih}_{kademeIndex}
+    const odemeMap: Record<string, boolean> = {};
+    for (const o of tumOdemeler) {
+      if (o.odendi) odemeMap[o.key] = true;
+    }
+
+    // Her gün × her mekan × her kademe için prim hesapla
+    const primKayitlari: any[] = [];
+
+    for (const kayit of ayKayitlari) {
+      const mekan = mekanMap[kayit.mekanId];
+      if (!mekan || !mekan.kotaKademeleri || mekan.kotaKademeleri.length === 0) continue;
+
+      const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
+      const ciro = satislar.reduce((sum: number, s: any) => sum + (s.finalPrice || 0), 0);
+
+      // Personel sayısı: kareKayitlari'ndaki farklı isimler
+      const fotografcilar = new Set((kayit.kareKayitlari || []).map((k: any) => k.photographerName).filter(Boolean));
+      const personelSayisi = fotografcilar.size || 1;
+      const coklu = personelSayisi > 1;
+
+      for (let ki = 0; ki < mekan.kotaKademeleri.length; ki++) {
+        const kademe = mekan.kotaKademeleri[ki];
+        if (ciro >= kademe.hedef) {
+          const primMiktar = coklu ? kademe.primCoklu : kademe.primTek;
+          const odemeKey = `prim_odendi_${kayit.mekanId}_${kayit.tarih}_${ki}`;
+          const odendiMi = odemeMap[odemeKey] || false;
+          primKayitlari.push({
+            mekanId: kayit.mekanId,
+            mekanName: mekan.name,
+            mekanEmoji: mekan.emoji || "📍",
+            mekanColor: mekan.color || "#9dd9ea",
+            tarih: kayit.tarih,
+            ciro: Math.round(ciro),
+            kademeIndex: ki,
+            kademeHedef: kademe.hedef,
+            primMiktar,
+            personelSayisi,
+            coklu,
+            odendi: odendiMi,
+            odemeKey,
+          });
+        }
+      }
+    }
+
+    // Özet
+    const toplamPrim = primKayitlari.reduce((s, p) => s + p.primMiktar * p.personelSayisi, 0);
+    const odenenPrim = primKayitlari.filter(p => p.odendi).reduce((s, p) => s + p.primMiktar * p.personelSayisi, 0);
+    const bekleyenPrim = toplamPrim - odenenPrim;
+
+    console.log(`Prim raporu ${ay}: ${primKayitlari.length} kayıt, toplam ₺${toplamPrim}`);
+    return c.json({ ay, primKayitlari, toplamPrim, odenenPrim, bekleyenPrim });
+  } catch (err) {
+    console.log("Prim rapor error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// PRİM: Anlık vardiya prim bilgisi (personel için)
+// GET /shift/prim-bilgi?mekanAdi=...
+// Auth: tüm roller
+// ══════════════════════════════════════════
+app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const mekanAdi = c.req.query("mekanAdi") || "";
+    if (!mekanAdi) return c.json({ error: "mekanAdi zorunludur." }, 400);
+
+    // Bugünün tarihi (TR timezone)
+    const now = new Date();
+    const istanbulOffset = 3 * 60;
+    const localMs = now.getTime() + (now.getTimezoneOffset() + istanbulOffset) * 60000;
+    const localDate = new Date(localMs);
+    const today = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, "0")}-${String(localDate.getDate()).padStart(2, "0")}`;
+
+    // Tüm mekanları al, ada göre bul
+    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekan = mekanlarList.find((m: any) =>
+      (m.name || "").toLowerCase().trim() === mekanAdi.toLowerCase().trim()
+    );
+    if (!mekan) return c.json({ primBilgi: null, sebep: "Mekan bulunamadı." });
+
+    const kotaKademeleri: any[] = mekan.kotaKademeleri || [];
+    if (kotaKademeleri.length === 0) return c.json({ primBilgi: null, sebep: "Bu mekanda kota tanımlı değil." });
+
+    // Bugünkü stok kaydını al
+    const stokKey = `stok_gunluk_${mekan.id}_${today}`;
+    const kayit: any = await kv.get(stokKey);
+    if (!kayit) return c.json({ primBilgi: null, sebep: "Bugün için stok kaydı bulunamadı." });
+
+    const satislar: any[] = (kayit.satislar || []).filter((s: any) => !s.iptal);
+    const ciro = Math.round(satislar.reduce((sum: number, s: any) => sum + (Number(s.finalPrice) || 0), 0));
+
+    // Personel sayısı
+    const fotografcilar = new Set((kayit.kareKayitlari || []).map((k: any) => k.photographerName).filter(Boolean));
+    const personelSayisi = fotografcilar.size || 1;
+    const coklu = personelSayisi > 1;
+
+    const gecilenKademeler = kotaKademeleri
+      .map((k: any, i: number) => ({ ...k, index: i }))
+      .filter((k: any) => ciro >= k.hedef);
+
+    const kotaKademeOzet = kotaKademeleri.map((k: any) => ({ hedef: k.hedef, primTek: k.primTek, primCoklu: k.primCoklu }));
+
+    if (gecilenKademeler.length === 0) {
+      const ilk = kotaKademeleri[0];
+      return c.json({
+        primBilgi: null,
+        ciro,
+        ilkHedef: ilk.hedef,
+        fark: ilk.hedef - ciro,
+        sebep: "Henüz kota geçilmedi.",
+        kotaKademeleri: kotaKademeOzet,
+      });
+    }
+
+    const topKademe = gecilenKademeler[gecilenKademeler.length - 1];
+    const toplamPrim = gecilenKademeler.reduce((s: number, k: any) => s + ((coklu ? k.primCoklu : k.primTek) || 0), 0);
+
+    return c.json({
+      primBilgi: {
+        kademeIndex: topKademe.index,
+        kademeHedef: topKademe.hedef,
+        topKademePrim: (coklu ? topKademe.primCoklu : topKademe.primTek) || 0,
+        toplamPrim,
+        toplamKademe: gecilenKademeler.length,
+        toplamKademeAdet: kotaKademeleri.length,
+        personelSayisi,
+        coklu,
+        ciro,
+      },
+      ciro,
+      ilkHedef: kotaKademeleri[0].hedef,
+      fark: 0,
+      kotaKademeleri: kotaKademeOzet,
+    });
+  } catch (err) {
+    console.log("shift/prim-bilgi error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// PRİM: Ödendi olarak işaretle (tekli veya toplu)
+// POST /primler/ode
+// body: { odemeKeys: string[], odendiMi: boolean }
+// ══════════════════════════════════════════
+app.post("/make-server-4da0b637/primler/ode", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur"].includes(callerRole)) {
+      return c.json({ error: "Prim ödeme yetkisi yalnızca Yönetici / Üst Müdür rolüne aittir." }, 403);
+    }
+
+    const body = await c.req.json();
+    const { odemeKeys, odendiMi = true } = body;
+
+    if (!Array.isArray(odemeKeys) || odemeKeys.length === 0) {
+      return c.json({ error: "odemeKeys dizisi zorunludur." }, 400);
+    }
+
+    const now = new Date().toISOString();
+    const results = [];
+    for (const key of odemeKeys) {
+      const record = {
+        key,
+        odendi: odendiMi,
+        odemeTarihi: now,
+        odeyenKisi: user.email || user.id,
+      };
+      await kv.set(key, record);
+      results.push(key);
+    }
+
+    console.log(`Prim ödeme: ${results.length} kayıt ${odendiMi ? "ödendi" : "geri alındı"} by ${user.email}`);
+    return c.json({ success: true, guncellenen: results.length });
+  } catch (err) {
+    console.log("Prim ode error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
@@ -5517,6 +5888,31 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
         albumMaliyeti: Math.round(albumMaliyeti),
         baskiMaliyeti: Math.round(baskiMaliyeti),
         baskiPaperName,
+        kotaKademeleri: mekan.kotaKademeleri || [],
+        primBilgi: (() => {
+          const kkList: any[] = mekan.kotaKademeleri || [];
+          if (kkList.length === 0) return null;
+          const fotografcilar = new Set((kayit.kareKayitlari || []).map((k: any) => k.photographerName).filter(Boolean));
+          const personelSayisi = fotografcilar.size || personeller.length || 1;
+          const coklu = personelSayisi > 1;
+          const gecilenKademeler = kkList
+            .map((k: any, i: number) => ({ ...k, index: i }))
+            .filter((k: any) => Math.round(toplamCiro) >= k.hedef);
+          if (gecilenKademeler.length === 0) return null;
+          const topKademe = gecilenKademeler[gecilenKademeler.length - 1];
+          const toplamPrimTutar = gecilenKademeler.reduce((s: number, k: any) => {
+            return s + ((coklu ? k.primCoklu : k.primTek) || 0);
+          }, 0);
+          return {
+            kademeIndex: topKademe.index,
+            kademeHedef: topKademe.hedef,
+            topKademePrim: (coklu ? topKademe.primCoklu : topKademe.primTek) || 0,
+            toplamPrim: toplamPrimTutar,
+            toplamKademe: gecilenKademeler.length,
+            personelSayisi,
+            coklu,
+          };
+        })(),
       };
     });
 

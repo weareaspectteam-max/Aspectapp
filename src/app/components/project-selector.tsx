@@ -1,8 +1,12 @@
 import { getTasks, getLocations } from '../services/rotation-service';
 import type { Task } from '../services/rotation-service';
-import { MapPin, Clock, Navigation, CheckCircle2, Lock, ArrowLeft, Zap, Loader2 } from 'lucide-react';
+import { MapPin, Clock, Navigation, CheckCircle2, Lock, ArrowLeft, Zap, Loader2, Trophy } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { localDateStr, toLocalDateStr } from '../lib/date';
+import { authHeaders } from '../lib/api';
+import { projectId } from '/utils/supabase/info';
+
+const API_BASE_PS = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
 interface Project {
   id: string;
@@ -52,6 +56,14 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
   // Şu an zaman penceresinde aktif olan mekanlar (tüm kullanıcılar için)
   const [visibleVenueNames, setVisibleVenueNames] = useState<Set<string>>(new Set());
 
+  // ── Kota / Prim progress state ──
+  const [kotaData, setKotaData] = useState<{
+    ciro: number;
+    kademeler: { hedef: number; primTek: number; primCoklu: number }[];
+    primBilgi: { toplamKademe: number; toplamPrim: number; coklu: boolean } | null;
+    fark: number | null;
+  } | null>(null);
+
   // Rol bazlı davranış
   // SADECE yonetici rotasyonu bypass eder (her mekana girebilir)
   // Diğer herkes (ust-mudur, mudur, operasyon, personel, idari vb.) rotasyona tabi
@@ -67,6 +79,39 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
     };
     load();
   }, []);
+
+  // ── Kota/Prim bilgisini çek (seçili mekan değişince) ──
+  useEffect(() => {
+    if (!selectedProject) { setKotaData(null); return; }
+    let cancelled = false;
+    const fetchKota = async () => {
+      try {
+        const headers = await authHeaders();
+        const res = await fetch(
+          `${API_BASE_PS}/shift/prim-bilgi?mekanAdi=${encodeURIComponent(selectedProject.name)}`,
+          { headers }
+        );
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled && data.kotaKademeleri && data.kotaKademeleri.length > 0) {
+          setKotaData({
+            ciro: data.ciro ?? 0,
+            kademeler: data.kotaKademeleri,
+            primBilgi: data.primBilgi ?? null,
+            fark: data.fark ?? null,
+          });
+        } else {
+          setKotaData(null);
+        }
+      } catch {
+        setKotaData(null);
+      }
+    };
+    fetchKota();
+    // Her 60 sn. güncelle
+    const interval = setInterval(fetchKota, 60_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [selectedProject?.name]);
 
   // ─── Görevin şu an görünür pencerede olup olmadığını kontrol eder ───
   // Görünür pencere: startTime - 5 saat ≤ şimdi ≤ endTime + 5 saat
@@ -344,6 +389,104 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                 </div>
               </div>
             </div>
+
+            {/* ── Kota Progress Bar ── */}
+            {kotaData && kotaData.kademeler.length > 0 && (() => {
+              const { ciro, kademeler, primBilgi, fark } = kotaData;
+              const sorted = [...kademeler].sort((a, b) => a.hedef - b.hedef);
+              const maxHedef = sorted[sorted.length - 1].hedef;
+              const barFill = Math.min(ciro / maxHedef, 1.0);
+              const COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399'];
+
+              const enYuksekAsildi = [...sorted].map((k, i) => ({ k, i })).reverse().find(({ k }) => ciro >= k.hedef);
+              const barGrad = enYuksekAsildi
+                ? (enYuksekAsildi.i >= 2 ? 'linear-gradient(90deg,#60a5fa,#a855f7,#fbbf24)'
+                  : enYuksekAsildi.i >= 1 ? 'linear-gradient(90deg,#60a5fa,#a855f7)'
+                  : '#60a5fa')
+                : 'rgba(255,255,255,0.15)';
+              const glowColor = enYuksekAsildi ? COLORS[Math.min(enYuksekAsildi.i, 3)] : null;
+
+              const formatTLc = (v: number) => v >= 1000 ? `₺${(v / 1000).toFixed(0)}B` : `₺${v}`;
+
+              return (
+                <div style={{ marginTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10 }}>
+                  {/* Üst satır: ciro + prim rozeti */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
+                      Günlük Ciro
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: glowColor ?? 'rgba(255,255,255,0.5)' }}>
+                        {formatTLc(ciro)}
+                      </span>
+                      {primBilgi ? (
+                        <div style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 3,
+                          padding: '2px 7px', borderRadius: 8,
+                          background: `${glowColor}22`, border: `1px solid ${glowColor}44`,
+                        }}>
+                          <Trophy style={{ width: 9, height: 9, color: glowColor ?? '#fbbf24' }} />
+                          <span style={{ fontSize: 9, fontWeight: 800, color: glowColor ?? '#fbbf24' }}>PRİM</span>
+                        </div>
+                      ) : fark !== null && fark > 0 ? (
+                        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontWeight: 600 }}>
+                          {formatTLc(fark)} eksik
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* Bar */}
+                  <div style={{ position: 'relative', height: 4, borderRadius: 99, background: 'rgba(255,255,255,0.07)' }}>
+                    <div style={{
+                      position: 'absolute', top: 0, left: 0,
+                      height: '100%', borderRadius: 99,
+                      width: `${Math.min(barFill * 100, 100)}%`,
+                      background: barGrad,
+                      boxShadow: glowColor ? `0 0 8px ${glowColor}70` : 'none',
+                      transition: 'width 0.6s ease',
+                    }} />
+                    {sorted.map((k, i) => {
+                      const pos = k.hedef / maxHedef;
+                      const achieved = ciro >= k.hedef;
+                      const c = COLORS[Math.min(i, 3)];
+                      return (
+                        <div key={i} style={{
+                          position: 'absolute', top: '50%', left: `${pos * 100}%`,
+                          transform: 'translate(-50%,-50%)',
+                          width: 9, height: 9, borderRadius: '50%',
+                          background: achieved ? c : 'rgba(255,255,255,0.12)',
+                          border: `1.5px solid ${achieved ? c : 'rgba(255,255,255,0.18)'}`,
+                          boxShadow: achieved ? `0 0 7px ${c}90` : 'none',
+                          transition: 'all 0.4s ease',
+                          zIndex: 2,
+                        }} />
+                      );
+                    })}
+                  </div>
+
+                  {/* Alt etiketler */}
+                  <div style={{ position: 'relative', height: 13, marginTop: 2 }}>
+                    {sorted.map((k, i) => {
+                      const pos = k.hedef / maxHedef;
+                      const achieved = ciro >= k.hedef;
+                      const c = COLORS[Math.min(i, 3)];
+                      return (
+                        <span key={i} style={{
+                          position: 'absolute', left: `${pos * 100}%`,
+                          transform: 'translateX(-50%)',
+                          fontSize: 8, fontWeight: 800,
+                          color: achieved ? c : 'rgba(255,255,255,0.2)',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {achieved ? '✓' : formatTLc(k.hedef)}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>

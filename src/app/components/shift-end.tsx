@@ -1,8 +1,24 @@
 import { useState } from 'react';
-import { CheckCircle, Package, AlertCircle, Printer, Film, Camera, X } from 'lucide-react';
+import { CheckCircle, Package, AlertCircle, Printer, Film, Camera, X, Trophy } from 'lucide-react';
 import { motion } from 'motion/react';
 import { StaffTopBar } from './staff-top-bar';
 import { NewBottomNav } from './new-bottom-nav';
+import { getToken } from '../lib/api';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
+
+interface PrimBilgi {
+  kademeIndex: number;
+  kademeHedef: number;
+  topKademePrim: number;
+  toplamPrim: number;
+  toplamKademe: number;
+  toplamKademeAdet: number;
+  personelSayisi: number;
+  coklu: boolean;
+  ciro: number;
+}
 
 interface ShiftEndProps {
   userName: string;
@@ -21,6 +37,9 @@ export function ShiftEnd({ userName, userRole, projectName, onBack, onLogout, on
   const [showShiftEndSuccess, setShowShiftEndSuccess] = useState(false);
   const [venuePhotoTaken, setVenuePhotoTaken] = useState(false);
   const [venuePhotoPreview, setVenuePhotoPreview] = useState<string | null>(null);
+  const [primBilgi, setPrimBilgi] = useState<PrimBilgi | null>(null);
+  const [primFark, setPrimFark] = useState<number | null>(null);
+  const [primYukleniyor, setPrimYukleniyor] = useState(false);
 
   // Kapanış sayımı state
   const [closingCount, setClosingCount] = useState({
@@ -78,13 +97,40 @@ export function ShiftEnd({ userName, userRole, projectName, onBack, onLogout, on
     setVenuePhotoTaken(false);
   };
 
-  const handleCompleteShift = () => {
+  const handleCompleteShift = async () => {
     if (confirm(`Vardiyayı bitirmek istediğinize emin misiniz?\n\nRibon Değişimi: ${ribbonChanges} adet`)) {
+      // Prim bilgisini çek
+      setPrimYukleniyor(true);
+      try {
+        const token = await getToken();
+        const res = await fetch(
+          `${API_BASE}/shift/prim-bilgi?mekanAdi=${encodeURIComponent(projectName)}`,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${publicAnonKey}`,
+              'X-Access-Token': token,
+            },
+          }
+        );
+        const data = await res.json();
+        if (res.ok) {
+          setPrimBilgi(data.primBilgi || null);
+          setPrimFark(data.fark ?? null);
+        } else {
+          console.log('[ShiftEnd] prim-bilgi hatası:', data.error);
+        }
+      } catch (e) {
+        console.log('[ShiftEnd] prim-bilgi fetch error:', e);
+      } finally {
+        setPrimYukleniyor(false);
+      }
+
       setShowShiftEndSuccess(true);
       setTimeout(() => {
         setShowShiftEndSuccess(false);
         onNavigate('profile');
-      }, 3000);
+      }, 5000);
     }
   };
 
@@ -423,88 +469,189 @@ export function ShiftEnd({ userName, userRole, projectName, onBack, onLogout, on
       )}
 
       {/* Shift End Success Modal */}
-      {showShiftEndSuccess && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex items-center justify-center p-6"
-        >
+      {showShiftEndSuccess && (() => {
+        const KADEME_COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399'];
+        const KADEME_EMOJIS = ['🥉', '🥈', '🥇', '🏅'];
+        const pb = primBilgi;
+        const idx = pb ? Math.min(pb.kademeIndex, 3) : 0;
+        const kColor = pb ? KADEME_COLORS[idx] : '#a8e6cf';
+        const kEmoji = pb ? KADEME_EMOJIS[idx] : null;
+
+        return (
           <motion.div
-            initial={{ scale: 0.5, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: "spring", duration: 0.5 }}
-            className="w-full max-w-md bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] rounded-3xl shadow-2xl border-2 border-[#a8e6cf]/30 overflow-hidden"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex items-center justify-center p-4"
           >
-            {/* Success Icon */}
-            <div className="relative p-12 text-center">
-              {/* Background Glow */}
-              <motion.div
-                animate={{
-                  scale: [1, 1.2, 1],
-                  opacity: [0.3, 0.6, 0.3],
-                }}
-                transition={{
-                  duration: 2,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }}
-                className="absolute inset-0 bg-gradient-to-br from-[#a8e6cf]/40 to-[#9dd9ea]/40 blur-3xl"
-              />
+            <motion.div
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", duration: 0.5 }}
+              className="w-full max-w-md bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] rounded-3xl shadow-2xl overflow-hidden"
+              style={{ border: `2px solid ${pb ? kColor + '60' : 'rgba(168,230,207,0.3)'}` }}
+            >
+              {/* Success Icon */}
+              <div className="relative pt-10 pb-6 px-8 text-center">
+                {/* Background Glow */}
+                <motion.div
+                  animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.6, 0.3] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                  className="absolute inset-0 blur-3xl"
+                  style={{ background: `linear-gradient(135deg, ${pb ? kColor + '30' : 'rgba(168,230,207,0.25)'} 0%, rgba(157,217,234,0.2) 100%)` }}
+                />
 
-              {/* Success Check Icon */}
-              <motion.div
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-                className="relative w-32 h-32 mx-auto mb-6 bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] rounded-full flex items-center justify-center shadow-2xl"
-              >
-                <CheckCircle className="w-20 h-20 text-[#2d3748]" strokeWidth={2.5} />
-              </motion.div>
+                {/* Success Check Icon */}
+                <motion.div
+                  initial={{ scale: 0, rotate: -180 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                  className="relative w-24 h-24 mx-auto mb-4 rounded-full flex items-center justify-center shadow-2xl"
+                  style={{ background: `linear-gradient(135deg, #a8e6cf, #8dd9b8)` }}
+                >
+                  <CheckCircle className="w-14 h-14 text-[#2d3748]" strokeWidth={2.5} />
+                </motion.div>
 
-              {/* Title */}
-              <motion.h2
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.4 }}
-                className="text-3xl font-black text-white mb-3"
-              >
-                Harika İş! 🎉
-              </motion.h2>
+                {/* Title */}
+                <motion.h2
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.4 }}
+                  className="text-2xl font-black text-white mb-1"
+                >
+                  Harika İş! 🎉
+                </motion.h2>
+                <motion.p
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.5 }}
+                  className="text-gray-400 text-sm mb-5"
+                >
+                  Vardiya başarıyla tamamlandı · Bugünkü çalışmanız için teşekkürler! 🌟
+                </motion.p>
 
-              {/* Message */}
-              <motion.p
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.5 }}
-                className="text-gray-300 text-lg mb-2"
-              >
-                Vardiya başarıyla tamamlandı
-              </motion.p>
-
-              <motion.p
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.6 }}
-                className="text-gray-400 text-sm"
-              >
-                Bugünkü çalışmanız için teşekkürler! 🌟
-              </motion.p>
-
-              {/* Decorative Elements */}
-              <div className="absolute top-10 left-10 text-4xl animate-bounce">
-                ✨
+                {/* Decorative */}
+                <div className="absolute top-8 left-8 text-3xl animate-bounce">✨</div>
+                <div className="absolute top-12 right-10 text-2xl animate-bounce" style={{ animationDelay: '0.2s' }}>🎊</div>
               </div>
-              <div className="absolute top-16 right-12 text-3xl animate-bounce" style={{ animationDelay: '0.2s' }}>
-                🎊
+
+              {/* Prim Bölümü */}
+              <div className="px-6 pb-8">
+                {primYukleniyor ? (
+                  <div className="flex items-center justify-center gap-2 py-4"
+                    style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 14, border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white/80 animate-spin" />
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>Prim hesaplanıyor…</span>
+                  </div>
+                ) : pb ? (
+                  <motion.div
+                    initial={{ y: 16, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.65 }}
+                    style={{
+                      background: `linear-gradient(135deg, ${kColor}18 0%, ${kColor}08 100%)`,
+                      border: `1px solid ${kColor}40`,
+                      borderRadius: 16, padding: '14px 16px',
+                    }}
+                  >
+                    <div className="flex items-center gap-2.5 mb-3">
+                      <div style={{
+                        width: 36, height: 36, borderRadius: 11,
+                        background: `${kColor}22`, border: `1px solid ${kColor}44`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 18, flexShrink: 0,
+                      }}>
+                        {kEmoji}
+                      </div>
+                      <div className="flex-1">
+                        <p style={{ fontSize: 13, fontWeight: 800, color: 'white' }}>🏆 Prim Kazandınız!</p>
+                        <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
+                          {pb.toplamKademe}/{pb.toplamKademeAdet} kota · ₺{pb.ciro.toLocaleString('tr-TR')} ciro
+                        </p>
+                      </div>
+                      <div style={{
+                        padding: '4px 10px', borderRadius: 10,
+                        background: `${kColor}25`, border: `1px solid ${kColor}50`,
+                      }}>
+                        <span style={{ fontSize: 16, fontWeight: 900, color: kColor }}>
+                          ₺{pb.toplamPrim.toLocaleString('tr-TR')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      {[
+                        { label: 'Kişi Başı', val: `₺${pb.topKademePrim.toLocaleString('tr-TR')}`, color: kColor },
+                        { label: 'Personel', val: `${pb.personelSayisi} kişi${pb.coklu ? ' 👥' : ' 👤'}`, color: 'rgba(255,255,255,0.8)' },
+                        { label: 'Kademe', val: `${pb.toplamKademe}/${pb.toplamKademeAdet}`, color: 'rgba(255,255,255,0.8)' },
+                      ].map(item => (
+                        <div key={item.label} style={{
+                          background: 'rgba(255,255,255,0.05)', borderRadius: 10,
+                          padding: '8px 10px', border: '1px solid rgba(255,255,255,0.08)',
+                        }}>
+                          <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>{item.label}</p>
+                          <p style={{ fontSize: 12, fontWeight: 800, color: item.color }}>{item.val}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 3, marginBottom: 4 }}>
+                      {Array.from({ length: pb.toplamKademeAdet }).map((_, i) => {
+                        const reached = i < pb.toplamKademe;
+                        const c = KADEME_COLORS[Math.min(i, 3)];
+                        return (
+                          <div key={i} style={{
+                            flex: 1, height: 4, borderRadius: 4,
+                            background: reached ? c : 'rgba(255,255,255,0.1)',
+                            boxShadow: reached ? `0 0 6px ${c}80` : 'none',
+                          }} />
+                        );
+                      })}
+                    </div>
+                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>
+                      Prim ödemeniz yönetici tarafından yapılacaktır
+                    </p>
+                  </motion.div>
+                ) : primFark !== null && primFark > 0 ? (
+                  <motion.div
+                    initial={{ y: 16, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.65 }}
+                    style={{
+                      background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 16, padding: '12px 14px',
+                    }}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Trophy style={{ width: 18, height: 18, color: 'rgba(255,255,255,0.25)', flexShrink: 0 }} />
+                      <div>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.55)' }}>Prim eşiğine ulaşılamadı</p>
+                        <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
+                          İlk kotaya ₺{primFark.toLocaleString('tr-TR')} eksik kaldı
+                        </p>
+                      </div>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    initial={{ y: 16, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.65 }}
+                    style={{
+                      background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                      borderRadius: 16, padding: '12px 14px', textAlign: 'center',
+                    }}
+                  >
+                    <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
+                      Bu mekana prim kotası tanımlı değil
+                    </p>
+                  </motion.div>
+                )}
               </div>
-              <div className="absolute bottom-16 left-16 text-3xl animate-bounce" style={{ animationDelay: '0.4s' }}>
-                🏆
-              </div>
-            </div>
+            </motion.div>
           </motion.div>
-        </motion.div>
-      )}
+        );
+      })()}
     </div>
   );
 }

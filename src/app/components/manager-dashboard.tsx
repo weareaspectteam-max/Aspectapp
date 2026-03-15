@@ -1,6 +1,15 @@
-import { TrendingUp, Users, Camera, DollarSign } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
+import {
+  BarChart2, AlertTriangle, MapPin, FileText, TrendingUp,
+  Camera, RefreshCw, ShoppingBag, Clock, ChevronRight,
+  Star, Activity, Zap, Trophy,
+} from 'lucide-react';
 import { CurrencyWidget } from './currency-widget';
+import { getToken, buildHeaders } from '../lib/api';
+import { projectId } from '/utils/supabase/info';
+
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
 interface ManagerDashboardProps {
   userName: string;
@@ -9,81 +18,328 @@ interface ManagerDashboardProps {
   onNavigate: (tab: string) => void;
 }
 
-export function ManagerDashboard({ userName, roleTitle }: ManagerDashboardProps) {
-  const stats = [
-    { label: 'Günlük Satış', value: '₺45,890', change: '+12.5%', icon: DollarSign, color: 'from-[#9dd9ea] to-[#b8d4f1]' },
-    { label: 'Aktif Personel', value: '12', change: '+2', icon: Users, color: 'from-[#ffd4a3] to-[#ffb86c]' },
-    { label: 'Toplam Fotoğraf', value: '234', change: '+45', icon: Camera, color: 'from-[#a8e6cf] to-[#7dd3a0]' },
-    { label: 'Performans', value: '%87', change: '+5%', icon: TrendingUp, color: 'from-[#9dd9ea] to-[#ffd4a3]' },
-  ];
+interface DashboardData {
+  tarih: string;
+  toplamCiro: number;
+  toplamAdet: number;
+  toplamKare: number;
+  anomaliSayisi: number;
+  aktifMekanSayisi: number;
+  toplamMekanSayisi: number;
+  aktifMekanlar: {
+    id: string;
+    name: string;
+    emoji: string;
+    color: string;
+    satisAdet: number;
+    ciro: number;
+    kare: number;
+    acilisZamani: string;
+  }[];
+}
+
+function formatTL(val: number): string {
+  if (val >= 1_000_000) return `₺${(val / 1_000_000).toFixed(1)}M`;
+  if (val >= 1_000) return `₺${(val / 1_000).toFixed(1)}B`;
+  return `₺${val.toLocaleString('tr-TR')}`;
+}
+
+/* ── Glassmorphism stili ── */
+const glass: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.05)',
+  border: '1px solid rgba(255,255,255,0.10)',
+  backdropFilter: 'blur(20px)',
+  WebkitBackdropFilter: 'blur(20px)',
+  borderRadius: 20,
+};
+
+const QUICK_ACTIONS = [
+  { label: 'Satış Raporu',       icon: BarChart2,   color: '#9dd9ea', tab: 'satis-raporu' },
+  { label: 'Vardiya Raporları',  icon: FileText,    color: '#ffd4a3', tab: 'vardiya-raporlari' },
+  { label: 'Anomali Panosu',     icon: AlertTriangle, color: '#f87171', tab: 'anomali-panosu' },
+  { label: 'Mekan Durumu',       icon: MapPin,      color: '#a8e6cf', tab: 'isletme-genel-durum' },
+  { label: 'İndirim İstatistik', icon: Star,        color: '#c4b5fd', tab: 'indirim-istatistik' },
+  { label: 'Yön. Raporları',     icon: TrendingUp,  color: '#fb923c', tab: 'manager-reports' },
+  { label: 'Prim Takip',         icon: Trophy,      color: '#fbbf24', tab: 'prim-takip' },
+];
+
+export function ManagerDashboard({ userName, roleTitle, onNavigate }: ManagerDashboardProps) {
+  const [data, setData]       = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState<string | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/manager/dashboard-summary`, {
+        headers: buildHeaders(token),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Sunucu hatası');
+      setData(json);
+      setLastRefresh(new Date());
+    } catch (err: any) {
+      console.error('ManagerDashboard fetch error:', err);
+      setError(err.message || 'Veri alınamadı');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 120_000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  const isLoading = loading && !data;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] p-6 pt-24">
-      {/* Welcome Section */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-8"
-      >
-        <h1 className="text-3xl font-bold text-white mb-2">
-          Hoş Geldiniz, {userName}
-        </h1>
-        <p className="text-gray-400">{roleTitle}</p>
-      </motion.div>
+    <div className="min-h-screen pb-28" style={{ background: 'linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%)' }}>
+      <div className="px-4 pt-4 space-y-4">
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        {stats.map((stat, index) => (
-          <motion.div
-            key={index}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-            className="relative backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-4 shadow-xl"
-          >
-            <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${stat.color} flex items-center justify-center mb-3`}>
-              <stat.icon className="w-6 h-6 text-white" />
+        {/* ── Başlık ── */}
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-black text-white">Genel Durum</h1>
+              <p className="text-xs mt-0.5" style={{ color: 'rgba(196,181,253,0.5)' }}>
+                {userName} · {roleTitle} · {new Date().toLocaleDateString('tr-TR')}
+              </p>
             </div>
-            <p className="text-gray-400 text-sm mb-1">{stat.label}</p>
-            <p className="text-2xl font-bold text-white mb-1">{stat.value}</p>
-            <p className="text-[#a8e6cf] text-sm">{stat.change}</p>
-          </motion.div>
-        ))}
+            <button
+              onClick={fetchData}
+              disabled={loading}
+              style={{ ...glass, padding: 10, borderRadius: 14 }}
+            >
+              <RefreshCw className={`w-4 h-4 text-white/60 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+          {lastRefresh && (
+            <p className="text-[10px] mt-1" style={{ color: 'rgba(255,255,255,0.2)' }}>
+              Son güncelleme: {lastRefresh.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+            </p>
+          )}
+        </motion.div>
+
+        {/* ── Hata ── */}
+        {error && (
+          <div style={{ ...glass, padding: 12, border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.1)' }}>
+            <p className="text-red-300 text-sm">⚠️ {error}</p>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════
+            1. DASHBOARD KARTLARI — GERÇEK VERİ
+            ══════════════════════════════════════════ */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="grid grid-cols-2 gap-3"
+        >
+          {/* Günlük Ciro */}
+          <div style={{ ...glass, padding: 16, border: '1px solid rgba(157,217,234,0.25)', boxShadow: '0 4px 24px rgba(157,217,234,0.08)' }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(157,217,234,0.15)', border: '1px solid rgba(157,217,234,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+              <BarChart2 className="w-5 h-5" style={{ color: '#9dd9ea' }} />
+            </div>
+            <p className="text-xs font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Günlük Ciro</p>
+            {isLoading
+              ? <div className="h-6 w-20 rounded-lg bg-white/10 animate-pulse" />
+              : <p className="text-xl font-black text-white leading-none">{formatTL(data?.toplamCiro ?? 0)}</p>
+            }
+            <p className="text-[10px] mt-1.5" style={{ color: 'rgba(255,255,255,0.3)' }}>{data?.toplamAdet ?? 0} ürün satıldı</p>
+          </div>
+
+          {/* Aktif Mekan */}
+          <div style={{ ...glass, padding: 16, border: '1px solid rgba(168,230,207,0.25)', boxShadow: '0 4px 24px rgba(168,230,207,0.08)' }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(168,230,207,0.15)', border: '1px solid rgba(168,230,207,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+              <MapPin className="w-5 h-5" style={{ color: '#a8e6cf' }} />
+            </div>
+            <p className="text-xs font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Aktif Mekan</p>
+            {isLoading
+              ? <div className="h-6 w-12 rounded-lg bg-white/10 animate-pulse" />
+              : <p className="text-xl font-black text-white leading-none">{data?.aktifMekanSayisi ?? 0}</p>
+            }
+            <p className="text-[10px] mt-1.5" style={{ color: 'rgba(255,255,255,0.3)' }}>/ {data?.toplamMekanSayisi ?? 0} toplam</p>
+          </div>
+
+          {/* Fotoğraf Karesi */}
+          <div style={{ ...glass, padding: 16, border: '1px solid rgba(196,181,253,0.25)', boxShadow: '0 4px 24px rgba(196,181,253,0.08)' }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(196,181,253,0.15)', border: '1px solid rgba(196,181,253,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+              <Camera className="w-5 h-5" style={{ color: '#c4b5fd' }} />
+            </div>
+            <p className="text-xs font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Fotoğraf Karesi</p>
+            {isLoading
+              ? <div className="h-6 w-16 rounded-lg bg-white/10 animate-pulse" />
+              : <p className="text-xl font-black text-white leading-none">{(data?.toplamKare ?? 0).toLocaleString('tr-TR')}</p>
+            }
+            <p className="text-[10px] mt-1.5" style={{ color: 'rgba(255,255,255,0.3)' }}>bugün çekildi</p>
+          </div>
+
+          {/* Anomali */}
+          {(() => {
+            const anomali = data?.anomaliSayisi ?? 0;
+            const hasAnomali = anomali > 0;
+            return (
+              <button
+                onClick={() => onNavigate('anomali-panosu')}
+                className="w-full text-left transition-all active:scale-95"
+                style={{
+                  ...glass,
+                  padding: 16,
+                  border: hasAnomali ? '1px solid rgba(248,113,113,0.4)' : '1px solid rgba(255,255,255,0.1)',
+                  background: hasAnomali ? 'rgba(248,113,113,0.12)' : 'rgba(255,255,255,0.05)',
+                  boxShadow: hasAnomali ? '0 4px 24px rgba(248,113,113,0.15)' : '0 4px 24px rgba(0,0,0,0.1)',
+                }}
+              >
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: hasAnomali ? 'rgba(248,113,113,0.2)' : 'rgba(255,255,255,0.08)', border: `1px solid ${hasAnomali ? 'rgba(248,113,113,0.4)' : 'rgba(255,255,255,0.15)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+                  <AlertTriangle className="w-5 h-5" style={{ color: hasAnomali ? '#f87171' : 'rgba(255,255,255,0.3)' }} />
+                </div>
+                <p className="text-xs font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Anomali</p>
+                {isLoading
+                  ? <div className="h-6 w-8 rounded-lg bg-white/10 animate-pulse" />
+                  : <p className="text-xl font-black leading-none" style={{ color: hasAnomali ? '#f87171' : 'white' }}>{anomali}</p>
+                }
+                <p className="text-[10px] mt-1.5" style={{ color: hasAnomali ? 'rgba(248,113,113,0.6)' : 'rgba(255,255,255,0.3)' }}>
+                  {hasAnomali ? 'detay için tıkla →' : 'anomali yok'}
+                </p>
+              </button>
+            );
+          })()}
+        </motion.div>
+
+        {/* Döviz Widget */}
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+          <CurrencyWidget />
+        </motion.div>
+
+        {/* ══════════════════════════════════════════
+            2. HIZLI ERİŞİM MENÜSÜ
+            ══════════════════════════════════════════ */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          style={{ ...glass, padding: 16 }}
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <Zap className="w-4 h-4" style={{ color: '#ffd4a3' }} />
+            <p className="text-sm font-bold text-white">Hızlı Erişim</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {QUICK_ACTIONS.map((action) => (
+              <button
+                key={action.tab}
+                onClick={() => onNavigate(action.tab)}
+                className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all active:scale-95"
+                style={{ background: `${action.color}10`, border: `1px solid ${action.color}25` }}
+              >
+                <div
+                  className="flex items-center justify-center"
+                  style={{ width: 40, height: 40, borderRadius: 12, background: `${action.color}20`, border: `1px solid ${action.color}35` }}
+                >
+                  <action.icon className="w-5 h-5" style={{ color: action.color }} />
+                </div>
+                <span className="text-[10px] font-bold text-center leading-tight" style={{ color: 'rgba(255,255,255,0.7)' }}>
+                  {action.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* ══════════════════════════════════════════
+            3. SON VARDİYALAR / CANLI DURUM
+            ══════════════════════════════════════════ */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          style={{ ...glass, padding: 16 }}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <p className="text-sm font-bold text-white">Canlı Durum</p>
+              <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399', border: '1px solid rgba(52,211,153,0.3)' }}>
+                {data?.aktifMekanSayisi ?? 0} açık
+              </span>
+            </div>
+            <button
+              onClick={() => onNavigate('isletme-genel-durum')}
+              className="flex items-center gap-0.5 text-xs font-bold"
+              style={{ color: '#9dd9ea' }}
+            >
+              Tümü <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-2">
+              {[0, 1, 2].map(i => (
+                <div key={i} className="h-16 rounded-xl bg-white/5 animate-pulse" />
+              ))}
+            </div>
+          ) : !data?.aktifMekanlar || data.aktifMekanlar.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 gap-2">
+              <Activity className="w-8 h-8" style={{ color: 'rgba(255,255,255,0.15)' }} />
+              <p className="text-sm" style={{ color: 'rgba(255,255,255,0.3)' }}>Bugün açık vardiya yok</p>
+              <p className="text-xs" style={{ color: 'rgba(255,255,255,0.18)' }}>Açılış yapılan mekanlar burada listelenir</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {data.aktifMekanlar.map((mekan) => (
+                <div
+                  key={mekan.id}
+                  className="flex items-center gap-3 rounded-xl"
+                  style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+                >
+                  {/* Mekan ikonu */}
+                  <div
+                    className="flex items-center justify-center text-lg shrink-0"
+                    style={{ width: 40, height: 40, borderRadius: 12, background: `${mekan.color}15`, border: `1px solid ${mekan.color}30` }}
+                  >
+                    {mekan.emoji}
+                  </div>
+
+                  {/* Bilgi */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white truncate">{mekan.name}</p>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      <span className="text-[10px] flex items-center gap-1" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                        <ShoppingBag className="w-2.5 h-2.5" />{mekan.satisAdet} ürün
+                      </span>
+                      <span className="text-[10px] flex items-center gap-1" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                        <Camera className="w-2.5 h-2.5" />{mekan.kare} kare
+                      </span>
+                      {mekan.acilisZamani && (
+                        <span className="text-[10px] flex items-center gap-1" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                          <Clock className="w-2.5 h-2.5" />
+                          {new Date(mekan.acilisZamani).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Ciro */}
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-black" style={{ color: '#34d399' }}>{formatTL(mekan.ciro)}</p>
+                    <div className="flex items-center justify-end gap-1 mt-0.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="text-[10px]" style={{ color: 'rgba(52,211,153,0.6)' }}>Açık</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </motion.div>
+
       </div>
-
-      {/* Currency Widget */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4 }}
-        className="mb-6"
-      >
-        <CurrencyWidget />
-      </motion.div>
-
-      {/* Quick Actions */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4 }}
-        className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-6"
-      >
-        <h2 className="text-xl font-bold text-white mb-4">Hızlı İşlemler</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <button className="p-4 bg-gradient-to-br from-[#9dd9ea]/20 to-[#9dd9ea]/10 border border-[#9dd9ea]/30 rounded-xl text-white hover:from-[#9dd9ea]/30 hover:to-[#9dd9ea]/20 transition-all">
-            Satış Gir
-          </button>
-          <button className="p-4 bg-gradient-to-br from-[#ffd4a3]/20 to-[#ffd4a3]/10 border border-[#ffd4a3]/30 rounded-xl text-white hover:from-[#ffd4a3]/30 hover:to-[#ffd4a3]/20 transition-all">
-            Rapor Görüntüle
-          </button>
-          <button className="p-4 bg-gradient-to-br from-[#a8e6cf]/20 to-[#a8e6cf]/10 border border-[#a8e6cf]/30 rounded-xl text-white hover:from-[#a8e6cf]/30 hover:to-[#a8e6cf]/20 transition-all">
-            Personel Yönetimi
-          </button>
-          <button className="p-4 bg-gradient-to-br from-[#9dd9ea]/20 to-[#ffd4a3]/10 border border-white/20 rounded-xl text-white hover:from-[#9dd9ea]/30 hover:to-[#ffd4a3]/20 transition-all">
-            Ayarlar
-          </button>
-        </div>
-      </motion.div>
     </div>
   );
 }

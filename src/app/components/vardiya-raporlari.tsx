@@ -8,7 +8,7 @@ import {
   ArrowLeft, ChevronRight, Users, Printer, TrendingUp, Package,
   CreditCard, Banknote, Wallet, AlertTriangle, Camera, RefreshCw,
   SlidersHorizontal, ChevronUp, ChevronDown, Loader2, AlertCircle,
-  Trash2,
+  Trash2, Trophy,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
@@ -75,6 +75,16 @@ interface VardiyaKayit {
   albumMaliyeti: number;
   baskiMaliyeti: number;
   baskiPaperName: string | null;
+  kotaKademeleri?: any[];
+  primBilgi?: {
+    kademeIndex: number;
+    kademeHedef: number;
+    topKademePrim: number;
+    toplamPrim: number;
+    toplamKademe: number;
+    personelSayisi: number;
+    coklu: boolean;
+  } | null;
 }
 
 /* ─────────────────────── Helpers ─────────────────────── */
@@ -623,7 +633,7 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
 
       {/* Yazıcı Sayaçları */}
       {v.yazicilar.length > 0 && (
-        <div style={{ ...sectionStyle, marginBottom: 0 }}>
+        <div style={sectionStyle}>
           <p style={labelStyle}>
             <Printer style={{ width: 10, height: 10, display: 'inline', marginRight: 4 }} />
             Yazıcı Sayaçları
@@ -649,6 +659,112 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
           </div>
         </div>
       )}
+
+      {/* ── Prim Özeti ── */}
+      {v.primBilgi && (() => {
+        const pb = v.primBilgi!;
+        const KADEME_COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399'];
+        const KADEME_EMOJIS = ['🥉', '🥈', '🥇', '🏅'];
+        const KADEME_LABELS = ['1. Kademe', '2. Kademe', '3. Kademe', '4. Kademe'];
+        const idx = Math.min(pb.kademeIndex, 3);
+        const color = KADEME_COLORS[idx];
+        const emoji = KADEME_EMOJIS[idx];
+        const label = KADEME_LABELS[idx];
+        return (
+          <div style={{
+            background: `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)`,
+            border: `1px solid ${color}40`,
+            borderRadius: 14, padding: '14px 16px', marginBottom: 10,
+          }}>
+            {/* Başlık */}
+            <div className="flex items-center gap-2 mb-3">
+              <div style={{
+                width: 32, height: 32, borderRadius: 10,
+                background: `${color}22`, border: `1px solid ${color}44`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 16, flexShrink: 0,
+              }}>{emoji}</div>
+              <div className="flex-1">
+                <p style={{ fontSize: 13, fontWeight: 800, color: 'white' }}>
+                  🏆 Prim Kazanıldı!
+                </p>
+                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
+                  {label} · Hedef {tl(pb.kademeHedef)} geçildi
+                </p>
+              </div>
+              <div style={{
+                padding: '3px 8px', borderRadius: 8,
+                background: `${color}25`, border: `1px solid ${color}50`,
+              }}>
+                <span style={{ fontSize: 14, fontWeight: 900, color }}>{tl(pb.toplamPrim)}</span>
+              </div>
+            </div>
+
+            {/* Detay satırları */}
+            <div className="grid grid-cols-3 gap-2">
+              <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '8px 10px', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Kişi Başı</p>
+                <p style={{ fontSize: 13, fontWeight: 800, color }}>{tl(pb.topKademePrim)}</p>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '8px 10px', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Personel</p>
+                <p style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.85)' }}>
+                  {pb.personelSayisi} kişi{pb.coklu ? ' 👥' : ' 👤'}
+                </p>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '8px 10px', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Kademe</p>
+                <p style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.85)' }}>
+                  {pb.toplamKademe}/{(v.kotaKademeleri || []).length}
+                </p>
+              </div>
+            </div>
+
+            {/* Progress bar: kaç kota geçildi */}
+            {(v.kotaKademeleri || []).length > 0 && (
+              <div className="mt-3">
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {(v.kotaKademeleri || []).map((k: any, i: number) => {
+                    const reached = v.toplamCiro >= k.hedef;
+                    const kColor = KADEME_COLORS[Math.min(i, 3)];
+                    return (
+                      <div key={i} style={{ flex: 1, height: 4, borderRadius: 4, background: reached ? kColor : 'rgba(255,255,255,0.1)', boxShadow: reached ? `0 0 6px ${kColor}80` : 'none' }} />
+                    );
+                  })}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                  {(v.kotaKademeleri || []).map((k: any, i: number) => (
+                    <span key={i} style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', fontWeight: 600 }}>
+                      {k.hedef >= 1000 ? `${(k.hedef / 1000).toFixed(0)}B` : k.hedef}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Prim yoksa ama kota varsa minimal bilgi */}
+      {!v.primBilgi && (v.kotaKademeleri || []).length > 0 && (() => {
+        const kkList = v.kotaKademeleri || [];
+        const ilk = kkList[0];
+        const fark = ilk.hedef - v.toplamCiro;
+        if (fark <= 0) return null;
+        return (
+          <div style={{
+            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+            borderRadius: 14, padding: '12px 14px', marginBottom: 10,
+          }}>
+            <div className="flex items-center gap-2">
+              <Trophy style={{ width: 14, height: 14, color: 'rgba(255,255,255,0.25)' }} />
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
+                1. Prim kotasına {tl(fark)} eksik kaldı
+              </p>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

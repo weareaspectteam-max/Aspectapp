@@ -121,6 +121,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [stokEklemeler, setStokEklemeler] = useState<StokEkleme[]>([]);
   const [showAcilisAnomaliUyari, setShowAcilisAnomaliUyari] = useState(false);
   const [showKapanisAnomaliUyari, setShowKapanisAnomaliUyari] = useState(false);
+  const [kapanisPhotoHata, setKapanisPhotoHata] = useState(false);
   const [yaziciAcilisAnomali, setYaziciAcilisAnomali] = useState<any[]>([]);
   const [showAcilisSifirlaModal, setShowAcilisSifirlaModal] = useState(false);
   const [acilisSifirlaYukleniyor, setAcilisSifirlaYukleniyor] = useState(false);
@@ -2469,15 +2470,29 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
               <p className="text-xs text-gray-400 mb-5 text-center">
                 Sayımı tekrar kontrol edebilir ya da yine de gönderebilirsiniz.
               </p>
+              {kapanisPhotoHata && (
+                <div className="mb-3 bg-red-500/15 border border-red-400/40 rounded-2xl px-4 py-2.5 flex items-center gap-2">
+                  <span className="text-lg">📷</span>
+                  <span className="text-xs text-red-300 font-medium">Mekan fotoğrafı çekilmeden kapanış gönderilemez. Lütfen önce fotoğraf çekiniz.</span>
+                </div>
+              )}
               <div className="flex gap-3">
                 <button
-                  onClick={() => setShowKapanisAnomaliUyari(false)}
+                  onClick={() => { setShowKapanisAnomaliUyari(false); setKapanisPhotoHata(false); }}
                   className="flex-1 py-3 rounded-2xl bg-white/10 border border-white/20 text-white font-semibold text-sm active:scale-[0.98] transition-all"
                 >
                   ← Geri Dön
                 </button>
                 <button
-                  onClick={() => { setShowKapanisAnomaliUyari(false); handleShiftEndComplete(); }}
+                  onClick={() => {
+                    if (!venuePhotoTaken) {
+                      setKapanisPhotoHata(true);
+                      return;
+                    }
+                    setKapanisPhotoHata(false);
+                    setShowKapanisAnomaliUyari(false);
+                    handleShiftEndComplete();
+                  }}
                   className="flex-1 py-3 rounded-2xl bg-amber-500/80 text-white font-bold text-sm active:scale-[0.98] transition-all"
                 >
                   Yine de Gönder
