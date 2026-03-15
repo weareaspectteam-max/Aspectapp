@@ -663,13 +663,17 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
       {/* ── Prim Özeti ── */}
       {v.primBilgi && (() => {
         const pb = v.primBilgi!;
-        const KADEME_COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399'];
-        const KADEME_EMOJIS = ['🥉', '🥈', '🥇', '🏅'];
-        const KADEME_LABELS = ['1. Kademe', '2. Kademe', '3. Kademe', '4. Kademe'];
-        const idx = Math.min(pb.kademeIndex, 3);
+        const KADEME_COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399', '#f87171', '#fb923c'];
+        const KADEME_EMOJIS = ['🥉', '🥈', '🥇', '🏅', '💎', '👑'];
+        const KADEME_LABELS = ['1. Kademe', '2. Kademe', '3. Kademe', '4. Kademe', '5. Kademe', '6. Kademe'];
+        const idx = Math.min(pb.kademeIndex, 5);
         const color = KADEME_COLORS[idx];
         const emoji = KADEME_EMOJIS[idx];
         const label = KADEME_LABELS[idx];
+
+        // Personel isimleri: v.personeller varsa oradan al
+        const personelIsimleri: string[] = (v.personeller || []).map((p: any) => p.ad).filter(Boolean);
+
         return (
           <div style={{
             background: `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)`,
@@ -701,7 +705,7 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
             </div>
 
             {/* Detay satırları */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2 mb-2">
               <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '8px 10px', border: '1px solid rgba(255,255,255,0.07)' }}>
                 <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Kişi Başı</p>
                 <p style={{ fontSize: 13, fontWeight: 800, color }}>{tl(pb.topKademePrim)}</p>
@@ -720,13 +724,40 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
               </div>
             </div>
 
+            {/* Kişi bazlı prim listesi */}
+            {personelIsimleri.length > 0 && (
+              <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: '8px 10px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: 8 }}>
+                <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>
+                  Kişi Bazlı Kazanım
+                </p>
+                <div className="space-y-1.5">
+                  {personelIsimleri.map((ad, i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <div style={{
+                          width: 20, height: 20, borderRadius: 6,
+                          background: `${color}18`, border: `1px solid ${color}30`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 9, fontWeight: 800, color,
+                        }}>
+                          {ad.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
+                        </div>
+                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 600 }}>{ad}</span>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 800, color }}>{tl(pb.topKademePrim)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Progress bar: kaç kota geçildi */}
             {(v.kotaKademeleri || []).length > 0 && (
-              <div className="mt-3">
+              <div className="mt-1">
                 <div style={{ display: 'flex', gap: 4 }}>
                   {(v.kotaKademeleri || []).map((k: any, i: number) => {
                     const reached = v.toplamCiro >= k.hedef;
-                    const kColor = KADEME_COLORS[Math.min(i, 3)];
+                    const kColor = KADEME_COLORS[Math.min(i, 5)];
                     return (
                       <div key={i} style={{ flex: 1, height: 4, borderRadius: 4, background: reached ? kColor : 'rgba(255,255,255,0.1)', boxShadow: reached ? `0 0 6px ${kColor}80` : 'none' }} />
                     );

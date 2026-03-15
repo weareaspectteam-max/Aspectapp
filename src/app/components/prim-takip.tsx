@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ChevronLeft, RefreshCw, Trophy, Check, Clock,
-  ChevronDown, ChevronUp, Users, Filter, CreditCard,
-  Calendar, AlertCircle, CheckCircle2,
+  ChevronDown, ChevronUp, Filter, CreditCard,
+  Calendar, AlertCircle, CheckCircle2, User, Users,
+  Banknote, X,
 } from 'lucide-react';
 import { getToken, buildHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
@@ -21,7 +22,7 @@ const glass: React.CSSProperties = {
 function formatTL(val: number): string {
   if (val >= 1_000_000) return `₺${(val / 1_000_000).toFixed(1)}M`;
   if (val >= 1_000) return `₺${(val / 1_000).toFixed(0)}B`;
-  return `₺${val.toLocaleString('tr-TR')}`;
+  return `₺${Math.round(val).toLocaleString('tr-TR')}`;
 }
 
 function formatDate(tarih: string): string {
@@ -29,6 +30,17 @@ function formatDate(tarih: string): string {
   return `${d}/${m}/${y}`;
 }
 
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' }) +
+    ' ' + d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function getInitials(name: string): string {
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+}
+
+// ── Interface'ler ───────────────────────────────────────
 interface PrimKayit {
   mekanId: string;
   mekanName: string;
@@ -39,10 +51,21 @@ interface PrimKayit {
   kademeIndex: number;
   kademeHedef: number;
   primMiktar: number;
+  personelAdi: string;
   personelSayisi: number;
   coklu: boolean;
   odendi: boolean;
+  odemeTarihi: string | null;
   odemeKey: string;
+}
+
+interface OdemeDetay {
+  key: string;
+  personelAdi: string;
+  mekanAdi: string;
+  tarih: string;
+  kademeIndex: number;
+  primMiktar: number;
 }
 
 interface PrimRapor {
@@ -58,10 +81,10 @@ interface PrimTakipProps {
   onBack: () => void;
 }
 
-const KADEME_COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399'];
-const KADEME_EMOJIS = ['🥉', '🥈', '🥇', '🏅'];
+// ── Yardımcı sabitler ───────────────────────────────────
+const KADEME_COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399', '#f87171', '#fb923c'];
+const KADEME_EMOJIS = ['🥉', '🥈', '🥇', '🏅', '💎', '👑'];
 
-// ── Ay seçici ──────────────────────────────────────────
 function getAylar(): { value: string; label: string }[] {
   const result = [];
   const now = new Date();
@@ -74,16 +97,47 @@ function getAylar(): { value: string; label: string }[] {
   return result;
 }
 
-// ── Grupla: mekan bazında ────────────────────────────
-function grupla(kayitlar: PrimKayit[]): Record<string, PrimKayit[]> {
-  const map: Record<string, PrimKayit[]> = {};
+// ── Grupla: mekan → tarih → kişiler ────────────────────
+type MekanGrup = {
+  mekanId: string;
+  mekanName: string;
+  mekanEmoji: string;
+  mekanColor: string;
+  tarihGruplari: {
+    tarih: string;
+    ciro: number;
+    kisiListesi: PrimKayit[];
+  }[];
+};
+
+function grupla(kayitlar: PrimKayit[]): MekanGrup[] {
+  const mekanMap: Record<string, MekanGrup> = {};
   for (const k of kayitlar) {
-    if (!map[k.mekanId]) map[k.mekanId] = [];
-    map[k.mekanId].push(k);
+    if (!mekanMap[k.mekanId]) {
+      mekanMap[k.mekanId] = {
+        mekanId: k.mekanId,
+        mekanName: k.mekanName,
+        mekanEmoji: k.mekanEmoji,
+        mekanColor: k.mekanColor,
+        tarihGruplari: [],
+      };
+    }
+    const mg = mekanMap[k.mekanId];
+    let tg = mg.tarihGruplari.find(t => t.tarih === k.tarih);
+    if (!tg) {
+      tg = { tarih: k.tarih, ciro: k.ciro, kisiListesi: [] };
+      mg.tarihGruplari.push(tg);
+    }
+    tg.kisiListesi.push(k);
   }
-  return map;
+  // Tarihleri yeniden eskiye sırala
+  for (const mg of Object.values(mekanMap)) {
+    mg.tarihGruplari.sort((a, b) => b.tarih.localeCompare(a.tarih));
+  }
+  return Object.values(mekanMap).sort((a, b) => a.mekanName.localeCompare(b.mekanName));
 }
 
+// ── Ana bileşen ─────────────────────────────────────────
 export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
   const canEdit = ['yonetici', 'ust-mudur'].includes(userRole);
   const aylar = getAylar();
@@ -95,8 +149,8 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
   const [successMsg, setSuccessMsg] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Seçili kayıtlar (toplu ödeme için)
-  const [seciliKeys, setSeciliKeys] = useState<Set<string>>(new Set());
+  // Seçili kayıtlar: key → PrimKayit
+  const [seciliMap, setSeciliMap] = useState<Map<string, PrimKayit>>(new Map());
   // Açık mekan panelleri
   const [acikMekanlar, setAcikMekanlar] = useState<Set<string>>(new Set());
   // Filtre: sadece bekleyenler
@@ -113,7 +167,6 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Sunucu hatası');
       setRapor(data);
-      // İlk yüklемede tüm mekanları aç
       const mekanIds = new Set<string>(data.primKayitlari.map((k: PrimKayit) => k.mekanId));
       setAcikMekanlar(mekanIds);
     } catch (e: any) {
@@ -126,24 +179,41 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
 
   useEffect(() => {
     fetchRapor();
-    setSeciliKeys(new Set());
+    setSeciliMap(new Map());
   }, [fetchRapor]);
 
-  const handleOde = async (keys: string[], odendiMi: boolean) => {
+  // ── Ödeme işlemi ──────────────────────────────────────
+  const handleOde = async (items: PrimKayit[], odendiMi: boolean) => {
     if (!canEdit) return;
     setSaving(true);
     try {
       const token = await getToken();
+      const odemeDetaylari: OdemeDetay[] = odendiMi ? items.map(k => ({
+        key: k.odemeKey,
+        personelAdi: k.personelAdi,
+        mekanAdi: k.mekanName,
+        tarih: k.tarih,
+        kademeIndex: k.kademeIndex,
+        primMiktar: k.primMiktar,
+      })) : [];
+
       const res = await fetch(`${API_BASE}/primler/ode`, {
         method: 'POST',
         headers: buildHeaders(token),
-        body: JSON.stringify({ odemeKeys: keys, odendiMi }),
+        body: JSON.stringify({
+          odemeKeys: items.map(i => i.odemeKey),
+          odendiMi,
+          odemeDetaylari,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Kayıt hatası');
-      setSuccessMsg(`✅ ${data.guncellenen} kayıt ${odendiMi ? 'ödendi' : 'geri alındı'} olarak işaretlendi.`);
-      setTimeout(() => setSuccessMsg(''), 3000);
-      setSeciliKeys(new Set());
+      const msg = odendiMi
+        ? `✅ ${data.guncellenen} ödeme işlendi, ${data.giderOlusturulan ?? 0} gider kalemi oluşturuldu.`
+        : `↩️ ${data.guncellenen} kayıt geri alındı.`;
+      setSuccessMsg(msg);
+      setTimeout(() => setSuccessMsg(''), 4000);
+      setSeciliMap(new Map());
       await fetchRapor();
     } catch (e: any) {
       console.error('PrimTakip ode error:', e);
@@ -154,11 +224,12 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
     }
   };
 
-  const toggleSecim = (key: string) => {
-    setSeciliKeys(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+  // ── Seçim işlemleri ──────────────────────────────────
+  const toggleSecim = (kayit: PrimKayit) => {
+    setSeciliMap(prev => {
+      const next = new Map(prev);
+      if (next.has(kayit.odemeKey)) next.delete(kayit.odemeKey);
+      else next.set(kayit.odemeKey, kayit);
       return next;
     });
   };
@@ -172,12 +243,12 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
     });
   };
 
+  // ── Filtrelenmiş veriler ──────────────────────────────
   const filtreliKayitlar = rapor?.primKayitlari.filter(k => !sadeceBekleyen || !k.odendi) ?? [];
   const mekanGruplari = grupla(filtreliKayitlar);
-  const mekanIds = Object.keys(mekanGruplari).sort();
 
-  // Toplu seçim: bekleyen tüm kayıtlar
-  const tumBekleyenKeys = (rapor?.primKayitlari ?? []).filter(k => !k.odendi).map(k => k.odemeKey);
+  const tumBekleyenler = (rapor?.primKayitlari ?? []).filter(k => !k.odendi);
+  const seciliArray = Array.from(seciliMap.values());
 
   return (
     <div className="min-h-screen pb-32">
@@ -196,7 +267,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
               <Trophy className="w-5 h-5" style={{ color: '#fbbf24' }} />
               Prim Takip
             </h1>
-            <p className="text-xs" style={{ color: 'rgba(196,181,253,0.5)' }}>Kota bazlı prim yönetimi</p>
+            <p className="text-xs" style={{ color: 'rgba(196,181,253,0.5)' }}>Kişi bazlı prim yönetimi</p>
           </div>
           <button
             onClick={fetchRapor}
@@ -269,11 +340,12 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
           </motion.div>
         )}
 
-        {/* ── Filtreler + Toplu ödeme ── */}
+        {/* ── Araç çubuğu ── */}
         {rapor && !loading && rapor.primKayitlari.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-            className="flex items-center gap-2">
-            {/* Filtre toggle */}
+            className="flex flex-wrap items-center gap-2">
+
+            {/* Filtre */}
             <button
               onClick={() => setSadeceBekleyen(v => !v)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all"
@@ -287,37 +359,46 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
               Sadece Bekleyen
             </button>
 
-            {/* Seçili göstergesi */}
-            {seciliKeys.size > 0 && (
-              <span className="text-xs font-bold px-2 py-1 rounded-lg"
+            {/* Seçili gösterge */}
+            {seciliArray.length > 0 && (
+              <span className="text-xs font-bold px-2 py-1 rounded-lg flex items-center gap-1"
                 style={{ background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.3)', color: '#c4b5fd' }}>
-                {seciliKeys.size} seçili
+                <User className="w-3 h-3" />
+                {seciliArray.length} seçili · {formatTL(seciliArray.reduce((s, k) => s + k.primMiktar, 0))}
               </span>
             )}
 
-            {/* Toplu ödeme butonu */}
+            {/* Seçilileri sıfırla */}
+            {seciliArray.length > 0 && (
+              <button onClick={() => setSeciliMap(new Map())} className="p-1.5 rounded-lg"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.35)' }}>
+                <X className="w-3 h-3" />
+              </button>
+            )}
+
+            {/* Sağ: toplu ödeme butonları */}
             {canEdit && (
               <div className="flex gap-2 ml-auto">
-                {seciliKeys.size > 0 && (
+                {seciliArray.length > 0 && (
                   <button
-                    onClick={() => handleOde(Array.from(seciliKeys), true)}
+                    onClick={() => handleOde(seciliArray, true)}
                     disabled={saving}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95"
                     style={{ background: 'rgba(52,211,153,0.2)', border: '1px solid rgba(52,211,153,0.4)', color: '#34d399' }}
                   >
                     <Check className="w-3 h-3" />
-                    Seçilileri Öde
+                    Seçilileri Öde ({seciliArray.length})
                   </button>
                 )}
-                {tumBekleyenKeys.length > 0 && (
+                {tumBekleyenler.length > 0 && (
                   <button
-                    onClick={() => handleOde(tumBekleyenKeys, true)}
+                    onClick={() => handleOde(tumBekleyenler, true)}
                     disabled={saving}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95"
                     style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.35)', color: '#fbbf24' }}
                   >
-                    <CreditCard className="w-3 h-3" />
-                    Tümünü Öde ({tumBekleyenKeys.length})
+                    <Banknote className="w-3 h-3" />
+                    Tümünü Öde ({tumBekleyenler.length})
                   </button>
                 )}
               </div>
@@ -345,33 +426,32 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
           </motion.div>
         )}
 
-        {/* ── Mekan bazlı kart listesi ── */}
-        {!loading && mekanIds.length > 0 && (
+        {/* ── Mekan kartları ── */}
+        {!loading && mekanGruplari.length > 0 && (
           <div className="space-y-3">
-            {mekanIds.map((mekanId, mi) => {
-              const kayitlar = mekanGruplari[mekanId].sort((a, b) => b.tarih.localeCompare(a.tarih));
-              const ilk = kayitlar[0];
-              const acik = acikMekanlar.has(mekanId);
-              const mekanToplamPrim = kayitlar.reduce((s, k) => s + k.primMiktar * k.personelSayisi, 0);
-              const mekanOdenenPrim = kayitlar.filter(k => k.odendi).reduce((s, k) => s + k.primMiktar * k.personelSayisi, 0);
-              const bekleyenSayisi = kayitlar.filter(k => !k.odendi).length;
+            {mekanGruplari.map((mg, mi) => {
+              const acik = acikMekanlar.has(mg.mekanId);
+              const tumKisiler = mg.tarihGruplari.flatMap(tg => tg.kisiListesi);
+              const bekleyenKisiler = tumKisiler.filter(k => !k.odendi);
+              const mekanToplamPrim = tumKisiler.reduce((s, k) => s + k.primMiktar, 0);
+              const mekanOdenenPrim = tumKisiler.filter(k => k.odendi).reduce((s, k) => s + k.primMiktar, 0);
+              const bekleyenSayisi = bekleyenKisiler.length;
 
-              // Mekan seçim durumu
-              const mekanKeys = kayitlar.filter(k => !k.odendi).map(k => k.odemeKey);
-              const hepsiSecili = mekanKeys.length > 0 && mekanKeys.every(k => seciliKeys.has(k));
+              const hepsiSecili = bekleyenKisiler.length > 0 &&
+                bekleyenKisiler.every(k => seciliMap.has(k.odemeKey));
 
               const toggleMekanSecim = () => {
-                setSeciliKeys(prev => {
-                  const next = new Set(prev);
-                  if (hepsiSecili) mekanKeys.forEach(k => next.delete(k));
-                  else mekanKeys.forEach(k => next.add(k));
+                setSeciliMap(prev => {
+                  const next = new Map(prev);
+                  if (hepsiSecili) bekleyenKisiler.forEach(k => next.delete(k.odemeKey));
+                  else bekleyenKisiler.forEach(k => next.set(k.odemeKey, k));
                   return next;
                 });
               };
 
               return (
                 <motion.div
-                  key={mekanId}
+                  key={mg.mekanId}
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: mi * 0.05 }}
@@ -383,29 +463,27 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                       : '1px solid rgba(52,211,153,0.2)',
                   }}
                 >
-                  {/* Mekan başlık satırı */}
+                  {/* Mekan başlık */}
                   <button
-                    onClick={() => toggleMekan(mekanId)}
+                    onClick={() => toggleMekan(mg.mekanId)}
                     className="w-full flex items-center gap-3 text-left transition-all active:scale-[0.99]"
                     style={{ padding: '12px 14px' }}
                   >
-                    {/* Emoji */}
                     <div style={{
-                      width: 40, height: 40, borderRadius: 12, flexShrink: 0,
-                      background: `${ilk.mekanColor}20`,
-                      border: `1px solid ${ilk.mekanColor}40`,
+                      width: 42, height: 42, borderRadius: 12, flexShrink: 0,
+                      background: `${mg.mekanColor}20`,
+                      border: `1px solid ${mg.mekanColor}40`,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 18,
+                      fontSize: 19,
                     }}>
-                      {ilk.mekanEmoji}
+                      {mg.mekanEmoji}
                     </div>
 
-                    {/* Bilgi */}
                     <div className="flex-1 min-w-0">
-                      <p style={{ color: 'white', fontWeight: 700, fontSize: 13 }}>{ilk.mekanName}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <p style={{ color: 'white', fontWeight: 700, fontSize: 13 }}>{mg.mekanName}</p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10 }}>
-                          {kayitlar.length} kayıt
+                          {mg.tarihGruplari.length} gün · {tumKisiler.length} kayıt
                         </span>
                         {bekleyenSayisi > 0 && (
                           <span style={{
@@ -430,24 +508,23 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                       </div>
                     </div>
 
-                    {/* Sağ: toplam + ok */}
-                    <div className="text-right shrink-0">
+                    <div className="text-right shrink-0 mr-1">
                       <p style={{ color: bekleyenSayisi > 0 ? '#fbbf24' : '#34d399', fontSize: 13, fontWeight: 900 }}>
                         {formatTL(mekanToplamPrim)}
                       </p>
-                      {mekanOdenenPrim < mekanToplamPrim && (
+                      {mekanOdenenPrim > 0 && mekanOdenenPrim < mekanToplamPrim && (
                         <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 9 }}>
                           {formatTL(mekanOdenenPrim)} ödendi
                         </p>
                       )}
                     </div>
-                    <div style={{ marginLeft: 4, color: 'rgba(255,255,255,0.3)' }}>
+                    <div style={{ color: 'rgba(255,255,255,0.3)' }}>
                       {acik ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </div>
                   </button>
 
-                  {/* Mekan seçim toplu butonu (bekleyen varsa) */}
-                  {acik && canEdit && mekanKeys.length > 0 && (
+                  {/* Mekan içi: toplu seçim + öde */}
+                  {acik && canEdit && bekleyenKisiler.length > 0 && (
                     <div style={{ paddingInline: 14, paddingBottom: 8 }}>
                       <div className="flex items-center gap-2">
                         <button
@@ -465,22 +542,20 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                           </div>
                           Tümünü seç
                         </button>
-                        {canEdit && mekanKeys.length > 0 && (
-                          <button
-                            onClick={() => handleOde(mekanKeys, true)}
-                            disabled={saving}
-                            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95"
-                            style={{ background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.3)', color: '#34d399' }}
-                          >
-                            <CreditCard className="w-3 h-3" />
-                            Mekânı Öde
-                          </button>
-                        )}
+                        <button
+                          onClick={() => handleOde(bekleyenKisiler, true)}
+                          disabled={saving}
+                          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95"
+                          style={{ background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.3)', color: '#34d399' }}
+                        >
+                          <CreditCard className="w-3 h-3" />
+                          Mekânı Öde ({bekleyenKisiler.length})
+                        </button>
                       </div>
                     </div>
                   )}
 
-                  {/* Kayıt satırları */}
+                  {/* Tarih grupları */}
                   <AnimatePresence>
                     {acik && (
                       <motion.div
@@ -490,117 +565,158 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                         transition={{ duration: 0.25 }}
                         style={{ overflow: 'hidden' }}
                       >
-                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', padding: '8px 14px 12px' }} className="space-y-2">
-                          {kayitlar.map((kayit) => {
-                            const kadeColor = KADEME_COLORS[Math.min(kayit.kademeIndex, 3)];
-                            const kadeEmoji = KADEME_EMOJIS[Math.min(kayit.kademeIndex, 3)];
-                            const secili = seciliKeys.has(kayit.odemeKey);
-
-                            return (
+                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                          {mg.tarihGruplari.map((tg, tgi) => (
+                            <div key={tg.tarih}>
+                              {/* Tarih başlığı */}
                               <div
-                                key={kayit.odemeKey}
+                                className="flex items-center gap-2"
                                 style={{
-                                  borderRadius: 12,
-                                  padding: '10px 12px',
-                                  background: kayit.odendi
-                                    ? 'rgba(52,211,153,0.06)'
-                                    : secili
-                                    ? 'rgba(168,85,247,0.1)'
-                                    : 'rgba(255,255,255,0.04)',
-                                  border: kayit.odendi
-                                    ? '1px solid rgba(52,211,153,0.2)'
-                                    : secili
-                                    ? '1px solid rgba(168,85,247,0.35)'
-                                    : '1px solid rgba(255,255,255,0.07)',
-                                  transition: 'all 0.2s ease',
+                                  padding: '8px 14px 6px',
+                                  borderTop: tgi > 0 ? '1px solid rgba(255,255,255,0.05)' : undefined,
+                                  background: 'rgba(255,255,255,0.02)',
                                 }}
                               >
-                                <div className="flex items-center gap-3">
-                                  {/* Checkbox (sadece bekleyen + canEdit) */}
-                                  {canEdit && !kayit.odendi && (
-                                    <button onClick={() => toggleSecim(kayit.odemeKey)}>
-                                      <div style={{
-                                        width: 16, height: 16, borderRadius: 5,
-                                        border: `1.5px solid ${secili ? '#a855f7' : 'rgba(255,255,255,0.2)'}`,
-                                        background: secili ? 'rgba(168,85,247,0.3)' : 'transparent',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        flexShrink: 0, transition: 'all 0.2s',
-                                      }}>
-                                        {secili && <Check className="w-2.5 h-2.5" style={{ color: '#c4b5fd' }} />}
-                                      </div>
-                                    </button>
-                                  )}
-
-                                  {/* Kademe rozeti */}
-                                  <div style={{
-                                    width: 32, height: 32, borderRadius: 9, flexShrink: 0,
-                                    background: `${kadeColor}15`,
-                                    border: `1px solid ${kadeColor}35`,
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    fontSize: 15,
-                                  }}>
-                                    {kadeEmoji}
-                                  </div>
-
-                                  {/* Bilgi */}
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <span style={{ color: kadeColor, fontSize: 10, fontWeight: 800 }}>
-                                        {kayit.kademeIndex + 1}. Kademe
-                                      </span>
-                                      <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10 }}>·</span>
-                                      <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>
-                                        Hedef: {formatTL(kayit.kademeHedef)}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center gap-2 mt-1">
-                                      <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, display: 'flex', alignItems: 'center', gap: 3 }}>
-                                        <Clock className="w-2.5 h-2.5" />{formatDate(kayit.tarih)}
-                                      </span>
-                                      <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, display: 'flex', alignItems: 'center', gap: 3 }}>
-                                        <Users className="w-2.5 h-2.5" />{kayit.personelSayisi} kişi{kayit.coklu && ' (çoklu)'}
-                                      </span>
-                                      <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>
-                                        Ciro: {formatTL(kayit.ciro)}
-                                      </span>
-                                    </div>
-                                  </div>
-
-                                  {/* Prim + durum */}
-                                  <div className="text-right shrink-0">
-                                    <p style={{ color: kayit.odendi ? '#34d399' : kadeColor, fontSize: 13, fontWeight: 900 }}>
-                                      {formatTL(kayit.primMiktar)}
-                                    </p>
-                                    <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9 }}>
-                                      /kişi · {formatTL(kayit.primMiktar * kayit.personelSayisi)} toplam
-                                    </p>
-                                    {kayit.odendi ? (
-                                      <div className="flex items-center justify-end gap-1 mt-1">
-                                        <Check className="w-2.5 h-2.5" style={{ color: '#34d399' }} />
-                                        <span style={{ color: '#34d399', fontSize: 8, fontWeight: 700 }}>Ödendi</span>
-                                      </div>
-                                    ) : canEdit ? (
-                                      <button
-                                        onClick={() => handleOde([kayit.odemeKey], true)}
-                                        disabled={saving}
-                                        className="mt-1 flex items-center gap-1 ml-auto active:scale-95"
-                                        style={{
-                                          fontSize: 8, padding: '2px 6px', borderRadius: 6, fontWeight: 800,
-                                          background: 'rgba(52,211,153,0.15)',
-                                          border: '1px solid rgba(52,211,153,0.3)',
-                                          color: '#34d399',
-                                        }}
-                                      >
-                                        <Check className="w-2 h-2" /> Öde
-                                      </button>
-                                    ) : (
-                                      <span style={{ color: '#fbbf24', fontSize: 8, fontWeight: 700 }}>Bekliyor</span>
-                                    )}
-                                  </div>
-                                </div>
+                                <Clock className="w-3 h-3" style={{ color: 'rgba(255,255,255,0.3)' }} />
+                                <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, fontWeight: 700 }}>
+                                  {formatDate(tg.tarih)}
+                                </span>
+                                <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9 }}>
+                                  Ciro: {formatTL(tg.ciro)}
+                                </span>
+                                {tg.kisiListesi[0]?.coklu ? (
+                                  <span className="flex items-center gap-0.5" style={{ color: 'rgba(168,85,247,0.6)', fontSize: 9 }}>
+                                    <Users className="w-2.5 h-2.5" /> Çoklu Rotasyon
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-0.5" style={{ color: 'rgba(96,165,250,0.6)', fontSize: 9 }}>
+                                    <User className="w-2.5 h-2.5" /> Tekli
+                                  </span>
+                                )}
                               </div>
-                            );
-                          })}
+
+                              {/* Kişi satırları */}
+                              <div className="space-y-1.5" style={{ padding: '4px 12px 10px' }}>
+                                {tg.kisiListesi.map((kayit) => {
+                                  const kadeColor = KADEME_COLORS[Math.min(kayit.kademeIndex, 5)];
+                                  const kadeEmoji = KADEME_EMOJIS[Math.min(kayit.kademeIndex, 5)];
+                                  const secili = seciliMap.has(kayit.odemeKey);
+
+                                  return (
+                                    <div
+                                      key={kayit.odemeKey}
+                                      style={{
+                                        borderRadius: 12,
+                                        padding: '9px 11px',
+                                        background: kayit.odendi
+                                          ? 'rgba(52,211,153,0.06)'
+                                          : secili
+                                          ? 'rgba(168,85,247,0.1)'
+                                          : 'rgba(255,255,255,0.04)',
+                                        border: kayit.odendi
+                                          ? '1px solid rgba(52,211,153,0.2)'
+                                          : secili
+                                          ? '1px solid rgba(168,85,247,0.35)'
+                                          : '1px solid rgba(255,255,255,0.07)',
+                                        transition: 'all 0.2s ease',
+                                      }}
+                                    >
+                                      <div className="flex items-center gap-2.5">
+                                        {/* Checkbox */}
+                                        {canEdit && !kayit.odendi && (
+                                          <button onClick={() => toggleSecim(kayit)} className="shrink-0">
+                                            <div style={{
+                                              width: 16, height: 16, borderRadius: 5,
+                                              border: `1.5px solid ${secili ? '#a855f7' : 'rgba(255,255,255,0.2)'}`,
+                                              background: secili ? 'rgba(168,85,247,0.3)' : 'transparent',
+                                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                              transition: 'all 0.2s',
+                                            }}>
+                                              {secili && <Check className="w-2.5 h-2.5" style={{ color: '#c4b5fd' }} />}
+                                            </div>
+                                          </button>
+                                        )}
+                                        {/* Ödendi checkmark placeholder */}
+                                        {kayit.odendi && (
+                                          <div style={{
+                                            width: 16, height: 16, borderRadius: 5, flexShrink: 0,
+                                            background: 'rgba(52,211,153,0.2)',
+                                            border: '1px solid rgba(52,211,153,0.4)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                          }}>
+                                            <Check className="w-2.5 h-2.5" style={{ color: '#34d399' }} />
+                                          </div>
+                                        )}
+
+                                        {/* Kişi avatarı */}
+                                        <div style={{
+                                          width: 32, height: 32, borderRadius: 10, flexShrink: 0,
+                                          background: kayit.odendi ? 'rgba(52,211,153,0.12)' : `${kadeColor}18`,
+                                          border: `1px solid ${kayit.odendi ? 'rgba(52,211,153,0.3)' : kadeColor + '35'}`,
+                                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                          fontSize: 11, fontWeight: 800,
+                                          color: kayit.odendi ? '#34d399' : kadeColor,
+                                        }}>
+                                          {getInitials(kayit.personelAdi)}
+                                        </div>
+
+                                        {/* Bilgi */}
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span style={{ color: 'white', fontSize: 11, fontWeight: 700 }}>
+                                              {kayit.personelAdi}
+                                            </span>
+                                            <span style={{
+                                              fontSize: 9, padding: '1px 5px', borderRadius: 6, fontWeight: 700,
+                                              background: `${kadeColor}18`, border: `1px solid ${kadeColor}35`,
+                                              color: kadeColor,
+                                            }}>
+                                              {kadeEmoji} {kayit.kademeIndex + 1}. Kademe
+                                            </span>
+                                          </div>
+                                          {kayit.odendi && kayit.odemeTarihi ? (
+                                            <p style={{ color: 'rgba(52,211,153,0.6)', fontSize: 9, marginTop: 1 }}>
+                                              Ödendi: {formatDateTime(kayit.odemeTarihi)}
+                                            </p>
+                                          ) : (
+                                            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 9, marginTop: 1 }}>
+                                              Hedef: {formatTL(kayit.kademeHedef)} · {kayit.coklu ? 'Çoklu prim' : 'Tekli prim'}
+                                            </p>
+                                          )}
+                                        </div>
+
+                                        {/* Prim + öde butonu */}
+                                        <div className="text-right shrink-0">
+                                          <p style={{ color: kayit.odendi ? '#34d399' : kadeColor, fontSize: 14, fontWeight: 900 }}>
+                                            {formatTL(kayit.primMiktar)}
+                                          </p>
+                                          {!kayit.odendi && canEdit && (
+                                            <button
+                                              onClick={() => handleOde([kayit], true)}
+                                              disabled={saving}
+                                              className="mt-1 flex items-center gap-1 ml-auto active:scale-95"
+                                              style={{
+                                                fontSize: 8, padding: '2px 7px', borderRadius: 6, fontWeight: 800,
+                                                background: 'rgba(52,211,153,0.15)',
+                                                border: '1px solid rgba(52,211,153,0.3)',
+                                                color: '#34d399',
+                                              }}
+                                            >
+                                              <Check className="w-2 h-2" />
+                                              Öde
+                                            </button>
+                                          )}
+                                          {kayit.odendi && (
+                                            <p style={{ fontSize: 8, color: '#34d399', fontWeight: 700, marginTop: 2 }}>✓ Ödendi</p>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </motion.div>
                     )}
@@ -611,15 +727,54 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
           </div>
         )}
 
-        {/* ── Bilgi kutusu ── */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          style={{ ...glass, padding: 14, background: 'rgba(168,85,247,0.05)', border: '1px solid rgba(168,85,247,0.15)' }}>
-          <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, lineHeight: 1.6 }}>
-            💡 <strong style={{ color: 'rgba(255,255,255,0.6)' }}>Nasıl çalışır?</strong> Mekanlara Mekan Yönetimi'nden kota kademeleri eklenir.
-            Günlük ciro bu hedefleri geçince prim otomatik hesaplanır ve burada listelenir.
-            Ödeme yapıldığında "Öde" butonuna bas — kayıt kaldırılmaz, ödendi olarak işaretlenir.
-          </p>
-        </motion.div>
+        {/* ── Seçili kişiler — sabit alt panel ── */}
+        <AnimatePresence>
+          {canEdit && seciliArray.length > 0 && (
+            <motion.div
+              initial={{ y: 60, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 60, opacity: 0 }}
+              style={{
+                position: 'fixed', bottom: 80, left: 16, right: 16, zIndex: 50,
+                background: 'rgba(15,10,30,0.92)',
+                border: '1px solid rgba(168,85,247,0.35)',
+                backdropFilter: 'blur(24px)',
+                WebkitBackdropFilter: 'blur(24px)',
+                borderRadius: 18, padding: '12px 16px',
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p style={{ color: '#c4b5fd', fontSize: 12, fontWeight: 800 }}>
+                    {seciliArray.length} kişi seçili
+                  </p>
+                  <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>
+                    Toplam: {formatTL(seciliArray.reduce((s, k) => s + k.primMiktar, 0))}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSeciliMap(new Map())}
+                  className="p-2 rounded-lg"
+                  style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)' }}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => handleOde(seciliArray, true)}
+                  disabled={saving}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold active:scale-95 transition-all"
+                  style={{ background: 'rgba(52,211,153,0.2)', border: '1px solid rgba(52,211,153,0.4)', color: '#34d399' }}
+                >
+                  {saving
+                    ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    : <Banknote className="w-3.5 h-3.5" />
+                  }
+                  Öde
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
       </div>
     </div>

@@ -416,6 +416,14 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
 
               const formatTLc = (v: number) => v >= 1000 ? `₺${(v / 1000).toFixed(0)}B` : `₺${v}`;
 
+              // Kademe sayısından bağımsız: son kademe daima en iyi kupa
+              const TROPHY_POOL = ['🎖️', '🥉', '🥈', '🏆', '💎', '👑'];
+              const getTrophy = (i: number, total: number) => {
+                const fromEnd = (total - 1) - i; // 0 = son kademe
+                const poolIdx = Math.max(0, TROPHY_POOL.length - 1 - fromEnd);
+                return TROPHY_POOL[poolIdx];
+              };
+
               return (
                 <div style={{ marginTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10 }}>
                   {/* Üst satır: ciro + prim rozeti */}
@@ -445,12 +453,12 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                   </div>
 
                   {/* Checkpoint etiketleri — bar'ın ÜSTÜNDE */}
-                  <div style={{ position: 'relative', height: 30, marginBottom: 2 }}>
+                  <div style={{ position: 'relative', height: 44, marginBottom: 2 }}>
                     {sorted.map((k, i) => {
                       const pos = k.hedef / maxHedef;
                       const achieved = ciro >= k.hedef;
                       const c = COLORS[Math.min(i, 4)];
-                      // Kenar boşluğu: ilk ve son eleman taşmasın
+                      const trophy = getTrophy(i, sorted.length);
                       const leftPct = Math.min(Math.max(pos * 100, 6), 94);
                       return (
                         <div key={i} style={{
@@ -463,6 +471,30 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                           alignItems: 'center',
                           gap: 1,
                         }}>
+                          {/* Kupa ikonu — sadece ulaşıldıysa göster, bounce animasyonlu */}
+                          {achieved ? (
+                            <span style={{
+                              fontSize: 16,
+                              lineHeight: 1,
+                              display: 'block',
+                              animation: 'kotaBounce 0.6s cubic-bezier(0.36,0.07,0.19,0.97) both',
+                              filter: `drop-shadow(0 0 6px ${c})`,
+                              marginBottom: 1,
+                            }}>
+                              {trophy}
+                            </span>
+                          ) : (
+                            <span style={{
+                              fontSize: 14,
+                              lineHeight: 1,
+                              display: 'block',
+                              opacity: 0.18,
+                              marginBottom: 1,
+                              filter: 'grayscale(1)',
+                            }}>
+                              {trophy}
+                            </span>
+                          )}
                           <span style={{
                             fontSize: 7.5,
                             fontWeight: 800,

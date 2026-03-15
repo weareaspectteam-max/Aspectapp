@@ -2276,7 +2276,7 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
 });
 
 // ══════════════════════════════════════════
-// PRİM: Aylık rapor — mekanlardaki kota geçmelerini hesapla
+// PRİM: Aylık rapor — KİŞİ BAZLI prim kayıtları
 // GET /primler/rapor?ay=2026-03
 // ══════════════════════════════════════════
 app.get("/make-server-4da0b637/primler/rapor", async (c) => {
@@ -2305,16 +2305,15 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
       return ky === yil && ka === ayNo;
     });
 
-    // Ödendi kayıtlarını çek
+    // Ödendi kayıtlarını çek — key, odendi ve odemeTarihi saklanıyor
     const odemePrefix = `prim_odendi_`;
     const tumOdemeler: any[] = await kv.getByPrefix(odemePrefix) || [];
-    // odeme key: prim_odendi_{mekanId}_{tarih}_{kademeIndex}
-    const odemeMap: Record<string, boolean> = {};
+    const odemeMap: Record<string, { odendi: boolean; odemeTarihi?: string }> = {};
     for (const o of tumOdemeler) {
-      if (o.odendi) odemeMap[o.key] = true;
+      if (o.key) odemeMap[o.key] = { odendi: o.odendi || false, odemeTarihi: o.odemeTarihi };
     }
 
-    // Her gün × her mekan × her kademe için prim hesapla
+    // Her gün × her mekan × her kademe × her personel için AYRI prim kaydı
     const primKayitlari: any[] = [];
 
     for (const kayit of ayKayitlari) {
@@ -2324,42 +2323,56 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
       const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
       const ciro = satislar.reduce((sum: number, s: any) => sum + (s.finalPrice || 0), 0);
 
-      // Personel sayısı: kareKayitlari'ndaki farklı isimler
-      const fotografcilar = new Set((kayit.kareKayitlari || []).map((k: any) => k.photographerName).filter(Boolean));
-      const personelSayisi = fotografcilar.size || 1;
+      // Personel listesi: kareKayitlari'ndaki farklı isimler
+      const fotografcilarSet = new Set<string>(
+        (kayit.kareKayitlari || []).map((k: any) => k.photographerName).filter(Boolean)
+      );
+      const fotografcilar: string[] = fotografcilarSet.size > 0
+        ? Array.from(fotografcilarSet)
+        : ["Bilinmiyor"];
+
+      const personelSayisi = fotografcilar.length;
       const coklu = personelSayisi > 1;
 
       for (let ki = 0; ki < mekan.kotaKademeleri.length; ki++) {
         const kademe = mekan.kotaKademeleri[ki];
         if (ciro >= kademe.hedef) {
-          const primMiktar = coklu ? kademe.primCoklu : kademe.primTek;
-          const odemeKey = `prim_odendi_${kayit.mekanId}_${kayit.tarih}_${ki}`;
-          const odendiMi = odemeMap[odemeKey] || false;
-          primKayitlari.push({
-            mekanId: kayit.mekanId,
-            mekanName: mekan.name,
-            mekanEmoji: mekan.emoji || "📍",
-            mekanColor: mekan.color || "#9dd9ea",
-            tarih: kayit.tarih,
-            ciro: Math.round(ciro),
-            kademeIndex: ki,
-            kademeHedef: kademe.hedef,
-            primMiktar,
-            personelSayisi,
-            coklu,
-            odendi: odendiMi,
-            odemeKey,
-          });
+          const primMiktar = (coklu ? kademe.primCoklu : kademe.primTek) || 0;
+
+          // Her personel için ayrı kayıt
+          for (const personelAdi of fotografcilar) {
+            const safeAd = encodeURIComponent(personelAdi);
+            const odemeKey = `prim_odendi_${kayit.mekanId}_${kayit.tarih}_${ki}_${safeAd}`;
+            const odemeData = odemeMap[odemeKey] || null;
+
+            primKayitlari.push({
+              mekanId: kayit.mekanId,
+              mekanName: mekan.name,
+              mekanEmoji: mekan.emoji || "📍",
+              mekanColor: mekan.color || "#9dd9ea",
+              tarih: kayit.tarih,
+              ciro: Math.round(ciro),
+              kademeIndex: ki,
+              kademeHedef: kademe.hedef,
+              primMiktar,
+              personelAdi,
+              personelSayisi,
+              coklu,
+              odendi: odemeData?.odendi || false,
+              odemeTarihi: odemeData?.odemeTarihi || null,
+              odemeKey,
+            });
+          }
         }
       }
     }
 
-    // Özet
-    const toplamPrim = primKayitlari.reduce((s, p) => s + p.primMiktar * p.personelSayisi, 0);
-    const odenenPrim = primKayitlari.filter(p => p.odendi).reduce((s, p) => s + p.primMiktar * p.personelSayisi, 0);
+    // Özet: her kayıt tek kişinin primini tutuyor
+    const toplamPrim = primKayitlari.reduce((s, p) => s + p.primMiktar, 0);
+    const odenenPrim = primKayitlari.filter(p => p.odendi).reduce((s, p) => s + p.primMiktar, 0);
     const bekleyenPrim = toplamPrim - odenenPrim;
 
-    console.log(`Prim raporu ${ay}: ${primKayitlari.length} kayıt, toplam ₺${toplamPrim}`);
+    console.log(`Prim raporu ${ay}: ${primKayitlari.length} kişi-kademe kaydı, toplam ₺${toplamPrim}`);
     return c.json({ ay, primKayitlari, toplamPrim, odenenPrim, bekleyenPrim });
   } catch (err) {
     console.log("Prim rapor error:", err);
@@ -2455,9 +2468,10 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
 });
 
 // ══════════════════════════════════════════
-// PRİM: Ödendi olarak işaretle (tekli veya toplu)
+// PRİM: Ödendi olarak işaretle + otomatik gider kalemi
 // POST /primler/ode
-// body: { odemeKeys: string[], odendiMi: boolean }
+// body: { odemeKeys: string[], odendiMi: boolean, odemeDetaylari: OdemeDetay[] }
+// OdemeDetay: { key, personelAdi, mekanAdi, tarih, kademeIndex, primMiktar }
 // ══════════════════════════════════════════
 app.post("/make-server-4da0b637/primler/ode", async (c) => {
   try {
@@ -2469,27 +2483,56 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
     }
 
     const body = await c.req.json();
-    const { odemeKeys, odendiMi = true } = body;
+    const { odemeKeys, odendiMi = true, odemeDetaylari = [] } = body;
 
     if (!Array.isArray(odemeKeys) || odemeKeys.length === 0) {
       return c.json({ error: "odemeKeys dizisi zorunludur." }, 400);
     }
 
     const now = new Date().toISOString();
+    const todayStr = now.slice(0, 10);
     const results = [];
+    let giderSayisi = 0;
+
     for (const key of odemeKeys) {
+      const detay = (odemeDetaylari as any[]).find((d: any) => d.key === key);
       const record = {
         key,
         odendi: odendiMi,
         odemeTarihi: now,
         odeyenKisi: user.email || user.id,
+        personelAdi: detay?.personelAdi,
+        mekanAdi: detay?.mekanAdi,
+        primMiktar: detay?.primMiktar,
       };
       await kv.set(key, record);
       results.push(key);
+
+      // Ödeme yapılıyorsa → otomatik işletme gider kalemi oluştur
+      if (odendiMi && detay) {
+        const kademeLabel = `${(detay.kademeIndex ?? 0) + 1}. Kademe`;
+        const giderId = `prim_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const gider = {
+          id: giderId,
+          category: "personel",
+          odemeTipi: "prim",
+          amount: detay.primMiktar || 0,
+          currency: "TRY",
+          description: `Personel Prim Ödemesi — ${detay.personelAdi || "Bilinmiyor"} — ${detay.mekanAdi || ""} ${detay.tarih || todayStr} ${kademeLabel}`,
+          date: detay.tarih || todayStr,
+          personelAdi: detay.personelAdi,
+          mekanAdi: detay.mekanAdi,
+          primKey: key,
+          created_at: now,
+          created_by: user.email || user.id,
+        };
+        await kv.set(`isletme_gider_${giderId}`, gider);
+        giderSayisi++;
+      }
     }
 
-    console.log(`Prim ödeme: ${results.length} kayıt ${odendiMi ? "ödendi" : "geri alındı"} by ${user.email}`);
-    return c.json({ success: true, guncellenen: results.length });
+    console.log(`Prim ödeme: ${results.length} kayıt ${odendiMi ? "ödendi" : "geri alındı"}, ${giderSayisi} gider kalemi oluşturuldu — by ${user.email}`);
+    return c.json({ success: true, guncellenen: results.length, giderOlusturulan: giderSayisi });
   } catch (err) {
     console.log("Prim ode error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
