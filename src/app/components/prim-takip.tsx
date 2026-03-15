@@ -4,7 +4,7 @@ import {
   ChevronLeft, RefreshCw, Trophy, Check, Clock,
   ChevronDown, ChevronUp, Filter, CreditCard,
   Calendar, AlertCircle, CheckCircle2, User, Users,
-  Banknote, X, TrendingUp,
+  Banknote, X, TrendingUp, Undo2,
 } from 'lucide-react';
 import { getToken, buildHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
@@ -241,7 +241,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
       if (!res.ok) throw new Error(data.error || 'Kayıt hatası');
       const msg = odendiMi
         ? `✅ ${data.guncellenen} ödeme işlendi, ${data.giderOlusturulan ?? 0} gider kalemi oluşturuldu.`
-        : `↩️ ${data.guncellenen} kayıt geri alındı.`;
+        : `↩️ ${data.guncellenen} ödeme iptali gerçekleşti.`;
       setSuccessMsg(msg);
       setTimeout(() => setSuccessMsg(''), 4000);
       setSeciliMap(new Map());
@@ -558,6 +558,26 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                         </button>
                       )}
 
+                      {/* Mekan bazlı ödeme iptali — tüm kayıtlar ödendiyse göster */}
+                      {canEdit && tumBekleyen.length === 0 && mg.odenenPrim > 0 && (() => {
+                        const tumOdenenler = mg.kisiler.flatMap(p => p.kayitlar.filter(k => k.odendi));
+                        return (
+                          <button
+                            onClick={() => handleOde(tumOdenenler, false)}
+                            disabled={saving}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold active:scale-95 transition-all"
+                            style={{
+                              background: 'rgba(248,113,113,0.12)',
+                              border: '1px solid rgba(248,113,113,0.3)',
+                              color: '#fca5a5',
+                            }}
+                          >
+                            <Undo2 className="w-3 h-3" />
+                            İptal
+                          </button>
+                        );
+                      })()}
+
                       <div style={{ color: 'rgba(255,255,255,0.3)' }}>
                         {acik ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                       </div>
@@ -715,6 +735,23 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                                       </button>
                                     )}
 
+                                    {/* Kişi bazlı ödeme iptali — tüm kayıtlar ödendiyse göster */}
+                                    {canEdit && allOdendi && pg.kayitlar.length > 0 && (
+                                      <button
+                                        onClick={() => handleOde(pg.kayitlar.filter(k => k.odendi), false)}
+                                        disabled={saving}
+                                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold active:scale-95 transition-all"
+                                        style={{
+                                          background: 'rgba(248,113,113,0.12)',
+                                          border: '1px solid rgba(248,113,113,0.3)',
+                                          color: '#fca5a5',
+                                        }}
+                                      >
+                                        {saving ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Undo2 className="w-2.5 h-2.5" />}
+                                        İptal
+                                      </button>
+                                    )}
+
                                     {/* Detay toggle */}
                                     <button
                                       onClick={() => toggleKisiDetay(kisiKey)}
@@ -767,7 +804,24 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                                                     {formatTL(kayit.primMiktar)}
                                                   </span>
                                                   {kayit.odendi ? (
-                                                    <span style={{ fontSize: 8, color: 'rgba(52,211,153,0.6)', fontWeight: 700 }}>✓</span>
+                                                    canEdit ? (
+                                                      <button
+                                                        onClick={() => handleOde([kayit], false)}
+                                                        disabled={saving}
+                                                        style={{
+                                                          fontSize: 8, padding: '1px 5px', borderRadius: 5, fontWeight: 700,
+                                                          background: 'rgba(248,113,113,0.12)',
+                                                          border: '1px solid rgba(248,113,113,0.3)',
+                                                          color: '#fca5a5',
+                                                        }}
+                                                        className="active:scale-95 transition-all flex items-center gap-0.5"
+                                                      >
+                                                        <Undo2 style={{ width: 7, height: 7 }} />
+                                                        İptal
+                                                      </button>
+                                                    ) : (
+                                                      <span style={{ fontSize: 8, color: 'rgba(52,211,153,0.6)', fontWeight: 700 }}>✓</span>
+                                                    )
                                                   ) : canEdit ? (
                                                     <button
                                                       onClick={() => handleOde([kayit], true)}
