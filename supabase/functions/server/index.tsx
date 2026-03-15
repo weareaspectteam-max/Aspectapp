@@ -1387,20 +1387,28 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
     const dunTarih = new Date(tarih);
     dunTarih.setDate(dunTarih.getDate() - 1);
     const dunStr = dunTarih.toISOString().split("T")[0];
-    const dun = await kv.get(`stok_gunluk_${mekanId}_${dunStr}`);
 
-    const tumEklemeler = await kv.getByPrefix(`stok_ekleme_`);
+    // ── Bağımsız KV okumalarını paralel çalıştır (timeout riskini azaltır) ─
+    const [dun, tumEklemelerRaw, tumAktarimlarRaw, tumEkipmanlarRaw] = await Promise.all([
+      kv.get(`stok_gunluk_${mekanId}_${dunStr}`).catch(() => null),
+      kv.getByPrefix(`stok_ekleme_`).catch(() => []),
+      kv.getByPrefix(`stok_aktarim_`).catch(() => []),
+      kv.getByPrefix(`ekipman_`).catch(() => []),
+    ]);
+
+    const tumEklemeler: any[] = tumEklemelerRaw || [];
+    const tumAktarimlar: any[] = tumAktarimlarRaw || [];
+    const tumEkipmanlar: any[] = tumEkipmanlarRaw || [];
+
     const eklemeler = tumEklemeler.filter(
       (e: any) => e.mekanId === mekanId && e.tarih === tarih
     );
 
-    const tumAktarimlar = await kv.getByPrefix(`stok_aktarim_`);
     const bekleyenAktarimlar = tumAktarimlar.filter(
       (a: any) => a.hedefMekanId === mekanId && a.durum === "bekliyor"
     );
 
     // ── Mekana bağlı ekipman yazıcılarını çek ──────────────────────────────
-    const tumEkipmanlar: any[] = await kv.getByPrefix("ekipman_") || [];
     const mekanYazicilariRaw = tumEkipmanlar.filter((eq: any) =>
       eq.category === 'printer' &&
       eq.locationId === mekanId &&
@@ -1416,25 +1424,28 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
         : null,
     }));
 
-    // Fallback: ribonMevcut yoksa son 14 günlük kapanış kayıtlarından endCounter'ı al
+    // Fallback: ribonMevcut yoksa son 7 günlük kapanış kayıtlarını PARALEL çek
     if (mekanYazicilariRaw.length > 0) {
       const eksikler = mekanYazicilariRaw.filter((y: any) => y.ribonMevcut === null);
       if (eksikler.length > 0) {
         const baseDate = new Date(tarih);
-        for (let i = 1; i <= 14; i++) {
-          if (eksikler.every((y: any) => y.ribonMevcut !== null)) break;
+        const gunStrler = Array.from({ length: 7 }, (_, i) => {
           const d = new Date(baseDate);
-          d.setDate(d.getDate() - i);
-          const dStr = d.toISOString().split('T')[0];
-          const gunKayit: any = await kv.get(`stok_gunluk_${mekanId}_${dStr}`);
-          if (gunKayit?.printerData && Array.isArray(gunKayit.printerData)) {
-            for (const pr of gunKayit.printerData) {
-              const eid = pr.ekipmanId || pr.id;
-              if (!eid) continue;
-              const yazici = eksikler.find((y: any) => y.ekipmanId === eid && y.ribonMevcut === null);
-              if (yazici && pr.endCounter !== undefined) {
-                yazici.ribonMevcut = Number(pr.endCounter);
-              }
+          d.setDate(d.getDate() - (i + 1));
+          return d.toISOString().split('T')[0];
+        });
+        const gunKayitlar = await Promise.all(
+          gunStrler.map(gStr => kv.get(`stok_gunluk_${mekanId}_${gStr}`).catch(() => null))
+        );
+        for (const gunKayit of gunKayitlar) {
+          if (eksikler.every((y: any) => y.ribonMevcut !== null)) break;
+          if (!gunKayit?.printerData || !Array.isArray(gunKayit.printerData)) continue;
+          for (const pr of gunKayit.printerData) {
+            const eid = pr.ekipmanId || pr.id;
+            if (!eid) continue;
+            const yazici = eksikler.find((y: any) => y.ekipmanId === eid && y.ribonMevcut === null);
+            if (yazici && pr.endCounter !== undefined) {
+              yazici.ribonMevcut = Number(pr.endCounter);
             }
           }
         }
@@ -1600,11 +1611,16 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
     if (!existing) return c.json({ error: "Önce açılış kaydı yapılmalıdır." }, 400);
 
-    const tumEklemeler = await kv.getByPrefix(`stok_ekleme_`);
+    // Paralel KV okuma
+    const [tumEklemelerKapRaw, tumAktarimlarKapRaw] = await Promise.all([
+      kv.getByPrefix(`stok_ekleme_`).catch(() => []),
+      kv.getByPrefix(`stok_aktarim_`).catch(() => []),
+    ]);
+    const tumEklemeler: any[] = tumEklemelerKapRaw || [];
+    const tumAktarimlar: any[] = tumAktarimlarKapRaw || [];
     const eklemeler = tumEklemeler.filter(
       (e: any) => e.mekanId === mekanId && e.tarih === tarih
     );
-    const tumAktarimlar = await kv.getByPrefix(`stok_aktarim_`);
     const gelenOnaylandi = tumAktarimlar.filter(
       (a: any) => a.hedefMekanId === mekanId && a.tarih === tarih && a.durum === "onaylandi"
     );
