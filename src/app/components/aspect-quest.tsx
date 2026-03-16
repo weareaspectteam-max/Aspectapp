@@ -2396,38 +2396,51 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
               🛡️ GOD
             </div>
           )}
-          {/* Hidden cheat input — nearly invisible, small, corner */}
-          <input
-            type="text"
-            value={cheatInput}
-            onChange={e => {
-              const val = e.target.value.toLowerCase();
-              setCheatInput(val);
-              if (val.endsWith('aspect')) {
-                const next = !godModeRef.current;
-                godModeRef.current = next;
-                setGodMode(next);
-                setCheatInput('');
-                if (gsRef.current) {
-                  gsRef.current.floats.push({ x: gsRef.current.px, y: gsRef.current.py - 30, text: next ? '🛡️ GOD MODE ON!' : '💀 GOD MODE OFF', life: 120, col: next ? '#00FFFF' : '#FF8800' });
-                }
-              }
-              // Clear if too long
-              if (val.length > 10) setCheatInput(val.slice(-6));
-            }}
-            className="w-8 h-4 text-xs bg-transparent border-none outline-none select-none shrink-0"
-            style={{ color: 'rgba(255,255,255,0.08)', caretColor: 'transparent', WebkitTapHighlightColor: 'transparent' }}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            tabIndex={-1}
-          />
+
         </div>
 
         {/* Canvas + overlaid controls — fills all remaining space */}
         <div ref={wrapRef} className="flex-1 overflow-hidden relative" style={{ minHeight: 0 }}>
           <canvas ref={canvasRef} width={CW} height={CH} style={{ imageRendering: 'pixelated', display: 'block' }} />
+
+          {/* Cheat code input — bottom-right corner of canvas area */}
+          <div className="absolute bottom-1 right-2 z-30 flex items-center gap-1">
+            <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>🔒</span>
+            <input
+              type="text"
+              value={cheatInput}
+              onChange={e => {
+                const val = e.target.value.toLowerCase();
+                setCheatInput(val);
+                if (val.endsWith('aspect')) {
+                  const next = !godModeRef.current;
+                  godModeRef.current = next;
+                  setGodMode(next);
+                  setCheatInput('');
+                  if (gsRef.current) {
+                    gsRef.current.floats.push({ x: gsRef.current.px, y: gsRef.current.py - 30, text: next ? '🛡️ GOD MODE ON!' : '💀 GOD MODE OFF', life: 120, col: next ? '#00FFFF' : '#FF8800' });
+                  }
+                }
+                if (val.length > 10) setCheatInput(val.slice(-6));
+              }}
+              placeholder="···"
+              className="bg-transparent outline-none"
+              style={{
+                width: 44,
+                color: 'rgba(255,255,255,0.28)',
+                caretColor: 'rgba(255,255,255,0.35)',
+                border: 'none',
+                borderBottom: '1px dotted rgba(255,255,255,0.18)',
+                WebkitTapHighlightColor: 'transparent',
+                fontSize: 10,
+                letterSpacing: 3,
+              }}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+            />
+          </div>
 
           {/* Water warning */}
           {ld.waterRises && uiSnap.waterY < CH * 0.7 && (
