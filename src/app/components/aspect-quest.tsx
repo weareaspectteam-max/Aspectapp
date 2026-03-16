@@ -1,11 +1,11 @@
 /**
- * ASPECT QUEST — 5 Bölümlü Platformer
- * Özgür Drone Boss · ASPECT Branding · Mobile Touch Controls
- * Procedural Audio · Photo Moment Mechanic
+ * ASPECT QUEST — 8 Bölümlü Platformer
+ * Türkiye · Fethiye · ASPECT Operations
+ * Bosses: Celil & Selçuk, Zuhal, Büşra, Tanrıverdi, Kayhan, Aman Aman, Özgür
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { ChevronLeft, Volume2, VolumeX, Trophy, RotateCcw } from 'lucide-react';
+import { ChevronLeft, Volume2, VolumeX, Trophy, RotateCcw, Heart } from 'lucide-react';
 import type { UserRole } from './login';
 
 // ─────────────────────────── AUDIO ───────────────────────────────────────────
@@ -35,41 +35,62 @@ const SFX = {
   photo:   () => { tone(880, 0.04); setTimeout(() => tone(1240, 0.07), 32); setTimeout(() => tone(660, 0.12), 75); },
   lvlWin:  () => [350, 440, 550, 660, 880].forEach((f, i) => setTimeout(() => tone(f, 0.18, 0.22), i * 72)),
   gameOver:() => { tone(320, 0.18, 0.25, 'sawtooth'); setTimeout(() => tone(220, 0.22, 0.25, 'sawtooth'), 200); setTimeout(() => tone(110, 0.4, 0.25, 'sawtooth'), 460); },
+  boss:    () => { tone(80, 0.5, 0.3, 'sawtooth'); setTimeout(() => tone(60, 0.5, 0.3, 'sawtooth'), 300); },
+  bossHit: () => { tone(200, 0.12, 0.25, 'sawtooth'); },
+  bossWin: () => [550, 660, 770, 880, 1100].forEach((f, i) => setTimeout(() => tone(f, 0.2, 0.3, 'triangle'), i * 60)),
 };
 
 // ─────────────────────────── TYPES ───────────────────────────────────────────
 interface Plat {
   x: number; y: number; w: number; h: number; col: string;
   ox?: number; oy?: number; dvx?: number; dvy?: number; range?: number; spd?: number; t?: number;
+  slippery?: boolean;
 }
 interface Enemy {
   id: number; x: number; y: number; w: number; h: number;
-  type: 'bird' | 'drone' | 'cart' | 'boss';
+  type: 'minion' | 'zabita' | 'girl' | 'boss_celil' | 'boss_selcuk' | 'boss_zuhal' | 'boss_busra' | 'boss_tanriverdi' | 'boss_kayhan' | 'boss_amanaman' | 'boss_ozgur';
   vx: number; alive: boolean; minX: number; maxX: number;
-  oy: number; amp?: number; freq?: number; ph?: number;
-  hitTimer?: number;
+  oy: number; hp?: number; maxHp?: number; attackTimer?: number; phase?: number;
+  hitTimer?: number; stunTimer?: number; isStomped?: boolean;
+}
+interface Projectile {
+  id: number; x: number; y: number; vx: number; vy: number;
+  type: 'plate' | 'ice' | 'net' | 'surfboard' | 'album' | 'shockwave';
+  w: number; h: number; active: boolean; timer: number;
+  netActive?: boolean; // net caught player
+}
+interface SpawnedGirl {
+  id: number; x: number; y: number; vx: number; alive: boolean; vy: number; onGround: boolean;
 }
 interface Collectable {
   id: number; x: number; y: number; w: number; h: number;
   type: 'lens' | 'frame' | 'card' | 'battery' | 'star';
   pts: number; got: boolean;
 }
-interface Shot { id: number; tx: number; wx: number; wy: number; active: boolean; timer: number; done: boolean; }
 interface Spark { x: number; y: number; vx: number; vy: number; life: number; maxl: number; col: string; sz: number; }
 interface FloatText { x: number; y: number; text: string; life: number; col: string; }
+interface Dialog { speaker: string; text: string; portrait: string; }
 
-type Screen = 'menu' | 'cut' | 'play' | 'pause' | 'lvlwin' | 'over' | 'victory';
+type Screen = 'menu' | 'dialog' | 'play' | 'boss_fight' | 'boss_dead' | 'lvlwin' | 'over' | 'victory';
 
 interface GS {
   screen: Screen; lvl: number;
   px: number; py: number; pvx: number; pvy: number;
   ponG: boolean; pjumps: number; pface: number;
-  lives: number; score: number; combo: number; comboT: number;
+  lives: number; score: number;
   pinv: number; pcamAnim: number; pdead: boolean; pdeadT: number;
-  plats: Plat[]; enemies: Enemy[]; items: Collectable[]; shots: Shot[];
+  netTimer: number; // slowed by Büşra net
+  plats: Plat[]; enemies: Enemy[]; items: Collectable[];
+  projectiles: Projectile[]; spawnedGirls: SpawnedGirl[];
   sparks: Spark[]; floats: FloatText[];
-  camX: number; t: number; levelT: number; slowMo: number; flash: number;
-  cutLine: number; cutTimer: number; totalScore: number; gotCollect: number;
+  camX: number; t: number; levelT: number; flash: number;
+  waterLevel: number; waterRising: boolean;
+  shockwaveTimer: number; shockwaveX: number;
+  bossDefeated: boolean;
+  zabitas: { x: number; y: number; vx: number }[];
+  dialogIdx: number; dialogs: Dialog[];
+  bossSpawned: boolean;
+  projId: number; girlId: number;
   levelComplete: boolean;
 }
 
@@ -79,292 +100,391 @@ const GY = 305;
 const PW = 22, PH = 34;
 const GRAV = 0.52, JV = -12.5, DJV = -10.5, SPD = 3.7, MAXVY = 14;
 
-// ─────────────────────────── PLATFORM HELPERS ────────────────────────────────
-const gnd  = (x: number, w: number, col = '#704214'): Plat => ({ x, y: GY, w, h: 60, col });
+// ─────────────────────────── HELPERS ─────────────────────────────────────────
+const gnd  = (x: number, w: number, col = '#704214', slip = false): Plat => ({ x, y: GY, w, h: 60, col, slippery: slip });
 const plt  = (x: number, y: number, w: number, col: string): Plat => ({ x, y, w, h: 16, col });
-const mplX = (ox: number, oy: number, w: number, col: string, range: number, spd = 0.03): Plat =>
-  ({ x: ox, y: oy, w, h: 16, col, ox, oy, dvx: 1, dvy: 0, range, spd, t: Math.random() * 6.28 });
-const mplY = (ox: number, oy: number, w: number, col: string, range: number, spd = 0.03): Plat =>
-  ({ x: ox, y: oy, w, h: 16, col, ox, oy, dvx: 0, dvy: 1, range, spd, t: Math.random() * 6.28 });
+const mplX = (ox: number, oy: number, w: number, col: string, range: number): Plat =>
+  ({ x: ox, y: oy, w, h: 16, col, ox, oy, dvx: 1, dvy: 0, range, spd: 0.03, t: Math.random() * 6.28 });
 
-// ─────────────────────────── ENEMY HELPERS ───────────────────────────────────
-type EnemyDef = Omit<Enemy, 'id' | 'alive' | 'oy' | 'hitTimer'>;
-const bird  = (x: number, y: number, mn: number, mx: number): EnemyDef =>
-  ({ x, y, w: 28, h: 16, type: 'bird', vx: 1.2, minX: mn, maxX: mx });
-const drone = (x: number, y: number, mn: number, mx: number, amp = 22): EnemyDef =>
-  ({ x, y, w: 28, h: 24, type: 'drone', vx: 1.4, minX: mn, maxX: mx, amp, freq: 0.035, ph: Math.random() * 6.28 });
-const cart  = (x: number, y: number, mn: number, mx: number): EnemyDef =>
-  ({ x, y: y - 22, w: 34, h: 22, type: 'cart', vx: 1.3, minX: mn, maxX: mx });
-const boss  = (x: number, y: number, mn: number, mx: number): EnemyDef =>
-  ({ x, y, w: 72, h: 56, type: 'boss', vx: 1.8, minX: mn, maxX: mx, amp: 85, freq: 0.022, ph: 0 });
+function drawRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
 
-// ─────────────────────────── COLLECTIBLE HELPERS ─────────────────────────────
-type CollDef = Omit<Collectable, 'id' | 'got'>;
-const itm = (x: number, y: number, type: Collectable['type'], pts: number): CollDef =>
-  ({ x, y, w: 18, h: 18, type, pts });
+function aabb(ax: number, ay: number, aw: number, ah: number, bx: number, by: number, bw: number, bh: number) {
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+// ─────────────────────────── LEVEL DIALOGS ───────────────────────────────────
+type DialogKey = 'intro' | 'boss_intro' | 'boss_win' | 'npc_necati' | 'npc_ezgi' | 'npc_zeliha' | 'npc_ayse';
+
+interface LevelDialogSet {
+  intro: Dialog[];
+  boss_intro?: Dialog[];
+  boss_win?: Dialog[];
+  mid?: Dialog[];
+}
+
+const LEVEL_DIALOGS: LevelDialogSet[] = [
+  // Level 0: Zoka Restaurant
+  {
+    intro: [
+      { speaker: 'Özgür', text: 'Zoka\'dan başlıyoruz. İlk durak, ilk fotoğraf. Ama kolay olduğunu sanma.', portrait: 'ozgur' },
+      { speaker: 'Celil', text: 'Buyur kardeşim, güzel geldin. Bu mekanı sen yönetemezsin ama misafir olabilirsin.', portrait: 'celil' },
+      { speaker: 'Selçuk', text: 'Celil\'in dediği gibi... Yani... Saygı çerçevesinde tabii. Hoş geldin.', portrait: 'selcuk' },
+      { speaker: 'Özgür', text: 'Tamam tamam. Önce içeri girelim. Fotoğrafları yakala!', portrait: 'ozgur' },
+    ],
+    boss_intro: [
+      { speaker: 'Celil', text: 'Dur bir dakika! Burası fotoğraf stüdyosu değil. Biraz fazla ileri gittin sanırım.', portrait: 'celil' },
+      { speaker: 'Selçuk', text: 'Celil... yani... haklı. Ama şiddet istemem ha. Centilmence halledelim.', portrait: 'selcuk' },
+      { speaker: 'Celil', text: 'Tabakları hazırla Selçuk. Zarif bir şekilde.', portrait: 'celil' },
+    ],
+    boss_win: [
+      { speaker: 'Celil', text: 'Tamam tamam, hakkını vereyim. İyi fotoğrafçısın. Zoka\'dan bir kare kazandın.', portrait: 'celil' },
+      { speaker: 'Selçuk', text: 'Ben zaten tabak atmak istemiyordum... 😅', portrait: 'selcuk' },
+    ],
+  },
+  // Level 1: Fethiye Sokakları (escape - no boss)
+  {
+    intro: [
+      { speaker: 'Özgür', text: 'Fethiye sokaklarında çekim yaparken dikkatli ol. Belediye zabıtası bugün aktif.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'İzin belgesi... evet var ama... bulmak biraz zaman alıyor. Şimdilik koş!', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Sokağın sonuna ulaş, bir şey olursa ararım seni. KOŞ!', portrait: 'ozgur' },
+    ],
+    boss_win: [
+      { speaker: 'Özgür', text: 'Bravo! Zabıtaları atlattın. Hız konusunda sorun yok. 😄', portrait: 'ozgur' },
+    ],
+  },
+  // Level 2: Balık Hali
+  {
+    intro: [
+      { speaker: 'Necati Abi', text: 'Hoş geldin evladım. Balık Hali\'ne. Burası bizim topraklarımız.', portrait: 'necati' },
+      { speaker: 'Necati Abi', text: 'Ama dikkat et — Zuhal bugün sinirli. Sabahtan beri tartışıyor. Ona yaklaşma.', portrait: 'necati' },
+      { speaker: 'Özgür', text: 'Necati Abi\'ye teşekkürler. Fotoğrafları çek, Zuhal\'dan kaç. Basit!', portrait: 'ozgur' },
+    ],
+    boss_intro: [
+      { speaker: 'Zuhal', text: 'Dur orada! Kim verdi sana burada fotoğraf çekme izni?', portrait: 'zuhal' },
+      { speaker: 'Zuhal', text: 'Ezgi! Zeliha! Ayşe! Gelin buraya bakayım!', portrait: 'zuhal' },
+      { speaker: 'Ezgi', text: 'Tamam geliyor... Ne var yine?', portrait: 'ezgi' },
+      { speaker: 'Zeliha', text: 'Ben saldırmam bu adama. Yani... Niye saldırıyoruz ki?', portrait: 'zeliha' },
+      { speaker: 'Ayşe', text: 'Ben de istemiyorum ama... Zuhal Hanım kızar...', portrait: 'ayse' },
+      { speaker: 'Zuhal', text: 'SALDIRIN DEDİM! Buz küreklerini alın!', portrait: 'zuhal' },
+      { speaker: 'Zeliha', text: '...Tamam yani... 😒', portrait: 'zeliha' },
+    ],
+    boss_win: [
+      { speaker: 'Zuhal', text: 'Hmm. Fena değil. Ama bir daha görürsem...', portrait: 'zuhal' },
+      { speaker: 'Necati Abi', text: 'Aferin evladım. Gel şunu al. Müjgan\'a git, ama Büşra orada bugün...', portrait: 'necati' },
+      { speaker: 'Zeliha', text: 'Ben zaten saldırmak istemiyordum zaten. 😤', portrait: 'zeliha' },
+    ],
+  },
+  // Level 3: Müjgan Restaurant (rising water, Büşra boss)
+  {
+    intro: [
+      { speaker: 'Özgür', text: 'Müjgan Restaurant. Güzel mekan. Bir de... borular bu sabah patladı mı nedir?', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Su yükseliyor. Platformlara atla, yukarıda kal. Ve Büşra\'ya dikkat.', portrait: 'ozgur' },
+      { speaker: 'Büşra', text: 'Özgür! Bu ne saçmalık? Burada ne arıyorsun sen?!', portrait: 'busra' },
+      { speaker: 'Özgür', text: 'Merhaba ortağım... kamera... fotoğraf... iş gereği...', portrait: 'ozgur' },
+      { speaker: 'Büşra', text: 'İş gereği?! Su bastı mekanı, sen fotoğraf çekiyorsun!', portrait: 'busra' },
+    ],
+    boss_intro: [
+      { speaker: 'Büşra', text: 'Yeter! Dur bir saniye!', portrait: 'busra' },
+      { speaker: 'Büşra', text: 'Ağı al! Bir ASPECT fotoğrafçısını bir balık gibi yakalamanın vakti geldi!', portrait: 'busra' },
+      { speaker: 'Özgür', text: 'Büşra dur dur dur — iş birliği yapalım, beraber çözelim...', portrait: 'ozgur' },
+    ],
+    boss_win: [
+      { speaker: 'Büşra', text: 'Tamam tamam. Hakkını vereyim. İyi kaçtın.', portrait: 'busra' },
+      { speaker: 'Büşra', text: 'Ama bir daha burayı su basarsa seni çağırıyorum. Sen de geleceksin!', portrait: 'busra' },
+      { speaker: 'Özgür', text: '...Tabii ki gelirim ortağım. 😅', portrait: 'ozgur' },
+    ],
+  },
+  // Level 4: Çalış Plajı (Tanrıverdi boss)
+  {
+    intro: [
+      { speaker: 'Özgür', text: 'Çalış Plajı. Güneş, kum, turkuaz su. Mükemmel fotoğraf mekanı.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Bir de Tanrıverdi var tabii. Uzun boylu, sakallı. Kendini çok beğenmiş biri.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Sörf tahtasını fırlatır, dikkat et. Kum üzerinde biraz yavaş kalırsın.', portrait: 'ozgur' },
+    ],
+    boss_intro: [
+      { speaker: 'Tanrıverdi', text: 'Eyyy! Bu plajda çekim mi yapıyorsun sen?', portrait: 'tanriverdi' },
+      { speaker: 'Tanrıverdi', text: 'Burası benim alanım. Ben burada oluşmadan fotoğraf çekilmez.', portrait: 'tanriverdi' },
+      { speaker: 'Özgür', text: 'Anlıyorum ama... turistik fotoğrafçılık, iznim var...', portrait: 'ozgur' },
+      { speaker: 'Tanrıverdi', text: 'Şu sörf tahtasını al bakalım!', portrait: 'tanriverdi' },
+    ],
+    boss_win: [
+      { speaker: 'Tanrıverdi', text: 'Tamam... fena değilsin. Devam et.', portrait: 'tanriverdi' },
+      { speaker: 'Özgür', text: 'Sağ ol Tanrıverdi. Bir gün seninle fotoğraf çekeceğiz!', portrait: 'ozgur' },
+    ],
+  },
+  // Level 5: İki Duble (Kayhan boss)
+  {
+    intro: [
+      { speaker: 'Özgür', text: 'İki Duble. Karanlık, müzik yüksek. Ama kare burada da var.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Kayhan burada takılıyor her gece. Kısa boylu, siyah giyimli, beyaz ayakkabı.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Telefona sarılırsa dur! Telefonda kızları çağırıyor, etraf dolup taşıyor.', portrait: 'ozgur' },
+    ],
+    boss_intro: [
+      { speaker: 'Kayhan', text: 'Dur bakalım. Fotoğrafçı mı bu? İyi, iyi...', portrait: 'kayhan' },
+      { speaker: 'Kayhan', text: 'Ama bu mekanda öyle öyle dolaşılmaz. *telefona bakıyor*', portrait: 'kayhan' },
+      { speaker: 'Kayhan', text: 'Alo? Siz gelin bakayım buraya. Evet. Şimdi.', portrait: 'kayhan' },
+    ],
+    boss_win: [
+      { speaker: 'Kayhan', text: 'Vay be. Çevik adamsın. Tamam, bu kareyi hak ettin.', portrait: 'kayhan' },
+      { speaker: 'Özgür', text: 'Teşekkürler Kayhan. Mios\'a geçiyorum.', portrait: 'ozgur' },
+    ],
+  },
+  // Level 6: Mios Restaurant (Aman Aman boss)
+  {
+    intro: [
+      { speaker: 'Özgür', text: 'Mios. Güvenli liman gibi görünür. Ama Aman Aman bugün moodu bozuk.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Sol kolu dövmeli, uzun boylu, sakallı. Bağırınca her şey sallanıyor.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Şok dalgasından kaç. Kafan dumanlıysa bir an dur, nefes al.', portrait: 'ozgur' },
+    ],
+    boss_intro: [
+      { speaker: 'Aman Aman', text: 'Aman aman... Ne bu karışıklık? Kim bu adam?', portrait: 'amanaman' },
+      { speaker: 'Aman Aman', text: 'BURASI ÖZEL ALAN!', portrait: 'amanaman' },
+      { speaker: 'Özgür', text: 'Aman aman...', portrait: 'ozgur' },
+      { speaker: 'Aman Aman', text: 'AMAN AMAN DEMEYECEKSİN BENİM ADIMI!', portrait: 'amanaman' },
+    ],
+    boss_win: [
+      { speaker: 'Aman Aman', text: '...Tamam, tamam. İyi adamsın. Git.', portrait: 'amanaman' },
+      { speaker: 'Özgür', text: 'Son durak ASPECT HQ. Kendi ofisime gidiyorum. Ama orada da çile var...', portrait: 'ozgur' },
+    ],
+  },
+  // Level 7: ASPECT HQ (Özgür Final Boss)
+  {
+    intro: [
+      { speaker: 'Özgür', text: 'ASPECT HQ. Kendi ofisim. Kendi dünyam.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Ama bugün personel değerlendirmesi var. Ve ben... patronum.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Son fotoğrafı çekersen... seni gerçek ASPECT fotoğrafçısı ilan ederim.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Ama önce benden geçeceksin. 😈', portrait: 'ozgur' },
+    ],
+    boss_intro: [
+      { speaker: 'Özgür', text: 'Haha! Buraya kadar geldin! İyi.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Ama bu albümleri gördün mü? 10 yıllık arşiv. Fırlatmaya başladım mı...', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Toplantı zamanı! Personel çağırıyorum!', portrait: 'ozgur' },
+    ],
+    boss_win: [
+      { speaker: 'Özgür', text: '...Kazandın. Gerçek bir ASPECT fotoğrafçısısın.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Tüm mekanları gezdik, tüm fotoğrafları çektik. Mükemmeldi.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Hoş geldin ASPECT ailesine! 📸✨', portrait: 'ozgur' },
+    ],
+  },
+];
 
 // ─────────────────────────── LEVEL DATA ──────────────────────────────────────
-const W1 = '#8B6914', M1 = '#1e4a72', S1 = '#4a3a6a', R1 = '#1a5c1a';
-
 interface LevelDef {
   name: string; ww: number; fx: number;
   bg1: string; bg2: string; gc: string; acc: string;
   plats: Plat[];
-  enemies: EnemyDef[];
-  items: CollDef[];
-  shots: { tx: number; wx: number; wy: number }[];
-  msg: string[];
-  rain?: boolean; neon?: boolean; pixel?: boolean;
+  items: { x: number; y: number; type: Collectable['type']; pts: number }[];
+  hasBoss: boolean;
+  bossType: Enemy['type'];
+  bossX: number;
+  isEscape?: boolean;
+  waterRises?: boolean;
+  sandLevel?: boolean;
+  darkBar?: boolean;
+}
+
+const W1 = '#8B6914', M1 = '#1e4a72', S1 = '#4a3a6a', R1 = '#1a5c1a';
+const B1 = '#2a4a2a', P1 = '#6a2a6a';
+
+function makePlatItems(xs: number[], y: number, types: Collectable['type'][]): { x: number; y: number; type: Collectable['type']; pts: number }[] {
+  return xs.map((x, i) => ({ x, y: y - 20, type: types[i % types.length], pts: types[i % types.length] === 'star' ? 300 : types[i % types.length] === 'card' ? 100 : 75 }));
 }
 
 const LEVELS: LevelDef[] = [
-  // ── LEVEL 1: Altın Saat Plajı ────────────────────────────────────────────
+  // ── LEVEL 0: Zoka Restaurant
   {
-    name: 'Altın Saat Plajı', ww: 4300, fx: 4060,
-    bg1: '#FF7043', bg2: '#FFB74D', gc: '#C2824A', acc: '#FFE082',
-    plats: [
-      gnd(0, 490), gnd(560, 360), gnd(1000, 390), gnd(1480, 420), gnd(1990, 480),
-      gnd(2580, 320), gnd(3000, 380), gnd(3470, 620),
-      plt(160, 268, 85, W1), plt(300, 232, 76, W1), plt(450, 272, 82, W1),
-      plt(610, 245, 80, W1), plt(770, 210, 76, W1), plt(920, 265, 82, W1),
-      plt(1070, 250, 80, W1), plt(1220, 218, 76, W1), plt(1370, 272, 82, W1),
-      plt(1550, 240, 80, W1), plt(1710, 208, 76, W1), plt(1870, 265, 82, W1),
-      plt(2060, 250, 80, W1), plt(2230, 215, 76, W1), plt(2420, 265, 80, W1),
-      plt(2640, 255, 82, W1), plt(2800, 220, 76, W1), plt(2970, 265, 80, W1),
-      plt(3160, 240, 82, W1), plt(3330, 208, 76, W1), plt(3510, 265, 80, W1),
-      plt(3690, 240, 80, W1), plt(3860, 215, 80, W1),
-    ],
-    enemies: [
-      bird(250, 248, 160, 390), bird(630, 225, 540, 740), bird(960, 245, 870, 1060),
-      bird(1460, 250, 1370, 1620), bird(1960, 244, 1860, 2110),
-      bird(2650, 235, 2540, 2800), bird(3170, 220, 3070, 3330),
-      bird(3670, 245, 3570, 3810),
-    ],
-    items: [
-      itm(180, 243, 'lens', 50), itm(320, 207, 'frame', 75), itm(470, 247, 'card', 100),
-      itm(630, 220, 'battery', 60), itm(790, 185, 'star', 300), itm(940, 240, 'lens', 50),
-      itm(1090, 225, 'frame', 75), itm(1240, 193, 'card', 100), itm(1390, 247, 'battery', 60),
-      itm(1570, 215, 'lens', 50), itm(1730, 183, 'star', 300), itm(1890, 240, 'frame', 75),
-      itm(2080, 225, 'card', 100), itm(2250, 190, 'battery', 60), itm(2440, 240, 'lens', 50),
-      itm(2660, 230, 'card', 100), itm(2820, 195, 'star', 300), itm(2990, 240, 'lens', 50),
-    ],
-    shots: [
-      { tx: 600, wx: 730, wy: 228 },
-      { tx: 1850, wx: 1980, wy: 213 },
-      { tx: 3100, wx: 3230, wy: 223 },
-    ],
-    msg: ['Hoş geldin, ASPECT şampiyonu! 📸', 'Plajda güzel çekimler seni bekliyor.', 'Hareket et, zıpla, fotoğraf yakala!', 'Hadi başlayalım!'],
-  },
-
-  // ── LEVEL 2: Gece Şehri ───────────────────────────────────────────────────
-  {
-    name: 'Gece Şehri', ww: 4700, fx: 4460,
-    bg1: '#0D0D2B', bg2: '#1A1A4F', gc: '#0D0D1A', acc: '#00E5FF',
-    neon: true,
-    plats: [
-      gnd(0, 310, '#0D0D1A'), gnd(400, 190, '#0D0D1A'), gnd(690, 200, '#0D0D1A'),
-      gnd(1000, 190, '#0D0D1A'), gnd(1310, 220, '#0D0D1A'), gnd(1650, 200, '#0D0D1A'),
-      gnd(1970, 190, '#0D0D1A'), gnd(2280, 200, '#0D0D1A'), gnd(2640, 190, '#0D0D1A'),
-      gnd(2980, 220, '#0D0D1A'), gnd(3330, 190, '#0D0D1A'), gnd(3680, 220, '#0D0D1A'),
-      gnd(4070, 540, '#0D0D1A'),
-      plt(80, 215, 90, M1), plt(215, 175, 82, M1), plt(380, 220, 86, M1),
-      plt(530, 180, 80, M1), plt(710, 215, 86, M1), plt(855, 170, 80, M1),
-      plt(1020, 215, 90, M1), plt(1165, 165, 80, M1), plt(1335, 215, 82, M1),
-      plt(1480, 170, 80, M1), plt(1680, 215, 86, M1), plt(1840, 165, 80, M1),
-      plt(2010, 215, 80, M1), plt(2155, 165, 80, M1), plt(2320, 215, 86, M1),
-      plt(2490, 170, 80, M1), plt(2680, 215, 80, M1), plt(2820, 165, 80, M1),
-      plt(3010, 215, 86, M1), plt(3180, 165, 80, M1), plt(3400, 215, 80, M1),
-      plt(3550, 170, 80, M1), plt(3720, 215, 86, M1), plt(3880, 165, 80, M1),
-      plt(4110, 215, 80, M1),
-      mplX(1590, 250, 76, M1, 100), mplX(2960, 195, 76, M1, 130),
-    ],
-    enemies: [
-      drone(150, 195, 80, 290, 20), drone(490, 180, 380, 620, 25),
-      drone(820, 165, 710, 970, 22), cart(1070, GY, 1000, 1300),
-      drone(1420, 195, 1310, 1560, 28), drone(1740, 165, 1650, 1960, 25),
-      cart(2140, GY, 1970, 2270), drone(2400, 195, 2280, 2630, 20),
-      drone(2770, 165, 2640, 2970, 28), drone(3090, 195, 2980, 3320, 22),
-      cart(3510, GY, 3330, 3670), drone(3780, 165, 3680, 4060, 25),
-    ],
-    items: [
-      itm(100, 190, 'lens', 50), itm(235, 150, 'star', 300), itm(400, 195, 'card', 100),
-      itm(550, 155, 'frame', 75), itm(730, 190, 'battery', 60), itm(875, 145, 'star', 300),
-      itm(1040, 190, 'lens', 50), itm(1185, 140, 'card', 100), itm(1355, 190, 'frame', 75),
-      itm(1500, 145, 'battery', 60), itm(1700, 190, 'lens', 50), itm(1860, 140, 'star', 300),
-      itm(2030, 190, 'card', 100), itm(2175, 140, 'frame', 75), itm(2340, 190, 'lens', 50),
-      itm(2510, 145, 'battery', 60), itm(2700, 190, 'star', 300), itm(2840, 140, 'card', 100),
-      itm(3030, 190, 'lens', 50), itm(3200, 140, 'frame', 75),
-    ],
-    shots: [
-      { tx: 520, wx: 660, wy: 183 },
-      { tx: 1760, wx: 1900, wy: 168 },
-      { tx: 3380, wx: 3520, wy: 178 },
-    ],
-    msg: ['Gece şehri seni bekliyor! 🌃', 'Neon ışıklar aldatıcı olabilir...', 'Çatı atlamalarına dikkat et!', 'Drone\'lar başladı — hazır mısın?'],
-  },
-
-  // ── LEVEL 3: Festival Sahnesi ─────────────────────────────────────────────
-  {
-    name: 'Festival Sahnesi', ww: 4900, fx: 4660,
+    name: 'Zoka Restaurant 🍽️', ww: 3800, fx: 3620,
     bg1: '#1a0033', bg2: '#3d0066', gc: '#220033', acc: '#FF00FF',
+    hasBoss: true, bossType: 'boss_celil', bossX: 3400,
     plats: [
-      gnd(0, 360, '#220033'), gnd(460, 190, '#220033'), gnd(760, 195, '#220033'),
-      gnd(1080, 190, '#220033'), gnd(1400, 200, '#220033'), gnd(1730, 190, '#220033'),
-      gnd(2090, 195, '#220033'), gnd(2450, 200, '#220033'), gnd(2820, 190, '#220033'),
-      gnd(3210, 200, '#220033'), gnd(3620, 190, '#220033'), gnd(4060, 200, '#220033'),
-      gnd(4290, 620, '#220033'),
-      plt(80, 270, 90, S1), plt(230, 230, 80, S1), plt(390, 272, 86, S1),
-      plt(550, 228, 80, S1), plt(720, 268, 86, S1), plt(880, 218, 80, S1),
-      plt(1060, 268, 86, S1), plt(1225, 196, 80, S1), plt(1390, 268, 86, S1),
-      plt(1570, 222, 80, S1), plt(1750, 268, 86, S1), plt(1920, 188, 80, S1),
-      plt(2110, 265, 86, S1), plt(2310, 222, 80, S1), plt(2520, 268, 86, S1),
-      plt(2700, 196, 80, S1), plt(2910, 268, 86, S1), plt(3100, 188, 80, S1),
-      plt(3310, 265, 86, S1), plt(3520, 218, 80, S1), plt(3730, 268, 86, S1),
-      plt(3950, 196, 80, S1), plt(4150, 268, 80, S1),
-      mplX(1680, 278, 72, S1, 120), mplX(2900, 248, 72, S1, 140),
-      mplY(3570, 228, 72, S1, 68),
-    ],
-    enemies: [
-      drone(180, 250, 80, 370, 20), drone(560, 228, 450, 690, 25),
-      cart(920, GY, 760, 1070), drone(1200, 196, 1080, 1390, 28),
-      drone(1560, 222, 1400, 1720, 22), cart(1990, GY, 1730, 2080),
-      drone(2280, 222, 2090, 2440, 30), drone(2700, 196, 2450, 2810, 25),
-      cart(3110, GY, 2820, 3200), drone(3400, 188, 3210, 3610, 28),
-      drone(3810, 218, 3620, 4050), cart(4190, GY, 4060, 4280),
+      gnd(0, 380), gnd(480, 280), gnd(870, 260), gnd(1250, 300), gnd(1700, 280),
+      gnd(2100, 260), gnd(2550, 280), gnd(2950, 260), gnd(3200, 600),
+      plt(120, 255, 90, S1), plt(280, 215, 80, S1), plt(450, 255, 85, S1),
+      plt(620, 210, 80, S1), plt(790, 255, 85, S1), plt(970, 200, 80, S1),
+      plt(1140, 255, 85, S1), plt(1320, 190, 80, S1), plt(1490, 255, 85, S1),
+      plt(1670, 205, 80, S1), plt(1840, 255, 85, S1), plt(2020, 188, 80, S1),
+      plt(2200, 255, 85, S1), plt(2390, 200, 80, S1), plt(2580, 255, 85, S1),
+      plt(2760, 195, 80, S1), plt(2940, 255, 85, S1), plt(3120, 188, 80, S1),
+      mplX(1580, 265, 72, S1, 120), mplX(2800, 240, 72, S1, 140),
     ],
     items: [
-      itm(100, 245, 'battery', 60), itm(250, 205, 'lens', 50), itm(410, 247, 'star', 300),
-      itm(570, 203, 'card', 100), itm(740, 243, 'frame', 75), itm(900, 193, 'battery', 60),
-      itm(1080, 243, 'lens', 50), itm(1245, 171, 'star', 300), itm(1410, 243, 'card', 100),
-      itm(1590, 197, 'frame', 75), itm(1770, 243, 'battery', 60), itm(1940, 163, 'star', 300),
-      itm(2130, 240, 'lens', 50), itm(2330, 197, 'card', 100), itm(2540, 243, 'frame', 75),
-      itm(2720, 171, 'battery', 60), itm(2930, 243, 'star', 300), itm(3120, 163, 'card', 100),
-      itm(3330, 240, 'lens', 50), itm(3540, 193, 'star', 300),
+      ...makePlatItems([140, 300, 470, 640, 810, 990, 1160, 1340, 1510, 1690, 1860, 2040, 2220, 2410, 2600, 2780, 2960, 3140], 255, ['lens', 'frame', 'card', 'battery', 'star', 'lens', 'frame', 'card', 'battery', 'star', 'lens', 'frame', 'card', 'battery', 'star', 'lens', 'frame', 'card']),
     ],
-    shots: [
-      { tx: 470, wx: 610, wy: 232 },
-      { tx: 1650, wx: 1790, wy: 212 },
-      { tx: 3020, wx: 3160, wy: 202 },
-      { tx: 4100, wx: 4240, wy: 248 },
-    ],
-    msg: ['Festival zamanı! 🎵', 'Işıklar seni yanıltmasın...', 'Hareketli platformlar var!', 'Kamera anları daha sık gelecek!'],
   },
-
-  // ── LEVEL 4: Fırtına Limanı ───────────────────────────────────────────────
+  // ── LEVEL 1: Fethiye Sokakları (escape)
   {
-    name: 'Fırtına Limanı', ww: 5100, fx: 4870,
+    name: 'Fethiye Sokakları 🏃', ww: 3400, fx: 3200,
+    bg1: '#1a2a0a', bg2: '#2a4a1a', gc: '#1a3a0a', acc: '#88FF44',
+    hasBoss: false, bossType: 'minion', bossX: 0,
+    isEscape: true,
+    plats: [
+      gnd(0, 340), gnd(440, 280), gnd(790, 260), gnd(1150, 300), gnd(1560, 280),
+      gnd(1940, 260), gnd(2360, 280), gnd(2730, 600),
+      plt(90, 255, 85, B1), plt(250, 212, 78, B1), plt(410, 255, 83, B1),
+      plt(570, 206, 78, B1), plt(740, 255, 83, B1), plt(910, 196, 78, B1),
+      plt(1080, 255, 83, B1), plt(1260, 178, 78, B1), plt(1440, 255, 83, B1),
+      plt(1630, 196, 78, B1), plt(1820, 255, 83, B1), plt(2010, 178, 78, B1),
+      plt(2200, 255, 83, B1), plt(2400, 196, 78, B1), plt(2590, 255, 80, B1),
+      mplX(1480, 265, 70, B1, 100), mplX(2650, 235, 70, B1, 120),
+    ],
+    items: [
+      ...makePlatItems([110, 270, 430, 590, 760, 930, 1100, 1280, 1460, 1650, 1840, 2030, 2220, 2420, 2610], 255, ['lens', 'star', 'card', 'battery', 'frame', 'lens', 'star', 'card', 'battery', 'frame', 'lens', 'star', 'card', 'battery', 'frame']),
+    ],
+  },
+  // ── LEVEL 2: Balık Hali
+  {
+    name: 'Balık Hali 🐟', ww: 3900, fx: 3720,
+    bg1: '#FF7043', bg2: '#FFB74D', gc: '#C2824A', acc: '#FFE082',
+    hasBoss: true, bossType: 'boss_zuhal', bossX: 3500,
+    plats: [
+      gnd(0, 420), gnd(530, 300), gnd(940, 280), gnd(1380, 320), gnd(1840, 300),
+      gnd(2280, 280), gnd(2720, 300), gnd(3060, 280), gnd(3300, 600),
+      plt(130, 265, 88, W1), plt(300, 228, 80, W1), plt(480, 265, 85, W1),
+      plt(650, 222, 80, W1), plt(820, 265, 85, W1), plt(1000, 210, 80, W1),
+      plt(1170, 265, 85, W1), plt(1360, 196, 80, W1), plt(1540, 265, 85, W1),
+      plt(1720, 206, 80, W1), plt(1900, 265, 85, W1), plt(2090, 192, 80, W1),
+      plt(2270, 265, 85, W1), plt(2460, 202, 80, W1), plt(2640, 265, 85, W1),
+      plt(2830, 196, 80, W1), plt(3020, 265, 85, W1), plt(3180, 192, 80, W1),
+      mplX(1600, 272, 72, W1, 110), mplX(2850, 245, 72, W1, 130),
+    ],
+    items: [
+      ...makePlatItems([150, 320, 500, 670, 840, 1020, 1190, 1380, 1560, 1740, 1920, 2110, 2290, 2480, 2660, 2850, 3040, 3200], 265, ['lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'card']),
+    ],
+  },
+  // ── LEVEL 3: Müjgan Restaurant (rising water)
+  {
+    name: 'Müjgan Restaurant 💧', ww: 3600, fx: 3420,
+    bg1: '#003366', bg2: '#006699', gc: '#004488', acc: '#00CCFF',
+    hasBoss: true, bossType: 'boss_busra', bossX: 3200,
+    waterRises: true,
+    plats: [
+      gnd(0, 350), gnd(450, 280), gnd(850, 260), gnd(1250, 300), gnd(1680, 280),
+      gnd(2080, 260), gnd(2500, 280), gnd(2900, 260), gnd(3100, 600),
+      plt(100, 248, 88, M1), plt(270, 208, 80, M1), plt(440, 248, 85, M1),
+      plt(610, 202, 80, M1), plt(780, 248, 85, M1), plt(960, 192, 80, M1),
+      plt(1130, 248, 85, M1), plt(1310, 178, 80, M1), plt(1490, 248, 85, M1),
+      plt(1670, 198, 80, M1), plt(1850, 248, 85, M1), plt(2030, 178, 80, M1),
+      plt(2210, 248, 85, M1), plt(2400, 192, 80, M1), plt(2580, 248, 85, M1),
+      plt(2760, 185, 80, M1), plt(2940, 248, 85, M1), plt(3100, 182, 80, M1),
+      mplX(1560, 258, 72, M1, 110), mplX(2760, 238, 72, M1, 130),
+    ],
+    items: [
+      ...makePlatItems([120, 290, 460, 630, 800, 980, 1150, 1330, 1510, 1690, 1870, 2050, 2230, 2420, 2600, 2780, 2960, 3120], 248, ['lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'card']),
+    ],
+  },
+  // ── LEVEL 4: Çalış Plajı
+  {
+    name: 'Çalış Plajı 🏖️', ww: 3800, fx: 3620,
+    bg1: '#0066AA', bg2: '#00AADD', gc: '#F0C060', acc: '#FFDD44',
+    hasBoss: true, bossType: 'boss_tanriverdi', bossX: 3400,
+    sandLevel: true,
+    plats: [
+      gnd(0, 400, '#D2A55A', true), gnd(500, 300, '#D2A55A', true), gnd(900, 280, '#D2A55A', true),
+      gnd(1300, 310, '#D2A55A', true), gnd(1740, 290, '#D2A55A', true),
+      gnd(2160, 275, '#D2A55A', true), gnd(2580, 290, '#D2A55A', true),
+      gnd(2990, 275, '#D2A55A', true), gnd(3240, 600, '#D2A55A', true),
+      plt(110, 258, 86, '#D2A55A'), plt(280, 218, 78, '#C8944A'),
+      plt(450, 258, 83, '#D2A55A'), plt(620, 208, 78, '#C8944A'),
+      plt(790, 258, 83, '#D2A55A'), plt(970, 196, 78, '#C8944A'),
+      plt(1140, 258, 83, '#D2A55A'), plt(1320, 180, 78, '#C8944A'),
+      plt(1500, 258, 83, '#D2A55A'), plt(1680, 198, 78, '#C8944A'),
+      plt(1860, 258, 83, '#D2A55A'), plt(2040, 180, 78, '#C8944A'),
+      plt(2220, 258, 83, '#D2A55A'), plt(2410, 195, 78, '#C8944A'),
+      plt(2590, 258, 83, '#D2A55A'), plt(2770, 188, 78, '#C8944A'),
+      plt(2960, 258, 83, '#D2A55A'), plt(3130, 185, 78, '#C8944A'),
+      mplX(1590, 268, 70, '#C8944A', 100), mplX(2800, 248, 70, '#C8944A', 120),
+    ],
+    items: [
+      ...makePlatItems([130, 300, 470, 640, 810, 990, 1160, 1340, 1520, 1700, 1880, 2060, 2240, 2430, 2610, 2790, 2980, 3150], 258, ['lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'card']),
+    ],
+  },
+  // ── LEVEL 5: İki Duble
+  {
+    name: 'İki Duble 🥃', ww: 3700, fx: 3520,
     bg1: '#0a0a12', bg2: '#1a1a28', gc: '#1a1a2a', acc: '#4FC3F7',
-    rain: true,
+    hasBoss: true, bossType: 'boss_kayhan', bossX: 3300,
+    darkBar: true,
     plats: [
-      gnd(0, 250, '#1a1a2a'), gnd(350, 160, '#1a1a2a'), gnd(630, 158, '#1a1a2a'),
-      gnd(920, 162, '#1a1a2a'), gnd(1220, 185, '#1a1a2a'), gnd(1560, 158, '#1a1a2a'),
-      gnd(1870, 155, '#1a1a2a'), gnd(2200, 165, '#1a1a2a'), gnd(2570, 158, '#1a1a2a'),
-      gnd(2940, 162, '#1a1a2a'), gnd(3310, 158, '#1a1a2a'), gnd(3700, 165, '#1a1a2a'),
-      gnd(4090, 158, '#1a1a2a'), gnd(4580, 640, '#1a1a2a'),
-      plt(70, 258, 92, M1), plt(215, 212, 82, M1), plt(370, 258, 86, M1),
-      plt(530, 210, 82, M1), plt(700, 258, 86, M1), plt(860, 203, 82, M1),
-      plt(1040, 258, 92, M1), plt(1210, 186, 82, M1), plt(1400, 258, 86, M1),
-      plt(1590, 204, 82, M1), plt(1780, 258, 86, M1), plt(1960, 190, 82, M1),
-      plt(2150, 258, 86, M1), plt(2340, 186, 82, M1), plt(2550, 258, 86, M1),
-      plt(2730, 202, 82, M1), plt(2940, 258, 86, M1), plt(3140, 186, 82, M1),
-      plt(3380, 258, 86, M1), plt(3580, 196, 82, M1), plt(3820, 258, 86, M1),
-      plt(4030, 196, 82, M1), plt(4310, 258, 80, M1),
-      mplX(1510, 268, 72, M1, 100), mplX(2650, 230, 72, M1, 130),
-      mplY(3280, 220, 72, M1, 76), mplX(4170, 228, 72, M1, 150),
-    ],
-    enemies: [
-      drone(190, 212, 70, 330, 22), cart(520, GY, 350, 620),
-      drone(720, 203, 630, 910, 25), drone(920, 186, 920, 1210, 28),
-      cart(1340, GY, 1220, 1550), drone(1650, 204, 1560, 1860, 22),
-      drone(1900, 190, 1870, 2190, 30), cart(2290, GY, 2200, 2560),
-      drone(2620, 202, 2570, 2930, 25), drone(3040, 186, 2940, 3300, 28),
-      cart(3420, GY, 3310, 3690), drone(3700, 196, 3700, 4080, 22),
-      drone(4200, 196, 4090, 4570, 30),
+      gnd(0, 280, '#1a1a2a'), gnd(380, 200, '#1a1a2a'), gnd(690, 190, '#1a1a2a'),
+      gnd(1010, 210, '#1a1a2a'), gnd(1370, 195, '#1a1a2a'), gnd(1740, 190, '#1a1a2a'),
+      gnd(2110, 210, '#1a1a2a'), gnd(2490, 190, '#1a1a2a'), gnd(2860, 210, '#1a1a2a'),
+      gnd(3060, 600, '#1a1a2a'),
+      plt(80, 258, 90, M1), plt(240, 215, 82, M1), plt(400, 258, 86, M1),
+      plt(560, 208, 82, M1), plt(730, 258, 86, M1), plt(900, 198, 82, M1),
+      plt(1080, 258, 86, M1), plt(1260, 182, 82, M1), plt(1440, 258, 86, M1),
+      plt(1620, 200, 82, M1), plt(1800, 258, 86, M1), plt(1980, 182, 82, M1),
+      plt(2160, 258, 86, M1), plt(2350, 198, 82, M1), plt(2540, 258, 86, M1),
+      plt(2720, 192, 82, M1), plt(2900, 258, 86, M1), plt(3070, 188, 82, M1),
+      mplX(1540, 268, 72, M1, 100), mplX(2750, 248, 72, M1, 120),
     ],
     items: [
-      itm(90, 233, 'battery', 60), itm(235, 187, 'frame', 75), itm(390, 233, 'card', 100),
-      itm(550, 185, 'star', 300), itm(720, 233, 'lens', 50), itm(880, 178, 'battery', 60),
-      itm(1060, 233, 'card', 100), itm(1230, 161, 'star', 300), itm(1420, 233, 'frame', 75),
-      itm(1610, 179, 'lens', 50), itm(1800, 233, 'battery', 60), itm(1980, 165, 'star', 300),
-      itm(2170, 233, 'card', 100), itm(2360, 161, 'frame', 75), itm(2570, 233, 'lens', 50),
-      itm(2750, 177, 'battery', 60), itm(2960, 233, 'star', 300), itm(3160, 161, 'card', 100),
-      itm(3400, 233, 'frame', 75), itm(3600, 171, 'star', 300), itm(3840, 233, 'lens', 50),
+      ...makePlatItems([100, 260, 420, 580, 750, 920, 1100, 1280, 1460, 1640, 1820, 2000, 2180, 2370, 2560, 2740, 2920, 3090], 258, ['lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'card']),
     ],
-    shots: [
-      { tx: 520, wx: 660, wy: 205 },
-      { tx: 1690, wx: 1830, wy: 192 },
-      { tx: 3100, wx: 3240, wy: 186 },
-      { tx: 4380, wx: 4520, wy: 198 },
-    ],
-    msg: ['Fırtına geliyor... 🌩️', 'Bu bölüm gerçekten zor.', 'Düşen kasalara dikkat et!', '5. bölüme hazır mısın?... Ben de hazırım. 😈'],
   },
-
-  // ── LEVEL 5: Retro ASPECT Dünyası ────────────────────────────────────────
+  // ── LEVEL 6: Mios
   {
-    name: 'Retro ASPECT Dünyası', ww: 5600, fx: 5380,
-    bg1: '#000022', bg2: '#000044', gc: '#003300', acc: '#00FF00',
-    pixel: true,
+    name: 'Mios ⚓', ww: 3900, fx: 3720,
+    bg1: '#0D0D2B', bg2: '#1A1A4F', gc: '#0D0D1A', acc: '#00E5FF',
+    hasBoss: true, bossType: 'boss_amanaman', bossX: 3500,
     plats: [
-      gnd(0, 300, '#003300'), gnd(410, 160, '#003300'), gnd(700, 158, '#003300'),
-      gnd(1010, 162, '#003300'), gnd(1350, 155, '#003300'), gnd(1720, 160, '#003300'),
-      gnd(2090, 155, '#003300'), gnd(2490, 162, '#003300'), gnd(2890, 155, '#003300'),
-      gnd(3330, 162, '#003300'), gnd(3780, 155, '#003300'), gnd(4260, 160, '#003300'),
-      gnd(4740, 155, '#003300'), gnd(5200, 600, '#003300'),
-      plt(80, 258, 88, R1), plt(225, 212, 78, R1), plt(380, 258, 84, R1),
-      plt(540, 205, 78, R1), plt(720, 258, 84, R1), plt(890, 196, 78, R1),
-      plt(1080, 258, 84, R1), plt(1260, 176, 78, R1), plt(1480, 258, 84, R1),
-      plt(1680, 196, 78, R1), plt(1900, 258, 84, R1), plt(2100, 176, 78, R1),
-      plt(2350, 256, 84, R1), plt(2570, 190, 78, R1), plt(2790, 258, 84, R1),
-      plt(3010, 176, 78, R1), plt(3250, 256, 84, R1), plt(3490, 188, 78, R1),
-      plt(3730, 258, 84, R1), plt(3980, 188, 78, R1), plt(4240, 258, 84, R1),
-      plt(4510, 188, 78, R1), plt(4800, 258, 84, R1), plt(5080, 196, 78, R1),
-      plt(5280, 258, 80, R1),
-      mplX(1030, 238, 72, R1, 120), mplX(2310, 218, 72, R1, 150),
-      mplY(3410, 228, 72, R1, 88), mplX(4440, 218, 72, R1, 160),
-      mplX(5100, 228, 72, R1, 130),
-    ],
-    enemies: [
-      drone(190, 212, 80, 390, 22), drone(570, 205, 410, 690, 28),
-      cart(950, GY, 700, 1000), drone(1130, 176, 1010, 1340, 30),
-      drone(1490, 196, 1350, 1710, 25), cart(1930, GY, 1720, 2080),
-      drone(2250, 176, 2090, 2480, 32), drone(2700, 190, 2490, 2880, 28),
-      cart(3150, GY, 2890, 3320), drone(3450, 188, 3330, 3770, 30),
-      drone(3960, 188, 3780, 4250, 25), cart(4580, GY, 4260, 4730),
-      drone(4920, 188, 4740, 5190, 32),
-      // ÖZGÜR DRONE BOSS 👑
-      boss(5100, 155, 4850, 5550),
+      gnd(0, 340, '#0D0D1A'), gnd(440, 230, '#0D0D1A'), gnd(800, 215, '#0D0D1A'),
+      gnd(1170, 230, '#0D0D1A'), gnd(1560, 215, '#0D0D1A'), gnd(1940, 230, '#0D0D1A'),
+      gnd(2320, 215, '#0D0D1A'), gnd(2710, 230, '#0D0D1A'), gnd(3090, 215, '#0D0D1A'),
+      gnd(3320, 600, '#0D0D1A'),
+      plt(90, 258, 88, M1), plt(260, 215, 80, M1), plt(430, 258, 85, M1),
+      plt(600, 208, 80, M1), plt(770, 258, 85, M1), plt(950, 196, 80, M1),
+      plt(1120, 258, 85, M1), plt(1300, 180, 80, M1), plt(1480, 258, 85, M1),
+      plt(1660, 200, 80, M1), plt(1840, 258, 85, M1), plt(2020, 180, 80, M1),
+      plt(2200, 258, 85, M1), plt(2390, 196, 80, M1), plt(2570, 258, 85, M1),
+      plt(2750, 190, 80, M1), plt(2930, 258, 85, M1), plt(3100, 186, 80, M1),
+      mplX(1570, 268, 72, M1, 110), mplX(2760, 248, 72, M1, 130),
     ],
     items: [
-      itm(100, 233, 'star', 300), itm(245, 187, 'card', 100), itm(400, 233, 'frame', 75),
-      itm(560, 180, 'star', 300), itm(740, 233, 'battery', 60), itm(910, 171, 'star', 300),
-      itm(1100, 233, 'lens', 50), itm(1280, 151, 'star', 300), itm(1500, 233, 'card', 100),
-      itm(1700, 171, 'star', 300), itm(1920, 233, 'frame', 75), itm(2120, 151, 'star', 300),
-      itm(2370, 231, 'battery', 60), itm(2590, 165, 'star', 300), itm(2810, 233, 'lens', 50),
-      itm(3030, 151, 'star', 300), itm(3270, 231, 'card', 100), itm(3510, 163, 'star', 300),
-      itm(3750, 233, 'frame', 75), itm(4000, 163, 'star', 300), itm(4260, 233, 'battery', 60),
-      itm(4530, 163, 'star', 300), itm(4820, 233, 'lens', 50), itm(5100, 171, 'star', 300),
-      itm(5300, 233, 'card', 100),
+      ...makePlatItems([110, 280, 450, 620, 790, 970, 1140, 1320, 1500, 1680, 1860, 2040, 2220, 2410, 2590, 2770, 2950, 3120], 258, ['lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'card']),
     ],
-    shots: [
-      { tx: 620, wx: 760, wy: 208 },
-      { tx: 1600, wx: 1740, wy: 193 },
-      { tx: 2860, wx: 3000, wy: 186 },
-      { tx: 4300, wx: 4440, wy: 193 },
-      { tx: 5100, wx: 5240, wy: 198 },
+  },
+  // ── LEVEL 7: ASPECT HQ (Final Boss Özgür)
+  {
+    name: 'ASPECT HQ 👑', ww: 4200, fx: 4020,
+    bg1: '#000022', bg2: '#000044', gc: '#003300', acc: '#00FF00',
+    hasBoss: true, bossType: 'boss_ozgur', bossX: 3800,
+    plats: [
+      gnd(0, 330, '#003300'), gnd(430, 220, '#003300'), gnd(800, 205, '#003300'),
+      gnd(1180, 225, '#003300'), gnd(1580, 210, '#003300'), gnd(1970, 225, '#003300'),
+      gnd(2370, 210, '#003300'), gnd(2780, 225, '#003300'), gnd(3180, 210, '#003300'),
+      gnd(3580, 225, '#003300'), gnd(3840, 600, '#003300'),
+      plt(90, 258, 88, R1), plt(265, 215, 80, R1), plt(445, 258, 85, R1),
+      plt(620, 208, 80, R1), plt(800, 258, 85, R1), plt(990, 196, 80, R1),
+      plt(1170, 258, 85, R1), plt(1360, 178, 80, R1), plt(1550, 258, 85, R1),
+      plt(1740, 200, 80, R1), plt(1930, 258, 85, R1), plt(2120, 178, 80, R1),
+      plt(2310, 258, 85, R1), plt(2510, 195, 80, R1), plt(2700, 258, 85, R1),
+      plt(2900, 188, 80, R1), plt(3090, 258, 85, R1), plt(3290, 185, 80, R1),
+      plt(3490, 258, 85, R1), plt(3680, 185, 80, R1),
+      mplX(1530, 268, 72, R1, 120), mplX(2750, 248, 72, R1, 150),
+      mplX(3430, 238, 72, R1, 130),
     ],
-    msg: ['Tebrikler... buraya kadar geldin. 🎮', 'Ama bu iş bitmedi.', 'ÖZGÜR DRONE™ seni bekliyor!', 'En iyi kazansın. 😈'],
+    items: [
+      ...makePlatItems([110, 285, 465, 640, 820, 1010, 1190, 1380, 1570, 1760, 1950, 2140, 2330, 2530, 2720, 2920, 3110, 3310, 3510, 3700], 258, ['star', 'frame', 'star', 'card', 'star', 'lens', 'star', 'card', 'star', 'battery', 'star', 'frame', 'star', 'card', 'star', 'lens', 'star', 'card', 'star', 'battery']),
+    ],
   },
 ];
 
 // ─────────────────────────── SAVE / LEADERBOARD ──────────────────────────────
-const SAVE_KEY = 'aq-save-v1';
-const LB_KEY = 'aq-lb-v1';
+const SAVE_KEY = 'aq2-save-v1';
+const LB_KEY = 'aq2-lb-v1';
 interface SaveData { unlocked: number; best: number[]; sound: boolean; }
 interface LBEntry { name: string; score: number; level: number; date: string; }
 
 function loadSave(): SaveData {
-  try { return { unlocked: 1, best: [0, 0, 0, 0, 0], sound: true, ...JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') }; }
-  catch { return { unlocked: 1, best: [0, 0, 0, 0, 0], sound: true }; }
+  try { return { unlocked: 0, best: new Array(8).fill(0), sound: true, ...JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') }; }
+  catch { return { unlocked: 0, best: new Array(8).fill(0), sound: true }; }
 }
 function saveSave(d: SaveData) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(d)); } catch {} }
 function loadLB(): LBEntry[] { try { return JSON.parse(localStorage.getItem(LB_KEY) || '[]'); } catch { return []; } }
@@ -375,19 +495,299 @@ function addLB(name: string, score: number, level: number) {
   try { localStorage.setItem(LB_KEY, JSON.stringify(lb.slice(0, 10))); } catch {}
 }
 
-// ─────────────────────────── RENDER HELPERS ──────────────────────────────────
-function drawRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
+// ─────────────────────────── DRAW CHARACTERS ─────────────────────────────────
+function drawCharacterPortrait(ctx: CanvasRenderingContext2D, name: string, x: number, y: number, size: number) {
+  const cx = x + size / 2, cy = y + size * 0.45;
+  const r = size * 0.38;
+  ctx.save();
+  // Head
+  ctx.fillStyle = name === 'busra' || name === 'zuhal' ? '#FDBCB4' : '#FDBCB4';
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#C8956C'; ctx.lineWidth = 1; ctx.stroke();
+
+  // Hair
+  const hairColors: Record<string, string> = {
+    ozgur: '#1a1a1a', celil: '#111', selcuk: '#444', zuhal: '#2a1a0a',
+    necati: '#888', busra: '#5C3D1A', tanriverdi: '#2a1a0a',
+    kayhan: '#111', amanaman: '#1a1a1a', ezgi: '#C87941',
+    zeliha: '#1a1a1a', ayse: '#8B4513',
+  };
+  ctx.fillStyle = hairColors[name] ?? '#333';
+
+  if (name === 'zuhal') {
+    // Short hair
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0); ctx.fill();
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 0.4);
+  } else if (name === 'busra') {
+    // Koyu kahve saç omuzlara kadar
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0); ctx.fill();
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 0.5);
+    ctx.fillRect(cx - r, cy, r * 0.4, r * 0.8);
+    ctx.fillRect(cx + r * 0.6, cy, r * 0.4, r * 0.8);
+  } else if (name === 'necati') {
+    // Bald top with side hair
+    ctx.fillRect(cx - r * 0.6, cy - r, r * 1.2, r * 0.3);
+    ctx.fillRect(cx - r, cy - r + 2, r * 0.5, r * 0.5);
+    ctx.fillRect(cx + r * 0.5, cy - r + 2, r * 0.5, r * 0.5);
+  } else if (name === 'tanriverdi') {
+    // Yakışıklı saç
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0); ctx.fill();
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 0.55);
+    // Beard
+    ctx.fillStyle = '#2a1a0a';
+    ctx.beginPath(); ctx.arc(cx, cy + r * 0.55, r * 0.7, 0, Math.PI); ctx.fill();
+  } else if (name === 'amanaman') {
+    // Sakallı, dövmeli
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0); ctx.fill();
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 0.5);
+    ctx.fillStyle = '#2a1a0a';
+    ctx.beginPath(); ctx.arc(cx, cy + r * 0.5, r * 0.75, 0, Math.PI); ctx.fill();
+    // Sol kol dövme göstergesi
+    ctx.fillStyle = '#1a3a8a';
+    ctx.fillRect(x, cy + r * 0.2, size * 0.12, r);
+    ctx.fillStyle = '#4a6aCA';
+    ctx.fillRect(x + 2, cy + r * 0.35, size * 0.08, r * 0.5);
+  } else if (name === 'kayhan') {
+    // Kısa boylu, simsiyah saç
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0); ctx.fill();
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 0.45);
+  } else {
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0); ctx.fill();
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 0.5);
+  }
+
+  // Eyes
+  ctx.fillStyle = '#333';
+  ctx.fillRect(cx - r * 0.45, cy - r * 0.12, r * 0.25, r * 0.2);
+  ctx.fillRect(cx + r * 0.2, cy - r * 0.12, r * 0.25, r * 0.2);
+
+  // Body / clothing color
+  const clothColors: Record<string, string> = {
+    ozgur: '#1a3a6a', celil: '#111111', selcuk: '#3a5a8a',
+    zuhal: '#DDAA00', necati: '#f0f0f0', busra: '#111111',
+    tanriverdi: '#2255aa', kayhan: '#111111', amanaman: '#1a1a1a',
+    ezgi: '#E87040', zeliha: '#5566BB', ayse: '#CC4477',
+  };
+  ctx.fillStyle = clothColors[name] ?? '#444';
+  ctx.fillRect(cx - r * 0.9, cy + r, r * 1.8, r * 0.9);
+
+  // Special: Celil - gold sunglasses
+  if (name === 'celil') {
+    ctx.fillStyle = '#FFD700';
+    ctx.fillRect(cx - r * 0.5, cy - r * 0.12, r * 0.35, r * 0.18);
+    ctx.fillRect(cx + r * 0.15, cy - r * 0.12, r * 0.35, r * 0.18);
+    ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx - r * 0.15, cy - r * 0.04); ctx.lineTo(cx + r * 0.15, cy - r * 0.04); ctx.stroke();
+  }
+  // Necati: beyaz önlük
+  if (name === 'necati') {
+    ctx.fillStyle = '#f8f8f8';
+    ctx.fillRect(cx - r * 0.7, cy + r * 0.2, r * 1.4, r * 0.7);
+  }
+  // Zuhal: sarı yelek
+  if (name === 'zuhal') {
+    ctx.fillStyle = '#FFD700';
+    ctx.fillRect(cx - r * 0.9, cy + r, r * 1.8, r * 0.9);
+    ctx.fillStyle = '#FF8800';
+    ctx.fillRect(cx - r * 0.9, cy + r + r * 0.4, r * 1.8, r * 0.5);
+  }
+  // Özgür: takım elbise
+  if (name === 'ozgur') {
+    ctx.fillStyle = '#1a3a6a';
+    ctx.fillRect(cx - r * 0.9, cy + r, r * 1.8, r * 0.9);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(cx - r * 0.12, cy + r * 0.1, r * 0.24, r * 0.8);
+    ctx.fillStyle = '#CC2222';
+    ctx.fillRect(cx - r * 0.08, cy + r * 0.2, r * 0.16, r * 0.5);
+  }
+
+  ctx.restore();
+}
+
+// ─────────────────────────── DRAW BOSSES IN GAME ─────────────────────────────
+function drawBoss(ctx: CanvasRenderingContext2D, e: Enemy, sx: number, t: number, ld: LevelDef) {
+  ctx.save();
+  const cx = sx + e.w / 2, cy = e.y;
+  const bob = Math.sin(t * 0.08 + e.id * 0.7) * 4;
+
+  // Hit flash
+  if (e.hitTimer && e.hitTimer > 0 && Math.floor(t / 3) % 2 === 0) {
+    ctx.globalAlpha = 0.4;
+  }
+
+  switch (e.type) {
+    case 'boss_celil':
+    case 'boss_selcuk': {
+      const isCelil = e.type === 'boss_celil';
+      // Body
+      ctx.fillStyle = isCelil ? '#111' : '#3a5a8a';
+      ctx.fillRect(sx + 4, cy + 30 + bob, e.w - 8, e.h - 40);
+      // Head
+      ctx.fillStyle = '#FDBCB4';
+      ctx.beginPath(); ctx.arc(cx, cy + 18 + bob, 14, 0, Math.PI * 2); ctx.fill();
+      // Hair
+      ctx.fillStyle = isCelil ? '#111' : '#444';
+      ctx.beginPath(); ctx.arc(cx, cy + 18 + bob, 14, Math.PI, 0); ctx.fill();
+      ctx.fillRect(cx - 14, cy + 4 + bob, 28, 7);
+      // Celil: gold sunglasses
+      if (isCelil) {
+        ctx.fillStyle = '#FFD700';
+        ctx.fillRect(cx - 10, cy + 16 + bob, 7, 4);
+        ctx.fillRect(cx + 3, cy + 16 + bob, 7, 4);
+        ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(cx - 3, cy + 18 + bob); ctx.lineTo(cx + 3, cy + 18 + bob); ctx.stroke();
+      }
+      break;
+    }
+    case 'boss_zuhal': {
+      // Body - sarı yelek turuncu alt
+      ctx.fillStyle = '#FF8800';
+      ctx.fillRect(sx + 5, cy + 32 + bob, e.w - 10, e.h - 42);
+      ctx.fillStyle = '#FFD700';
+      ctx.fillRect(sx + 3, cy + 28 + bob, e.w - 6, 18);
+      // Head
+      ctx.fillStyle = '#FDBCB4';
+      ctx.beginPath(); ctx.arc(cx, cy + 16 + bob, 13, 0, Math.PI * 2); ctx.fill();
+      // Short hair
+      ctx.fillStyle = '#2a1a0a';
+      ctx.beginPath(); ctx.arc(cx, cy + 16 + bob, 13, Math.PI, 0); ctx.fill();
+      ctx.fillRect(cx - 13, cy + 3 + bob, 26, 6);
+      break;
+    }
+    case 'boss_busra': {
+      // Siyah ceket siyah pantolon, koyu kahve saç
+      ctx.fillStyle = '#111';
+      ctx.fillRect(sx + 4, cy + 28 + bob, e.w - 8, e.h - 36);
+      ctx.fillStyle = '#FDBCB4';
+      ctx.beginPath(); ctx.arc(cx, cy + 16 + bob, 14, 0, Math.PI * 2); ctx.fill();
+      // Koyu kahve saç omuzlara
+      ctx.fillStyle = '#5C3D1A';
+      ctx.beginPath(); ctx.arc(cx, cy + 16 + bob, 14, Math.PI, 0); ctx.fill();
+      ctx.fillRect(cx - 14, cy + 2 + bob, 28, 8);
+      ctx.fillRect(cx - 16, cy + 16 + bob, 6, 14); // sol saç
+      ctx.fillRect(cx + 10, cy + 16 + bob, 6, 14); // sağ saç
+      break;
+    }
+    case 'boss_tanriverdi': {
+      // Uzun boylu, yakışıklı, sakallı
+      ctx.fillStyle = '#2255aa';
+      ctx.fillRect(sx + 3, cy + 26 + bob, e.w - 6, e.h - 34);
+      ctx.fillStyle = '#FDBCB4';
+      ctx.beginPath(); ctx.arc(cx, cy + 14 + bob, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#2a1a0a';
+      ctx.beginPath(); ctx.arc(cx, cy + 14 + bob, 14, Math.PI, 0); ctx.fill();
+      ctx.fillRect(cx - 14, cy + bob, 28, 7);
+      // Beard
+      ctx.fillStyle = '#2a1a0a';
+      ctx.beginPath(); ctx.arc(cx, cy + 24 + bob, 10, 0, Math.PI); ctx.fill();
+      break;
+    }
+    case 'boss_kayhan': {
+      // Kısa boylu, simsiyah, beyaz ayakkabı
+      ctx.fillStyle = '#111';
+      ctx.fillRect(sx + 5, cy + 28 + bob, e.w - 10, e.h - 38);
+      // Beyaz ayakkabı
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(sx + 3, cy + e.h - 12 + bob, e.w - 6, 8);
+      ctx.fillStyle = '#FDBCB4';
+      ctx.beginPath(); ctx.arc(cx, cy + 16 + bob, 12, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#111';
+      ctx.beginPath(); ctx.arc(cx, cy + 16 + bob, 12, Math.PI, 0); ctx.fill();
+      ctx.fillRect(cx - 12, cy + 4 + bob, 24, 6);
+      // Phone
+      ctx.fillStyle = '#222';
+      ctx.fillRect(cx + 8, cy + 22 + bob, 8, 12);
+      ctx.fillStyle = '#44aaff';
+      ctx.fillRect(cx + 9, cy + 23 + bob, 6, 8);
+      break;
+    }
+    case 'boss_amanaman': {
+      // Uzun boylu, sakallı, dövmeli sol kol
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(sx + 3, cy + 26 + bob, e.w - 6, e.h - 34);
+      // Sol kol dövme
+      ctx.fillStyle = '#1a3a8a';
+      ctx.fillRect(sx + 2, cy + 30 + bob, 10, 22);
+      ctx.fillStyle = '#5577DD';
+      ctx.fillRect(sx + 3, cy + 34 + bob, 8, 10);
+      ctx.fillStyle = '#FDBCB4';
+      ctx.beginPath(); ctx.arc(cx, cy + 13 + bob, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath(); ctx.arc(cx, cy + 13 + bob, 14, Math.PI, 0); ctx.fill();
+      ctx.fillRect(cx - 14, cy - 1 + bob, 28, 7);
+      // Beard
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath(); ctx.arc(cx, cy + 24 + bob, 10, 0, Math.PI); ctx.fill();
+      break;
+    }
+    case 'boss_ozgur': {
+      // Takım elbise
+      ctx.fillStyle = '#1a3a6a';
+      ctx.fillRect(sx + 4, cy + 28 + bob, e.w - 8, e.h - 36);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(cx - 3, cy + 30 + bob, 6, e.h - 44);
+      ctx.fillStyle = '#CC2222';
+      ctx.fillRect(cx - 2, cy + 34 + bob, 4, e.h - 54);
+      ctx.fillStyle = '#FDBCB4';
+      ctx.beginPath(); ctx.arc(cx, cy + 15 + bob, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath(); ctx.arc(cx, cy + 15 + bob, 14, Math.PI, 0); ctx.fill();
+      ctx.fillRect(cx - 14, cy + 1 + bob, 28, 7);
+      break;
+    }
+  }
+  ctx.restore();
+}
+
+function drawMinion(ctx: CanvasRenderingContext2D, e: Enemy, sx: number, t: number, lvl: number) {
+  ctx.save();
+  if (e.hitTimer && e.hitTimer > 0 && Math.floor(t / 3) % 2 === 0) ctx.globalAlpha = 0.4;
+  const cx = sx + e.w / 2;
+  const bob = Math.sin(t * 0.18 + e.id) * 2;
+
+  // Body
+  const bodyColors: Record<number, string> = {
+    1: '#3a6a3a', // zabita green
+    5: '#CC44AA', // girl
+  };
+  ctx.fillStyle = e.type === 'zabita' ? '#2a5a2a' : e.type === 'girl' ? '#CC44AA' : '#cc4444';
+  ctx.fillRect(sx + 3, e.y + 18 + bob, e.w - 6, e.h - 26);
+
+  // Head
+  ctx.fillStyle = '#FDBCB4';
+  ctx.beginPath(); ctx.arc(cx, e.y + 11 + bob, 10, 0, Math.PI * 2); ctx.fill();
+
+  // Hair
+  ctx.fillStyle = e.type === 'zabita' ? '#111' : e.type === 'girl' ? '#8B4513' : '#333';
+  ctx.beginPath(); ctx.arc(cx, e.y + 11 + bob, 10, Math.PI, 0); ctx.fill();
+  ctx.fillRect(cx - 10, e.y + 1 + bob, 20, 5);
+
+  // zabita hat
+  if (e.type === 'zabita') {
+    ctx.fillStyle = '#1a4a1a';
+    ctx.fillRect(cx - 12, e.y + 1 + bob, 24, 5);
+    ctx.fillRect(cx - 8, e.y - 5 + bob, 16, 6);
+    ctx.fillStyle = '#FFD700';
+    ctx.fillRect(cx - 5, e.y + 2 + bob, 10, 2);
+  }
+
+  ctx.restore();
+}
+
+function drawSpawnedGirl(ctx: CanvasRenderingContext2D, g: SpawnedGirl, camX: number, t: number) {
+  const sx = g.x - camX;
+  if (sx < -20 || sx > CW + 20) return;
+  ctx.save();
+  const bob = Math.sin(t * 0.15 + g.id) * 2;
+  const cx = sx + 12;
+  ctx.fillStyle = ['#CC44AA', '#AA44CC', '#FF6699'][g.id % 3];
+  ctx.fillRect(sx + 2, g.y + 16 + bob, 20, 18);
+  ctx.fillStyle = '#FDBCB4';
+  ctx.beginPath(); ctx.arc(cx, g.y + 10 + bob, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = ['#8B4513', '#FFD700', '#1a1a1a'][g.id % 3];
+  ctx.beginPath(); ctx.arc(cx, g.y + 10 + bob, 9, Math.PI, 0); ctx.fill();
+  ctx.fillRect(cx - 9, g.y + 1 + bob, 18, 4);
+  ctx.restore();
 }
 
 // ─────────────────────────── PROPS ───────────────────────────────────────────
@@ -399,50 +799,108 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
   const wrapRef    = useRef<HTMLDivElement>(null);
   const rafRef     = useRef<number>(0);
   const gsRef      = useRef<GS>(null!);
-  const inputRef   = useRef({ left: false, right: false, jump: false, jumpPress: false, cam: false, camPress: false });
+  const inputRef   = useRef({ left: false, right: false, jump: false, jumpPress: false });
   const scaleRef   = useRef(1);
   const soundRef   = useRef(true);
-  const touchRef   = useRef({ left: false, right: false, jump: false, cam: false });
+  const touchRef   = useRef({ left: false, right: false, jump: false });
 
   const [screen, setScreen]     = useState<Screen>('menu');
   const [saveData, setSaveData] = useState<SaveData>(() => loadSave());
   const [showLB, setShowLB]     = useState(false);
-  const [cutIdx, setCutIdx]     = useState(0);
-  const [uiSnap, setUiSnap]     = useState({ score: 0, lives: 3, combo: 0, lvl: 0, t: 0, got: 0, totalItems: 0 });
+  const [currentDialog, setCurrentDialog] = useState<Dialog | null>(null);
+  const [dialogIdx, setDialogIdx] = useState(0);
+  const [dialogQueue, setDialogQueue] = useState<Dialog[]>([]);
+  const [uiSnap, setUiSnap]     = useState({ score: 0, lives: 3, lvl: 0, bossHp: 0, bossMaxHp: 0, waterY: CH });
+  const [bossFightPhase, setBossFightPhase] = useState<'approaching' | 'fighting'>('approaching');
 
-  // ── Init a level into gsRef ──────────────────────────────────────────────
+  // ── Init a level ──────────────────────────────────────────────────────────
   const initLevel = useCallback((lvlIdx: number, lives: number, score: number) => {
     const ld = LEVELS[lvlIdx];
-    let eid = 0, iid = 0, sid = 0;
-    const enemies: Enemy[] = ld.enemies.map(e => ({ ...e, id: eid++, alive: true, oy: e.y }));
-    const items: Collectable[] = ld.items.map(it => ({ ...it, id: iid++, got: false }));
-    const shots: Shot[] = ld.shots.map(s => ({ ...s, id: sid++, active: false, timer: 0, done: false }));
-    const plats = ld.plats.map(p => ({ ...p })); // clone for mutations
+    let eid = 0, iid = 0, pid = 0, gid = 0;
+
+    // Spawn regular minions for escape level
+    const enemies: Enemy[] = [];
+    if (ld.isEscape) {
+      // Zabıtalar — spawned during gameplay from off-screen right (handled in update)
+    }
+    // Spawn boss
+    if (ld.hasBoss) {
+      enemies.push({
+        id: eid++, x: ld.bossX, y: GY - 60, w: 50, h: 60,
+        type: ld.bossType, vx: 1.5, alive: true, minX: ld.bossX - 80, maxX: ld.bossX + 80,
+        oy: GY - 60, hp: 6, maxHp: 6, attackTimer: 120, phase: 0, hitTimer: 0, stunTimer: 0,
+      });
+    }
+
+    const items: Collectable[] = ld.items.map(it => ({
+      id: iid++, x: it.x, y: it.y, w: 18, h: 18, type: it.type, pts: it.pts, got: false,
+    }));
+
+    const plats = ld.plats.map(p => ({ ...p }));
+
     gsRef.current = {
-      screen: 'play', lvl: lvlIdx,
+      screen: 'dialog', lvl: lvlIdx,
       px: 80, py: GY - PH, pvx: 0, pvy: 0,
       ponG: false, pjumps: 2, pface: 1,
-      lives, score, combo: 0, comboT: 0,
+      lives, score,
       pinv: 0, pcamAnim: 0, pdead: false, pdeadT: 0,
-      plats, enemies, items, shots, sparks: [], floats: [],
-      camX: 0, t: 0, levelT: 0, slowMo: 0, flash: 0,
-      cutLine: 0, cutTimer: 0, totalScore: score, gotCollect: 0,
+      netTimer: 0,
+      plats, enemies, items,
+      projectiles: [], spawnedGirls: [],
+      sparks: [], floats: [],
+      camX: 0, t: 0, levelT: 0, flash: 0,
+      waterLevel: CH + 50, waterRising: ld.waterRises ?? false,
+      shockwaveTimer: 0, shockwaveX: 0,
+      bossDefeated: false,
+      zabitas: ld.isEscape ? [] : [],
+      dialogIdx: 0, dialogs: LEVEL_DIALOGS[lvlIdx]?.intro ?? [],
+      bossSpawned: true,
+      projId: 0, girlId: 0,
       levelComplete: false,
     };
   }, []);
 
-  // ── Collision ────────────────────────────────────────────────────────────
-  function aabb(ax: number, ay: number, aw: number, ah: number, bx: number, by: number, bw: number, bh: number) {
-    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
-  }
+  // ── Show dialog queue ────────────────────────────────────────────────────
+  const showDialogs = useCallback((dialogs: Dialog[], onComplete: () => void) => {
+    if (!dialogs.length) { onComplete(); return; }
+    setDialogQueue(dialogs);
+    setDialogIdx(0);
+    setCurrentDialog(dialogs[0]);
+    setScreen('dialog');
+    (gsRef as any)._dialogComplete = onComplete;
+  }, []);
 
-  // ── Spawn sparks ─────────────────────────────────────────────────────────
-  // wx/wy must be in WORLD space — renderer subtracts camX at draw time
-  function spawnSparks(gs: GS, wx: number, wy: number, col: string, n = 10) {
+  const advanceDialog = useCallback(() => {
+    const gs = gsRef.current;
+    setDialogIdx(prev => {
+      const next = prev + 1;
+      if (next >= dialogQueue.length) {
+        setCurrentDialog(null);
+        const cb = (gsRef as any)._dialogComplete;
+        if (cb) { cb(); (gsRef as any)._dialogComplete = null; }
+        return 0;
+      }
+      setCurrentDialog(dialogQueue[next]);
+      return next;
+    });
+  }, [dialogQueue]);
+
+  // ── Start level flow ─────────────────────────────────────────────────────
+  const startLevel = useCallback((lvlIdx: number, lives = 3, score = 0) => {
+    initLevel(lvlIdx, lives, score);
+    const intros = LEVEL_DIALOGS[lvlIdx]?.intro ?? [];
+    showDialogs(intros, () => {
+      if (gsRef.current) gsRef.current.screen = 'play';
+      setScreen('play');
+    });
+  }, [initLevel, showDialogs]);
+
+  // ── Collision helper ─────────────────────────────────────────────────────
+  function spawnSparks(gs: GS, wx: number, wy: number, col: string, n = 8) {
     for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const spd = Math.random() * 4 + 1;
-      gs.sparks.push({ x: wx, y: wy, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd, life: 35, maxl: 35, col, sz: Math.random() * 4 + 1 });
+      gs.sparks.push({ x: wx, y: wy, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd, life: 30, maxl: 30, col, sz: Math.random() * 3 + 1 });
     }
   }
 
@@ -453,13 +911,11 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
 
     const inp = inputRef.current;
     const tc  = touchRef.current;
-    const dt  = gs.slowMo > 0 ? 0.35 : 1;
     gs.t++; gs.levelT++;
-    if (gs.slowMo > 0) gs.slowMo--;
     if (gs.flash > 0) gs.flash--;
     if (gs.pinv > 0) gs.pinv--;
     if (gs.pcamAnim > 0) gs.pcamAnim--;
-    if (gs.comboT > 0) { gs.comboT -= dt; if (gs.comboT <= 0) gs.combo = 0; }
+    if (gs.netTimer > 0) gs.netTimer--;
 
     // Death handling
     if (gs.pdead) {
@@ -467,32 +923,25 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       if (gs.pdeadT > 90) {
         gs.lives--;
         if (gs.lives <= 0) {
-          gs.screen = 'over';
-          setScreen('over');
-          if (soundRef.current) SFX.gameOver();
-          return;
+          gs.screen = 'over'; setScreen('over');
+          if (soundRef.current) SFX.gameOver(); return;
         }
         gs.px = 80; gs.py = GY - PH; gs.pvx = 0; gs.pvy = 0;
         gs.pjumps = 2; gs.ponG = false; gs.camX = 0;
         gs.pdead = false; gs.pdeadT = 0; gs.pinv = 120;
+        gs.waterLevel = CH + 50; // reset water
       }
-      // Update sparks/floats even while dead
       gs.sparks = gs.sparks.filter(s => s.life > 0);
       gs.sparks.forEach(s => { s.x += s.vx; s.y += s.vy; s.vy += 0.15; s.life--; });
       return;
     }
+    if (gs.levelComplete) return;
 
-    // Level completion
-    if (gs.levelComplete) {
-      gs.pvy = 0; gs.pvx = 0.5;
-      return;
-    }
-
-    // Update moving platforms
+    // Moving platforms
     gs.plats.forEach(p => {
       if (p.ox !== undefined) {
-        p.t = (p.t ?? 0) + 0.03 * dt;
-        const s = Math.sin(p.t * ((p.spd ?? 0.03) / 0.03));
+        p.t = (p.t ?? 0) + 0.03;
+        const s = Math.sin(p.t * (p.spd ?? 0.03) / 0.03);
         p.x = p.ox + s * (p.range ?? 80) * (p.dvx ?? 0);
         p.y = p.oy! + s * (p.range ?? 80) * (p.dvy ?? 0);
       }
@@ -502,12 +951,14 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
     const goLeft  = inp.left  || tc.left;
     const goRight = inp.right || tc.right;
     const doJump  = inp.jumpPress || tc.jump;
-    const doCam   = inp.camPress  || tc.cam;
-    inp.jumpPress = false; inp.camPress = false;
-    tc.jump = false; tc.cam = false;
+    inp.jumpPress = false;
+    tc.jump = false;
 
-    if (goLeft)       { gs.pvx = Math.max(gs.pvx - SPD * 0.45, -SPD); gs.pface = -1; }
-    else if (goRight) { gs.pvx = Math.min(gs.pvx + SPD * 0.45,  SPD); gs.pface =  1; }
+    const netSlow = gs.netTimer > 0 ? 0.45 : 1;
+    const ld = LEVELS[gs.lvl];
+
+    if (goLeft)       { gs.pvx = Math.max(gs.pvx - SPD * 0.45 * netSlow, -SPD * netSlow); gs.pface = -1; }
+    else if (goRight) { gs.pvx = Math.min(gs.pvx + SPD * 0.45 * netSlow,  SPD * netSlow); gs.pface =  1; }
     else              { gs.pvx *= 0.72; if (Math.abs(gs.pvx) < 0.1) gs.pvx = 0; }
 
     if (doJump && gs.pjumps > 0) {
@@ -517,159 +968,328 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       if (soundRef.current) isDouble ? SFX.djump() : SFX.jump();
     }
 
-    if (doCam) {
-      gs.pcamAnim = 18;
-      const activeShot = gs.shots.find(s => s.active && !s.done);
-      if (activeShot) {
-        activeShot.done = true; activeShot.active = false;
-        gs.combo++; gs.comboT = 180;
-        const bonus = 500 + (gs.combo - 1) * 120;
-        gs.score += bonus;
-        gs.slowMo = 55; gs.flash = 10;
-        if (soundRef.current) SFX.photo();
-        // World-space coords — spawnSparks & floats now store world space
-        spawnSparks(gs, activeShot.wx, activeShot.wy, '#FFD700', 20);
-        gs.floats.push({ x: activeShot.wx, y: activeShot.wy - 20, text: `+${bonus} 📸`, life: 80, col: '#FFD700' });
-      }
-    }
-
-    // Photo moments trigger — gs.px is world space, s.tx is world space
-    gs.shots.forEach(s => {
-      if (!s.done && !s.active && gs.px > s.tx) { s.active = true; s.timer = 180; }
-      if (s.active && !s.done) { s.timer -= dt; if (s.timer <= 0) { s.active = false; s.done = true; } }
-    });
-
     // Gravity
-    gs.pvy = Math.min(gs.pvy + GRAV * dt, MAXVY);
+    gs.pvy = Math.min(gs.pvy + GRAV, MAXVY);
 
-    // ── Move X ──
-    gs.px += gs.pvx * dt;
+    // Move X
+    gs.px += gs.pvx;
     if (gs.px < 0) { gs.px = 0; gs.pvx = 0; }
 
-    // ── Horizontal platform collision ──
-    // Only push sideways when player is NOT dropping onto the platform from above.
-    // If player feet (py + PH) are still at/above platform top, skip — the vertical
-    // pass will land them correctly. This prevents invisible-floor side-pushes.
+    // Horizontal platform collision
     gs.plats.forEach(p => {
       if (!aabb(gs.px, gs.py, PW, PH, p.x, p.y, p.w, p.h)) return;
-      if (gs.py + PH <= p.y + 3) return; // approaching from above — vertical pass handles this
+      if (gs.py + PH <= p.y + 3) return;
       const overlapL = (gs.px + PW) - p.x;
       const overlapR = (p.x + p.w) - gs.px;
       if (overlapL < overlapR) { gs.px = p.x - PW; gs.pvx = 0; }
       else                     { gs.px = p.x + p.w; gs.pvx = 0; }
     });
 
-    // ── Move Y ──
-    const prevPy = gs.py; // snapshot pre-move Y to detect landing direction
-    gs.py += gs.pvy * dt;
+    // Move Y
+    const prevPy = gs.py;
+    gs.py += gs.pvy;
     gs.ponG = false;
 
-    // ── Vertical platform collision ──
+    // Vertical platform collision
     gs.plats.forEach(p => {
       if (!aabb(gs.px, gs.py, PW, PH, p.x, p.y, p.w, p.h)) return;
       if (gs.pvy >= 0 && prevPy + PH <= p.y + 5) {
-        // Landing from above: feet were at/above platform top before Y move
         gs.py = p.y - PH;
         gs.pvy = 0;
         gs.pjumps = 2;
         gs.ponG = true;
+        // Slippery sand
+        if (p.slippery && Math.abs(gs.pvx) > 0.1) gs.pvx *= 0.95;
       } else if (gs.pvy < 0 && prevPy >= p.y + p.h - 5) {
-        // Hitting head: top was at/below platform bottom before Y move
         gs.py = p.y + p.h;
         gs.pvy = 0;
       }
-      // Side entry in Y pass → no-op (horizontal already resolved it)
     });
 
-    // Death by falling — GY is ground, fall below screen bottom triggers death
+    // Fall death
     if (gs.py > GY + 120) {
       gs.pdead = true; gs.pdeadT = 0;
       if (soundRef.current) SFX.hit();
-      // World-space position for sparks
-      spawnSparks(gs, gs.px + PW / 2, GY, '#FF4444', 12);
+      spawnSparks(gs, gs.px + PW / 2, GY, '#FF4444', 10);
       return;
     }
 
-    // ── Camera — deadzone follow with hard edge clamps ──
-    // gs.px is world space. Camera keeps player roughly at 36% from left.
-    const maxCam = LEVELS[gs.lvl].ww - CW;
-    const screenPx = gs.px - gs.camX;        // where player currently appears on screen
+    // Water death
+    if (gs.waterRising) {
+      // Water rises slowly
+      gs.waterLevel -= 0.18;
+      if (gs.waterLevel < CH - 50) gs.waterLevel = CH - 50; // cap
+      // Check if player hit water
+      if (gs.py + PH > gs.waterLevel) {
+        gs.pdead = true; gs.pdeadT = 0;
+        gs.waterLevel = CH + 50;
+        if (soundRef.current) SFX.hit();
+        spawnSparks(gs, gs.px + PW / 2, gs.py, '#0088FF', 10);
+        return;
+      }
+    }
+
+    // Camera
+    const maxCam = ld.ww - CW;
+    const screenPx = gs.px - gs.camX;
     const targetCam = gs.px - CW * 0.36;
     let newCamX = gs.camX + (targetCam - gs.camX) * 0.16;
-    // Hard clamps: player must never go off screen
     if (screenPx < CW * 0.10) newCamX = gs.px - CW * 0.10;
     if (screenPx > CW * 0.88) newCamX = gs.px - CW * 0.88;
     gs.camX = Math.max(0, Math.min(maxCam, newCamX));
 
-    // Enemy update
+    // ── Zabıta (escape level) ──────────────────────────────────────────────
+    if (ld.isEscape) {
+      // Spawn zabıta every 6 seconds
+      if (gs.t % 360 === 0 || (gs.t === 60)) {
+        gs.zabitas.push({ x: gs.camX + CW + 40, y: GY - 30, vx: -3.5 });
+      }
+      gs.zabitas.forEach(z => { z.x += z.vx; });
+      gs.zabitas = gs.zabitas.filter(z => z.x > gs.camX - 100);
+      // Check zabıta collision
+      if (gs.pinv === 0) {
+        for (const z of gs.zabitas) {
+          if (aabb(gs.px, gs.py, PW, PH, z.x, z.y, 24, 30)) {
+            gs.pinv = 100; gs.lives--;
+            spawnSparks(gs, gs.px, gs.py, '#FF4444', 8);
+            gs.floats.push({ x: gs.px, y: gs.py - 15, text: '-1 💔', life: 60, col: '#FF4444' });
+            if (soundRef.current) SFX.hit();
+            if (gs.lives <= 0) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
+          }
+        }
+      }
+    }
+
+    // ── Enemies (boss) ────────────────────────────────────────────────────
     gs.enemies.forEach(e => {
       if (!e.alive) return;
-      e.x += e.vx * dt;
+      if (e.hitTimer !== undefined && e.hitTimer > 0) e.hitTimer--;
+      if (e.stunTimer !== undefined && e.stunTimer > 0) { e.stunTimer--; return; }
+
+      // Boss movement
+      e.x += e.vx;
       if (e.x < e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); }
       if (e.x + e.w > e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); }
 
-      if (e.type === 'drone' || e.type === 'boss') {
-        e.y = e.oy + Math.sin(gs.t * (e.freq ?? 0.035) + (e.ph ?? 0)) * (e.amp ?? 22);
-      }
-      if (e.hitTimer !== undefined && e.hitTimer > 0) e.hitTimer--;
+      // Boss attacks
+      if (e.attackTimer !== undefined) {
+        e.attackTimer--;
+        if (e.attackTimer <= 0) {
+          const attackInterval = (e.hp! < e.maxHp! / 2) ? 80 : 130;
+          e.attackTimer = attackInterval;
+          const pid = gs.projId++;
+          const bx = e.x + e.w / 2, by = e.y + 20;
+          const dx = gs.px - bx, dy = gs.py - by;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const spd = 4;
 
-      // Player collision — all coords are world space, compare directly
-      if (gs.pinv > 0) return;
-      if (aabb(gs.px, gs.py, PW, PH, e.x, e.y, e.w, e.h)) {
-        gs.pinv = 100;
-        gs.lives--;
-        gs.combo = 0; gs.comboT = 0;
-        if (soundRef.current) SFX.hit();
-        spawnSparks(gs, gs.px + PW / 2, gs.py + PH / 2, '#FF4444', 8);
-        // Float stored in world space — renderer subtracts camX
-        gs.floats.push({ x: gs.px, y: gs.py - 15, text: '-1 💔', life: 60, col: '#FF4444' });
-        if (gs.lives <= 0) {
-          gs.screen = 'over'; setScreen('over');
-          if (soundRef.current) SFX.gameOver();
+          let ptype: Projectile['type'] = 'plate';
+          if (e.type === 'boss_zuhal') ptype = 'ice';
+          else if (e.type === 'boss_busra') ptype = 'net';
+          else if (e.type === 'boss_tanriverdi') ptype = 'surfboard';
+          else if (e.type === 'boss_amanaman') ptype = 'shockwave';
+          else if (e.type === 'boss_ozgur') ptype = 'album';
+
+          if (ptype === 'shockwave') {
+            gs.shockwaveTimer = 60;
+            gs.shockwaveX = e.x + e.w / 2; // world space — renderer subtracts camX
+          } else {
+            gs.projectiles.push({
+              id: pid, x: bx, y: by,
+              vx: (dx / dist) * spd,
+              vy: (dy / dist) * spd,
+              type: ptype,
+              w: ptype === 'surfboard' ? 60 : ptype === 'album' ? 28 : 20,
+              h: ptype === 'surfboard' ? 14 : 20,
+              active: true, timer: 200,
+            });
+          }
+
+          // Kayhan spawns girls every attack
+          if (e.type === 'boss_kayhan') {
+            for (let gi = 0; gi < 2; gi++) {
+              gs.spawnedGirls.push({
+                id: gs.girlId++, x: e.x + e.w / 2 + (gi === 0 ? -40 : 40),
+                y: e.y, vx: gi === 0 ? -2 : 2, alive: true, vy: 0, onGround: false,
+              });
+            }
+          }
+
+          // Özgür spawns personel (minions)
+          if (e.type === 'boss_ozgur' && e.hp! < e.maxHp! * 0.5) {
+            gs.spawnedGirls.push({
+              id: gs.girlId++, x: e.x + e.w / 2,
+              y: e.y, vx: gs.px < e.x ? -2.5 : 2.5, alive: true, vy: 0, onGround: false,
+            });
+          }
+        }
+      }
+
+      // Stomp check — player jumps on boss
+      if (gs.pinv === 0) {
+        const bossHit = aabb(gs.px, gs.py, PW, PH, e.x, e.y, e.w, e.h);
+        if (bossHit) {
+          const stompingFromAbove = gs.pvy > 0 && prevPy + PH <= e.y + 8;
+          if (stompingFromAbove) {
+            e.hp = (e.hp ?? 1) - 1;
+            e.hitTimer = 20;
+            gs.pvy = JV * 0.7; // bounce
+            gs.score += 200;
+            spawnSparks(gs, e.x + e.w / 2, e.y, '#FFDD00', 12);
+            gs.floats.push({ x: e.x, y: e.y - 10, text: '-HP! 💥', life: 60, col: '#FFD700' });
+            if (soundRef.current) SFX.bossHit();
+            if (e.hp! <= 0) {
+              e.alive = false;
+              gs.bossDefeated = true;
+              gs.score += 1000;
+              spawnSparks(gs, e.x + e.w / 2, e.y + e.h / 2, '#FFD700', 30);
+              if (soundRef.current) SFX.bossWin();
+              // Show win dialog
+              const winDialogs = LEVEL_DIALOGS[gs.lvl]?.boss_win ?? [];
+              setTimeout(() => {
+                showDialogs(winDialogs, () => {
+                  if (gsRef.current) gsRef.current.levelComplete = true;
+                  setTimeout(() => { setScreen('lvlwin'); }, 500);
+                });
+              }, 400);
+            }
+          } else {
+            // Boss touches player
+            gs.pinv = 100; gs.lives--;
+            spawnSparks(gs, gs.px + PW / 2, gs.py + PH / 2, '#FF4444', 8);
+            gs.floats.push({ x: gs.px, y: gs.py - 15, text: '-1 💔', life: 60, col: '#FF4444' });
+            if (soundRef.current) SFX.hit();
+            if (gs.lives <= 0) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
+          }
         }
       }
     });
 
-    // Collectible check — all world space
+    // ── Projectiles ───────────────────────────────────────────────────────
+    gs.projectiles.forEach(p => {
+      if (!p.active) return;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.15; // gravity on projectiles
+      p.timer--;
+      if (p.timer <= 0 || p.y > GY + 50) { p.active = false; return; }
+      // Player hit
+      if (gs.pinv === 0 && aabb(gs.px, gs.py, PW, PH, p.x - p.w / 2, p.y - p.h / 2, p.w, p.h)) {
+        p.active = false;
+        if (p.type === 'net') {
+          gs.netTimer = 180; // slowed for 3 seconds
+          gs.floats.push({ x: gs.px, y: gs.py - 15, text: 'AĞA TAKILDIK! 🕸️', life: 80, col: '#88FF88' });
+        } else {
+          gs.pinv = 80; gs.lives--;
+          spawnSparks(gs, gs.px, gs.py, '#FF4444', 8);
+          gs.floats.push({ x: gs.px, y: gs.py - 15, text: '-1 💔', life: 60, col: '#FF4444' });
+          if (soundRef.current) SFX.hit();
+          if (gs.lives <= 0) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
+        }
+      }
+    });
+    gs.projectiles = gs.projectiles.filter(p => p.active);
+
+    // ── Shockwave ─────────────────────────────────────────────────────────
+    if (gs.shockwaveTimer > 0) {
+      gs.shockwaveTimer--;
+      if (gs.pinv === 0) {
+        // shockwave hits if player is on ground
+        if (gs.ponG) {
+          gs.pinv = 80; gs.lives--;
+          spawnSparks(gs, gs.px, gs.py, '#FF4444', 8);
+          gs.floats.push({ x: gs.px, y: gs.py - 15, text: 'SHOCKWAVE! 💥', life: 60, col: '#FF8800' });
+          if (soundRef.current) SFX.hit();
+          if (gs.lives <= 0) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
+        }
+      }
+    }
+
+    // ── Spawned girls / personel ──────────────────────────────────────────
+    gs.spawnedGirls.forEach(g => {
+      if (!g.alive) return;
+      g.vy += GRAV;
+      g.x += g.vx;
+      g.y += g.vy;
+      // Simple ground landing
+      if (g.y + 34 > GY) { g.y = GY - 34; g.vy = 0; g.onGround = true; }
+      // Chase player
+      if (g.onGround) {
+        const dx2 = gs.px - g.x;
+        g.vx = dx2 > 0 ? 2.2 : -2.2;
+      }
+      if (gs.pinv === 0 && aabb(gs.px, gs.py, PW, PH, g.x, g.y, 24, 34)) {
+        g.alive = false;
+        gs.pinv = 80; gs.lives--;
+        spawnSparks(gs, gs.px, gs.py, '#FF4444', 8);
+        gs.floats.push({ x: gs.px, y: gs.py - 15, text: '-1 💔', life: 60, col: '#FF4444' });
+        if (soundRef.current) SFX.hit();
+        if (gs.lives <= 0) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
+      }
+    });
+    gs.spawnedGirls = gs.spawnedGirls.filter(g => g.alive && g.x > gs.camX - 200 && g.x < gs.camX + CW + 200);
+
+    // ── Collectibles ──────────────────────────────────────────────────────
     gs.items.forEach(it => {
       if (it.got) return;
       if (aabb(gs.px, gs.py, PW, PH, it.x, it.y, it.w, it.h)) {
         it.got = true;
-        gs.combo++; gs.comboT = 120;
-        const bonus = it.pts * (1 + Math.floor(gs.combo / 3) * 0.5);
-        gs.score += Math.floor(bonus);
-        gs.gotCollect++;
+        gs.score += it.pts;
         if (soundRef.current) it.type === 'star' ? SFX.star() : SFX.collect();
-        // World-space coords — spawnSparks & floats store world space
         spawnSparks(gs, it.x, it.y, it.type === 'star' ? '#FFD700' : '#88EEFF', 6);
-        gs.floats.push({ x: it.x, y: it.y - 16, text: `+${Math.floor(bonus)}`, life: 50, col: it.type === 'star' ? '#FFD700' : '#88EEFF' });
+        gs.floats.push({ x: it.x, y: it.y - 16, text: `+${it.pts}`, life: 50, col: it.type === 'star' ? '#FFD700' : '#88EEFF' });
       }
     });
 
-    // Finish check
-    // Finish check — gs.px is world space, ld.fx is world space
-    const ld = LEVELS[gs.lvl];
+    // ── Finish check ──────────────────────────────────────────────────────
     if (gs.px > ld.fx) {
       if (!gs.levelComplete) {
         gs.levelComplete = true;
         const timeBonus = Math.max(0, 3000 - Math.floor(gs.levelT / 60) * 10);
         gs.score += timeBonus + gs.lives * 200;
         if (soundRef.current) SFX.lvlWin();
-        setTimeout(() => { setScreen('lvlwin'); }, 800);
+        if (ld.isEscape) {
+          const winD = LEVEL_DIALOGS[gs.lvl]?.boss_win ?? [];
+          setTimeout(() => {
+            showDialogs(winD, () => { setScreen('lvlwin'); });
+          }, 200);
+        } else if (!ld.hasBoss) {
+          setTimeout(() => { setScreen('lvlwin'); }, 600);
+        }
       }
     }
 
-    // Update particles
-    gs.sparks = gs.sparks.filter(s => s.life > 0);
-    gs.sparks.forEach(s => { s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 0.14 * dt; s.life--; });
-    gs.floats = gs.floats.filter(f => f.life > 0);
-    gs.floats.forEach(f => { f.y -= 0.6 * dt; f.life--; });
-
-    // UI update every 10 frames
-    if (gs.t % 10 === 0) {
-      setUiSnap({ score: gs.score, lives: gs.lives, combo: gs.combo, lvl: gs.lvl, t: Math.floor(gs.levelT / 60), got: gs.gotCollect, totalItems: gs.items.length });
+    // ── Boss intro dialog ─────────────────────────────────────────────────
+    // Trigger boss intro when player gets close enough to boss
+    const boss = gs.enemies.find(e => e.type === gs.enemies[0]?.type && e.alive);
+    if (boss && !gs.bossDefeated && gs.px > boss.x - 250 && !(gsRef as any)._bossIntroShown) {
+      (gsRef as any)._bossIntroShown = true;
+      const bossIntroD = LEVEL_DIALOGS[gs.lvl]?.boss_intro;
+      if (bossIntroD?.length) {
+        gs.screen = 'dialog';
+        showDialogs(bossIntroD, () => {
+          if (gsRef.current) gsRef.current.screen = 'play';
+          setScreen('play');
+        });
+      }
     }
-  }, []);
+
+    // Particles
+    gs.sparks = gs.sparks.filter(s => s.life > 0);
+    gs.sparks.forEach(s => { s.x += s.vx; s.y += s.vy; s.vy += 0.14; s.life--; });
+    gs.floats = gs.floats.filter(f => f.life > 0);
+    gs.floats.forEach(f => { f.y -= 0.6; f.life--; });
+
+    // UI every 8 frames
+    if (gs.t % 8 === 0) {
+      const boss2 = gs.enemies.find(e => e.alive);
+      setUiSnap({
+        score: gs.score, lives: gs.lives, lvl: gs.lvl,
+        bossHp: boss2?.hp ?? 0, bossMaxHp: boss2?.maxHp ?? 0,
+        waterY: gs.waterLevel,
+      });
+    }
+  }, [showDialogs]);
 
   // ── Render ───────────────────────────────────────────────────────────────
   const render = useCallback(() => {
@@ -679,150 +1299,87 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
     if (!ctx) return;
     const gs = gsRef.current;
     if (!gs) return;
+    if (gs.screen !== 'play') return;
 
     const { camX, t, lvl } = gs;
     const ld = LEVELS[lvl];
 
-    // ── Background ──────────────────────────────────────────────────────────
+    // Background
     const grd = ctx.createLinearGradient(0, 0, 0, CH);
     grd.addColorStop(0, ld.bg1);
     grd.addColorStop(1, ld.bg2);
     ctx.fillStyle = grd;
     ctx.fillRect(0, 0, CW, CH);
 
-    // Rain effect for Level 4
-    if (ld.rain) {
-      ctx.strokeStyle = 'rgba(100,180,255,0.18)';
-      ctx.lineWidth = 1;
-      for (let i = 0; i < 40; i++) {
-        const rx = ((i * 137 + t * 3) % (CW + 60)) - 30;
-        const ry = (i * 71 + t * 4) % (CH + 20);
-        ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx - 3, ry + 14); ctx.stroke();
+    // Beach sky
+    if (ld.sandLevel) {
+      // Sun
+      ctx.fillStyle = '#FFD700';
+      ctx.beginPath(); ctx.arc(CW * 0.8, 60, 30, 0, Math.PI * 2); ctx.fill();
+      // Waves bg
+      ctx.fillStyle = 'rgba(0,150,200,0.25)';
+      for (let wi = 0; wi < CW; wi += 40) {
+        const wy = 120 + Math.sin((wi + t * 0.5) * 0.08) * 8;
+        ctx.beginPath(); ctx.arc(wi, wy, 22, 0, Math.PI); ctx.fill();
       }
     }
 
-    // Mountains / skyline (parallax 0.3x)
-    const mx = -camX * 0.3;
-    if (lvl === 1) {
-      // Neon city skyline
-      ctx.fillStyle = 'rgba(15,52,96,0.55)';
-      for (let i = 0; i < 18; i++) {
-        const bx = ((i * 220 + mx) % (CW + 200)) - 100;
-        const bh = 60 + (i * 43 % 80);
-        ctx.fillRect(bx, CH - 50 - bh, 45 + (i % 3) * 20, bh);
-      }
-    } else if (lvl === 2) {
-      // Festival stage bg
-      for (let i = 0; i < 6; i++) {
-        const hue = (i * 60 + t) % 360;
-        ctx.fillStyle = `hsla(${hue},80%,40%,0.12)`;
-        ctx.fillRect(0, 0, CW, CH);
-      }
-    } else if (lvl === 3) {
-      // Storm clouds
-      ctx.fillStyle = 'rgba(30,30,50,0.5)';
-      for (let i = 0; i < 6; i++) {
-        const cx2 = ((i * 180 + mx) % (CW + 150)) - 60;
-        ctx.beginPath(); ctx.arc(cx2, 40 + (i % 3) * 18, 55, 0, Math.PI * 2); ctx.fill();
-      }
-      if (Math.random() < 0.02) {
-        ctx.strokeStyle = 'rgba(200,220,255,0.7)'; ctx.lineWidth = 2;
-        const lx = Math.random() * CW;
-        ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx + 10, 60); ctx.stroke();
-      }
-    } else {
-      // Generic mountains
-      ctx.fillStyle = ld.acc + '22';
-      for (let i = 0; i < 5; i++) {
-        const bx = ((i * 250 + mx) % (CW + 300)) - 100;
-        ctx.beginPath(); ctx.moveTo(bx, CH - 50); ctx.lineTo(bx + 150, CH - 160); ctx.lineTo(bx + 300, CH - 50); ctx.closePath(); ctx.fill();
+    // Dark bar neon
+    if (ld.darkBar) {
+      for (let ni = 0; ni < 8; ni++) {
+        const nx = ((ni * 600 - camX * 0.6) % (CW + 500)) - 100;
+        ctx.save();
+        ctx.globalAlpha = 0.5 + 0.2 * Math.sin(t * 0.05 + ni);
+        ctx.fillStyle = ['#ff00aa', '#00ffff', '#ff6600', '#aa00ff'][ni % 4];
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(['İKİ DUBLE', 'KAYHAN\'S', '🥃 BAR', 'TONIGHT'][ni % 4], nx, 60 + (ni % 3) * 25);
+        ctx.restore();
       }
     }
 
-    // ASPECT background watermarks (parallax 0.15x)
+    // ASPECT watermarks
     ctx.save();
-    ctx.globalAlpha = 0.07;
+    ctx.globalAlpha = 0.06;
     ctx.fillStyle = ld.acc;
-    ctx.font = 'bold 64px monospace';
+    ctx.font = 'bold 60px monospace';
     ctx.textAlign = 'center';
-    for (let i = 0; i < 6; i++) {
-      const wx2 = ((i * 800 - camX * 0.15) % (CW + 800)) - 200;
+    for (let i = 0; i < 5; i++) {
+      const wx2 = ((i * 900 - camX * 0.12) % (CW + 800)) - 200;
       ctx.fillText('ASPECT', wx2, CH / 2 + 20);
     }
     ctx.restore();
 
-    // Neon signs / billboards (parallax 0.7x)
-    const signs = ['ASPECT', 'ASPECT PHOTOGRAPHY', 'ASPECT OPS', 'ASPECT TEAM', 'CAPTURE THE MOMENT', 'ASPECT STUDIO', 'ASPECT PRO', 'ASPECT ✦'];
-    for (let i = 0; i < 8; i++) {
-      const sx2 = ((i * 700 - camX * 0.7) % (CW + 600)) - 200;
-      const sy2 = 40 + (i % 3) * 30;
-      ctx.save();
-      ctx.globalAlpha = 0.75;
-      // Sign board
-      ctx.fillStyle = 'rgba(0,0,0,0.45)';
-      drawRoundRect(ctx, sx2 - 4, sy2 - 18, 190, 28, 4);
-      ctx.fill();
-      ctx.strokeStyle = ld.acc;
-      ctx.lineWidth = 1.5;
-      ctx.globalAlpha = 0.9;
-      drawRoundRect(ctx, sx2 - 4, sy2 - 18, 190, 28, 4);
-      ctx.stroke();
-      ctx.fillStyle = ld.acc;
-      ctx.font = 'bold 11px monospace';
-      ctx.textAlign = 'left';
-      ctx.fillText(signs[i % signs.length], sx2, sy2);
-      ctx.restore();
+    // Background tables (parallax)
+    const tblMx = -camX * 0.45;
+    const clothCols = ['rgba(125,0,175,0.35)', 'rgba(30,180,30,0.3)', 'rgba(255,120,0,0.3)',
+      'rgba(0,100,200,0.35)', 'rgba(200,180,50,0.3)', 'rgba(8,8,18,0.5)', 'rgba(0,50,100,0.35)', 'rgba(0,70,0,0.3)'];
+    for (let i = 0; i < 7; i++) {
+      const tbx = ((i * 500 + tblMx) % (CW + 420)) - 110;
+      const tby = GY - 55;
+      ctx.fillStyle = 'rgba(100,70,30,0.3)'; ctx.fillRect(tbx, tby, 90, 11);
+      ctx.fillStyle = clothCols[lvl] ?? 'rgba(80,60,20,0.3)'; ctx.fillRect(tbx, tby, 90, 11);
+      ctx.fillStyle = 'rgba(60,35,10,0.28)';
+      ctx.fillRect(tbx + 8, tby + 11, 8, 28); ctx.fillRect(tbx + 74, tby + 11, 8, 28);
     }
 
-    // Pixel grid for retro level
-    if (ld.pixel) {
-      ctx.save(); ctx.globalAlpha = 0.06; ctx.strokeStyle = '#00FF00'; ctx.lineWidth = 0.5;
-      for (let gx = 0; gx < CW; gx += 16) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, CH); ctx.stroke(); }
-      for (let gy = 0; gy < CH; gy += 16) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(CW, gy); ctx.stroke(); }
-      ctx.restore();
-    }
-
-    // Ground decoration text
-    ctx.save();
-    ctx.globalAlpha = 0.12;
-    ctx.fillStyle = ld.acc;
-    ctx.font = '500 11px monospace';
-    ctx.textAlign = 'left';
-    for (let i = 0; i < 10; i++) {
-      const gx2 = ((i * 480 - camX * 1.0) % (CW + 400)) - 100;
-      ctx.fillText('▸ ASPECT ◂', gx2, GY + 18);
-    }
-    ctx.restore();
-
-    // ── Platforms ────────────────────────────────────────────────────────────
+    // Platforms
     gs.plats.forEach(p => {
       const sx3 = p.x - camX;
       if (sx3 + p.w < 0 || sx3 > CW) return;
-
       if (p.y >= GY) {
-        // Ground segment
-        ctx.fillStyle = ld.gc;
-        ctx.fillRect(sx3, p.y, p.w, p.h);
-        // Ground surface strip
-        ctx.fillStyle = p.col;
-        ctx.fillRect(sx3, p.y, p.w, 8);
-        // Ground texture
-        ctx.fillStyle = 'rgba(255,255,255,0.06)';
-        for (let gi = 0; gi < p.w; gi += 20) ctx.fillRect(sx3 + gi, p.y, 10, 8);
+        ctx.fillStyle = ld.gc; ctx.fillRect(sx3, p.y, p.w, p.h);
+        ctx.fillStyle = p.col; ctx.fillRect(sx3, p.y, p.w, 8);
+        if (p.slippery) {
+          ctx.fillStyle = 'rgba(255,220,150,0.3)';
+          for (let gi = 0; gi < p.w; gi += 15) ctx.fillRect(sx3 + gi, p.y, 8, 8);
+        }
       } else {
-        // Elevated platform
-        ctx.fillStyle = p.col;
-        ctx.fillRect(sx3, p.y, p.w, p.h);
-        // Top highlight
-        ctx.fillStyle = 'rgba(255,255,255,0.25)';
-        ctx.fillRect(sx3, p.y, p.w, 3);
-        // Shadow
-        ctx.fillStyle = 'rgba(0,0,0,0.3)';
-        ctx.fillRect(sx3, p.y + p.h - 3, p.w, 3);
-        // Moving platform glow
+        ctx.fillStyle = p.col; ctx.fillRect(sx3, p.y, p.w, p.h);
+        ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.fillRect(sx3, p.y, p.w, 3);
+        ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(sx3, p.y + p.h - 3, p.w, 3);
         if (p.ox !== undefined) {
-          ctx.save();
-          ctx.shadowColor = ld.acc; ctx.shadowBlur = 8;
+          ctx.save(); ctx.shadowColor = ld.acc; ctx.shadowBlur = 8;
           ctx.strokeStyle = ld.acc; ctx.lineWidth = 1;
           ctx.strokeRect(sx3, p.y, p.w, p.h);
           ctx.restore();
@@ -830,348 +1387,220 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       }
     });
 
-    // ── Finish portal ─────────────────────────────────────────────────────────
+    // Finish portal
     const fsx = ld.fx - camX;
     if (fsx > -60 && fsx < CW + 60) {
       const pulse = 0.8 + 0.2 * Math.sin(t * 0.08);
       ctx.save();
       ctx.shadowColor = ld.acc; ctx.shadowBlur = 20 * pulse;
-      // Portal frame
       ctx.strokeStyle = ld.acc; ctx.lineWidth = 3;
       ctx.strokeRect(fsx - 20, GY - 70, 40, 70);
-      // Inner glow
       const pg = ctx.createLinearGradient(fsx - 20, GY - 70, fsx + 20, GY);
-      pg.addColorStop(0, ld.acc + '44');
-      pg.addColorStop(0.5, ld.acc + '88');
-      pg.addColorStop(1, ld.acc + '44');
-      ctx.fillStyle = pg;
-      ctx.fillRect(fsx - 20, GY - 70, 40, 70);
-      // Stars
-      for (let i = 0; i < 4; i++) {
-        const starX = fsx - 15 + (i % 2) * 30;
-        const starY = GY - 60 + Math.floor(i / 2) * 30 + Math.sin(t * 0.1 + i) * 4;
-        ctx.fillStyle = '#FFD700';
-        ctx.fillRect(starX - 3, starY - 3, 6, 6);
-      }
-      ctx.restore();
-      // Text
-      ctx.save();
-      ctx.font = 'bold 10px monospace';
-      ctx.fillStyle = ld.acc;
-      ctx.textAlign = 'center';
-      ctx.shadowColor = ld.acc; ctx.shadowBlur = 8;
-      ctx.fillText('ASPECT', fsx, GY - 78);
-      ctx.fillText('FINISH', fsx, GY - 67);
+      pg.addColorStop(0, ld.acc + '44'); pg.addColorStop(1, ld.acc + '88');
+      ctx.fillStyle = pg; ctx.fillRect(fsx - 20, GY - 70, 40, 70);
+      ctx.font = 'bold 9px monospace'; ctx.fillStyle = ld.acc; ctx.textAlign = 'center';
+      ctx.fillText('FINISH', fsx, GY - 74);
       ctx.restore();
     }
 
-    // ── Collectibles ─────────────────────────────────────────────────────────
+    // Collectibles
     gs.items.forEach(it => {
       if (it.got) return;
       const sx4 = it.x - camX;
       if (sx4 < -20 || sx4 > CW + 20) return;
       const bob = Math.sin(t * 0.08 + it.id) * 3;
       const colors: Record<string, string> = { lens: '#64B5F6', frame: '#FFD54F', card: '#81C784', battery: '#FF8A65', star: '#FFD700' };
-      const col2 = colors[it.type] || '#FFFFFF';
-
+      const col2 = colors[it.type] || '#FFF';
       ctx.save();
       ctx.shadowColor = col2; ctx.shadowBlur = 8;
+      ctx.fillStyle = col2;
       if (it.type === 'star') {
-        ctx.fillStyle = col2;
         const cy2 = it.y + bob + it.h / 2;
         const r1 = it.w / 2, r2 = r1 * 0.45;
         ctx.beginPath();
         for (let si = 0; si < 10; si++) {
           const angle = (si * Math.PI) / 5 - Math.PI / 2;
-          const r3 = si % 2 === 0 ? r1 : r2;
-          if (si === 0) ctx.moveTo(sx4 + it.w / 2 + Math.cos(angle) * r3, cy2 + Math.sin(angle) * r3);
-          else ctx.lineTo(sx4 + it.w / 2 + Math.cos(angle) * r3, cy2 + Math.sin(angle) * r3);
+          const rr = si % 2 === 0 ? r1 : r2;
+          si === 0 ? ctx.moveTo(sx4 + it.w / 2 + Math.cos(angle) * rr, cy2 + Math.sin(angle) * rr)
+                   : ctx.lineTo(sx4 + it.w / 2 + Math.cos(angle) * rr, cy2 + Math.sin(angle) * rr);
         }
         ctx.closePath(); ctx.fill();
-        ctx.strokeStyle = '#FFA000'; ctx.lineWidth = 1.5; ctx.stroke();
       } else if (it.type === 'lens') {
         ctx.strokeStyle = col2; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(sx4 + it.w / 2, it.y + bob + it.h / 2, it.w / 2, 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.arc(sx4 + it.w / 2, it.y + bob + it.h / 2, it.w / 4, 0, Math.PI * 2); ctx.fillStyle = col2 + '88'; ctx.fill();
-      } else if (it.type === 'frame') {
-        ctx.strokeStyle = col2; ctx.lineWidth = 2;
-        ctx.strokeRect(sx4 + 2, it.y + bob + 2, it.w - 4, it.h - 4);
-        ctx.strokeRect(sx4 + 5, it.y + bob + 5, it.w - 10, it.h - 10);
-      } else if (it.type === 'card') {
-        ctx.fillStyle = col2; ctx.fillRect(sx4 + 2, it.y + bob + 3, it.w - 4, it.h - 6);
-        ctx.fillStyle = '#FFFFFF88';
-        ctx.font = '7px monospace'; ctx.textAlign = 'center';
-        ctx.fillText('SD', sx4 + it.w / 2, it.y + bob + it.h / 2 + 2);
-      } else if (it.type === 'battery') {
-        ctx.fillStyle = col2 + 'CC';
-        ctx.fillRect(sx4 + 3, it.y + bob + 4, it.w - 6, it.h - 8);
-        ctx.fillStyle = '#00FF0088';
-        ctx.fillRect(sx4 + 4, it.y + bob + 5, (it.w - 8) * 0.7, it.h - 10);
-        ctx.fillStyle = col2; ctx.fillRect(sx4 + it.w / 2 - 2, it.y + bob, 4, 4);
+        ctx.beginPath(); ctx.arc(sx4 + 9, it.y + bob + 9, 8, 0, Math.PI * 2); ctx.stroke();
+      } else {
+        ctx.fillRect(sx4 + 2, it.y + bob + 2, it.w - 4, it.h - 4);
       }
       ctx.restore();
     });
 
-    // ── Photo moments ─────────────────────────────────────────────────────────
-    gs.shots.forEach(s => {
-      if (!s.active || s.done) return;
-      const sx5 = s.wx - camX;
-      const progress = s.timer / 180;
-      const pulse2 = 0.7 + 0.3 * Math.sin(t * 0.25);
-      ctx.save();
-      ctx.globalAlpha = progress * pulse2;
-      ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 16;
-      ctx.font = 'bold 22px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#FFD700';
-      ctx.fillText('📷', sx5, s.wy);
-      // Timer ring
-      ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(sx5, s.wy + 4, 18, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
-      ctx.stroke();
-      ctx.font = 'bold 9px monospace';
-      ctx.fillStyle = '#FFD700';
-      ctx.fillText('FLASH!', sx5, s.wy + 28);
-      ctx.restore();
-    });
-
-    // ── Enemies ───────────────────────────────────────────────────────────────
+    // Enemies (bosses)
     gs.enemies.forEach(e => {
       if (!e.alive) return;
       const ex2 = e.x - camX;
-      if (ex2 + e.w < -10 || ex2 > CW + 10) return;
+      if (ex2 + e.w < -20 || ex2 > CW + 20) return;
+      drawBoss(ctx, e, ex2, t, ld);
+      // HP bar above boss
+      if (e.maxHp && e.maxHp > 0) {
+        const barW = 60, barH = 6;
+        const bx = ex2 + e.w / 2 - barW / 2;
+        const by = e.y - 16;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx - 1, by - 1, barW + 2, barH + 2);
+        ctx.fillStyle = '#FF4444'; ctx.fillRect(bx, by, barW, barH);
+        ctx.fillStyle = '#44FF44'; ctx.fillRect(bx, by, barW * (e.hp! / e.maxHp!), barH);
+      }
+    });
 
+    // Spawned girls/personel
+    gs.spawnedGirls.forEach(g => drawSpawnedGirl(ctx, g, camX, t));
+
+    // Zabıtalar
+    gs.zabitas.forEach(z => {
+      const zx = z.x - camX;
+      if (zx < -40 || zx > CW + 40) return;
       ctx.save();
-      if (e.type === 'bird') {
-        // Seagull
-        const flap = Math.sin(t * 0.2 + e.id) > 0 ? 3 : -3;
-        ctx.fillStyle = '#E8E8E8';
-        ctx.beginPath(); ctx.arc(ex2 + 14, e.y + 8, 7, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#FFA500';
-        ctx.beginPath(); ctx.moveTo(ex2 + 19, e.y + 9); ctx.lineTo(ex2 + 24, e.y + 8); ctx.lineTo(ex2 + 20, e.y + 11); ctx.closePath(); ctx.fill();
-        // Wings
-        ctx.fillStyle = '#D0D0D0';
-        ctx.beginPath(); ctx.moveTo(ex2 + 4, e.y + 7); ctx.lineTo(ex2 - 4, e.y + 7 + flap); ctx.lineTo(ex2 + 8, e.y + 12); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(ex2 + 24, e.y + 7); ctx.lineTo(ex2 + 32, e.y + 7 + flap); ctx.lineTo(ex2 + 18, e.y + 12); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(ex2 + 16, e.y + 6, 1.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#2a5a2a'; ctx.fillRect(zx, z.y, 24, 30);
+      ctx.fillStyle = '#FDBCB4'; ctx.beginPath(); ctx.arc(zx + 12, z.y + 8, 8, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#1a4a1a'; ctx.fillRect(zx, z.y - 5, 24, 6);
+      ctx.restore();
+    });
 
-      } else if (e.type === 'drone') {
-        // Drone / quad-rotor
-        const bladeRot = (t * 0.25 + e.id) % (Math.PI * 2);
-        ctx.fillStyle = '#1a1a2e'; ctx.strokeStyle = ld.acc; ctx.lineWidth = 1.5;
-        // Body
-        ctx.shadowColor = ld.acc; ctx.shadowBlur = 8;
-        drawRoundRect(ctx, ex2 + 5, e.y + 6, e.w - 10, e.h - 10, 3);
-        ctx.fill(); ctx.stroke();
-        // Arms
-        ctx.strokeStyle = '#444'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(ex2, e.y + e.h / 2); ctx.lineTo(ex2 + e.w, e.y + e.h / 2); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(ex2 + e.w / 2, e.y); ctx.lineTo(ex2 + e.w / 2, e.y + e.h); ctx.stroke();
-        // Rotors
-        const rotors = [[0, 0], [e.w, 0], [0, e.h], [e.w, e.h]];
-        rotors.forEach(([rx2, ry2]) => {
-          ctx.save();
-          ctx.translate(ex2 + rx2, e.y + ry2);
-          ctx.rotate(bladeRot * (((rx2 + ry2) % 2 === 0) ? 1 : -1));
-          ctx.strokeStyle = ld.acc; ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(6, 0); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(0, 6); ctx.stroke();
-          ctx.restore();
-        });
-        // Eye / camera
-        ctx.fillStyle = '#FF0000'; ctx.beginPath(); ctx.arc(ex2 + e.w / 2, e.y + e.h / 2, 3, 0, Math.PI * 2); ctx.fill();
-
-      } else if (e.type === 'cart') {
-        // Equipment cart
-        ctx.fillStyle = '#444';
-        ctx.fillRect(ex2, e.y, e.w, e.h - 5);
-        ctx.fillStyle = '#666';
-        ctx.fillRect(ex2 + 2, e.y + 2, e.w - 4, e.h - 9);
-        // Wheels
-        ctx.fillStyle = '#222';
-        ctx.beginPath(); ctx.arc(ex2 + 8, e.y + e.h - 4, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(ex2 + e.w - 8, e.y + e.h - 4, 4, 0, Math.PI * 2); ctx.fill();
-        // ASPECT label
-        ctx.fillStyle = ld.acc; ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center';
-        ctx.fillText('ASPECT', ex2 + e.w / 2, e.y + e.h - 8);
-
-      } else if (e.type === 'boss') {
-        // ÖZGÜR DRONE BOSS 👑
-        ctx.shadowColor = '#FF6600'; ctx.shadowBlur = 20;
-        // Main body — large drone
-        ctx.fillStyle = '#1a0033'; ctx.strokeStyle = '#FF6600'; ctx.lineWidth = 2;
-        drawRoundRect(ctx, ex2 + 8, e.y + 12, e.w - 16, e.h - 18, 6);
-        ctx.fill(); ctx.stroke();
-        // Arms
-        ctx.strokeStyle = '#FF6600'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(ex2, e.y + e.h / 2 - 5); ctx.lineTo(ex2 + e.w, e.y + e.h / 2 - 5); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(ex2 + e.w / 2, e.y + 4); ctx.lineTo(ex2 + e.w / 2, e.y + e.h - 4); ctx.stroke();
-        // Rotors (big)
-        const corners2 = [[0, 0], [e.w, 0], [0, e.h], [e.w, e.h]];
-        corners2.forEach(([rx2, ry2]) => {
-          ctx.save();
-          ctx.translate(ex2 + rx2, e.y + ry2);
-          ctx.rotate((t * 0.35 * ((rx2 + ry2) % 2 === 0 ? 1 : -1)));
-          ctx.strokeStyle = '#FF9900'; ctx.lineWidth = 2.5;
-          ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(10, 0); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(0, 10); ctx.stroke();
-          ctx.restore();
-        });
-        // ÖZGÜR text on body
-        ctx.fillStyle = '#FFD700'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
-        ctx.fillText('ÖZGÜR', ex2 + e.w / 2, e.y + e.h / 2 - 1);
-        ctx.fillText('DRONE™', ex2 + e.w / 2, e.y + e.h / 2 + 11);
-        // Crown
-        ctx.fillStyle = '#FFD700';
-        ctx.beginPath();
-        ctx.moveTo(ex2 + e.w / 2 - 12, e.y + 8);
-        ctx.lineTo(ex2 + e.w / 2 - 12, e.y);
-        ctx.lineTo(ex2 + e.w / 2 - 4, e.y + 5);
-        ctx.lineTo(ex2 + e.w / 2, e.y);
-        ctx.lineTo(ex2 + e.w / 2 + 4, e.y + 5);
-        ctx.lineTo(ex2 + e.w / 2 + 12, e.y);
-        ctx.lineTo(ex2 + e.w / 2 + 12, e.y + 8);
-        ctx.closePath(); ctx.fill();
-        // Camera gun
-        ctx.fillStyle = '#444'; ctx.fillRect(ex2 + e.w / 2 - 14, e.y + e.h - 10, 28, 8);
-        ctx.fillStyle = '#FF0000'; ctx.beginPath(); ctx.arc(ex2 + e.w / 2, e.y + e.h - 6, 3, 0, Math.PI * 2); ctx.fill();
+    // Projectiles
+    gs.projectiles.forEach(p => {
+      if (!p.active) return;
+      const px2 = p.x - camX;
+      if (px2 < -60 || px2 > CW + 60) return;
+      ctx.save();
+      const rot = p.type === 'surfboard' ? Math.atan2(p.vy, p.vx) : (t * 0.15);
+      ctx.translate(px2, p.y);
+      ctx.rotate(rot);
+      if (p.type === 'plate') {
+        ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = '#AAAAAA'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.ellipse(0, 0, p.w / 2, p.h / 3, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      } else if (p.type === 'ice') {
+        ctx.fillStyle = '#88EEFF'; ctx.globalAlpha = 0.9;
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 1; ctx.strokeRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      } else if (p.type === 'net') {
+        ctx.strokeStyle = '#88FF88'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.85;
+        for (let ni = -2; ni <= 2; ni++) { ctx.beginPath(); ctx.moveTo(-p.w / 2 + ni * 5, -p.h / 2); ctx.lineTo(-p.w / 2 + ni * 5, p.h / 2); ctx.stroke(); }
+        for (let ni = -2; ni <= 2; ni++) { ctx.beginPath(); ctx.moveTo(-p.w / 2, -p.h / 2 + ni * 5); ctx.lineTo(p.w / 2, -p.h / 2 + ni * 5); ctx.stroke(); }
+      } else if (p.type === 'surfboard') {
+        ctx.fillStyle = '#FF8822'; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.fillStyle = '#FFCC44'; ctx.fillRect(-p.w / 2 + 4, -p.h / 4, p.w - 8, p.h / 2);
+      } else if (p.type === 'album') {
+        ctx.fillStyle = '#8B4513'; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.fillStyle = '#FDBCB4'; ctx.fillRect(-p.w / 2 + 3, -p.h / 2 + 3, p.w - 6, p.h - 6);
+        ctx.fillStyle = '#444'; ctx.font = '5px monospace'; ctx.textAlign = 'center';
+        ctx.fillText('PHOTO', 0, 3);
       }
       ctx.restore();
     });
 
-    // ── Player ────────────────────────────────────────────────────────────────
-    if (!gs.pdead || gs.pdeadT % 6 < 3) {
-      // gs.px is WORLD space — subtract camX to get screen position
-      const px6 = gs.px - camX;
-      const py6 = gs.py;
-      const flipped = gs.pface < 0;
-      const isInv = gs.pinv > 0 && (gs.t % 6 < 3);
-      if (!isInv) {
-        ctx.save();
-        if (flipped) { ctx.translate(px6 + PW, 0); ctx.scale(-1, 1); }
-
-        const bx6 = flipped ? 0 : px6;
-
-        // Body
-        ctx.fillStyle = gs.pdead ? '#FF4444' : '#6C63FF';
-        ctx.fillRect(bx6 + 3, py6 + 12, PW - 6, PH - 12);
-        // ASPECT on shirt
-        ctx.fillStyle = '#FFFFFF66'; ctx.font = '5px monospace'; ctx.textAlign = 'center';
-        ctx.fillText('ASPECT', bx6 + PW / 2, py6 + 22);
-
-        // Head
-        ctx.fillStyle = '#FDBCB4';
-        ctx.fillRect(bx6 + 4, py6 + 2, PW - 8, 12);
-        // Hair
-        ctx.fillStyle = '#4A3728';
-        ctx.fillRect(bx6 + 4, py6 + 2, PW - 8, 5);
-        ctx.fillRect(bx6 + 4, py6 + 4, 3, 6);
-        // Eye
-        ctx.fillStyle = '#333';
-        ctx.fillRect(bx6 + PW - 10, py6 + 6, 3, 3);
-        // Legs
-        const legOff = gs.ponG ? Math.sin(gs.t * 0.35) * 3 : 0;
-        ctx.fillStyle = '#4A3728';
-        ctx.fillRect(bx6 + 4, py6 + PH - 10, 7, 10 + legOff);
-        ctx.fillRect(bx6 + PW - 11, py6 + PH - 10, 7, 10 - legOff);
-        // Shoes
-        ctx.fillStyle = '#1a1a1a';
-        ctx.fillRect(bx6 + 3, py6 + PH - 2, 9, 3);
-        ctx.fillRect(bx6 + PW - 12, py6 + PH - 2, 9, 3);
-
-        // Camera
-        const camShake = gs.pcamAnim > 0 ? Math.sin(gs.pcamAnim * 1.5) * 2 : 0;
-        ctx.fillStyle = '#2a2a2a';
-        ctx.fillRect(bx6 + PW - 4, py6 + 14 + camShake, 10, 8);
-        ctx.fillStyle = '#444';
-        ctx.fillRect(bx6 + PW - 3, py6 + 15 + camShake, 8, 6);
-        ctx.fillStyle = '#87CEEB';
-        ctx.beginPath(); ctx.arc(bx6 + PW + 1, py6 + 18 + camShake, 2.5, 0, Math.PI * 2); ctx.fill();
-        // Flash effect
-        if (gs.pcamAnim > 12) {
-          ctx.fillStyle = '#FFFFFF'; ctx.globalAlpha = 0.7;
-          ctx.beginPath(); ctx.arc(bx6 + PW + 3, py6 + 13 + camShake, 5, 0, Math.PI * 2); ctx.fill();
-          ctx.globalAlpha = 1;
-        }
-        ctx.restore();
-      }
+    // Shockwave
+    if (gs.shockwaveTimer > 0) {
+      const sw = gs.shockwaveTimer;
+      const shx = gs.shockwaveX - camX;
+      ctx.save();
+      ctx.strokeStyle = '#FF8800';
+      ctx.lineWidth = 4;
+      ctx.globalAlpha = sw / 60;
+      const radius = (60 - sw) * 5;
+      ctx.beginPath(); ctx.arc(shx, GY - 10, radius, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(shx, GY - 10, radius * 0.6, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
     }
 
-    // ── Sparks — stored world space, subtract camX to render ─────────────────
+    // Water (Müjgan Restaurant)
+    if (gs.waterRising && gs.waterLevel < CH + 50) {
+      ctx.save();
+      ctx.globalAlpha = 0.6;
+      const waterGrd = ctx.createLinearGradient(0, gs.waterLevel, 0, CH);
+      waterGrd.addColorStop(0, '#0088FF');
+      waterGrd.addColorStop(1, '#004488');
+      ctx.fillStyle = waterGrd;
+      ctx.fillRect(0, gs.waterLevel, CW, CH - gs.waterLevel);
+      // Wave surface
+      ctx.globalAlpha = 0.8;
+      ctx.fillStyle = '#00AAFF';
+      for (let wi = 0; wi < CW; wi += 30) {
+        const wy = gs.waterLevel + Math.sin((wi + t * 2) * 0.15) * 4;
+        ctx.fillRect(wi, wy, 15, 3);
+      }
+      ctx.restore();
+    }
+
+    // Player
+    const psx = gs.px - camX;
+    ctx.save();
+    if (gs.pinv > 0 && Math.floor(t / 4) % 2 === 0) ctx.globalAlpha = 0.3;
+    if (gs.pdead) ctx.globalAlpha = 0.2;
+
+    // Player body — ASPECT fotoğrafçısı
+    const pcy = gs.py;
+    ctx.fillStyle = '#2244AA'; // mavi jacket
+    ctx.fillRect(psx, pcy + 12, PW, PH - 12);
+    ctx.fillStyle = '#FDBCB4'; // yüz
+    ctx.beginPath(); ctx.arc(psx + PW / 2, pcy + 7, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1a1a1a'; // saç
+    ctx.beginPath(); ctx.arc(psx + PW / 2, pcy + 7, 9, Math.PI, 0); ctx.fill();
+    ctx.fillRect(psx + PW / 2 - 9, pcy - 2, 18, 5);
+    // Kamera
+    ctx.fillStyle = '#222';
+    ctx.fillRect(psx + PW - 8 + (gs.pface > 0 ? 4 : -10), pcy + 8, 10, 7);
+    ctx.fillStyle = '#444';
+    ctx.fillRect(psx + PW - 6 + (gs.pface > 0 ? 4 : -10), pcy + 10, 6, 5);
+    ctx.fillStyle = '#88CCFF';
+    ctx.beginPath();
+    ctx.arc(psx + PW - 3 + (gs.pface > 0 ? 4 : -10), pcy + 13, 2, 0, Math.PI * 2);
+    ctx.fill();
+    // Net effect overlay
+    if (gs.netTimer > 0 && Math.floor(t / 4) % 2 === 0) {
+      ctx.strokeStyle = '#88FF88'; ctx.lineWidth = 1;
+      ctx.strokeRect(psx - 2, pcy - 2, PW + 4, PH + 4);
+    }
+    ctx.restore();
+
+    // Camera flash effect
+    if (gs.pcamAnim > 0) {
+      ctx.save();
+      ctx.globalAlpha = gs.pcamAnim / 18 * 0.5;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, CW, CH);
+      ctx.restore();
+    }
+
+    // Sparks
     gs.sparks.forEach(s => {
+      const sx6 = s.x - camX;
+      if (sx6 < 0 || sx6 > CW) return;
       ctx.globalAlpha = s.life / s.maxl;
       ctx.fillStyle = s.col;
-      ctx.fillRect(s.x - camX - s.sz / 2, s.y - s.sz / 2, s.sz, s.sz);
+      ctx.fillRect(sx6 - s.sz / 2, s.y - s.sz / 2, s.sz, s.sz);
     });
     ctx.globalAlpha = 1;
 
-    // ── Float texts — stored world space, subtract camX to render ─────────────
+    // Float texts
     gs.floats.forEach(f => {
-      ctx.save();
-      ctx.globalAlpha = Math.min(1, f.life / 30);
-      ctx.font = 'bold 12px monospace';
+      const fx6 = f.x - camX;
+      if (fx6 < 0 || fx6 > CW) return;
+      ctx.globalAlpha = f.life / 60;
       ctx.fillStyle = f.col;
+      ctx.font = 'bold 11px monospace';
       ctx.textAlign = 'center';
-      ctx.shadowColor = f.col; ctx.shadowBlur = 6;
-      ctx.fillText(f.text, f.x - camX + PW / 2, f.y);
-      ctx.restore();
+      ctx.fillText(f.text, fx6 + PW / 2, f.y);
     });
+    ctx.globalAlpha = 1;
 
-    // ── Screen flash ─────────────────────────────────────────────────────────
-    if (gs.flash > 0) {
-      ctx.fillStyle = `rgba(255,255,200,${gs.flash / 12 * 0.5})`;
-      ctx.fillRect(0, 0, CW, CH);
-    }
-
-    // ── HUD ───────────────────────────────────────────────────────────────────
-    // Top bar
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(0, 0, CW, 30);
-    ctx.strokeStyle = ld.acc + '44'; ctx.lineWidth = 1;
-    ctx.strokeRect(0, 0, CW, 30);
-
-    // Score
-    ctx.font = 'bold 11px monospace';
-    ctx.fillStyle = '#FFD700'; ctx.textAlign = 'left';
-    ctx.fillText(`★ ${gs.score.toLocaleString()}`, 8, 18);
-
-    // Level name
-    ctx.fillStyle = ld.acc; ctx.textAlign = 'center';
-    ctx.font = 'bold 9px monospace';
-    ctx.fillText(`LVL ${gs.lvl + 1} · ${ld.name}`, CW / 2, 11);
-
-    // Timer
-    ctx.fillStyle = '#FFFFFF88'; ctx.font = '9px monospace';
-    ctx.fillText(`${Math.floor(gs.levelT / 60)}s`, CW / 2, 22);
-
-    // Lives (hearts)
-    ctx.font = '13px monospace'; ctx.textAlign = 'right';
-    let livesStr = '';
-    for (let li = 0; li < gs.lives; li++) livesStr += '♥';
-    ctx.fillStyle = '#FF5555'; ctx.fillText(livesStr, CW - 8, 18);
-
-    // Combo
-    if (gs.combo >= 2) {
+    // Net timer indicator
+    if (gs.netTimer > 0) {
       ctx.save();
-      const cAlpha = Math.min(1, gs.comboT / 60);
-      ctx.globalAlpha = cAlpha;
-      ctx.font = 'bold 12px monospace';
-      ctx.fillStyle = '#FF9900'; ctx.textAlign = 'left';
-      ctx.fillText(`×${gs.combo} COMBO!`, 8, CH - 8);
+      ctx.fillStyle = '#88FF88';
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`🕸️ AĞ: ${Math.ceil(gs.netTimer / 60)}s`, CW / 2, 30);
       ctx.restore();
     }
-
-    // Progress bar — gs.px is world space, ld.fx is world space
-    const progress2 = Math.min(1, gs.px / ld.fx);
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.fillRect(8, 26, CW - 16, 4);
-    ctx.fillStyle = ld.acc;
-    ctx.fillRect(8, 26, (CW - 16) * progress2, 4);
-    // Player marker
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(8 + (CW - 16) * progress2 - 2, 24, 4, 8);
-
   }, []);
 
   // ── Game loop ────────────────────────────────────────────────────────────
@@ -1181,439 +1610,342 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
     rafRef.current = requestAnimationFrame(loop);
   }, [update, render]);
 
-  // ── Canvas resize ────────────────────────────────────────────────────────
+  useEffect(() => {
+    rafRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [loop]);
+
+  // ── Canvas scale ──────────────────────────────────────────────────────────
   useEffect(() => {
     const resize = () => {
       const wrap = wrapRef.current;
       const canvas = canvasRef.current;
       if (!wrap || !canvas) return;
-      const maxW = Math.min(wrap.clientWidth, 520);
-      const scale = maxW / CW;
+      const sw = wrap.clientWidth / CW;
+      const sh = wrap.clientHeight / CH;
+      const scale = Math.min(sw, sh, 2);
       scaleRef.current = scale;
-      canvas.style.width  = `${CW * scale}px`;
-      canvas.style.height = `${CH * scale}px`;
+      canvas.style.transform = `scale(${scale})`;
+      canvas.style.transformOrigin = 'top left';
     };
     resize();
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
   }, []);
 
-  // ── Start/stop loop ──────────────────────────────────────────────────────
+  // ── Keyboard input ────────────────────────────────────────────────────────
   useEffect(() => {
-    if (screen === 'play') {
-      rafRef.current = requestAnimationFrame(loop);
-    } else {
-      cancelAnimationFrame(rafRef.current);
-      // Still render one frame for paused state
-      if (screen === 'pause' || screen === 'lvlwin') render();
-    }
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [screen, loop, render]);
-
-  // ── Keyboard input ───────────────────────────────────────────────────────
-  useEffect(() => {
-    const inp = inputRef.current;
-    const down = (e: KeyboardEvent) => {
-      if (e.repeat) return;
-      if (e.key === 'ArrowLeft'  || e.key === 'a' || e.key === 'A') inp.left = true;
-      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') inp.right = true;
-      if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') { inp.jump = true; inp.jumpPress = true; }
-      if (e.key === 'Shift' || e.key === 'e' || e.key === 'E') { inp.cam = true; inp.camPress = true; }
-      if (e.key === 'Escape') {
-        const gs = gsRef.current;
-        if (gs?.screen === 'play')  { gs.screen = 'pause'; setScreen('pause'); }
-        else if (gs?.screen === 'pause') { gs.screen = 'play'; setScreen('play'); }
-      }
+    const kd = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft'  || e.key === 'a') inputRef.current.left = true;
+      if (e.key === 'ArrowRight' || e.key === 'd') inputRef.current.right = true;
+      if ((e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') && !e.repeat) inputRef.current.jumpPress = true;
     };
-    const up = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft'  || e.key === 'a' || e.key === 'A') inp.left = false;
-      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') inp.right = false;
-      if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') inp.jump = false;
-      if (e.key === 'Shift' || e.key === 'e' || e.key === 'E') inp.cam = false;
+    const ku = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft'  || e.key === 'a') inputRef.current.left = false;
+      if (e.key === 'ArrowRight' || e.key === 'd') inputRef.current.right = false;
     };
-    window.addEventListener('keydown', down);
-    window.addEventListener('keyup', up);
-    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+    window.addEventListener('keydown', kd);
+    window.addEventListener('keyup', ku);
+    return () => { window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); };
   }, []);
 
-  // ── Screen transitions ───────────────────────────────────────────────────
-  const handleStartGame = (lvlIdx: number) => {
-    initLevel(lvlIdx, 3, 0);
-    setCutIdx(0);
-    setScreen('cut');
-  };
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const ld = LEVELS[uiSnap.lvl] || LEVELS[0];
 
-  const handleCutNext = () => {
-    const gs = gsRef.current;
-    const msgs = LEVELS[gs.lvl].msg;
-    const next = cutIdx + 1;
-    if (next >= msgs.length) {
-      gs.screen = 'play';
-      setScreen('play');
-    } else {
-      setCutIdx(next);
-    }
-  };
-
-  const handleNextLevel = () => {
-    const gs = gsRef.current;
-    const nextLvl = gs.lvl + 1;
-    // Save data
-    const sd = loadSave();
-    if (gs.score > sd.best[gs.lvl]) { sd.best[gs.lvl] = gs.score; }
-    if (nextLvl > sd.unlocked) sd.unlocked = nextLvl;
-    saveSave(sd);
-    setSaveData({ ...sd });
-
-    if (nextLvl >= LEVELS.length) {
-      addLB(userName || 'Anonim', gs.score, gs.lvl + 1);
-      gs.screen = 'victory';
-      setScreen('victory');
-    } else {
-      initLevel(nextLvl, gs.lives, gs.score);
-      setCutIdx(0);
-      setScreen('cut');
-    }
-  };
-
-  const handleRetry = () => {
-    const gs = gsRef.current;
-    initLevel(gs.lvl, 3, 0);
-    setCutIdx(0);
-    setScreen('cut');
-  };
-
-  // ── Touch control handlers ───────────────────────────────────────────────
-  const mkTouch = (key: keyof typeof touchRef.current, isPress = false) => ({
-    onTouchStart: (e: React.TouchEvent) => {
-      e.preventDefault();
-      touchRef.current[key] = true;
-      if (isPress) touchRef.current[key] = true;
-    },
-    onTouchEnd: (e: React.TouchEvent) => {
-      e.preventDefault();
-      if (!isPress) touchRef.current[key] = false;
-    },
-    onMouseDown: (e: React.MouseEvent) => {
-      e.preventDefault();
-      touchRef.current[key] = true;
-    },
-    onMouseUp: (e: React.MouseEvent) => {
-      e.preventDefault();
-      if (!isPress) touchRef.current[key] = false;
-    },
-  });
-
-  const gs = gsRef.current;
-  const currentLevel = gs?.lvl ?? 0;
-  const ld = LEVELS[currentLevel];
-  const lb = loadLB();
-
-  // ── Render ───────────────────────────────────────────────────────────────
-  return (
-    <div className="flex flex-col h-full w-full overflow-hidden" style={{ background: 'linear-gradient(135deg,#0a0015,#1a0035,#0a001f)', minHeight: '100vh' }}>
-
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-        <button onClick={onBack} className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform" style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}>
-          <ChevronLeft size={18} className="text-white/70" />
-        </button>
-        <div className="flex-1">
-          <div className="font-bold text-white text-sm tracking-widest" style={{ textShadow: '0 0 12px #a855f7' }}>ASPECT QUEST</div>
-          <div className="text-white/40 text-xs">5 Bölümlü Platformer</div>
+  // ── RENDER: Menu ─────────────────────────────────────────────────────────
+  if (screen === 'menu') {
+    const lb = loadLB();
+    return (
+      <div className="fixed inset-0 flex flex-col" style={{ background: 'linear-gradient(135deg,#120024,#220044,#001a3a)' }}>
+        <div className="flex items-center gap-3 p-4">
+          <button onClick={onBack} className="text-white/70 hover:text-white"><ChevronLeft size={22} /></button>
+          <span className="text-white/60 text-sm">Aspect Quest</span>
+          <button onClick={() => { soundRef.current = !soundRef.current; setSaveData(d => ({ ...d, sound: soundRef.current })); }}
+            className="ml-auto text-white/60 hover:text-white">
+            {soundRef.current ? <Volume2 size={18} /> : <VolumeX size={18} />}
+          </button>
+          <button onClick={() => setShowLB(v => !v)} className="text-white/60 hover:text-white"><Trophy size={18} /></button>
         </div>
-        <button onClick={() => { soundRef.current = !soundRef.current; setSaveData(d => ({ ...d, sound: soundRef.current })); }} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}>
-          {soundRef.current ? <Volume2 size={16} className="text-purple-400" /> : <VolumeX size={16} className="text-white/30" />}
-        </button>
-        <button onClick={() => setShowLB(p => !p)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}>
-          <Trophy size={16} className="text-yellow-400" />
-        </button>
-      </div>
 
-      {/* Canvas area */}
-      <div ref={wrapRef} className="flex-1 flex flex-col items-center justify-center relative overflow-hidden" style={{ padding: '8px 4px 0' }}>
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6">
+          <div className="text-center mb-2">
+            <div className="text-4xl font-black text-white mb-1" style={{ textShadow: '0 0 24px #aa44ff' }}>ASPECT QUEST</div>
+            <div className="text-white/50 text-xs">8 Bölüm • Fethiye Maceraları</div>
+          </div>
+
+          {showLB ? (
+            <div className="w-full max-w-xs rounded-xl overflow-hidden border border-white/15" style={{ background: 'rgba(0,0,0,0.6)' }}>
+              <div className="px-4 py-2 text-white/80 font-bold text-sm border-b border-white/10">🏆 Skor Tablosu</div>
+              {lb.length === 0 && <div className="px-4 py-6 text-white/40 text-xs text-center">Henüz kayıt yok</div>}
+              {lb.slice(0, 6).map((e, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-2 border-b border-white/5">
+                  <span className="text-white/40 text-xs w-4">{i + 1}</span>
+                  <span className="text-white text-xs flex-1">{e.name}</span>
+                  <span className="text-yellow-400 text-xs">{e.score.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="w-full max-w-xs space-y-2">
+              {LEVELS.map((lv, i) => (
+                <button key={i}
+                  onClick={() => { if (i <= saveData.unlocked) startLevel(i, 3, 0); }}
+                  disabled={i > saveData.unlocked}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all"
+                  style={{
+                    background: i <= saveData.unlocked ? `linear-gradient(90deg,${lv.acc}22,${lv.acc}11)` : 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${i <= saveData.unlocked ? lv.acc + '44' : 'rgba(255,255,255,0.08)'}`,
+                    color: i <= saveData.unlocked ? '#fff' : '#ffffff44',
+                  }}>
+                  <span className="text-lg">{i <= saveData.unlocked ? '▶' : '🔒'}</span>
+                  <div className="flex-1 text-left">
+                    <div className="text-xs font-bold">{lv.name}</div>
+                    {saveData.best[i] > 0 && <div className="text-xs opacity-60">Best: {saveData.best[i].toLocaleString()}</div>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── RENDER: Dialog ────────────────────────────────────────────────────────
+  if (screen === 'dialog' && currentDialog) {
+    const d = currentDialog;
+    const portraitColors: Record<string, string> = {
+      ozgur: '#1a3a6a', celil: '#111', selcuk: '#3a5a8a', zuhal: '#AA7700',
+      necati: '#885522', busra: '#111', tanriverdi: '#2255aa', kayhan: '#111',
+      amanaman: '#1a1a1a', ezgi: '#CC6622', zeliha: '#4455AA', ayse: '#AA3366',
+    };
+    const accent = ld?.acc ?? '#aa44ff';
+    return (
+      <div className="fixed inset-0 flex flex-col" style={{ background: `linear-gradient(135deg,${ld?.bg1 ?? '#120024'},${ld?.bg2 ?? '#220044'})` }}>
+        <div className="flex items-center gap-3 p-4">
+          <button onClick={onBack} className="text-white/70 hover:text-white"><ChevronLeft size={22} /></button>
+          <span className="text-white/50 text-xs">{ld?.name}</span>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center px-4 gap-6">
+          {/* Portrait */}
+          <div className="relative">
+            <canvas
+              width={120} height={130}
+              ref={el => {
+                if (!el) return;
+                const c = el.getContext('2d')!;
+                c.clearRect(0, 0, 120, 130);
+                drawCharacterPortrait(c, d.portrait, 0, 0, 120);
+              }}
+              className="rounded-2xl"
+              style={{ border: `2px solid ${accent}55`, background: `${portraitColors[d.portrait] ?? '#222'}` }}
+            />
+            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-xs font-bold text-white"
+              style={{ background: accent, boxShadow: `0 0 12px ${accent}` }}>
+              {d.speaker}
+            </div>
+          </div>
+          {/* Dialog box */}
+          <div className="w-full max-w-sm rounded-2xl p-5 cursor-pointer select-none"
+            style={{ background: 'rgba(0,0,0,0.75)', border: `1px solid ${accent}44`, backdropFilter: 'blur(12px)' }}
+            onClick={advanceDialog}>
+            <p className="text-white text-sm leading-relaxed mb-4">{d.text}</p>
+            <div className="flex items-center justify-between">
+              <span className="text-white/30 text-xs">{dialogIdx + 1} / {dialogQueue.length}</span>
+              <span className="text-white/50 text-xs animate-pulse">Devam → Dokun</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── RENDER: Playing ───────────────────────────────────────────────────────
+  if (screen === 'play') {
+    const accent = ld.acc;
+    return (
+      <div className="fixed inset-0 flex flex-col" style={{ background: '#000' }}>
+        {/* HUD */}
+        <div className="flex items-center gap-2 px-3 py-2 z-10 relative" style={{ background: 'rgba(0,0,0,0.7)' }}>
+          <button onClick={onBack} className="text-white/60 hover:text-white mr-1"><ChevronLeft size={18} /></button>
+          <div className="flex gap-1">
+            {Array.from({ length: 3 }, (_, i) => (
+              <span key={i} className={`text-base ${i < uiSnap.lives ? 'text-red-400' : 'text-white/15'}`}>❤️</span>
+            ))}
+          </div>
+          <div className="flex-1 text-center">
+            <div className="text-white text-xs font-bold" style={{ color: accent, textShadow: `0 0 8px ${accent}` }}>{ld.name}</div>
+          </div>
+          <div className="text-yellow-400 text-xs font-bold">{uiSnap.score.toLocaleString()}</div>
+        </div>
+
+        {/* Boss HP bar */}
+        {uiSnap.bossMaxHp > 0 && !gsRef.current?.bossDefeated && (
+          <div className="px-4 py-1 z-10" style={{ background: 'rgba(0,0,0,0.5)' }}>
+            <div className="flex items-center gap-2">
+              <span className="text-white/60 text-xs font-bold">BOSS</span>
+              <div className="flex-1 h-2 rounded-full bg-white/10">
+                <div className="h-full rounded-full transition-all duration-200"
+                  style={{ width: `${(uiSnap.bossHp / uiSnap.bossMaxHp) * 100}%`, background: `linear-gradient(90deg,#FF4444,${accent})` }} />
+              </div>
+              <span className="text-white/60 text-xs">{uiSnap.bossHp}/{uiSnap.bossMaxHp}</span>
+            </div>
+          </div>
+        )}
 
         {/* Canvas */}
-        <div className="relative" style={{ borderRadius: 8, overflow: 'hidden', boxShadow: '0 0 40px rgba(168,85,247,0.3), 0 0 80px rgba(168,85,247,0.1)' }}>
-          <canvas ref={canvasRef} width={CW} height={CH} style={{ display: 'block', imageRendering: 'pixelated' }} />
-
-          {/* ── MENU SCREEN ── */}
-          {screen === 'menu' && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ background: 'rgba(5,0,20,0.92)', backdropFilter: 'blur(4px)' }}>
-              <div className="text-center mb-6">
-                <div className="font-black text-4xl tracking-[0.15em] mb-1" style={{ color: '#a855f7', textShadow: '0 0 30px #a855f750, 0 0 60px #a855f730' }}>ASPECT</div>
-                <div className="font-black text-2xl tracking-[0.5em] mb-3" style={{ color: '#ffffff', textShadow: '0 0 20px #fff4' }}>QUEST</div>
-                <div className="text-white/40 text-xs tracking-widest">5 BÖLÜMLÜ PLATFORMER</div>
-              </div>
-
-              {/* Level buttons */}
-              <div className="flex flex-col gap-2 w-full px-6 mb-4">
-                {LEVELS.map((lv, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleStartGame(i)}
-                    disabled={i > 0 && i >= saveData.unlocked}
-                    className="relative flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all active:scale-95 disabled:opacity-40"
-                    style={{ background: i === 0 ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.05)', border: `1px solid ${i === 0 ? '#a855f7' : 'rgba(255,255,255,0.1)'}` }}
-                  >
-                    <span className="text-lg">{['🌅','🌃','🎵','🌩️','🎮'][i]}</span>
-                    <div className="flex-1 text-left">
-                      <div className="text-white text-xs font-semibold">Bölüm {i + 1}: {lv.name}</div>
-                      {saveData.best[i] > 0 && <div className="text-yellow-400/60 text-[10px]">En iyi: {saveData.best[i].toLocaleString()}</div>}
-                    </div>
-                    {i < saveData.unlocked
-                      ? <span className="text-green-400 text-xs">▶</span>
-                      : <span className="text-white/30 text-xs">🔒</span>
-                    }
-                  </button>
-                ))}
-              </div>
-
-              <div className="text-white/30 text-[10px] tracking-widest">© ASPECT PHOTOGRAPHY</div>
-            </div>
-          )}
-
-          {/* ── CUTSCENE (Özgür messages) ── */}
-          {screen === 'cut' && gs && (
-            <div className="absolute inset-0 flex flex-col items-end justify-end" style={{ background: 'rgba(5,0,20,0.88)' }}>
-              {/* Level title */}
-              <div className="absolute top-4 left-0 right-0 text-center">
-                <div className="text-white/40 text-[10px] tracking-widest">BÖLÜM {currentLevel + 1}</div>
-                <div className="text-white font-bold text-base tracking-wide" style={{ textShadow: `0 0 12px ${ld.acc}` }}>{ld.name}</div>
-              </div>
-
-              {/* Özgür portrait */}
-              <div className="absolute left-4 bottom-20 flex flex-col items-center gap-1">
-                <div className="text-[10px] text-white/50 tracking-widest">ÖZGÜR</div>
-                {/* Simple pixel portrait */}
-                <div className="relative" style={{ width: 56, height: 72 }}>
-                  {/* Suit */}
-                  <div style={{ position: 'absolute', left: 8, top: 28, width: 40, height: 44, background: '#1a1a2e', borderRadius: '4px 4px 0 0', border: '2px solid #a855f7' }} />
-                  {/* Tie */}
-                  <div style={{ position: 'absolute', left: 24, top: 32, width: 8, height: 24, background: '#a855f7', borderRadius: 2 }} />
-                  {/* Head */}
-                  <div style={{ position: 'absolute', left: 12, top: 8, width: 32, height: 28, background: '#FDBCB4', borderRadius: '50% 50% 40% 40%', border: '2px solid #C8956C' }}>
-                    {/* Hair */}
-                    <div style={{ position: 'absolute', top: -4, left: -2, width: 36, height: 16, background: '#3a2a1a', borderRadius: '50% 50% 20% 20%' }} />
-                    {/* Eyes */}
-                    <div style={{ position: 'absolute', top: 10, left: 6, width: 4, height: 4, background: '#1a1a1a', borderRadius: '50%' }} />
-                    <div style={{ position: 'absolute', top: 10, right: 6, width: 4, height: 4, background: '#1a1a1a', borderRadius: '50%' }} />
-                    {/* Smile */}
-                    <div style={{ position: 'absolute', bottom: 5, left: '50%', transform: 'translateX(-50%)', width: 14, height: 6, borderRadius: '0 0 8px 8px', border: '2px solid #C8956C', borderTop: 'none' }} />
-                  </div>
-                  {/* Camera */}
-                  <div style={{ position: 'absolute', right: 0, top: 32, width: 16, height: 12, background: '#2a2a2a', borderRadius: 2, border: '1px solid #666' }}>
-                    <div style={{ position: 'absolute', top: 2, left: 2, width: 8, height: 8, borderRadius: '50%', background: '#87CEEB', border: '1px solid #555' }} />
-                  </div>
-                  {/* Crown on level 5 message about boss */}
-                  {currentLevel === 4 && <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', fontSize: 16 }}>👑</div>}
-                </div>
-              </div>
-
-              {/* Speech bubble */}
-              <div className="mb-20 mx-4 ml-20 flex-1 flex items-end">
-                <div className="relative rounded-2xl px-4 py-3" style={{ background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.4)', backdropFilter: 'blur(8px)', maxWidth: 260 }}>
-                  {/* Tail */}
-                  <div style={{ position: 'absolute', bottom: -8, left: 20, width: 0, height: 0, borderLeft: '8px solid transparent', borderRight: '8px solid transparent', borderTop: '8px solid rgba(168,85,247,0.4)' }} />
-                  <div className="text-white text-sm leading-relaxed">{ld.msg[cutIdx]}</div>
-                  <div className="text-white/40 text-[10px] mt-1 text-right">{cutIdx + 1}/{ld.msg.length}</div>
-                </div>
-              </div>
-
-              {/* Continue button */}
-              <button
-                onClick={handleCutNext}
-                className="absolute bottom-4 right-4 px-6 py-2.5 rounded-full font-bold text-sm transition-all active:scale-95"
-                style={{ background: 'rgba(168,85,247,0.9)', boxShadow: '0 0 20px rgba(168,85,247,0.5)' }}
-              >
-                {cutIdx < ld.msg.length - 1 ? 'Devam →' : 'Oyna! ▶'}
-              </button>
-
-              {/* Skip */}
-              <button onClick={() => { if (gs) { gs.screen = 'play'; setScreen('play'); } }} className="absolute bottom-4 left-4 text-white/30 text-xs">
-                Atla
-              </button>
-            </div>
-          )}
-
-          {/* ── PAUSE ── */}
-          {screen === 'pause' && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4" style={{ background: 'rgba(5,0,20,0.85)', backdropFilter: 'blur(6px)' }}>
-              <div className="text-white font-black text-2xl tracking-widest mb-2">⏸ PAUSE</div>
-              <button onClick={() => { if (gs) { gs.screen = 'play'; setScreen('play'); } }} className="px-8 py-2.5 rounded-full font-bold text-sm" style={{ background: 'rgba(168,85,247,0.8)', boxShadow: '0 0 16px rgba(168,85,247,0.4)' }}>
-                Devam Et ▶
-              </button>
-              <button onClick={handleRetry} className="px-8 py-2.5 rounded-full font-bold text-sm" style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}>
-                <span className="flex items-center gap-2 text-white"><RotateCcw size={14} /> Yeniden Başla</span>
-              </button>
-              <button onClick={() => setScreen('menu')} className="text-white/40 text-sm mt-2">Ana Menü</button>
-            </div>
-          )}
-
-          {/* ── LEVEL COMPLETE ── */}
-          {screen === 'lvlwin' && gs && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" style={{ background: 'rgba(5,0,20,0.90)', backdropFilter: 'blur(6px)' }}>
-              <div className="text-5xl mb-1">🏆</div>
-              <div className="font-black text-xl text-white tracking-widest">BÖLÜM TAMAMLANDI!</div>
-              <div className="text-sm" style={{ color: ld.acc }}>Bölüm {currentLevel + 1}: {ld.name}</div>
-              <div className="flex gap-6 my-2">
-                <div className="text-center">
-                  <div className="text-yellow-400 font-bold text-xl">{gs.score.toLocaleString()}</div>
-                  <div className="text-white/40 text-[10px]">PUAN</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-red-400 font-bold text-xl">{'♥'.repeat(gs.lives)}</div>
-                  <div className="text-white/40 text-[10px]">HAYAT</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-blue-400 font-bold text-xl">{gs.gotCollect}/{gs.items.length}</div>
-                  <div className="text-white/40 text-[10px]">KOLEKSIYON</div>
-                </div>
-              </div>
-              <button onClick={handleNextLevel} className="mt-1 px-10 py-3 rounded-full font-bold text-sm" style={{ background: ld.acc, color: '#000', boxShadow: `0 0 20px ${ld.acc}66` }}>
-                {currentLevel + 1 >= LEVELS.length ? '🏆 Finale Git' : `Bölüm ${currentLevel + 2} →`}
-              </button>
-            </div>
-          )}
-
-          {/* ── GAME OVER ── */}
-          {screen === 'over' && gs && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4" style={{ background: 'rgba(15,0,0,0.92)', backdropFilter: 'blur(6px)' }}>
-              <div className="text-5xl">💀</div>
-              <div className="font-black text-xl text-red-400 tracking-widest">GAME OVER</div>
-              <div className="text-white/50 text-sm">Bölüm {currentLevel + 1} · {gs.score.toLocaleString()} puan</div>
-              <button onClick={handleRetry} className="mt-2 px-10 py-3 rounded-full font-bold text-sm" style={{ background: 'rgba(168,85,247,0.8)', boxShadow: '0 0 16px rgba(168,85,247,0.4)' }}>
-                <span className="flex items-center gap-2"><RotateCcw size={14} /> Tekrar Dene</span>
-              </button>
-              <button onClick={() => setScreen('menu')} className="text-white/40 text-sm">Ana Menü</button>
-            </div>
-          )}
-
-          {/* ── VICTORY ── */}
-          {screen === 'victory' && gs && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-hidden" style={{ background: 'radial-gradient(ellipse at center, rgba(168,85,247,0.3) 0%, rgba(5,0,20,0.95) 70%)' }}>
-              {/* Confetti-like decorations */}
-              {[...Array(16)].map((_, i) => (
-                <div key={i} style={{ position: 'absolute', left: `${(i * 67 + 10) % 95}%`, top: `${(i * 43 + 5) % 90}%`, width: 6, height: 6, borderRadius: '50%', background: ['#FFD700','#FF6B6B','#4ECDC4','#45B7D1','#96CEB4','#FFEAA7'][i % 6], opacity: 0.6, animation: 'none' }} />
-              ))}
-              <div className="text-5xl">👑</div>
-              <div className="font-black text-2xl tracking-widest" style={{ color: '#FFD700', textShadow: '0 0 30px #FFD70088' }}>TÜM BÖLÜMLER</div>
-              <div className="font-black text-2xl tracking-widest" style={{ color: '#FFD700', textShadow: '0 0 30px #FFD70088' }}>TAMAMLANDI!</div>
-              <div className="text-white/70 text-sm">Tebrikler, ASPECT Şampiyonu!</div>
-              <div className="flex gap-6 my-2">
-                <div className="text-center">
-                  <div className="text-yellow-400 font-black text-2xl">{gs.score.toLocaleString()}</div>
-                  <div className="text-white/40 text-[10px]">TOPLAM PUAN</div>
-                </div>
-              </div>
-              {/* Unlocked character notification */}
-              <div className="px-4 py-2 rounded-xl text-center text-xs" style={{ background: 'rgba(255,215,0,0.15)', border: '1px solid rgba(255,215,0,0.3)', maxWidth: 260 }}>
-                🔓 <span className="text-yellow-400 font-bold">Patron Modu Özgür</span> karakteri açıldı!<br/>
-                <span className="text-white/40">Tüm bölümleri tamamladın!</span>
-              </div>
-              <button onClick={() => setScreen('menu')} className="mt-2 px-10 py-3 rounded-full font-bold text-sm" style={{ background: 'rgba(255,215,0,0.8)', color: '#000', boxShadow: '0 0 24px rgba(255,215,0,0.4)' }}>
-                Ana Menüye Dön
-              </button>
+        <div ref={wrapRef} className="flex-1 overflow-hidden relative">
+          <canvas ref={canvasRef} width={CW} height={CH} style={{ imageRendering: 'pixelated', display: 'block' }} />
+          {/* Water warning */}
+          {ld.waterRises && uiSnap.waterY < CH * 0.7 && (
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs text-blue-300 font-bold animate-pulse"
+              style={{ background: 'rgba(0,100,200,0.6)', border: '1px solid rgba(0,150,255,0.5)' }}>
+              💧 SU YÜKSELİYOR! YUKARI ÇIK!
             </div>
           )}
         </div>
 
-        {/* ── Mobile Touch Controls ── */}
-        {(screen === 'play' || screen === 'pause') && (
-          <div className="flex justify-between items-end w-full px-2 pt-2 pb-1 flex-shrink-0" style={{ maxWidth: 520 }}>
-            {/* Left: movement */}
-            <div className="flex gap-2">
-              <button
-                {...mkTouch('left')}
-                className="w-16 h-14 rounded-2xl flex items-center justify-center select-none active:scale-95 transition-transform"
-                style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', touchAction: 'none', userSelect: 'none' }}
-              >
-                <span className="text-white/80 text-2xl">◀</span>
-              </button>
-              <button
-                {...mkTouch('right')}
-                className="w-16 h-14 rounded-2xl flex items-center justify-center select-none active:scale-95 transition-transform"
-                style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', touchAction: 'none', userSelect: 'none' }}
-              >
-                <span className="text-white/80 text-2xl">▶</span>
-              </button>
-            </div>
+        {/* Touch controls */}
+        <div className="flex items-center justify-between px-4 py-3 z-10" style={{ background: 'rgba(0,0,0,0.7)' }}>
+          <div className="flex gap-3">
+            <button
+              className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl font-bold select-none active:scale-95"
+              style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
+              onTouchStart={e => { e.preventDefault(); touchRef.current.left = true; }}
+              onTouchEnd={e => { e.preventDefault(); touchRef.current.left = false; }}
+              onMouseDown={() => touchRef.current.left = true}
+              onMouseUp={() => touchRef.current.left = false}
+            >◀</button>
+            <button
+              className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl font-bold select-none active:scale-95"
+              style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
+              onTouchStart={e => { e.preventDefault(); touchRef.current.right = true; }}
+              onTouchEnd={e => { e.preventDefault(); touchRef.current.right = false; }}
+              onMouseDown={() => touchRef.current.right = true}
+              onMouseUp={() => touchRef.current.right = false}
+            >▶</button>
+          </div>
+          <button
+            className="w-20 h-14 rounded-xl flex items-center justify-center text-xl font-bold select-none active:scale-95"
+            style={{ background: `linear-gradient(135deg,${accent}44,${accent}22)`, border: `1px solid ${accent}66` }}
+            onTouchStart={e => { e.preventDefault(); touchRef.current.jump = true; }}
+            onTouchEnd={e => { e.preventDefault(); touchRef.current.jump = false; }}
+            onMouseDown={() => { touchRef.current.jump = true; inputRef.current.jumpPress = true; }}
+            onMouseUp={() => touchRef.current.jump = false}
+          >JUMP</button>
+        </div>
+      </div>
+    );
+  }
 
-            {/* Center: pause */}
+  // ── RENDER: Level Win ─────────────────────────────────────────────────────
+  if (screen === 'lvlwin') {
+    const gs = gsRef.current;
+    const score = gs?.score ?? 0;
+    const lvlIdx = gs?.lvl ?? 0;
+    const isLast = lvlIdx >= LEVELS.length - 1;
+    return (
+      <div className="fixed inset-0 flex flex-col items-center justify-center gap-5 px-6"
+        style={{ background: 'linear-gradient(135deg,#001a00,#002a00)' }}>
+        <div className="text-5xl">🎉</div>
+        <div className="text-white text-2xl font-black">BÖLÜM TAMAM!</div>
+        <div className="text-white/60 text-sm">{LEVELS[lvlIdx]?.name}</div>
+        <div className="text-yellow-400 text-3xl font-bold">{score.toLocaleString()}</div>
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          {!isLast && (
             <button
               onClick={() => {
-                const g2 = gsRef.current;
-                if (g2?.screen === 'play')  { g2.screen = 'pause'; setScreen('pause'); }
-                else if (g2?.screen === 'pause') { g2.screen = 'play'; setScreen('play'); }
+                const sd = loadSave();
+                const next = lvlIdx + 1;
+                if (next > sd.unlocked) { sd.unlocked = next; }
+                if (score > (sd.best[lvlIdx] ?? 0)) sd.best[lvlIdx] = score;
+                saveSave(sd); setSaveData(sd);
+                addLB(userName || 'ASPECT', score, lvlIdx + 1);
+                (gsRef as any)._bossIntroShown = false;
+                startLevel(next, gs?.lives ?? 3, score);
               }}
-              className="w-10 h-10 rounded-full flex items-center justify-center"
-              style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}
-            >
-              <span className="text-white/50 text-sm">{screen === 'pause' ? '▶' : '⏸'}</span>
+              className="w-full py-3 rounded-xl text-white font-bold text-lg"
+              style={{ background: 'linear-gradient(90deg,#44aa44,#22cc22)' }}>
+              Sonraki Bölüm ▶
             </button>
-
-            {/* Right: camera + jump */}
-            <div className="flex gap-2">
-              <button
-                onTouchStart={(e) => { e.preventDefault(); touchRef.current.cam = true; inputRef.current.camPress = true; }}
-                onTouchEnd={(e) => { e.preventDefault(); touchRef.current.cam = false; }}
-                onMouseDown={(e) => { e.preventDefault(); touchRef.current.cam = true; inputRef.current.camPress = true; }}
-                onMouseUp={() => touchRef.current.cam = false}
-                className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center select-none active:scale-95 transition-transform"
-                style={{ background: 'rgba(255,215,0,0.15)', border: '1px solid rgba(255,215,0,0.35)', touchAction: 'none', userSelect: 'none' }}
-              >
-                <span className="text-xl">📷</span>
-                <span className="text-yellow-400/60 text-[8px] font-bold">FLASH</span>
-              </button>
-              <button
-                onTouchStart={(e) => { e.preventDefault(); touchRef.current.jump = true; inputRef.current.jumpPress = true; }}
-                onTouchEnd={(e) => { e.preventDefault(); touchRef.current.jump = false; }}
-                onMouseDown={(e) => { e.preventDefault(); touchRef.current.jump = true; inputRef.current.jumpPress = true; }}
-                onMouseUp={() => touchRef.current.jump = false}
-                className="w-16 h-14 rounded-2xl flex flex-col items-center justify-center select-none active:scale-95 transition-transform"
-                style={{ background: 'rgba(168,85,247,0.2)', border: '1px solid rgba(168,85,247,0.5)', touchAction: 'none', userSelect: 'none' }}
-              >
-                <span className="text-white/80 text-2xl">↑</span>
-                <span className="text-purple-300/60 text-[8px] font-bold">JUMP</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Controls hint */}
-        {screen === 'menu' && (
-          <div className="text-center mt-2 pb-2">
-            <div className="text-white/30 text-[10px]">⌨️ A/D veya ← → hareket · Boşluk/↑ zıpla · E/Shift kamera</div>
-            <div className="text-white/20 text-[10px]">📱 Mobil: ekranda butonları kullan</div>
-          </div>
-        )}
-      </div>
-
-      {/* Leaderboard panel */}
-      {showLB && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.8)' }} onClick={() => setShowLB(false)}>
-          <div className="w-full max-w-xs rounded-2xl overflow-hidden" style={{ background: 'linear-gradient(135deg,rgba(20,0,40,0.97),rgba(10,0,25,0.97))', border: '1px solid rgba(168,85,247,0.3)', backdropFilter: 'blur(20px)' }} onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-              <Trophy size={16} className="text-yellow-400" />
-              <span className="text-white font-bold text-sm">SKOR TABLOSU</span>
-              <button onClick={() => setShowLB(false)} className="ml-auto text-white/40 text-lg leading-none">×</button>
-            </div>
-            <div className="p-3 flex flex-col gap-1.5">
-              {lb.length === 0 && <div className="text-white/30 text-sm text-center py-4">Henüz skor yok</div>}
-              {lb.map((e, i) => (
-                <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-xl" style={{ background: i === 0 ? 'rgba(255,215,0,0.1)' : 'rgba(255,255,255,0.04)', border: `1px solid ${i === 0 ? 'rgba(255,215,0,0.25)' : 'rgba(255,255,255,0.06)'}` }}>
-                  <span className="text-base w-5 text-center">{['🥇','🥈','🥉'][i] || `${i+1}.`}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-white text-xs font-semibold truncate">{e.name}</div>
-                    <div className="text-white/30 text-[10px]">Bölüm {e.level} · {e.date}</div>
-                  </div>
-                  <div className="text-yellow-400 font-bold text-xs">{e.score.toLocaleString()}</div>
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
+          {isLast && (
+            <button
+              onClick={() => {
+                addLB(userName || 'ASPECT', score, LEVELS.length);
+                setScreen('victory');
+              }}
+              className="w-full py-3 rounded-xl text-white font-bold text-lg"
+              style={{ background: 'linear-gradient(90deg,#FFD700,#FF8800)' }}>
+              🏆 FİNAL! 🏆
+            </button>
+          )}
+          <button onClick={() => setScreen('menu')}
+            className="w-full py-2.5 rounded-xl text-white/70 font-medium border border-white/15">
+            Ana Menü
+          </button>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    );
+  }
+
+  // ── RENDER: Game Over ─────────────────────────────────────────────────────
+  if (screen === 'over') {
+    const gs = gsRef.current;
+    const score = gs?.score ?? 0;
+    const lvlIdx = gs?.lvl ?? 0;
+    return (
+      <div className="fixed inset-0 flex flex-col items-center justify-center gap-5 px-6"
+        style={{ background: 'linear-gradient(135deg,#200000,#400000)' }}>
+        <div className="text-5xl">💀</div>
+        <div className="text-red-400 text-2xl font-black">OYUN BİTTİ</div>
+        <div className="text-white/50 text-sm">Skor: {score.toLocaleString()}</div>
+        <div className="flex flex-col gap-3 w-full max-w-xs mt-2">
+          <button
+            onClick={() => {
+              (gsRef as any)._bossIntroShown = false;
+              startLevel(lvlIdx, 3, 0);
+            }}
+            className="w-full py-3 rounded-xl text-white font-bold flex items-center justify-center gap-2"
+            style={{ background: 'linear-gradient(90deg,#aa2222,#cc4444)' }}>
+            <RotateCcw size={16} /> Tekrar Dene
+          </button>
+          <button onClick={() => setScreen('menu')}
+            className="w-full py-2.5 rounded-xl text-white/70 font-medium border border-white/15">
+            Ana Menü
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── RENDER: Victory ───────────────────────────────────────────────────────
+  if (screen === 'victory') {
+    const gs = gsRef.current;
+    return (
+      <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 px-6"
+        style={{ background: 'linear-gradient(135deg,#000022,#001100,#000022)' }}>
+        <div className="text-6xl">🏆</div>
+        <div className="text-yellow-400 text-3xl font-black">TÜM BÖLÜMLER TAMAM!</div>
+        <div className="text-white/70 text-sm text-center">
+          8 mekanda 8 fotoğraf!<br/>
+          Gerçek bir ASPECT Fotoğrafçısısın! 📸
+        </div>
+        <div className="text-yellow-400 text-4xl font-bold mt-2">{(gs?.score ?? 0).toLocaleString()}</div>
+        <div className="mt-4 text-center space-y-1">
+          {['Zoka Restaurant ✅', 'Fethiye Sokakları ✅', 'Balık Hali ✅', 'Müjgan Restaurant ✅',
+            'Çalış Plajı ✅', 'İki Duble ✅', 'Mios ✅', 'ASPECT HQ 👑'].map(n => (
+            <div key={n} className="text-white/50 text-xs">{n}</div>
+          ))}
+        </div>
+        <button onClick={() => setScreen('menu')}
+          className="mt-4 w-full max-w-xs py-3 rounded-xl text-white font-bold"
+          style={{ background: 'linear-gradient(90deg,#FFD700,#FF8800)' }}>
+          Ana Menüye Dön
+        </button>
+      </div>
+    );
+  }
+
+  return null;
 }

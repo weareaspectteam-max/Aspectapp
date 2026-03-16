@@ -169,13 +169,13 @@ export function AdminDashboard({ userName, userRole, onNavigate }: AdminDashboar
   );
 
   // Normalize ciro onto the same scale as adet so both series can share ONE YAxis.
-  // A dual YAxis causes recharts to render two sets of tick <text> elements with the
-  // same numeric key (e.g. "0") inside the same SVG, producing the duplicate-key warning.
   const maxAdet = Math.max(...saatlikData.map(d => d.adet), 1);
   const maxCiro = Math.max(...saatlikData.map(d => d.ciro), 1);
-  const chartData = saatlikData.map(item => ({
+  // Add a stable numeric index so recharts always has a unique key per data point.
+  const chartData = saatlikData.map((item, idx) => ({
     ...item,
-    ciroNorm: (item.ciro / maxCiro) * maxAdet, // scaled to adet range for single axis
+    _idx: idx,
+    ciroNorm: (item.ciro / maxCiro) * maxAdet,
   }));
 
   return (
@@ -495,11 +495,11 @@ export function AdminDashboard({ userName, userRole, onNavigate }: AdminDashboar
             <ResponsiveContainer width="100%" height={180} minWidth={0}>
               <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                <XAxis dataKey="saat" stroke="rgba(255,255,255,0.2)" tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis stroke="rgba(255,255,255,0.2)" tick={{ fill: 'rgba(167,139,250,0.7)', fontSize: 10 }} axisLine={false} tickLine={false} width={28} allowDecimals={false} tickCount={5} />
+                <XAxis dataKey="_idx" stroke="rgba(255,255,255,0.2)" tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => chartData[v]?.saat ?? v} interval="preserveStartEnd" />
+                <YAxis yAxisId="main" stroke="rgba(255,255,255,0.2)" tick={{ fill: 'rgba(167,139,250,0.7)', fontSize: 10 }} axisLine={false} tickLine={false} width={28} allowDecimals={false} />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar key="bar-adet" dataKey="adet" name="Satış" fill="rgba(167,139,250,0.4)" stroke="rgba(167,139,250,0.8)" strokeWidth={1} radius={[3, 3, 0, 0]} />
-                <Line key="line-ciro" type="monotone" dataKey="ciroNorm" name="Ciro" stroke={COLORS.emerald} strokeWidth={2.5} dot={{ fill: COLORS.emerald, r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                <Bar key="bar-adet" yAxisId="main" dataKey="adet" name="Satış" fill="rgba(167,139,250,0.4)" stroke="rgba(167,139,250,0.8)" strokeWidth={1} radius={[3, 3, 0, 0]} />
+                <Line key="line-ciro" yAxisId="main" type="monotone" dataKey="ciroNorm" name="Ciro" stroke={COLORS.emerald} strokeWidth={2.5} dot={{ fill: COLORS.emerald, r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
               </ComposedChart>
             </ResponsiveContainer>
           )}
