@@ -1623,10 +1623,16 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       if (!wrap || !canvas) return;
       const sw = wrap.clientWidth / CW;
       const sh = wrap.clientHeight / CH;
-      const scale = Math.min(sw, sh, 2);
+      // Fill width on mobile, keep aspect ratio
+      const scale = Math.min(sw, sh, 2.5);
       scaleRef.current = scale;
       canvas.style.transform = `scale(${scale})`;
       canvas.style.transformOrigin = 'top left';
+      // Center canvas horizontally if narrower than wrapper
+      const scaledW = CW * scale;
+      const scaledH = CH * scale;
+      canvas.style.marginLeft = scaledW < wrap.clientWidth ? `${(wrap.clientWidth - scaledW) / 2}px` : '0';
+      canvas.style.marginTop = scaledH < wrap.clientHeight ? `${(wrap.clientHeight - scaledH) / 2}px` : '0';
     };
     resize();
     window.addEventListener('resize', resize);
@@ -1765,74 +1771,80 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
     const accent = ld.acc;
     return (
       <div className="fixed inset-0 flex flex-col" style={{ background: '#000' }}>
-        {/* HUD */}
-        <div className="flex items-center gap-2 px-3 py-2 z-10 relative" style={{ background: 'rgba(0,0,0,0.7)' }}>
+        {/* HUD — compact single row */}
+        <div className="flex items-center gap-2 px-3 py-1.5 z-20 relative shrink-0" style={{ background: 'rgba(0,0,0,0.85)' }}>
           <button onClick={onBack} className="text-white/60 hover:text-white mr-1"><ChevronLeft size={18} /></button>
-          <div className="flex gap-1">
+          <div className="flex gap-0.5">
             {Array.from({ length: 3 }, (_, i) => (
-              <span key={i} className={`text-base ${i < uiSnap.lives ? 'text-red-400' : 'text-white/15'}`}>❤️</span>
+              <span key={i} className={`text-sm ${i < uiSnap.lives ? 'text-red-400' : 'text-white/15'}`}>❤️</span>
             ))}
           </div>
-          <div className="flex-1 text-center">
-            <div className="text-white text-xs font-bold" style={{ color: accent, textShadow: `0 0 8px ${accent}` }}>{ld.name}</div>
-          </div>
-          <div className="text-yellow-400 text-xs font-bold">{uiSnap.score.toLocaleString()}</div>
-        </div>
-
-        {/* Boss HP bar */}
-        {uiSnap.bossMaxHp > 0 && !gsRef.current?.bossDefeated && (
-          <div className="px-4 py-1 z-10" style={{ background: 'rgba(0,0,0,0.5)' }}>
-            <div className="flex items-center gap-2">
-              <span className="text-white/60 text-xs font-bold">BOSS</span>
-              <div className="flex-1 h-2 rounded-full bg-white/10">
+          {uiSnap.bossMaxHp > 0 && !gsRef.current?.bossDefeated ? (
+            <div className="flex items-center gap-1 flex-1 mx-2">
+              <span className="text-white/50 text-xs font-bold shrink-0">BOSS</span>
+              <div className="flex-1 h-1.5 rounded-full bg-white/10">
                 <div className="h-full rounded-full transition-all duration-200"
                   style={{ width: `${(uiSnap.bossHp / uiSnap.bossMaxHp) * 100}%`, background: `linear-gradient(90deg,#FF4444,${accent})` }} />
               </div>
-              <span className="text-white/60 text-xs">{uiSnap.bossHp}/{uiSnap.bossMaxHp}</span>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="flex-1 text-center">
+              <span className="text-xs font-bold" style={{ color: accent }}>{ld.name}</span>
+            </div>
+          )}
+          <div className="text-yellow-400 text-xs font-bold shrink-0">{uiSnap.score.toLocaleString()}</div>
+        </div>
 
-        {/* Canvas */}
-        <div ref={wrapRef} className="flex-1 overflow-hidden relative">
+        {/* Canvas + overlaid controls — fills all remaining space */}
+        <div ref={wrapRef} className="flex-1 overflow-hidden relative" style={{ minHeight: 0 }}>
           <canvas ref={canvasRef} width={CW} height={CH} style={{ imageRendering: 'pixelated', display: 'block' }} />
+
           {/* Water warning */}
           {ld.waterRises && uiSnap.waterY < CH * 0.7 && (
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs text-blue-300 font-bold animate-pulse"
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs text-blue-300 font-bold animate-pulse z-10"
               style={{ background: 'rgba(0,100,200,0.6)', border: '1px solid rgba(0,150,255,0.5)' }}>
               💧 SU YÜKSELİYOR! YUKARI ÇIK!
             </div>
           )}
-        </div>
 
-        {/* Touch controls */}
-        <div className="flex items-center justify-between px-4 py-3 z-10" style={{ background: 'rgba(0,0,0,0.7)' }}>
-          <div className="flex gap-3">
+          {/* Touch controls — overlaid inside canvas area, never overlaps bottom nav */}
+          <div className="absolute bottom-0 left-0 right-0 flex items-end justify-between px-4 pb-3 pt-6 z-20"
+            style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.7) 60%, transparent)' }}>
+            <div className="flex gap-3">
+              <button
+                className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl font-bold select-none active:scale-95"
+                style={{ background: 'rgba(255,255,255,0.13)', border: '1px solid rgba(255,255,255,0.28)', WebkitTapHighlightColor: 'transparent' }}
+                onTouchStart={e => { e.preventDefault(); touchRef.current.left = true; }}
+                onTouchEnd={e => { e.preventDefault(); touchRef.current.left = false; }}
+                onTouchCancel={e => { e.preventDefault(); touchRef.current.left = false; }}
+                onMouseDown={() => touchRef.current.left = true}
+                onMouseUp={() => touchRef.current.left = false}
+                onMouseLeave={() => touchRef.current.left = false}
+              >◀</button>
+              <button
+                className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl font-bold select-none active:scale-95"
+                style={{ background: 'rgba(255,255,255,0.13)', border: '1px solid rgba(255,255,255,0.28)', WebkitTapHighlightColor: 'transparent' }}
+                onTouchStart={e => { e.preventDefault(); touchRef.current.right = true; }}
+                onTouchEnd={e => { e.preventDefault(); touchRef.current.right = false; }}
+                onTouchCancel={e => { e.preventDefault(); touchRef.current.right = false; }}
+                onMouseDown={() => touchRef.current.right = true}
+                onMouseUp={() => touchRef.current.right = false}
+                onMouseLeave={() => touchRef.current.right = false}
+              >▶</button>
+            </div>
             <button
-              className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl font-bold select-none active:scale-95"
-              style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
-              onTouchStart={e => { e.preventDefault(); touchRef.current.left = true; }}
-              onTouchEnd={e => { e.preventDefault(); touchRef.current.left = false; }}
-              onMouseDown={() => touchRef.current.left = true}
-              onMouseUp={() => touchRef.current.left = false}
-            >◀</button>
-            <button
-              className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl font-bold select-none active:scale-95"
-              style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
-              onTouchStart={e => { e.preventDefault(); touchRef.current.right = true; }}
-              onTouchEnd={e => { e.preventDefault(); touchRef.current.right = false; }}
-              onMouseDown={() => touchRef.current.right = true}
-              onMouseUp={() => touchRef.current.right = false}
-            >▶</button>
+              className="w-24 h-16 rounded-2xl flex items-center justify-center text-xl font-black select-none active:scale-95"
+              style={{ background: `linear-gradient(135deg,${accent}66,${accent}33)`, border: `2px solid ${accent}88`, WebkitTapHighlightColor: 'transparent', boxShadow: `0 0 18px ${accent}55` }}
+              onTouchStart={e => { e.preventDefault(); touchRef.current.jump = true; inputRef.current.jumpPress = true; }}
+              onTouchEnd={e => { e.preventDefault(); touchRef.current.jump = false; }}
+              onTouchCancel={e => { e.preventDefault(); touchRef.current.jump = false; }}
+              onMouseDown={() => { touchRef.current.jump = true; inputRef.current.jumpPress = true; }}
+              onMouseUp={() => touchRef.current.jump = false}
+              onMouseLeave={() => touchRef.current.jump = false}
+            >
+              <span className="text-white tracking-wide">JUMP</span>
+            </button>
           </div>
-          <button
-            className="w-20 h-14 rounded-xl flex items-center justify-center text-xl font-bold select-none active:scale-95"
-            style={{ background: `linear-gradient(135deg,${accent}44,${accent}22)`, border: `1px solid ${accent}66` }}
-            onTouchStart={e => { e.preventDefault(); touchRef.current.jump = true; }}
-            onTouchEnd={e => { e.preventDefault(); touchRef.current.jump = false; }}
-            onMouseDown={() => { touchRef.current.jump = true; inputRef.current.jumpPress = true; }}
-            onMouseUp={() => touchRef.current.jump = false}
-          >JUMP</button>
         </div>
       </div>
     );
