@@ -79,7 +79,7 @@ interface NPC {
   // named_minion extras
   name?: string; quotes?: string[]; quoteIdx?: number; quoteInterval?: number;
   // enemy extras
-  chasing?: boolean; angerTimer?: number;
+  chasing?: boolean; angerTimer?: number; hp?: number;
 }
 interface PhotoSpot {
   id: number; x: number; used: boolean;
@@ -190,8 +190,10 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
   {
     intro: [
       { speaker: 'Necati Abi', text: 'Hoş geldin evladım. Balık Hali\'ne. Burası bizim topraklarımız.', portrait: 'necati' },
+      { speaker: 'Necati Abi', text: 'Kardeşlerim, arkanızdayım! Ne olursa olsun yanınızdayım. Devam edin!', portrait: 'necati' },
       { speaker: 'Necati Abi', text: 'Ama dikkat et — Zuhal bugün sinirli. Sabahtan beri tartışıyor. Ona yaklaşma.', portrait: 'necati' },
-      { speaker: 'Özgür', text: 'Necati Abi\'ye teşekkürler. Fotoğrafları çek, Zuhal\'dan kaç. Basit!', portrait: 'ozgur' },
+      { speaker: 'Necati Abi', text: 'Fotoğrafları çek, paralı müşterileri atlat. Ben buradayım, sorarsan bulursun.', portrait: 'necati' },
+      { speaker: 'Özgür', text: 'Necati Abi sağ ol. Kardeşlerimiz yanımızda, yürüyoruz! Zuhal\'dan kaç, fotoğrafı kap!', portrait: 'ozgur' },
     ],
     boss_intro: [
       { speaker: 'Zuhal', text: 'Dur orada! Kim verdi sana burada fotoğraf çekme izni?', portrait: 'zuhal' },
@@ -211,7 +213,8 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
   // Level 3: Müjgan Restaurant (rising water, Büşra boss)
   {
     intro: [
-      { speaker: 'Özgür', text: 'Müjgan Restaurant. Güzel mekan. Bir de... borular bu sabah patladı mı nedir?', portrait: 'ozgur' },
+      { speaker: 'Necati Abi', text: 'Evladım Müjgan\'a gidiyorsun. Borular patlamış, su basıyor içeriyi.', portrait: 'necati' },
+      { speaker: 'Necati Abi', text: 'Kardeşlerim arkanızdayım — ama suya girmeyin, yüksekte kalın!', portrait: 'necati' },
       { speaker: 'Özgür', text: 'Su yükseliyor. Platformlara atla, yukarıda kal. Ve Büşra\'ya dikkat.', portrait: 'ozgur' },
       { speaker: 'Büşra', text: 'Özgür! Bu ne saçmalık? Burada ne arıyorsun sen?!', portrait: 'busra' },
       { speaker: 'Özgür', text: 'Merhaba ortağım... kamera... fotoğraf... iş gereği...', portrait: 'ozgur' },
@@ -231,9 +234,10 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
   // Level 4: Çalış Plajı (Tanrıverdi boss)
   {
     intro: [
-      { speaker: 'Özgür', text: 'Çalış Plajı. Güneş, kum, turkuaz su. Mükemmel fotoğraf mekanı.', portrait: 'ozgur' },
-      { speaker: 'Özgür', text: 'Bir de Tanrıverdi var tabii. Uzun boylu, sakallı. Kendini çok beğenmiş biri.', portrait: 'ozgur' },
-      { speaker: 'Özgür', text: 'Sörf tahtasını fırlatır, dikkat et. Kum üzerinde biraz yavaş kalırsın.', portrait: 'ozgur' },
+      { speaker: 'Necati Abi', text: 'Çalış Plajı evladım! Güneş var, deniz var, müşteri var. Mükemmel!', portrait: 'necati' },
+      { speaker: 'Necati Abi', text: 'Ama dikkat — Tanrıverdi o sahili sahiplenmiş. Sörf tahtasını fırlatıyor.', portrait: 'necati' },
+      { speaker: 'Necati Abi', text: 'Kardeşlerim, arkanızdayım! Sahilden iyi bir kare kap, gurur duyarız!', portrait: 'necati' },
+      { speaker: 'Özgür', text: 'Necati Abi haklı. Kumda biraz yavaş kalırsın, dikkatli ol. Haydi!', portrait: 'ozgur' },
     ],
     boss_intro: [
       { speaker: 'Tanrıverdi', text: 'Eyyy! Bu plajda çekim mi yapıyorsun sen?', portrait: 'tanriverdi' },
@@ -249,9 +253,10 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
   // Level 5: İki Duble (Kayhan boss)
   {
     intro: [
-      { speaker: 'Özgür', text: 'İki Duble. Karanlık, müzik yüksek. Ama kare burada da var.', portrait: 'ozgur' },
-      { speaker: 'Özgür', text: 'Kayhan her gece burada. Adamın yerinden ayrıldığı görülmemiş. Dikkat et ona.', portrait: 'ozgur' },
-      { speaker: 'Özgür', text: 'Telefona sarıldı mı bitti. Kızları çağırıyor — ortalık dolup taşıyor.', portrait: 'ozgur' },
+      { speaker: 'Necati Abi', text: 'İki Duble\'ye giriyorsun evladım. Gece kulübü, karanlık, gürültülü.', portrait: 'necati' },
+      { speaker: 'Necati Abi', text: 'Kayhan orada her gece. Telefona sarıldı mı kızları çağırıyor, etraf dolup taşıyor.', portrait: 'necati' },
+      { speaker: 'Necati Abi', text: 'Kardeşlerim arkanızdayım — fotoğrafı çek, kızlardan kaç, Kayhan\'ı yen!', portrait: 'necati' },
+      { speaker: 'Özgür', text: 'Kulaklar çınlıyor ama duyuyorum. Haydi!', portrait: 'ozgur' },
     ],
     boss_intro: [
       { speaker: 'Kayhan', text: 'Dur bakalım. Fotoğrafçı mı bu? İyi, iyi...', portrait: 'kayhan' },
@@ -266,9 +271,10 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
   // Level 6: Mios Restaurant (Aman Aman boss)
   {
     intro: [
-      { speaker: 'Özgür', text: 'Mios. Güvenli liman gibi görünür. Ama Aman Aman bugün moodu bozuk.', portrait: 'ozgur' },
-      { speaker: 'Özgür', text: 'Sol kolu dövmeli, uzun boylu, sakallı. Bağırınca her şey sallanıyor.', portrait: 'ozgur' },
-      { speaker: 'Özgür', text: 'Şok dalgasından kaç. Kafan dumanlıysa bir an dur, nefes al.', portrait: 'ozgur' },
+      { speaker: 'Necati Abi', text: 'Mios\'a gidiyorsun evladım. Güzel mekan, ama Aman Aman bugün çok sinirli.', portrait: 'necati' },
+      { speaker: 'Necati Abi', text: 'Sol kolu dövmeli, uzun boylu. Bağırdığında yer titriyor, şok dalgası çıkarıyor!', portrait: 'necati' },
+      { speaker: 'Necati Abi', text: 'Kardeşlerim arkanızdayım! Bağırınca atlayın, yerde durma sakın!', portrait: 'necati' },
+      { speaker: 'Özgür', text: 'Kulağım çınlıyor ama tamam. Son iki durak! Devam!', portrait: 'ozgur' },
     ],
     boss_intro: [
       { speaker: 'Aman Aman', text: 'Aman aman... Ne bu karışıklık? Kim bu adam?', portrait: 'amanaman' },
@@ -376,7 +382,7 @@ function makeNPCs(ww: number, lvlIdx: number): NPC[] {
       quote: ANGRY_QUOTES[(ei + lvlIdx * 2) % ANGRY_QUOTES.length],
       quoteTimer: 0, bobOffset: ei * 30,
       skinColor: '#FDBCB4', clothColor: '#CC2222',
-      chasing: false, angerTimer: 0,
+      chasing: false, angerTimer: 0, hp: 2,
     });
   }
 
@@ -926,7 +932,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       enemies.push({
         id: eid++, x: ld.bossX, y: GY - 60, w: 50, h: 60,
         type: ld.bossType, vx: 2.4, alive: true, minX: ld.bossX - 110, maxX: ld.bossX + 110,
-        oy: GY - 60, hp: 10, maxHp: 10, attackTimer: 90, phase: 0, hitTimer: 0, stunTimer: 0,
+        oy: GY - 60, hp: 10 + lvlIdx * 5, maxHp: 10 + lvlIdx * 5, attackTimer: 90, phase: 0, hitTimer: 0, stunTimer: 0,
       });
     }
 
@@ -1337,11 +1343,27 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
           if (!e.alive || !p.active) return;
           if (aabb(p.x - p.w / 2, p.y - p.h / 2, p.w, p.h, e.x, e.y, e.w, e.h)) {
             p.active = false;
-            e.stunTimer = (e.stunTimer ?? 0) + 80; // stun ~1.3s
+            e.hp = (e.hp ?? 1) - 1;
             e.hitTimer = 20;
+            e.stunTimer = (e.stunTimer ?? 0) + 30; // kısa sersemletme (~0.5s)
             gs.score += 80;
             spawnSparks(gs, p.x, p.y, '#FFFF44', 12);
-            gs.floats.push({ x: p.x, y: p.y - 10, text: '📸 STUN! +80', life: 70, col: '#FFFF44' });
+            gs.floats.push({ x: e.x, y: e.y - 10, text: `📸 -1 HP! (${e.hp}/${e.maxHp})`, life: 70, col: '#FFFF44' });
+            if (soundRef.current) SFX.bossHit();
+            if (e.hp! <= 0) {
+              e.alive = false;
+              gs.bossDefeated = true;
+              gs.score += 1000;
+              spawnSparks(gs, e.x + e.w / 2, e.y + e.h / 2, '#FFD700', 30);
+              if (soundRef.current) SFX.bossWin();
+              const winDialogs = LEVEL_DIALOGS[gs.lvl]?.boss_win ?? [];
+              setTimeout(() => {
+                showDialogs(winDialogs, () => {
+                  if (gsRef.current) gsRef.current.levelComplete = true;
+                  setTimeout(() => { setScreen('lvlwin'); }, 500);
+                });
+              }, 400);
+            }
           }
         });
         // Hit spawned girls
@@ -1360,10 +1382,15 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
           if (!npc.alive || npc.type !== 'enemy_tourist' || !p.active) return;
           if (aabb(p.x - p.w / 2, p.y - p.h / 2, p.w, p.h, npc.x - 11, npc.y - 30, 22, 34)) {
             p.active = false;
-            npc.alive = false;
-            gs.score += 100;
-            spawnSparks(gs, p.x, p.y, '#FF8800', 10);
-            gs.floats.push({ x: p.x, y: p.y - 10, text: '📸 +100!', life: 65, col: '#FF8800' });
+            npc.hp = (npc.hp ?? 2) - 1;
+            spawnSparks(gs, p.x, p.y, '#FF8800', 8);
+            if (npc.hp <= 0) {
+              npc.alive = false;
+              gs.score += 100;
+              gs.floats.push({ x: p.x, y: p.y - 10, text: '📸 +100! 💀', life: 65, col: '#FF8800' });
+            } else {
+              gs.floats.push({ x: npc.x, y: npc.y - 35, text: '📸 Canı yarı! 😤', life: 60, col: '#FFAA00' });
+            }
           }
         });
       }
@@ -2403,9 +2430,9 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
         <div ref={wrapRef} className="flex-1 overflow-hidden relative" style={{ minHeight: 0 }}>
           <canvas ref={canvasRef} width={CW} height={CH} style={{ imageRendering: 'pixelated', display: 'block' }} />
 
-          {/* Cheat code input — bottom area, invisible text */}
+          {/* Cheat code input — mid-right, invisible text */}
           <div className="absolute z-30 flex items-center gap-1 px-2 py-1 rounded-lg"
-            style={{ bottom: 130, right: 8, background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)' }}>
+            style={{ bottom: 230, right: 8, background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)' }}>
             <span style={{ fontSize: 13 }}>🔒</span>
             <input
               type="text"
