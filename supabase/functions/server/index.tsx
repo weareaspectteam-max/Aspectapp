@@ -5635,7 +5635,7 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
     const mekanIdFilter = c.req.query("mekanId") || "";
     const periodKey = c.req.query("periodKey") || "";
 
-    // ── 1. Mekanlar ──
+    // ��─ 1. Mekanlar ──
     const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
     const mekanById: Record<string, any> = {};
     for (const m of mekanlarList) mekanById[m.id] = m;
@@ -6260,6 +6260,82 @@ app.post("/make-server-4da0b637/game/skor", async (c) => {
     return c.json({ kayit });
   } catch (err) {
     console.log("Game skor error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// OYUN: Aspect Quest Skor Sistemi
+// GET  /game/quest/skorlar?tip=haftalik|tumzamanlar
+// POST /game/quest/skor   { skor, seviye, seviyeAdi }
+// ══════════════════════════════════════════
+
+app.get("/make-server-4da0b637/game/quest/skorlar", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const tip = c.req.query("tip") || "haftalik";
+    const tumSkorlar: any[] = await kv.getByPrefix("game_quest_skor_") || [];
+
+    let filtrelenmis = tumSkorlar;
+    if (tip === "haftalik") {
+      const gecenHafta = new Date();
+      gecenHafta.setDate(gecenHafta.getDate() - 7);
+      filtrelenmis = tumSkorlar.filter((s: any) =>
+        s.tarih && new Date(s.tarih) >= gecenHafta
+      );
+    }
+
+    const kisiSkoru: Record<string, any> = {};
+    for (const skor of filtrelenmis) {
+      const key = skor.userId || skor.isim;
+      if (!kisiSkoru[key] || kisiSkoru[key].skor < skor.skor) {
+        kisiSkoru[key] = skor;
+      }
+    }
+
+    const sirali = Object.values(kisiSkoru)
+      .sort((a: any, b: any) => b.skor - a.skor)
+      .slice(0, 20)
+      .map((s: any, i: number) => ({ ...s, sira: i + 1 }));
+
+    return c.json({ skorlar: sirali });
+  } catch (err) {
+    console.log("Quest skorlar error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+app.post("/make-server-4da0b637/game/quest/skor", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const { skor, seviye, seviyeAdi } = await c.req.json();
+
+    if (typeof skor !== "number" || skor < 0) {
+      return c.json({ error: "Geçersiz skor." }, 400);
+    }
+
+    const isim = user.user_metadata?.full_name || user.email || "Bilinmeyen";
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+    const kayit = {
+      id,
+      userId: user.id,
+      isim,
+      skor: Math.round(skor),
+      seviye: seviye || 0,
+      seviyeAdi: seviyeAdi || "",
+      tarih: new Date().toISOString(),
+    };
+
+    await kv.set(`game_quest_skor_${id}`, kayit);
+    console.log(`Quest skor: ${isim} → ${skor} (Seviye ${seviye})`);
+    return c.json({ kayit });
+  } catch (err) {
+    console.log("Quest skor error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });

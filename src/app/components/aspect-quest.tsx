@@ -5,8 +5,34 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { ChevronLeft, Volume2, VolumeX, Trophy, RotateCcw, Heart } from 'lucide-react';
+import { ChevronLeft, Volume2, VolumeX, Trophy, RotateCcw, Heart, Star } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+
+// ─────────────────────────── QUEST SKOR API ──────────────────────────────────
+interface QuestScoreEntry { sira: number; isim: string; skor: number; seviye: number; seviyeAdi: string; tarih: string; }
+
+async function questSaveScore(score: number, seviye: number, seviyeAdi: string, accessToken: string) {
+  try {
+    await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-4da0b637/game/quest/skor`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}`, 'X-Access-Token': accessToken },
+      body: JSON.stringify({ skor: score, seviye, seviyeAdi }),
+    });
+  } catch (e) { console.error('Quest skor kayıt hatası:', e); }
+}
+
+async function questFetchScores(tip: 'haftalik' | 'tumzamanlar', accessToken: string): Promise<QuestScoreEntry[]> {
+  try {
+    const res = await fetch(
+      `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637/game/quest/skorlar?tip=${tip}`,
+      { headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-Access-Token': accessToken } },
+    );
+    const data = await res.json();
+    return data.skorlar || [];
+  } catch { return []; }
+}
 
 // ─────────────────────────── AUDIO ───────────────────────────────────────────
 let _actx: AudioContext | null = null;
@@ -935,7 +961,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
 
   const [screen, setScreen]     = useState<Screen>('menu');
   const [saveData, setSaveData] = useState<SaveData>(() => loadSave());
-  const [showLB, setShowLB]     = useState(false);
+
   const [currentDialog, setCurrentDialog] = useState<Dialog | null>(null);
   const [dialogIdx, setDialogIdx] = useState(0);
   const [dialogQueue, setDialogQueue] = useState<Dialog[]>([]);
@@ -945,6 +971,13 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
   const [godMode, setGodMode] = useState(false);
   const [cheatInput, setCheatInput] = useState('');
   const [bossFightPhase, setBossFightPhase] = useState<'approaching' | 'fighting'>('approaching');
+
+  // ── Scoreboard state ──────────────────────────────────────────────────────
+  const [onlineScores, setOnlineScores]   = useState<QuestScoreEntry[]>([]);
+  const [scoresTab, setScoresTab]         = useState<'haftalik' | 'tumzamanlar'>('haftalik');
+  const [scoresLoading, setScoresLoading] = useState(false);
+  const [showScoreboard, setShowScoreboard] = useState(false);
+  const scoreSavedRef = useRef(false);
 
   // ── Init a level ──────────────────────────────────────────────────────────
   const initLevel = useCallback((lvlIdx: number, lives: number, score: number) => {
@@ -998,6 +1031,18 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
     };
   }, []);
 
+  // ── Scoreboard load ───────────────────────────────────────────────────────
+  const loadOnlineScores = useCallback(async (tab: 'haftalik' | 'tumzamanlar') => {
+    setScoresLoading(true);
+    const data = await questFetchScores(tab, accessToken);
+    setOnlineScores(data);
+    setScoresLoading(false);
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (showScoreboard) loadOnlineScores(scoresTab);
+  }, [showScoreboard, scoresTab, loadOnlineScores]);
+
   // ── Show dialog queue ────────────────────────────────────────────────────
   const showDialogs = useCallback((dialogs: Dialog[], onComplete: () => void) => {
     if (!dialogs.length) { onComplete(); return; }
@@ -1025,6 +1070,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
 
   // ── Start level flow ─────────────────────────────────────────────────────
   const startLevel = useCallback((lvlIdx: number, lives = 3, score = 0) => {
+    scoreSavedRef.current = false;
     initLevel(lvlIdx, lives, score);
     const intros = LEVEL_DIALOGS[lvlIdx]?.intro ?? [];
     showDialogs(intros, () => {
@@ -2378,7 +2424,6 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
 
   // ── RENDER: Menu ─────────────────────────────────────────────────────────
   if (screen === 'menu') {
-    const lb = loadLB();
     return (
       <div className="fixed inset-0 flex flex-col" style={{ background: 'linear-gradient(135deg,#120024,#220044,#001a3a)' }}>
         <div className="flex items-center gap-3 p-4">
@@ -2388,28 +2433,85 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
             className="ml-auto text-white/60 hover:text-white">
             {soundRef.current ? <Volume2 size={18} /> : <VolumeX size={18} />}
           </button>
-          <button onClick={() => setShowLB(v => !v)} className="text-white/60 hover:text-white"><Trophy size={18} /></button>
+          <button onClick={() => { setShowScoreboard(v => !v); }} className="text-white/60 hover:text-white"><Trophy size={18} /></button>
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6">
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 overflow-y-auto pb-6">
           <div className="text-center mb-2">
             <div className="text-4xl font-black text-white mb-1" style={{ textShadow: '0 0 24px #aa44ff' }}>ASPECT QUEST</div>
             <div className="text-white/50 text-xs">8 Bölüm • Fethiye Maceraları</div>
           </div>
 
-          {showLB ? (
-            <div className="w-full max-w-xs rounded-xl overflow-hidden border border-white/15" style={{ background: 'rgba(0,0,0,0.6)' }}>
-              <div className="px-4 py-2 text-white/80 font-bold text-sm border-b border-white/10">🏆 Skor Tablosu</div>
-              {lb.length === 0 && <div className="px-4 py-6 text-white/40 text-xs text-center">Henüz kayıt yok</div>}
-              {lb.slice(0, 6).map((e, i) => (
-                <div key={i} className="flex items-center gap-3 px-4 py-2 border-b border-white/5">
-                  <span className="text-white/40 text-xs w-4">{i + 1}</span>
-                  <span className="text-white text-xs flex-1">{e.name}</span>
-                  <span className="text-yellow-400 text-xs">{e.score.toLocaleString()}</span>
+          {showScoreboard ? (
+            /* ── Online Scoreboard ── */
+            <div className="w-full max-w-xs">
+              <div className="flex gap-2 mb-3">
+                {(['haftalik', 'tumzamanlar'] as const).map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setScoresTab(tab)}
+                    className="flex-1 py-2 rounded-xl text-xs font-bold transition-all"
+                    style={{
+                      background: scoresTab === tab ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : 'rgba(255,255,255,0.06)',
+                      border: `1px solid ${scoresTab === tab ? 'transparent' : 'rgba(255,255,255,0.10)'}`,
+                      color: scoresTab === tab ? '#fff' : 'rgba(255,255,255,0.42)',
+                    }}>
+                    {tab === 'haftalik' ? '🗓 Bu Hafta' : '🏆 Tüm Zamanlar'}
+                  </button>
+                ))}
+              </div>
+
+              {scoresLoading ? (
+                <div className="flex flex-col items-center py-10 gap-3">
+                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
+                    <Star size={22} style={{ color: '#a855f7' }} />
+                  </motion.div>
+                  <span className="text-white/30 text-xs">Yükleniyor...</span>
                 </div>
-              ))}
+              ) : onlineScores.length === 0 ? (
+                <div className="text-center py-10 text-white/30 text-sm">
+                  Henüz skor yok. İlk sen ol! 🎮
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {onlineScores.map((s, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, x: -12 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.04 }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        background: i === 0 ? 'rgba(255,215,0,0.08)' : 'rgba(255,255,255,0.04)',
+                        border: `1px solid ${i === 0 ? 'rgba(255,215,0,0.22)' : 'rgba(255,255,255,0.07)'}`,
+                        borderRadius: 14, padding: '10px 12px',
+                      }}>
+                      <div style={{ width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: i === 0 ? 'rgba(255,215,0,0.18)' : 'rgba(255,255,255,0.05)', fontSize: i < 3 ? 14 : 11, fontWeight: 800, color: i === 0 ? '#FFD700' : i === 1 ? '#C0C0C0' : i === 2 ? '#CD7F32' : 'rgba(255,255,255,0.32)' }}>
+                        {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ color: '#fff', fontSize: 12, fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.isim}</p>
+                        <p style={{ color: 'rgba(255,255,255,0.30)', fontSize: 9, margin: '2px 0 0' }}>
+                          {s.seviyeAdi ? `Bölüm ${s.seviye}: ${s.seviyeAdi}` : `Bölüm ${s.seviye}`} · {s.tarih ? new Date(s.tarih).toLocaleDateString('tr-TR') : ''}
+                        </p>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <p style={{ color: i === 0 ? '#FFD700' : '#a78bfa', fontSize: 16, fontWeight: 900, margin: 0, fontFamily: 'monospace' }}>{s.skor.toLocaleString()}</p>
+                        <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 8, margin: 0 }}>PUAN</p>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                onClick={() => setShowScoreboard(false)}
+                className="w-full mt-3 py-2 rounded-xl text-white/50 text-xs font-medium border border-white/10">
+                ← Bölüm Seçimine Dön
+              </button>
             </div>
           ) : (
+            /* ── Level Select ── */
             <div className="w-full max-w-xs space-y-2">
               {LEVELS.map((lv, i) => (
                 <button key={i}
@@ -2685,6 +2787,11 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
     const score = gs?.score ?? 0;
     const lvlIdx = gs?.lvl ?? 0;
     const isLast = lvlIdx >= LEVELS.length - 1;
+    // Save score on level win
+    if (!scoreSavedRef.current && score > 0) {
+      scoreSavedRef.current = true;
+      questSaveScore(score, lvlIdx + 1, LEVELS[lvlIdx]?.name ?? '', accessToken);
+    }
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-5 px-6"
         style={{ background: 'linear-gradient(135deg,#001a00,#002a00)' }}>
@@ -2735,12 +2842,22 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
     const gs = gsRef.current;
     const score = gs?.score ?? 0;
     const lvlIdx = gs?.lvl ?? 0;
+    const lvName = LEVELS[lvlIdx]?.name ?? '';
+    // Save score once
+    if (!scoreSavedRef.current && score > 0) {
+      scoreSavedRef.current = true;
+      questSaveScore(score, lvlIdx + 1, lvName, accessToken);
+    }
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-5 px-6"
         style={{ background: 'linear-gradient(135deg,#200000,#400000)' }}>
         <div className="text-5xl">💀</div>
         <div className="text-red-400 text-2xl font-black">OYUN BİTTİ</div>
-        <div className="text-white/50 text-sm">Skor: {score.toLocaleString()}</div>
+        <div className="text-white/50 text-sm">{lvName} · Bölüm {lvlIdx + 1}</div>
+        <div style={{ textAlign: 'center' }}>
+          <div className="text-yellow-400 text-4xl font-black">{score.toLocaleString()}</div>
+          <div className="text-white/30 text-xs mt-1">PUAN</div>
+        </div>
         <div className="flex flex-col gap-3 w-full max-w-xs mt-2">
           <button
             onClick={() => {
@@ -2751,8 +2868,14 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
             style={{ background: 'linear-gradient(90deg,#aa2222,#cc4444)' }}>
             <RotateCcw size={16} /> Tekrar Dene
           </button>
+          <button
+            onClick={() => { setShowScoreboard(true); setScreen('menu'); }}
+            className="w-full py-2.5 rounded-xl text-white font-bold flex items-center justify-center gap-2"
+            style={{ background: 'linear-gradient(90deg,#7c3aed,#a855f7)', border: '1px solid rgba(255,255,255,0.18)' }}>
+            <Trophy size={15} /> Skor Tablosu
+          </button>
           <button onClick={() => setScreen('menu')}
-            className="w-full py-2.5 rounded-xl text-white/70 font-medium border border-white/15">
+            className="w-full py-2.5 rounded-xl text-white/60 font-medium border border-white/15">
             Ana Menü
           </button>
         </div>
@@ -2763,6 +2886,11 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
   // ── RENDER: Victory ───────────────────────────────────────────────────────
   if (screen === 'victory') {
     const gs = gsRef.current;
+    const score = gs?.score ?? 0;
+    if (!scoreSavedRef.current) {
+      scoreSavedRef.current = true;
+      questSaveScore(score, 8, 'ASPECT HQ', accessToken);
+    }
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 px-6"
         style={{ background: 'linear-gradient(135deg,#000022,#001100,#000022)' }}>
@@ -2772,18 +2900,26 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
           8 mekanda 8 fotoğraf!<br/>
           Gerçek bir ASPECT Fotoğrafçısısın! 📸
         </div>
-        <div className="text-yellow-400 text-4xl font-bold mt-2">{(gs?.score ?? 0).toLocaleString()}</div>
-        <div className="mt-4 text-center space-y-1">
+        <div className="text-yellow-400 text-4xl font-bold mt-2">{score.toLocaleString()}</div>
+        <div className="mt-2 text-center space-y-1">
           {['Zoka Restaurant ✅', 'Fethiye Sokakları ✅', 'Balık Hali ✅', 'Müjgan Restaurant ✅',
             'Çalış Plajı ✅', 'İki Duble ✅', 'Mios ✅', 'ASPECT HQ 👑'].map(n => (
             <div key={n} className="text-white/50 text-xs">{n}</div>
           ))}
         </div>
-        <button onClick={() => setScreen('menu')}
-          className="mt-4 w-full max-w-xs py-3 rounded-xl text-white font-bold"
-          style={{ background: 'linear-gradient(90deg,#FFD700,#FF8800)' }}>
-          Ana Menüye Dön
-        </button>
+        <div className="flex gap-3 w-full max-w-xs mt-2">
+          <button
+            onClick={() => { setShowScoreboard(true); setScreen('menu'); }}
+            className="flex-1 py-3 rounded-xl text-white font-bold flex items-center justify-center gap-2"
+            style={{ background: 'linear-gradient(90deg,#7c3aed,#a855f7)' }}>
+            <Trophy size={15} /> Skor Tablosu
+          </button>
+          <button onClick={() => setScreen('menu')}
+            className="flex-1 py-3 rounded-xl text-white font-bold"
+            style={{ background: 'linear-gradient(90deg,#FFD700,#FF8800)' }}>
+            Ana Menü
+          </button>
+        </div>
       </div>
     );
   }
