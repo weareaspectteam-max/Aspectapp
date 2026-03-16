@@ -1679,12 +1679,20 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
 
     let paper: any = null;
     if (paperTypeId) {
+      // Önce doğrudan ID ile ara
       paper = await kv.get(`cost_paper_${paperTypeId}`);
+      // Bulunamazsa tüm kağıtlar içinde isim veya id ile eşleştir (eski kayıtlar isim saklıyor olabilir)
+      if (!paper) {
+        const allPapers: any[] = await kv.getByPrefix("cost_paper_").catch(() => []) || [];
+        paper = allPapers.find((p: any) => p.id === paperTypeId || p.name === paperTypeId) || null;
+        if (paper) console.log(`Kağıt fallback (isim eşleşmesi): "${paperTypeId}" → "${paper.name}" (${paper.id})`);
+      }
     }
 
-    const kapasitePerTakim = paper
-      ? (Number(paper.pcsPerBox) / Number(paper.setsPerBox))
-      : 0;
+    // setsPerBox veya pcsPerBox eksik/sıfırsa güvenli varsayılan kullan
+    const safePcsPerBox = Number(paper?.pcsPerBox) || 1;
+    const safeSetsPerBox = Number(paper?.setsPerBox) || 1;
+    const kapasitePerTakim = paper ? (safePcsPerBox / safeSetsPerBox) : 0;
 
     // Kur dönüşümü: kağıt para birimi → TL
     const exchangeRates = await kv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
@@ -1697,7 +1705,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
 
     // birimMaliyet TL cinsinden: (boxPrice / pcsPerBox) × kur
     const birimMaliyetTam = paper
-      ? (Number(paper.boxPrice) / Number(paper.pcsPerBox)) * kurCarpani
+      ? (Number(paper.boxPrice) / safePcsPerBox) * kurCarpani
       : 0;
     // carpan: yarım kağıtta 1 baskı → 2 fotoğraf çıkışı
     const carpan = printType === "tam" ? 1 : 2;
@@ -1818,7 +1826,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       }
     }
 
-    console.log(`Stok kapanışı: ${mekanId} / ${tarih} by ${user.id} | baskı: ${vardiyaToplam.toplamKullanilanBaskı} | satılan: ${vardiyaToplam.toplamSatılanFotograf} | maliyet: ${vardiyaToplam.toplamMaliyet} ${vardiyaToplam.currency} | bitisAnomali: ${kapanisYaziciAnomali ? `fark=${kapanisYaziciAnomali.fark}` : 'yok'}`);
+    console.log(`Stok kapanışı: ${mekanId} / ${tarih} by ${user.id} | paperType="${paperTypeId}" paper="${paper?.name || 'YOK'}" birimMaliyet=${birimMaliyetTam.toFixed(4)} | baskı: ${vardiyaToplam.toplamKullanilanBaskı} | satılan: ${vardiyaToplam.toplamSatılanFotograf} | maliyet: ${vardiyaToplam.toplamMaliyet} ${vardiyaToplam.currency} | bitisAnomali: ${kapanisYaziciAnomali ? `fark=${kapanisYaziciAnomali.fark}` : 'yok'}`);
     return c.json({ kayit, anomali, beklenen, kapanisYaziciAnomali });
   } catch (err) {
     console.log("Post stok kapanis error:", err);
@@ -6657,6 +6665,12 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       try {
         const mekanlarDetay: any[] = await kv.getByPrefix("mekan_") || [];
         if (mekanlarDetay.length > 0) {
+          // Kağıt adını ID üzerinden çözmek için tüm kağıtları çek
+          const tumKagitlar: any[] = await kv.getByPrefix("cost_paper_").catch(() => []) || [];
+          const kagitById: Record<string, string> = {};
+          for (const k of tumKagitlar) {
+            if (k.id && k.name) kagitById[k.id] = k.name;
+          }
           mekanDetayStr = mekanlarDetay
             .filter((m: any) => m.id && m.name && m.created_by !== undefined)
             .sort((a: any, b: any) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime())
@@ -6667,7 +6681,10 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
               const sayfaTipi = m.printType === "tam" ? "Tam Sayfa" : m.printType === "yarim" ? "Yarım Sayfa" : m.printType || "Bilinmiyor";
               const fotFiyat = Number(m.photoPrice) || 0;
               const calisma = m.workingHours ? `${m.workingHours.start || "?"} - ${m.workingHours.end || "?"}` : "Belirtilmemiş";
-              const kagitTipi = m.paperType || "Belirtilmemiş";
+              // paperType: önce ID ile isim çöz, bulamazsan direkt değeri göster
+              const kagitTipi = m.paperType
+                ? (kagitById[m.paperType] || m.paperType)
+                : "Belirtilmemiş";
               return `  • ${m.emoji || "📍"} ${m.name}:\n    - Fotoğraf fiyatı: ₺${fotFiyat} / kare\n    - Baskı tipi: ${sayfaTipi}\n    - Kağıt tipi: ${kagitTipi}\n    - Yıllık kira: ₺${yillikKira.toLocaleString("tr-TR")} (aylık ≈₺${aylikKira.toLocaleString("tr-TR")}, günlük ≈₺${gunlukKira.toLocaleString("tr-TR")})\n    - Çalışma saatleri: ${calisma}`;
             }).join("\n");
         }
