@@ -4037,26 +4037,50 @@ app.get("/make-server-4da0b637/ai/ozet", async (c) => {
 
     // Stok durumu — tüm mekanların bugünkü açılış/kapanış stoğunu birleştir
     const stokAlanlari = ["album3","album5","album7","album9","album11","album13","album15","paspartu","ribon"];
+    const stokEtiketler: Record<string, string> = {
+      album3:"3 Kare Albüm", album5:"5 Kare Albüm", album7:"7 Kare Albüm",
+      album9:"9 Kare Albüm", album11:"11 Kare Albüm", album13:"13 Kare Albüm",
+      album15:"15 Kare Albüm", paspartu:"Paspartu", ribon:"Ribon Takımı",
+    };
     const stokToplam: Record<string, number> = {};
     for (const alan of stokAlanlari) stokToplam[alan] = 0;
+
+    // Mekan bazlı stok — her mekan için ayrı stok objesi
+    const mekanBazliStok: Array<{
+      mekanId: string; mekanAdi: string; mekanEmoji: string;
+      stokTipi: string; urunler: Array<{ alan: string; name: string; count: number; status: string }>;
+    }> = [];
+
     for (const kayit of bugunKayitlar) {
       const stok = kayit.kapanish || kayit.acilis;
+      const stokTipi = kayit.kapanish ? "kapaniş" : "açılış";
       if (stok) {
         for (const alan of stokAlanlari) stokToplam[alan] += Number(stok[alan]) || 0;
+        const mekan = mekanMap[kayit.mekanId] || { name: kayit.mekanId, emoji: "📍" };
+        mekanBazliStok.push({
+          mekanId: kayit.mekanId,
+          mekanAdi: mekan.name,
+          mekanEmoji: mekan.emoji || "📍",
+          stokTipi,
+          urunler: stokAlanlari.map(alan => {
+            const adet = Number(stok[alan]) || 0;
+            return {
+              alan,
+              name: stokEtiketler[alan] || alan,
+              count: adet,
+              status: adet === 0 ? "kritik" : adet <= 3 ? "kritik" : adet <= 8 ? "az" : "normal",
+            };
+          }),
+        });
       }
     }
 
-    // Stok durumu değerlendirme
+    // Genel stok durumu değerlendirme (tüm mekanların toplamı)
     const stokDurum = stokAlanlari.map(alan => {
       const adet = stokToplam[alan];
-      const etiketler: Record<string, string> = {
-        album3:"3 Kare Albüm", album5:"5 Kare Albüm", album7:"7 Kare Albüm",
-        album9:"9 Kare Albüm", album11:"11 Kare Albüm", album13:"13 Kare Albüm",
-        album15:"15 Kare Albüm", paspartu:"Paspartu", ribon:"Ribon Takımı",
-      };
       return {
         alan,
-        name: etiketler[alan] || alan,
+        name: stokEtiketler[alan] || alan,
         count: adet,
         status: adet === 0 ? "kritik" : adet <= 3 ? "kritik" : adet <= 8 ? "az" : "normal",
       };
@@ -4101,6 +4125,7 @@ app.get("/make-server-4da0b637/ai/ozet", async (c) => {
       aktifMekanSayisi: mekanlarList.length,
       mekanlar: mekanOzetleri,
       stokDurum,
+      mekanBazliStok,
       anomaliler,
       personelSiralama,
       odemeDagilimi: odemeTipi,
@@ -6326,6 +6351,109 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
     let ozetContext = "";
 
     if (userRole === "yonetici") {
+      // ─ YÖNETİCİ: İzin verisi her zaman çekilir (ozet'ten bağımsız) ──────────
+      let izinlerStr     = "  Veri yok.";
+      let izinGecmisiStr = "  Veri yok.";
+      try {
+        const todayStr = new Date().toISOString().split("T")[0];
+        const allLeaves: any[] = await kv.getByPrefix("rotation_leave_") || [];
+        const bugunIzinliler = allLeaves.filter((l: any) => {
+          if (l.status === "rejected") return false;
+          const start = l.startDate || l.date || "";
+          const end   = l.endDate   || l.date || "";
+          return start <= todayStr && todayStr <= end;
+        });
+        const dailyOnLeaveMap: Record<string, string[]> = await kv.get("rotation_daily_onleave") || {};
+        const gunlukIzinIds: string[] = dailyOnLeaveMap[todayStr] || [];
+        let allStaff: any[] = [];
+        try {
+          const adminSb = getAdminClient();
+          const { data: { users: authUsers } } = await adminSb.auth.admin.listUsers({ perPage: 1000 });
+          allStaff = (authUsers || []).map((u: any) => ({
+            id: u.id,
+            name: u.user_metadata?.full_name || u.email || u.id,
+            status: u.user_metadata?.status || "active",
+          }));
+        } catch (se) { console.log("[AI] Staff listesi çekme hatası:", se); }
+        const satirListesi: string[] = [];
+        const eklenenIds   = new Set<string>();   // ID bazlı dedup
+        const eklenenAdlar = new Set<string>();   // isim bazlı ek dedup (ID boş ise)
+
+        const ekle = (id: string | undefined, ad: string, satir: string) => {
+          if (id && eklenenIds.has(id)) return;
+          const adKey = ad.toLowerCase().trim();
+          if (eklenenAdlar.has(adKey)) return;
+          satirListesi.push(satir);
+          if (id) eklenenIds.add(id);
+          eklenenAdlar.add(adKey);
+        };
+
+        // Kaynak 1: Resmi izin talepleri — en yüksek öncelik
+        for (const l of bugunIzinliler) {
+          const ad    = l.personnelName || l.staffName || l.name || "Bilinmeyen";
+          const tip   = l.type === "annual" ? "Yıllık İzin" : l.type === "sick" ? "Hastalık" : l.type === "personal" ? "Mazeret" : (l.leaveType || l.type || "İzin");
+          const bas   = l.startDate || l.date || "?";
+          const bit   = l.endDate   || l.date || "?";
+          const durum = l.status === "approved" ? "✅ Onaylı" : "⏳ Bekliyor";
+          ekle(l.personnelId, ad, `  • ${ad}: ${tip} | ${bas} → ${bit} | ${durum}`);
+        }
+
+        // Kaynak 2: Günlük manuel izin — sadece Kaynak 1'de olmayanlar
+        for (const staffId of gunlukIzinIds) {
+          const staff = allStaff.find((s: any) => s.id === staffId);
+          const ad = staff?.name || staffId;
+          ekle(staffId, ad, `  • ${ad}: Günlük İzin | ${todayStr} | ✅ Manuel`);
+        }
+
+        // Kaynak 3: Sabit on_leave statüsü — sadece diğer kaynaklarda olmayanlar
+        for (const s of allStaff) {
+          if (s.status === "on_leave") {
+            ekle(s.id, s.name, `  • ${s.name}: Sabit İzin (süregelen)`);
+          }
+        }
+
+        izinlerStr = satirListesi.length > 0 ? satirListesi.join("\n") : "  Bugün izinli personel yok.";
+
+        // ── Tüm izin geçmişi (son 90 gün + gelecek talepler) ──────────────────
+        const doksonGunOnce = new Date();
+        doksonGunOnce.setDate(doksonGunOnce.getDate() - 90);
+        const doksonGunStr = doksonGunOnce.toISOString().split("T")[0];
+
+        const gecmisVeGelecek = allLeaves
+          .filter((l: any) => l.status !== "rejected" && (l.endDate || l.date || "") >= doksonGunStr)
+          .sort((a: any, b: any) => (b.startDate || b.date || "").localeCompare(a.startDate || a.date || ""));
+
+        if (gecmisVeGelecek.length > 0) {
+          const gecmisLines = gecmisVeGelecek.slice(0, 80).map((l: any) => {
+            const ad    = l.personnelName || l.staffName || l.name || "Bilinmeyen";
+            const tip   = l.type === "annual" ? "Yıllık" : l.type === "sick" ? "Hastalık" : l.type === "personal" ? "Mazeret" : (l.type || "İzin");
+            const bas   = l.startDate || l.date || "?";
+            const bit   = l.endDate   || l.date || "?";
+            const durum = l.status === "approved" ? "Onaylı" : "Bekliyor";
+            return `  • ${ad}: ${tip} | ${bas} → ${bit} | ${durum}`;
+          });
+          izinGecmisiStr = gecmisLines.join("\n");
+        } else {
+          izinGecmisiStr = "  Son 90 günde onaylı/bekleyen izin kaydı yok.";
+        }
+
+        // Günlük izin geçmişini de ekle
+        const gunlukGecmis: string[] = [];
+        for (const [tarih, ids] of Object.entries(dailyOnLeaveMap as Record<string, string[]>)) {
+          if (tarih < doksonGunStr) continue;
+          for (const sid of (ids || [])) {
+            const staff = allStaff.find((s: any) => s.id === sid);
+            const ad = staff?.name || sid;
+            gunlukGecmis.push(`  • ${ad}: Günlük İzin | ${tarih}`);
+          }
+        }
+        if (gunlukGecmis.length > 0) {
+          izinGecmisiStr += "\n\nGÜNLÜK MANUEL İZİNLER (son 90 gün):\n" + gunlukGecmis.sort().reverse().slice(0, 30).join("\n");
+        }
+      } catch (e) {
+        console.log("[AI] Yönetici izin çekme hatası:", e);
+      }
+
       // ─ YÖNETİCİ: tüm operasyonel veriler ─
       if (ozet) {
         const mekanlarStr = Array.isArray(ozet.mekanlar)
@@ -6334,9 +6462,18 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
             ).join("\n")
           : "  Veri yok.";
 
+        // Genel stok (tüm mekanların toplamı)
         const stokStr = Array.isArray(ozet.stokDurum)
           ? ozet.stokDurum.map((s: any) => `  • ${s.name}: ${s.count} adet (${s.status})`).join("\n")
           : "  Veri yok.";
+
+        // Mekan bazlı stok detayı
+        const mekanStokStr = Array.isArray(ozet.mekanBazliStok) && ozet.mekanBazliStok.length > 0
+          ? ozet.mekanBazliStok.map((ms: any) =>
+              `  ${ms.mekanEmoji} ${ms.mekanAdi} (${ms.stokTipi} stoğu):\n` +
+              ms.urunler.map((u: any) => `    - ${u.name}: ${u.count} adet${u.status !== "normal" ? ` ⚠️${u.status}` : ""}`).join("\n")
+            ).join("\n")
+          : "  Mekan bazlı stok verisi yok.";
 
         const anomaliStr = Array.isArray(ozet.anomaliler) && ozet.anomaliler.length > 0
           ? ozet.anomaliler.map((a: any) => `  ⚠️ ${a.mekanEmoji} ${a.mekan}: ${a.type}`).join("\n")
@@ -6358,8 +6495,11 @@ Aktif Mekan: ${ozet.aktifMekanSayisi}/${ozet.mekanSayisi}
 MEKANLAR:
 ${mekanlarStr}
 
-STOK DURUMU:
+GENEL STOK (tüm mekanlar toplamı):
 ${stokStr}
+
+MEKAN BAZLI STOK DETAYI:
+${mekanStokStr}
 
 ANOMALİLER:
 ${anomaliStr}
@@ -6367,15 +6507,41 @@ ${anomaliStr}
 PERSONEL SIRALAMASI (ciro bazlı):
 ${personelStr}
 
+BUGÜN İZİNLİ PERSONEL:
+${izinlerStr}
+
+İZİN GEÇMİŞİ (son 90 gün + gelecek onaylılar):
+${izinGecmisiStr}
+
 ÖDEME DAĞILIMI: ${odemeStr}
+--- VERİ SONU ---`;
+      } else {
+        // Ozet yoksa sadece izin bilgisini ver
+        ozetContext = `
+--- YÖNETİCİ VERİLERİ ---
+Bugün için satış/stok verisi henüz girilmemiş veya yüklenmemiş.
+
+BUGÜN İZİNLİ PERSONEL:
+${izinlerStr}
+
+İZİN GEÇMİŞİ (son 90 gün + gelecek onaylılar):
+${izinGecmisiStr}
 --- VERİ SONU ---`;
       }
     } else {
       // ─ DİĞER ROLLER: sadece stok + kişisel veriler ─
-      // 1. Stok durumu (ozet'ten geldi)
+      // 1. Genel stok (ozet'ten geldi — finansal değil, sadece stok adedi)
       const stokStr = Array.isArray(ozet?.stokDurum)
         ? ozet.stokDurum.map((s: any) => `  • ${s.name}: ${s.count} adet (${s.status})`).join("\n")
         : "  Veri yok.";
+
+      // 1b. Mekan bazlı stok detayı
+      const mekanStokStr = Array.isArray(ozet?.mekanBazliStok) && ozet.mekanBazliStok.length > 0
+        ? ozet.mekanBazliStok.map((ms: any) =>
+            `  ${ms.mekanEmoji} ${ms.mekanAdi} (${ms.stokTipi} stoğu):\n` +
+            ms.urunler.map((u: any) => `    - ${u.name}: ${u.count} adet${u.status !== "normal" ? ` ⚠️${u.status}` : ""}`).join("\n")
+          ).join("\n")
+        : "  Mekan bazlı stok verisi yok.";
 
       // 2. Kişisel izin talepleri (KV'den çek, user.id ile filtrele)
       let izinStr = "  Veri yok.";
@@ -6478,8 +6644,11 @@ ${personelStr}
 --- KİŞİSEL VERİLER: ${userName || "Kullanıcı"} ---
 ÖNEMLİ: Bu kullanıcının yalnızca kendi verileri aşağıdadır. Başka personelin finansal veya kişisel bilgilerini paylaşma.
 
-STOK DURUMU (genel):
+GENEL STOK (tüm mekanlar toplamı):
 ${stokStr}
+
+MEKAN BAZLI STOK DETAYI:
+${mekanStokStr}
 
 İZİN TALEPLERİM:
 ${izinStr}
@@ -6498,7 +6667,8 @@ ${gorevStr}
 
     const systemPrompt = `Sen "Aspect AI" adlı bir turistik fotoğrafçılık işletmesi asistanısın. İşletme adı: Aspect Operations.
 Kullanıcı: ${userName || "Kullanıcı"} | Rol: ${userRole || "personel"}
-Türkçe yanıt ver. Kısa ve net ol. Sayısal verileri kullanarak somut cevaplar ver. Markdown bold (**) kullanabilirsin.${rolKisitlamasi}
+Türkçe yanıt ver. Kısa ve net ol. Sayısal verileri kullanarak somut cevaplar ver. Markdown bold (**) kullanabilirsin.
+STOK SORULARI: "Genel stok" veya "toplam stok" sorulunca GENEL STOK bölümünü kullan. "[Mekan adı] stok" veya "[Mekan adı] stoğu" gibi mekan adı geçen sorularda MEKAN BAZLI STOK DETAYI bölümünü kullan. Her iki bölüm de ayrıdır — karıştırma.${rolKisitlamasi}
 ${ozetContext}
 ${systemContext || ""}`;
 

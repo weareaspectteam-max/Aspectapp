@@ -88,6 +88,7 @@ interface AIOzet {
   aktifMekanSayisi: number;
   mekanlar: AIOzetMekan[];
   stokDurum: { alan: string; name: string; count: number; status: string }[];
+  mekanBazliStok: { mekanId: string; mekanAdi: string; mekanEmoji: string; stokTipi: string; urunler: { alan: string; name: string; count: number; status: string }[] }[];
   anomaliler: { mekan: string; mekanEmoji: string; type: string; detail: any }[];
   personelSiralama: { ad: string; ciro: number; satis: number }[];
   odemeDagilimi: { cash: number; card: number; iban: number; foreign: number };
@@ -317,6 +318,79 @@ async function fetchAltiSaat(): Promise<{ text: string; card: ResponseCard }> {
 
 // ─── İzin Geçmişi Fetch ───────────────────────────────────────────────────────
 
+// ─── Bugün tüm izinliler (yönetici/müdür için) ───────────────────────────────
+
+async function fetchBugunIzinliler(): Promise<{ text: string; card?: ResponseCard }> {
+  try {
+    const [leaves, dailyOnLeave, staffMembers] = await Promise.all([
+      getLeaveRequests(),
+      getDailyOnLeave(),
+      getStaffMembers(),
+    ]);
+
+    // Türkiye saati (UTC+3)
+    const now = new Date();
+    const trOffset = 3 * 60;
+    const nowTR = new Date(now.getTime() + (trOffset - now.getTimezoneOffset()) * 60000);
+    const todayStr = nowTR.toISOString().split('T')[0];
+
+    const izinliler: { ad: string; tip: string; kaynak: string; bas?: string; bit?: string; durum?: string }[] = [];
+    const eklenenIds   = new Set<string>();  // auth user ID bazlı dedup
+    const eklenenAdlar = new Set<string>();  // isim bazlı ek dedup (ID null/boş ise)
+
+    const ekle = (id: string | undefined, ad: string, entry: typeof izinliler[0]) => {
+      if (id && eklenenIds.has(id)) return;           // ID eşleşmesi
+      if (eklenenAdlar.has(ad.toLowerCase().trim())) return; // isim eşleşmesi
+      izinliler.push(entry);
+      if (id) eklenenIds.add(id);
+      eklenenAdlar.add(ad.toLowerCase().trim());
+    };
+
+    // Kaynak 1: Resmi izin talepleri (onaylı / bekleyen) — en yüksek öncelik
+    for (const l of leaves) {
+      if (l.status === 'rejected') continue;
+      if (todayStr >= l.startDate && todayStr <= l.endDate) {
+        const tip   = l.type === 'annual' ? 'Yıllık İzin' : l.type === 'sick' ? 'Hastalık' : l.type === 'personal' ? 'Mazeret' : 'İzin';
+        const durum = l.status === 'approved' ? '✅' : '⏳';
+        ekle(l.personnelId, l.personnelName, { ad: l.personnelName, tip, kaynak: 'resmi', bas: l.startDate, bit: l.endDate, durum });
+      }
+    }
+
+    // Kaynak 2: Günlük manuel izin — sadece Kaynak 1'de olmayanlar
+    const gunlukIds: string[] = Array.isArray(dailyOnLeave[todayStr]) ? dailyOnLeave[todayStr] : [];
+    for (const sid of gunlukIds) {
+      const staff = staffMembers.find(s => s.id === sid);
+      const ad = staff?.name || sid;
+      ekle(sid, ad, { ad, tip: 'Günlük İzin', kaynak: 'manuel', durum: '✅' });
+    }
+
+    // Kaynak 3: Sabit on_leave statüsü — sadece diğer kaynaklarda olmayanlar
+    for (const s of staffMembers) {
+      if (s.status === 'on_leave') {
+        ekle(s.id, s.name, { ad: s.name, tip: 'Sabit İzin', kaynak: 'statü', durum: '🔴' });
+      }
+    }
+
+    if (izinliler.length === 0) {
+      return { text: `📅 Bugün (**${todayStr}**) izinli personel yok — tüm ekip aktif! 💪` };
+    }
+
+    const liste = izinliler.map(p => {
+      const tarihStr = p.bas && p.bit && p.bas !== p.bit ? ` (${p.bas} → ${p.bit})` : p.bas ? ` (${p.bas})` : '';
+      return `• ${p.durum} **${p.ad}** — ${p.tip}${tarihStr}`;
+    }).join('\n');
+
+    return {
+      text: `📅 Bugün (**${todayStr}**) izinli **${izinliler.length} personel** var:\n${liste}`,
+    };
+  } catch (e) {
+    console.error('fetchBugunIzinliler error:', e);
+    return { text: 'İzin verilerine şu an ulaşılamadı. Lütfen daha sonra tekrar dene.' };
+  }
+}
+
+// ─── İzin Geçmişi Fetch ───────────────────────────────────────────────────────
+
 async function fetchIzinGecmisi(userId: string, userName: string): Promise<{ text: string; card: ResponseCard }> {
   try {
     const [leaves, dailyOnLeave, staffMembers] = await Promise.all([
@@ -404,7 +478,161 @@ async function fetchIzinGecmisi(userId: string, userName: string): Promise<{ tex
 
 // ─── AI Response Engine (gerçek KV verisi kullanır) ───────────────────────────
 
-function generateAIResponse(q: string, role: string, ozet: AIOzet | null, configMap?: Record<string, RoleConfig>): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' | 'IZIN_GECMISI' | 'LEAVE_REQUEST' | 'LEAVE_CONFIRM' {
+// ─── İzin Analizi — tarihsel/kişi/aylık/sıralama sorgular (yönetici) ─────────
+async function fetchIzinAnalizi(soru: string, staffMembers: any[]): Promise<{ text: string }> {
+  try {
+    const [leaves, dailyOnLeave] = await Promise.all([getLeaveRequests(), getDailyOnLeave()]);
+    const now = new Date();
+    const trOffset = 3 * 60;
+    const nowTR = new Date(now.getTime() + (trOffset - now.getTimezoneOffset()) * 60000);
+    const todayStr = nowTR.toISOString().split('T')[0];
+    const lower = soru.toLowerCase();
+
+    const AYLAR: Record<string, number> = {
+      'ocak': 0, 'şubat': 1, 'mart': 2, 'nisan': 3, 'mayıs': 4, 'haziran': 5,
+      'temmuz': 6, 'ağustos': 7, 'eylül': 8, 'ekim': 9, 'kasım': 10, 'aralık': 11
+    };
+
+    // İzin gün sayacı (approved + daily)
+    const countLeaveDays = (id: string, rs: string, re: string) => {
+      let days = 0;
+      const d = new Date(rs); const end = new Date(re);
+      while (d <= end) {
+        const ds = d.toISOString().split('T')[0];
+        const inL = leaves.some(l => l.personnelId === id && l.status === 'approved' && ds >= l.startDate && ds <= l.endDate);
+        const inD = Array.isArray(dailyOnLeave[ds]) && dailyOnLeave[ds].includes(id);
+        if (inL || inD) days++;
+        d.setDate(d.getDate() + 1);
+      }
+      return days;
+    };
+
+    // Tarih tespit
+    const tarihMatch = lower.match(/(\d{1,2})\s*(ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)/);
+    const dunMatch   = lower.includes('dün') || lower.includes('dun');
+    const haftaMatch = lower.includes('hafta');
+    const ayAdi      = Object.keys(AYLAR).find(a => lower.includes(a));
+    const ayMatch    = lower.includes('bu ay') || lower.includes('geçen ay') || lower.includes('gecen ay') || !!ayAdi;
+    const isGecen    = lower.includes('geçen') || lower.includes('gecen');
+
+    // Kişi tespit
+    const staffMatch = staffMembers.find((s: any) =>
+      lower.includes(s.name.toLowerCase().split(' ')[0]) || lower.includes(s.name.toLowerCase())
+    );
+
+    // Yardımcı: ay aralığı
+    const ayAraligi = (adı?: string, gecen = false) => {
+      const ayIdx = adı ? AYLAR[adı] : nowTR.getMonth();
+      const gercek = gecen ? (ayIdx === 0 ? 11 : ayIdx - 1) : ayIdx;
+      const yil    = gecen && gercek === 11 ? nowTR.getFullYear() - 1 : nowTR.getFullYear();
+      const rs = `${yil}-${String(gercek + 1).padStart(2, '0')}-01`;
+      const re = `${yil}-${String(gercek + 1).padStart(2, '0')}-${new Date(yil, gercek + 1, 0).getDate()}`;
+      const label = `${Object.keys(AYLAR)[gercek].charAt(0).toUpperCase() + Object.keys(AYLAR)[gercek].slice(1)} ${yil}`;
+      return { rs, re: re > todayStr ? todayStr : re, label };
+    };
+
+    // Yardımcı: hafta aralığı
+    const haftaAraligi = (gecen = false) => {
+      const p = new Date(nowTR);
+      const g = p.getDay(); const fark = (gecen ? 7 : 0) + (g === 0 ? 6 : g - 1);
+      p.setDate(p.getDate() - fark);
+      const rs = p.toISOString().split('T')[0];
+      const pe = new Date(p); pe.setDate(pe.getDate() + 6);
+      const re = pe.toISOString().split('T')[0] > todayStr ? todayStr : pe.toISOString().split('T')[0];
+      return { rs, re, label: gecen ? 'Geçen hafta' : 'Bu hafta' };
+    };
+
+    // ── Belirli gün (dün / tarih) ──
+    if (dunMatch || tarihMatch) {
+      let hedef = todayStr;
+      if (dunMatch) { const d = new Date(nowTR); d.setDate(d.getDate() - 1); hedef = d.toISOString().split('T')[0]; }
+      else if (tarihMatch) {
+        const gun = parseInt(tarihMatch[1]); const ay = AYLAR[tarihMatch[2]];
+        hedef = `${nowTR.getFullYear()}-${String(ay + 1).padStart(2, '0')}-${String(gun).padStart(2, '0')}`;
+      }
+      const gunlukIds: string[] = Array.isArray(dailyOnLeave[hedef]) ? dailyOnLeave[hedef] : [];
+      const izinliler: string[] = []; const ek = new Set<string>();
+      for (const l of leaves) {
+        if (l.status === 'rejected') continue;
+        if (hedef >= l.startDate && hedef <= l.endDate) {
+          const tip = l.type === 'annual' ? 'Yıllık' : l.type === 'sick' ? 'Hastalık' : 'Mazeret';
+          izinliler.push(`**${l.personnelName}** (${tip}${l.status === 'pending' ? ' ⏳' : ' ✅'})`);
+          ek.add(l.personnelId);
+        }
+      }
+      for (const sid of gunlukIds) { if (!ek.has(sid)) { const s = staffMembers.find((x: any) => x.id === sid); izinliler.push(`**${s?.name || sid}** (Günlük)`); } }
+      if (!izinliler.length) return { text: `📅 **${hedef}** tarihinde izinli personel yok.` };
+      return { text: `📅 **${hedef}** tarihinde **${izinliler.length} kişi** izinliydi:\n${izinliler.map(x => `• ${x}`).join('\n')}` };
+    }
+
+    // ── Belirli kişi ──
+    if (staffMatch) {
+      let rs = `${nowTR.getFullYear()}-01-01`, re = todayStr, label = `${nowTR.getFullYear()} yılı`;
+      if (haftaMatch) { const r = haftaAraligi(isGecen); rs = r.rs; re = r.re; label = r.label; }
+      else if (ayMatch) { const r = ayAraligi(ayAdi, isGecen && !ayAdi); rs = r.rs; re = r.re; label = r.label; }
+
+      const gun = countLeaveDays(staffMatch.id, rs, re);
+      const approved = leaves.filter(l => l.personnelId === staffMatch.id && l.status === 'approved' && l.startDate >= rs && l.startDate <= re);
+      const pending  = leaves.filter(l => l.personnelId === staffMatch.id && l.status === 'pending' && l.startDate >= todayStr);
+      const detay = approved.slice(-5).reverse().map(l => {
+        const tip = l.type === 'annual' ? 'Yıllık' : l.type === 'sick' ? 'Hastalık' : 'Mazeret';
+        return `  • ${l.startDate}${l.endDate !== l.startDate ? ` → ${l.endDate}` : ''}: ${tip} (${l.days} gün)`;
+      }).join('\n');
+      return {
+        text: `📊 **${staffMatch.name}** — ${label}:\n• Toplam izin günü: **${gun} gün**\n• Onaylı talep: **${approved.length}**\n` +
+          (pending.length ? `• Bekleyen: **${pending.length}** ⏳\n` : '') +
+          (detay ? `\nİzinler:\n${detay}` : '')
+      };
+    }
+
+    // ── Genel dönem özeti ──
+    if (haftaMatch || ayMatch) {
+      let rs = '', re = '', label = '';
+      if (haftaMatch) { const r = haftaAraligi(isGecen); rs = r.rs; re = r.re; label = r.label; }
+      else { const r = ayAraligi(ayAdi, isGecen && !ayAdi); rs = r.rs; re = r.re; label = r.label; }
+
+      const personelIzin: { ad: string; gun: number }[] = [];
+      for (const s of staffMembers) {
+        const gun = countLeaveDays(s.id, rs, re);
+        if (gun > 0) personelIzin.push({ ad: s.name, gun });
+      }
+      personelIzin.sort((a, b) => b.gun - a.gun);
+      if (!personelIzin.length) return { text: `📅 **${label}** aralığında izin kaydı yok.` };
+      const toplam = personelIzin.reduce((s, p) => s + p.gun, 0);
+      return { text: `📊 **${label}** — toplam **${toplam} gün** izin:\n${personelIzin.map(p => `  • **${p.ad}**: ${p.gun} gün`).join('\n')}` };
+    }
+
+    // ── Sıralama ──
+    if (lower.includes('en çok') || lower.includes('en cok') || lower.includes('sıralama') || lower.includes('siralama')) {
+      const yil = nowTR.getFullYear(); const rs = `${yil}-01-01`;
+      const rank: { ad: string; gun: number }[] = [];
+      for (const s of staffMembers) { const gun = countLeaveDays(s.id, rs, todayStr); if (gun > 0) rank.push({ ad: s.name, gun }); }
+      rank.sort((a, b) => b.gun - a.gun);
+      if (!rank.length) return { text: `Bu yıl henüz onaylı izin kaydı yok.` };
+      return { text: `🏆 **${yil} yılı izin sıralaması:**\n${rank.slice(0, 10).map((p, i) => `  ${i + 1}. **${p.ad}**: ${p.gun} gün`).join('\n')}` };
+    }
+
+    // ── Bekleyen talepler ──
+    if (lower.includes('bekle') || lower.includes('onay')) {
+      const pending = leaves.filter(l => l.status === 'pending' && l.endDate >= todayStr);
+      if (!pending.length) return { text: `✅ Onay bekleyen izin talebi yok.` };
+      return { text: `⏳ **${pending.length} bekleyen** talep:\n${pending.map(l => `  • **${l.personnelName}**: ${l.startDate}${l.endDate !== l.startDate ? ` → ${l.endDate}` : ''} (${l.days} gün)`).join('\n')}` };
+    }
+
+    // ── Fallback ──
+    const yil = nowTR.getFullYear();
+    const approved = leaves.filter(l => l.status === 'approved' && l.startDate >= `${yil}-01-01`);
+    const pending  = leaves.filter(l => l.status === 'pending');
+    return {
+      text: `📅 **${yil} izin özeti:** ${approved.length} onaylı talep, toplam **${approved.reduce((s, l) => s + (l.days || 0), 0)} gün**. Bekleyen: **${pending.length}**.\n\nSorabileceklerin: "Dün kim izindi?", "Mart ayında kim kaç gün izin aldı?", "Bu ay en çok kim izin kullandı?"`
+    };
+  } catch (e) {
+    console.error('fetchIzinAnalizi error:', e);
+    return { text: 'İzin analizi şu an kullanılamıyor.' };
+  }
+}
+
+function generateAIResponse(q: string, role: string, ozet: AIOzet | null, configMap?: Record<string, RoleConfig>): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' | 'IZIN_GECMISI' | 'BUGUN_IZINLILER' | 'IZIN_ANALIZI' | 'LEAVE_REQUEST' | 'LEAVE_CONFIRM' {
   const lower = q.toLowerCase();
   const map = configMap ?? ROLE_CONFIG;
   const config = map[role] ?? ROLE_CONFIG['personel'];
@@ -431,8 +659,44 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
     return 'LEAVE_CONFIRM';
   }
 
-  // İzin geçmişi — async flag döndür
-  if (q === '__IZIN_GECMISIM__' || lower.includes('izin geçmişim') || lower.includes('izin geçmiş') || lower.includes('kaç gün izin') || lower.includes('ne kadar izin') || lower.includes('izin istatistik') || lower.includes('çalışma geçmiş')) {
+  // Bugün izinliler (sadece bugün)
+  if (
+    isAdmin && (
+      (lower.includes('bugün') || lower.includes('bugun')) &&
+      (lower.includes('izin') || lower.includes('izinde') || lower.includes('izinli'))
+    )
+  ) {
+    return 'BUGUN_IZINLILER';
+  }
+
+  // Tarihsel izin analizi — yönetici/müdür: geçmiş, belirli kişi, ay, hafta, sıralama
+  if (
+    isAdmin && (
+      lower.includes('dün') || lower.includes('dun') ||
+      lower.includes('geçen hafta') || lower.includes('gecen hafta') ||
+      lower.includes('bu hafta') ||
+      lower.includes('geçen ay') || lower.includes('gecen ay') || lower.includes('bu ay') ||
+      lower.includes('bu yıl') || lower.includes('bu yil') ||
+      lower.includes('en çok izin') || lower.includes('en cok izin') ||
+      lower.includes('izin sırala') || lower.includes('izin siralama') ||
+      lower.includes('izin ranking') ||
+      lower.includes('onay bekle') || lower.includes('bekleyen izin') ||
+      (lower.includes('izin') && lower.includes('kaç gün')) ||
+      (lower.includes('izin') && lower.includes('kaç kişi')) ||
+      (lower.includes('izin') && lower.includes('kim')) ||
+      (lower.includes('izin') && (
+        lower.includes('ocak') || lower.includes('şubat') || lower.includes('mart') ||
+        lower.includes('nisan') || lower.includes('mayıs') || lower.includes('haziran') ||
+        lower.includes('temmuz') || lower.includes('ağustos') || lower.includes('eylül') ||
+        lower.includes('ekim') || lower.includes('kasım') || lower.includes('aralık')
+      ))
+    )
+  ) {
+    return 'IZIN_ANALIZI';
+  }
+
+  // İzin geçmişi (kişisel) — async flag döndür
+  if (q === '__IZIN_GECMISIM__' || lower.includes('izin geçmişim') || lower.includes('izin geçmiş') || lower.includes('kaç gün izin aldım') || lower.includes('ne kadar izin') || lower.includes('izin istatistik') || lower.includes('çalışma geçmiş')) {
     return 'IZIN_GECMISI';
   }
 
@@ -2097,6 +2361,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
           acilisYapildi: m.acilisYapildi, kapanisYapildi: m.kapanisYapildi,
         })),
         stokDurum: ozet.stokDurum,
+        mekanBazliStok: ozet.mekanBazliStok,
         anomaliler: ozet.anomaliler,
         personelSiralama: ozet.personelSiralama,
         odemeDagilimi: ozet.odemeDagilimi,
@@ -2104,6 +2369,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       } : {
         // Diğer roller için sadece stok — finansal veri gönderilmez
         stokDurum: ozet.stokDurum,
+        mekanBazliStok: ozet.mekanBazliStok,
       }) : null;
 
       const res = await fetch(`${API_BASE}/ai/chat`, {
@@ -2152,6 +2418,14 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       const ghResult = await fetchAltiSaat();
       aiText = ghResult.text;
       aiCard = ghResult.card;
+    } else if (result === 'BUGUN_IZINLILER') {
+      const izinlilerResult = await fetchBugunIzinliler();
+      aiText = izinlilerResult.text;
+      aiCard = izinlilerResult.card;
+    } else if (result === 'IZIN_ANALIZI') {
+      const staff = await getStaffMembers();
+      const analizResult = await fetchIzinAnalizi(text.trim(), staff);
+      aiText = analizResult.text;
     } else if (result === 'IZIN_GECMISI') {
       const izinResult = await fetchIzinGecmisi(userId, userName);
       aiText = izinResult.text;
