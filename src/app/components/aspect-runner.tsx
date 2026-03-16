@@ -27,13 +27,18 @@ const PW = 24;
 const PH = 40;
 
 // Physics — asymmetric gravity for snappy feel
-const GRAV_UP   = 0.52;   // lighter rising
-const GRAV_DOWN = 0.84;   // heavier falling → lands fast
-const J1        = -14.2;  // first jump
-const J2        = -11.8;  // double jump
-const FALL_MAX  = 16;
-const COYOTE_T  = 7;      // frames after leaving ground where jump still works
-const JBUF_T    = 10;     // jump pressed up to N frames early → execute on land
+const GRAV_UP      = 0.52;
+const GRAV_DOWN    = 0.84;
+const J1_TAP       = -6.5;   // quick-tap first jump
+const J1_BOOST     = -1.15;  // per-frame boost while held
+const J1_HOLD_MAX  = 8;      // max hold frames (tap=low, full hold=high)
+const J2_TAP       = -5.5;   // quick-tap double jump
+const J2_BOOST     = -0.90;
+const J2_HOLD_MAX  = 6;
+const JUMP_CUT     = -4.0;   // releasing early caps upward speed
+const FALL_MAX     = 16;
+const COYOTE_T  = 7;
+const JBUF_T    = 10;
 
 // Game speed
 const SPD_INIT  = 4.0;
@@ -49,6 +54,8 @@ const SIGN_GAP      = 500;
 const SIGN_RAND     = 450;
 const SPEECH_GAP    = 2000;
 const SPEECH_RAND   = 1400;
+const POWERUP_GAP   = 2200;
+const POWERUP_RAND  = 1800;
 
 // Theme switch distance
 const THEME_DIST = 8000;
@@ -137,9 +144,20 @@ interface Player {
   dead: boolean;
   deadTimer: number;
   deadAngle: number;
+  jumpHoldFrames: number;  // boost frames applied
+  jumpIsDouble: boolean;   // true = boosting a double jump
 }
 
 type ObsType = 'box' | 'bird' | 'rock';
+type PowerupType = 'shield' | 'heart';
+
+interface Powerup {
+  id: number;
+  x: number; y: number;
+  type: PowerupType;
+  collected: boolean;
+  collectT: number;
+}
 
 interface Obstacle {
   id: number;
@@ -177,6 +195,7 @@ interface G {
   player: Player;
   obstacles: Obstacle[];
   photos: PhotoMoment[];
+  powerups: Powerup[];
   particles: Particle[];
   signs: Sign[];
   bgEls: BgEl[];
@@ -189,15 +208,18 @@ interface G {
   themeIdx: number;
   lives: number;
   invTimer: number;
+  shieldTimer: number;
   combo: number;
   comboT: number;
   nextObsIn: number;
   nextPhotoIn: number;
   nextSignIn: number;
   nextSpeechIn: number;
+  nextPowerupIn: number;
   lastMilestone: number;
   obsIdCtr: number;
   photoIdCtr: number;
+  powerupIdCtr: number;
   // brand watermark positions (slow parallax)
   wm1x: number;
   wm2x: number;
@@ -243,17 +265,19 @@ function initG(): G {
       onGround: true, squashT: 0,
       walkFrame: 0,
       dead: false, deadTimer: 0, deadAngle: 0,
+      jumpHoldFrames: 0, jumpIsDouble: false,
     },
-    obstacles: [], photos: [], particles: [], signs: [],
+    obstacles: [], photos: [], powerups: [], particles: [], signs: [],
     bgEls: mkBgEls(),
     speech: null, milestone: null,
     score: 0, distance: 0, speed: SPD_INIT, frame: 0, themeIdx: 0,
-    lives: 3, invTimer: 0, combo: 0, comboT: 0,
+    lives: 3, invTimer: 0, shieldTimer: 0, combo: 0, comboT: 0,
     nextObsIn: rnd(280, 460),
     nextPhotoIn: rnd(800, 1400),
     nextSignIn: rnd(400, 720),
     nextSpeechIn: rnd(SPEECH_GAP, SPEECH_GAP + SPEECH_RAND),
-    lastMilestone: 0, obsIdCtr: 0, photoIdCtr: 0,
+    nextPowerupIn: rnd(POWERUP_GAP, POWERUP_GAP + POWERUP_RAND),
+    lastMilestone: 0, obsIdCtr: 0, photoIdCtr: 0, powerupIdCtr: 0,
     wm1x: CW * 0.25,
     wm2x: CW * 1.05,
   };
@@ -263,21 +287,25 @@ function initG(): G {
 function doJump(p: Player) {
   if (p.dead) return;
   if (p.coyoteT > 0 || p.jumpsLeft === 2) {
-    p.vy = J1;
+    p.vy = J1_TAP;
     p.jumpsLeft = p.jumpsLeft === 2 ? 1 : p.jumpsLeft;
     p.coyoteT = 0;
     p.jbufT = 0;
+    p.jumpHoldFrames = 0;
+    p.jumpIsDouble = false;
   } else if (p.jumpsLeft === 1) {
-    p.vy = J2;
+    p.vy = J2_TAP;
     p.jumpsLeft = 0;
     p.jbufT = 0;
+    p.jumpHoldFrames = 0;
+    p.jumpIsDouble = true;
   } else {
-    p.jbufT = JBUF_T; // buffer the jump
+    p.jbufT = JBUF_T;
   }
 }
 
 // ─────────────────────────── UPDATE ──────────────────────────────────────────
-function update(g: G) {
+function update(g: G, jumpHeld: boolean) {
   if (g.status !== 'playing') return;
   g.frame++;
 
@@ -328,6 +356,15 @@ function update(g: G) {
   if (!p.dead) {
     // Asymmetric gravity
     p.vy += p.vy <= 0 ? GRAV_UP : GRAV_DOWN;
+    // Hold-to-jump-higher boost
+    if (!p.onGround && p.vy < 0 && jumpHeld) {
+      const maxF  = p.jumpIsDouble ? J2_HOLD_MAX : J1_HOLD_MAX;
+      const boost = p.jumpIsDouble ? J2_BOOST    : J1_BOOST;
+      if (p.jumpHoldFrames < maxF) {
+        p.vy += boost;
+        p.jumpHoldFrames++;
+      }
+    }
     p.vy = Math.min(p.vy, FALL_MAX);
     p.y  += p.vy;
 
@@ -344,8 +381,10 @@ function update(g: G) {
         p.squashT = 9; // landing squash
         if (p.jbufT > 0) { // buffered jump fires on landing
           p.jbufT = 0;
-          p.vy = J1;
+          p.vy = J1_TAP;
           p.jumpsLeft = 1;
+          p.jumpHoldFrames = 0;
+          p.jumpIsDouble = false;
           p.onGround = false;
         }
       }
@@ -410,6 +449,27 @@ function update(g: G) {
   }
   g.photos = g.photos.filter(ph => ph.x > -60 && ph.collectT < 40);
 
+  // ── Powerup spawn ──
+  g.nextPowerupIn -= g.speed;
+  if (g.nextPowerupIn <= 0) {
+    const type: PowerupType = Math.random() < 0.58 ? 'shield' : 'heart';
+    g.powerups.push({
+      id: g.powerupIdCtr++,
+      x: CW + 40,
+      y: GY - PH - rnd(12, 78),
+      type, collected: false, collectT: 0,
+    });
+    g.nextPowerupIn = rnd(POWERUP_GAP, POWERUP_GAP + POWERUP_RAND);
+  }
+  for (const pu of g.powerups) {
+    pu.x -= g.speed;
+    if (pu.collected) pu.collectT++;
+  }
+  g.powerups = g.powerups.filter(pu => pu.x > -60 && pu.collectT < 42);
+
+  // ── Shield timer ──
+  if (g.shieldTimer > 0) g.shieldTimer--;
+
   // ── Sign spawn ──
   g.nextSignIn -= g.speed;
   if (g.nextSignIn <= 0) {
@@ -437,7 +497,7 @@ function update(g: G) {
   }
 
   // ── Collision (fair hitboxes) ──
-  if (!p.dead && g.invTimer === 0) {
+  if (!p.dead && g.invTimer === 0 && g.shieldTimer === 0) {
     const px1 = PX + 6,    px2 = PX + PW - 6;
     const py1 = p.y + 5,   py2 = p.y + PH - 3;
 
@@ -469,6 +529,26 @@ function update(g: G) {
           g.comboT = 145;
           spawnParticles(g, ph.x, ph.y, '#FFD700', 14);
           spawnParticles(g, ph.x, ph.y, '#ffffff', 5);
+        }
+      }
+    }
+  }
+
+  // ── Powerup collection (always collectible) ──
+  if (!p.dead) {
+    for (const pu of g.powerups) {
+      if (!pu.collected) {
+        if (PX + PW > pu.x - 16 && PX < pu.x + 16 && p.y + PH > pu.y - 16 && p.y < pu.y + 16) {
+          pu.collected = true;
+          if (pu.type === 'shield') {
+            g.shieldTimer = 540; // ~9 seconds
+            spawnParticles(g, pu.x, pu.y, '#22d3ee', 16);
+            spawnParticles(g, pu.x, pu.y, '#ffffff', 5);
+          } else {
+            g.lives = Math.min(5, g.lives + 1);
+            spawnParticles(g, pu.x, pu.y, '#f43f5e', 14);
+            spawnParticles(g, pu.x, pu.y, '#ffffff', 6);
+          }
         }
       }
     }
@@ -553,6 +633,9 @@ function draw(ctx: CanvasRenderingContext2D, g: G) {
   // ── Photos ──
   for (const ph of g.photos) drawPhoto(ctx, ph, f);
 
+  // ── Powerups ──
+  for (const pu of g.powerups) drawPowerup(ctx, pu, f);
+
   // ── Particles ──
   for (const pt of g.particles) {
     ctx.globalAlpha = pt.life / pt.maxLife;
@@ -565,7 +648,7 @@ function draw(ctx: CanvasRenderingContext2D, g: G) {
 
   // ── Player ──
   const showPlayer = g.invTimer === 0 || Math.floor(g.invTimer / 5) % 2 === 0;
-  if (showPlayer) drawPlayer(ctx, p, th, f);
+  if (showPlayer) drawPlayer(ctx, p, th, f, g.shieldTimer > 0);
 
   // ── HUD ──
   drawHUD(ctx, g, th);
@@ -841,8 +924,48 @@ function drawPhoto(ctx: CanvasRenderingContext2D, ph: PhotoMoment, f: number) {
   ctx.restore();
 }
 
+// ─────────────────────────── POWERUP ─────────────────────────────────────────
+function drawPowerup(ctx: CanvasRenderingContext2D, pu: Powerup, f: number) {
+  if (pu.collected) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - pu.collectT / 40);
+    ctx.fillStyle = pu.type === 'shield' ? '#22d3ee' : '#f43f5e';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(pu.type === 'shield' ? '+KALKAN!' : '+CAN!', pu.x, pu.y - pu.collectT * 0.9);
+    ctx.textAlign = 'left';
+    ctx.restore();
+    return;
+  }
+  const bob   = Math.sin(f * 0.09 + pu.x * 0.02) * 4;
+  const pulse = 0.88 + Math.sin(f * 0.15) * 0.12;
+  ctx.save();
+  ctx.translate(pu.x, pu.y + bob);
+  ctx.scale(pulse, pulse);
+
+  if (pu.type === 'shield') {
+    ctx.shadowColor = '#22d3ee'; ctx.shadowBlur = 16;
+    ctx.font = '22px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('🛡️', 0, 8);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(34,211,238,0.90)';
+    ctx.font = 'bold 8px monospace';
+    ctx.fillText('KALKAN', 0, 22);
+  } else {
+    ctx.shadowColor = '#f43f5e'; ctx.shadowBlur = 16;
+    ctx.font = '22px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('❤️', 0, 8);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(244,63,94,0.90)';
+    ctx.font = 'bold 8px monospace';
+    ctx.fillText('+CAN', 0, 22);
+  }
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
 // ─────────────────────────── PLAYER ──────────────────────────────────────────
-function drawPlayer(ctx: CanvasRenderingContext2D, p: Player, th: Theme, f: number) {
+function drawPlayer(ctx: CanvasRenderingContext2D, p: Player, th: Theme, f: number, shielded: boolean) {
   const x = PX, y = p.y;
   ctx.save();
 
@@ -877,6 +1000,27 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: Player, th: Theme, f: numb
     ctx.beginPath();
     ctx.ellipse(x + PW / 2, GY + 3, shadowW, 4, 0, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  // Shield aura
+  if (shielded && !p.dead) {
+    const auraR = 26 + Math.sin(f * 0.18) * 3;
+    const a = 0.30 + Math.sin(f * 0.22) * 0.15;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth   = 3;
+    ctx.shadowColor = '#22d3ee';
+    ctx.shadowBlur  = 18;
+    ctx.beginPath();
+    ctx.arc(x + PW / 2, y + PH / 2, auraR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = a * 0.25;
+    ctx.fillStyle   = '#22d3ee';
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur  = 0;
+    ctx.restore();
   }
 
   // Legs
@@ -1004,14 +1148,28 @@ function drawHUD(ctx: CanvasRenderingContext2D, g: G, th: Theme) {
   ctx.fillStyle   = 'rgba(255,255,255,0.32)';
   ctx.fillText('PUAN', CW - 9, 30);
 
-  // Lives (hearts)
-  for (let i = 0; i < 3; i++) {
+  // Lives (hearts — up to 5)
+  const maxShow = Math.max(3, g.lives);
+  for (let i = 0; i < maxShow; i++) {
     ctx.globalAlpha = i < g.lives ? 1 : 0.18;
     ctx.font        = '12px sans-serif';
-    ctx.fillText('❤', CW - 9 - i * 17, 48);
+    ctx.fillText('❤', CW - 9 - i * 16, 48);
   }
   ctx.globalAlpha = 1;
-  ctx.textAlign   = 'left';
+
+  // Shield bar (when active)
+  if (g.shieldTimer > 0) {
+    const pct = g.shieldTimer / 540;
+    ctx.fillStyle = 'rgba(34,211,238,0.12)';
+    ctx.fillRect(CW - 74, 53, 66, 5);
+    ctx.fillStyle = '#22d3ee';
+    ctx.fillRect(CW - 74, 53, 66 * pct, 5);
+    ctx.font = 'bold 7px monospace';
+    ctx.fillStyle = '#22d3ee';
+    ctx.textAlign = 'right';
+    ctx.fillText('🛡️ KALKAN', CW - 9, 68);
+  }
+  ctx.textAlign = 'left';
 }
 
 // ─────────────────────────── API ──────────────────────────────────────────────
@@ -1071,7 +1229,7 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
     const ctx = cvs?.getContext('2d');
     if (!g || !cvs || !ctx) return;
 
-    update(g);
+    update(g, jumpHeld.current);
     draw(ctx, g);
 
     // Minimal state sync — only on change
@@ -1115,6 +1273,24 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
   }, [loop]);
 
   // ── Jump ─────────────────────────────────────────────────────────────────
+  const handleJumpStart = useCallback(() => {
+    const g = gameRef.current;
+    if (!g || g.status !== 'playing') return;
+    if (!jumpHeld.current) {
+      jumpHeld.current = true;
+      doJump(g.player);
+    }
+  }, []);
+
+  const handleJumpEnd = useCallback(() => {
+    jumpHeld.current = false;
+    const g = gameRef.current;
+    if (g && g.status === 'playing' && g.player.vy < 0) {
+      g.player.vy = Math.max(g.player.vy, JUMP_CUT);
+    }
+  }, []);
+
+  // keep handleJump for canvas onClick (mouse click = tap)
   const handleJump = useCallback(() => {
     const g = gameRef.current;
     if (!g || g.status !== 'playing') return;
@@ -1126,16 +1302,16 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
     const down = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'ArrowUp') {
         e.preventDefault();
-        if (!jumpHeld.current) { jumpHeld.current = true; handleJump(); }
+        handleJumpStart();
       }
     };
     const up = (e: KeyboardEvent) => {
-      if (e.code === 'Space' || e.code === 'ArrowUp') jumpHeld.current = false;
+      if (e.code === 'Space' || e.code === 'ArrowUp') handleJumpEnd();
     };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup',   up);
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
-  }, [handleJump]);
+  }, [handleJumpStart, handleJumpEnd]);
 
   // ── Cleanup ───────────────────────────────────────────────────────────────
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
@@ -1176,7 +1352,8 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
   return (
     <div
       style={{ position: 'relative', width: '100%', background: 'linear-gradient(135deg,#08041c 0%,#160836 50%,#0b0620 100%)', minHeight: '100%' }}
-      onTouchStart={uiState === 'playing' ? handleJump : undefined}
+      onTouchStart={uiState === 'playing' ? handleJumpStart : undefined}
+      onTouchEnd={uiState === 'playing' ? handleJumpEnd : undefined}
     >
       {/* Back */}
       <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 20 }}>
@@ -1253,7 +1430,7 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
 
               {/* Feature pills */}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 300, marginBottom: 18 }}>
-                {['❤️ 3 Can', '📸 Flash Anlar', '🔥 Kombo', '🌅→🌃 Tema Geçişi'].map(feat => (
+                {['❤️ Can & 🛡️ Kalkan', '📸 Flash Anlar', '🔥 Kombo', '🌅→🌃 Tema Geçişi'].map(feat => (
                   <span key={feat} style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.11)', borderRadius: 20, padding: '3px 11px', color: 'rgba(255,255,255,0.52)', fontSize: 10, fontWeight: 600 }}>
                     {feat}
                   </span>
@@ -1276,7 +1453,7 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
               </button>
 
               <div style={{ marginTop: 18, color: 'rgba(255,255,255,0.18)', fontSize: 9, fontFamily: 'monospace', letterSpacing: '0.12em' }}>
-                DOKUN / SPACE → ZIPLA &nbsp;·&nbsp; İKİ KEZ → ÇİFT ZIPLAMA
+                BASILI TUT → YÜKSEK ZIPLA &nbsp;·&nbsp; BIRAK → ALÇAK ZIPLA
               </div>
             </motion.div>
           )}
@@ -1353,7 +1530,7 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 style={{ color: 'rgba(255,255,255,0.15)', fontSize: 9, letterSpacing: '0.12em', fontFamily: 'monospace' }}
               >
-                DOKUN / SPACE / ↑ → ZIPLA &nbsp;·&nbsp; ÇİFT ZIPLAMA &nbsp;·&nbsp; 📸 FLASH TOPLA
+                BASILI TUT → YÜKSEK ZIPLA &nbsp;·&nbsp; BIRAK → ALÇAK &nbsp;·&nbsp; 🛡️ ❤️ POWERUP TOPLA
               </motion.span>
             )}
           </AnimatePresence>

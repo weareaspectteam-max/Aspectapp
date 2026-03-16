@@ -119,13 +119,18 @@ interface GS {
   birds: Bird[]; birdId: number;
   birdSpawnTimer: number;
   _finishBlockedShown?: boolean;
+  jumpHoldFrames: number;
+  jumpIsDouble: boolean;
 }
 
 // ─────────────────────────── CONSTANTS ───────────────────────────────────────
 const CW = 480, CH = 360;
 const GY = 305;
 const PW = 22, PH = 34;
-const GRAV = 0.52, JV = -12.5, DJV = -10.5, SPD = 3.7, MAXVY = 14;
+const GRAV = 0.52, SPD = 3.7, MAXVY = 14;
+const JV_TAP = -5.8,  JV_BOOST = -1.05, JV_HOLD_MAX = 8;
+const DJV_TAP = -5.0, DJV_BOOST = -0.85, DJV_HOLD_MAX = 6;
+const JUMP_CUT = -3.5;
 
 // ─────────────────────────── HELPERS ─────────────────────────────────────────
 const gnd  = (x: number, w: number, col = '#704214', slip = false): Plat => ({ x, y: GY, w, h: 60, col, slippery: slip });
@@ -923,10 +928,10 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
   const wrapRef    = useRef<HTMLDivElement>(null);
   const rafRef     = useRef<number>(0);
   const gsRef      = useRef<GS>(null!);
-  const inputRef   = useRef({ left: false, right: false, jump: false, jumpPress: false, shoot: false });
+  const inputRef   = useRef({ left: false, right: false, jump: false, jumpPress: false, shoot: false, jumpHeld: false });
   const scaleRef   = useRef(1);
   const soundRef   = useRef(true);
-  const touchRef   = useRef({ left: false, right: false, jump: false, shoot: false });
+  const touchRef   = useRef({ left: false, right: false, jump: false, jumpHeld: false, shoot: false });
 
   const [screen, setScreen]     = useState<Screen>('menu');
   const [saveData, setSaveData] = useState<SaveData>(() => loadSave());
@@ -989,6 +994,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       photoSpots: makePhotoSpots(ld.ww),
       flashCooldown: 0, nearPhotoSpot: false, flashWhite: 0, shootCooldown: 0,
       birds: [], birdId: 0, birdSpawnTimer: 60,
+      jumpHoldFrames: 0, jumpIsDouble: false,
     };
   }, []);
 
@@ -1084,8 +1090,9 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
     // Input
     const goLeft  = inp.left  || tc.left;
     const goRight = inp.right || tc.right;
-    const doJump  = inp.jumpPress || tc.jump;
-    const doShoot = inp.shoot || tc.shoot;
+    const doJump      = inp.jumpPress || tc.jump;
+    const jumpHeld    = inp.jumpHeld  || tc.jumpHeld;
+    const doShoot     = inp.shoot || tc.shoot;
     inp.jumpPress = false;
     inp.shoot = false;
     tc.jump = false;
@@ -1100,9 +1107,21 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
 
     if (doJump && gs.pjumps > 0) {
       const isDouble = gs.pjumps < 2;
-      gs.pvy = isDouble ? DJV : JV;
+      gs.pvy = isDouble ? DJV_TAP : JV_TAP;
       gs.pjumps--;
+      gs.jumpHoldFrames = 0;
+      gs.jumpIsDouble = isDouble;
       if (soundRef.current) isDouble ? SFX.djump() : SFX.jump();
+    }
+
+    // Hold-to-jump-higher boost
+    if (!gs.ponG && gs.pvy < 0 && jumpHeld) {
+      const maxF  = gs.jumpIsDouble ? DJV_HOLD_MAX : JV_HOLD_MAX;
+      const boost = gs.jumpIsDouble ? DJV_BOOST     : JV_BOOST;
+      if (gs.jumpHoldFrames < maxF) {
+        gs.pvy += boost;
+        gs.jumpHoldFrames++;
+      }
     }
 
     // Gravity
@@ -1135,6 +1154,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
         gs.pvy = 0;
         gs.pjumps = 2;
         gs.ponG = true;
+        gs.jumpHoldFrames = 0;
         // Slippery sand
         if (p.slippery && Math.abs(gs.pvx) > 0.1) gs.pvx *= 0.95;
       } else if (gs.pvy < 0 && prevPy >= p.y + p.h - 5) {
@@ -1278,7 +1298,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
           if (stompingFromAbove) {
             e.hp = (e.hp ?? 1) - 1;
             e.hitTimer = 20;
-            gs.pvy = JV * 0.7; // bounce
+            gs.pvy = JV_TAP * 1.2; // stomp bounce
             gs.score += 200;
             spawnSparks(gs, e.x + e.w / 2, e.y, '#FFDD00', 12);
             gs.floats.push({ x: e.x, y: e.y - 10, text: '-HP! 💥', life: 60, col: '#FFD700' });
@@ -2331,13 +2351,22 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
     const kd = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft'  || e.key === 'a') inputRef.current.left = true;
       if (e.key === 'ArrowRight' || e.key === 'd') inputRef.current.right = true;
-      if ((e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') && !e.repeat) inputRef.current.jumpPress = true;
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') {
+        if (!e.repeat) inputRef.current.jumpPress = true;
+        inputRef.current.jumpHeld = true;
+      }
       if ((e.key === 'f' || e.key === 'F') && !e.repeat) flashRef.current.flash = true;
       if ((e.key === 'z' || e.key === 'Z' || e.key === 'x' || e.key === 'X') && !e.repeat) inputRef.current.shoot = true;
     };
     const ku = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft'  || e.key === 'a') inputRef.current.left = false;
       if (e.key === 'ArrowRight' || e.key === 'd') inputRef.current.right = false;
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') {
+        inputRef.current.jumpHeld = false;
+        // jump cut: if player is moving up, cap velocity
+        const gs = gsRef.current;
+        if (gs && gs.pvy < 0) gs.pvy = Math.max(gs.pvy, JUMP_CUT);
+      }
     };
     window.addEventListener('keydown', kd);
     window.addEventListener('keyup', ku);
@@ -2634,12 +2663,12 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
               <button
                 className="w-20 h-16 rounded-2xl flex items-center justify-center text-xl font-black select-none active:scale-90 transition-transform"
                 style={{ background: `linear-gradient(135deg,${accent}77,${accent}44)`, border: `2px solid ${accent}99`, WebkitTapHighlightColor: 'transparent', boxShadow: `0 0 20px ${accent}66`, backdropFilter: 'blur(6px)' }}
-                onTouchStart={e => { e.preventDefault(); touchRef.current.jump = true; inputRef.current.jumpPress = true; }}
-                onTouchEnd={e => { e.preventDefault(); touchRef.current.jump = false; }}
-                onTouchCancel={e => { e.preventDefault(); touchRef.current.jump = false; }}
-                onMouseDown={() => { touchRef.current.jump = true; inputRef.current.jumpPress = true; }}
-                onMouseUp={() => touchRef.current.jump = false}
-                onMouseLeave={() => touchRef.current.jump = false}
+                onTouchStart={e => { e.preventDefault(); touchRef.current.jump = true; touchRef.current.jumpHeld = true; inputRef.current.jumpPress = true; inputRef.current.jumpHeld = true; }}
+                onTouchEnd={e => { e.preventDefault(); touchRef.current.jump = false; touchRef.current.jumpHeld = false; inputRef.current.jumpHeld = false; const gs = gsRef.current; if (gs && gs.pvy < 0) gs.pvy = Math.max(gs.pvy, JUMP_CUT); }}
+                onTouchCancel={e => { e.preventDefault(); touchRef.current.jump = false; touchRef.current.jumpHeld = false; inputRef.current.jumpHeld = false; }}
+                onMouseDown={() => { touchRef.current.jump = true; touchRef.current.jumpHeld = true; inputRef.current.jumpPress = true; inputRef.current.jumpHeld = true; }}
+                onMouseUp={() => { touchRef.current.jump = false; touchRef.current.jumpHeld = false; inputRef.current.jumpHeld = false; const gs = gsRef.current; if (gs && gs.pvy < 0) gs.pvy = Math.max(gs.pvy, JUMP_CUT); }}
+                onMouseLeave={() => { touchRef.current.jump = false; touchRef.current.jumpHeld = false; inputRef.current.jumpHeld = false; }}
               >
                 <span className="text-white font-black tracking-wide">ZIPla</span>
               </button>
