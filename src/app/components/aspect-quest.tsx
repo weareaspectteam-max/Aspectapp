@@ -1164,7 +1164,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       }
     }
 
-    // ── Enemies (boss) ────────────────────────────────────────────────────
+    // ── Enemies (boss) ─────────────────────────────────���──────────────────
     gs.enemies.forEach(e => {
       if (!e.alive) return;
       if (e.hitTimer !== undefined && e.hitTimer > 0) e.hitTimer--;
@@ -2403,17 +2403,17 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
         <div ref={wrapRef} className="flex-1 overflow-hidden relative" style={{ minHeight: 0 }}>
           <canvas ref={canvasRef} width={CW} height={CH} style={{ imageRendering: 'pixelated', display: 'block' }} />
 
-          {/* Cheat code input — top-right corner, clearly visible */}
-          <div className="absolute top-2 right-2 z-30 flex items-center gap-1 px-2 py-1 rounded-lg"
-            style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.3)' }}>
-            <span style={{ fontSize: 14 }}>🔒</span>
+          {/* Cheat code input — bottom area, invisible text */}
+          <div className="absolute z-30 flex items-center gap-1 px-2 py-1 rounded-lg"
+            style={{ bottom: 130, right: 8, background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)' }}>
+            <span style={{ fontSize: 13 }}>🔒</span>
             <input
               type="text"
               value={cheatInput}
               onChange={e => {
                 const val = e.target.value.toLowerCase();
                 setCheatInput(val);
-                if (val.endsWith('aspect')) {
+                if (val.endsWith('aspect123123')) {
                   const next = !godModeRef.current;
                   godModeRef.current = next;
                   setGodMode(next);
@@ -2422,20 +2422,18 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
                     gsRef.current.floats.push({ x: gsRef.current.px, y: gsRef.current.py - 30, text: next ? '🛡️ GOD MODE ON!' : '💀 GOD MODE OFF', life: 120, col: next ? '#00FFFF' : '#FF8800' });
                   }
                 }
-                if (val.length > 10) setCheatInput(val.slice(-6));
+                if (val.length > 20) setCheatInput(val.slice(-12));
               }}
-              placeholder="cheat..."
               className="bg-transparent outline-none"
               style={{
-                width: 60,
-                color: 'rgba(255,255,255,0.8)',
-                caretColor: '#fff',
+                width: 50,
+                color: 'transparent',
+                caretColor: 'rgba(255,255,255,0.4)',
                 borderTop: 'none',
                 borderLeft: 'none',
                 borderRight: 'none',
                 borderBottom: 'none',
                 fontSize: 12,
-                letterSpacing: 2,
               }}
               autoComplete="off"
               autoCorrect="off"
