@@ -160,10 +160,10 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
   // Level 0: Zoka Restaurant
   {
     intro: [
-      { speaker: 'Özgür', text: 'Zoka\'dan başlıyoruz. İlk durak, ilk fotoğraf. Ama kolay olduğunu sanma.', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Zoka\'dan başlıyoruz. İlk durak, ilk fotoğraf. Ama kolay olduğunu sanma.', portrait: 'ozgur' },
       { speaker: 'Celil', text: 'Buyur kardeşim, güzel geldin. Bu mekanı sen yönetemezsin ama misafir olabilirsin.', portrait: 'celil' },
       { speaker: 'Selçuk', text: 'Celil\'in dediği gibi... Yani... Saygı çerçevesinde tabii. Hoş geldin.', portrait: 'selcuk' },
-      { speaker: 'Özgür', text: 'Tamam tamam. Önce içeri girelim. Fotoğrafları yakala!', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Tamam tamam. Önce içeri girelim. Fotoğrafları yakala!', portrait: 'ozgur' },
     ],
     boss_intro: [
       { speaker: 'Celil', text: 'Dur bir dakika! Burası fotoğraf stüdyosu değil. Biraz fazla ileri gittin sanırım.', portrait: 'celil' },
@@ -178,12 +178,12 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
   // Level 1: Fethiye Sokakları (escape - no boss)
   {
     intro: [
-      { speaker: 'Özgür', text: 'Fethiye sokaklarında çekim yaparken dikkatli ol. Belediye zabıtası bugün aktif.', portrait: 'ozgur' },
-      { speaker: 'Özgür', text: 'İzin belgesi... evet var ama... bulmak biraz zaman alıyor. Şimdilik koş!', portrait: 'ozgur' },
-      { speaker: 'Özgür', text: 'Sokağın sonuna ulaş, bir şey olursa ararım seni. KOŞ!', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Fethiye sokaklarında çekim yaparken dikkatli ol. Belediye zabıtası bugün aktif.', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'İzin belgesi... evet var ama... bulmak biraz zaman alıyor. Şimdilik koş!', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Sokağın sonuna ulaş, bir şey olursa ararım seni. KOŞ!', portrait: 'ozgur' },
     ],
     boss_win: [
-      { speaker: 'Özgür', text: 'Bravo! Zabıtaları atlattın. Hız konusunda sorun yok. 😄', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Bravo! Zabıtaları atlattın. Hız konusunda sorun yok. 😄', portrait: 'ozgur' },
     ],
   },
   // Level 2: Balık Hali
@@ -193,7 +193,7 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
       { speaker: 'Necati Abi', text: 'Kardeşlerim, arkanızdayım! Ne olursa olsun yanınızdayım. Devam edin!', portrait: 'necati' },
       { speaker: 'Necati Abi', text: 'Ama dikkat et — Zuhal bugün sinirli. Sabahtan beri tartışıyor. Ona yaklaşma.', portrait: 'necati' },
       { speaker: 'Necati Abi', text: 'Fotoğrafları çek, paralı müşterileri atlat. Ben buradayım, sorarsan bulursun.', portrait: 'necati' },
-      { speaker: 'Özgür', text: 'Necati Abi sağ ol. Kardeşlerimiz yanımızda, yürüyoruz! Zuhal\'dan kaç, fotoğrafı kap!', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Necati Abi sağ ol. Kardeşlerimiz yanımızda, yürüyoruz! Zuhal\'dan kaç, fotoğrafı kap!', portrait: 'ozgur' },
     ],
     boss_intro: [
       { speaker: 'Zuhal', text: 'Dur orada! Kim verdi sana burada fotoğraf çekme izni?', portrait: 'zuhal' },
@@ -215,20 +215,20 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
     intro: [
       { speaker: 'Necati Abi', text: 'Evladım Müjgan\'a gidiyorsun. Borular patlamış, su basıyor içeriyi.', portrait: 'necati' },
       { speaker: 'Necati Abi', text: 'Kardeşlerim arkanızdayım — ama suya girmeyin, yüksekte kalın!', portrait: 'necati' },
-      { speaker: 'Özgür', text: 'Su yükseliyor. Platformlara atla, yukarıda kal. Ve Büşra\'ya dikkat.', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Su yükseliyor. Platformlara atla, yukarıda kal. Ve Büşra\'ya dikkat.', portrait: 'ozgur' },
       { speaker: 'Büşra', text: 'Özgür! Bu ne saçmalık? Burada ne arıyorsun sen?!', portrait: 'busra' },
-      { speaker: 'Özgür', text: 'Merhaba Büşra... kamera... fotoğraf... iş gereği...', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Merhaba Büşra... kamera... fotoğraf... iş gereği...', portrait: 'ozgur' },
       { speaker: 'Büşra', text: 'İş gereği?! Su bastı mekanı, sen fotoğraf çekiyorsun!', portrait: 'busra' },
     ],
     boss_intro: [
       { speaker: 'Büşra', text: 'Yeter! Dur bir saniye!', portrait: 'busra' },
       { speaker: 'Büşra', text: 'Ağı al! Bir ASPECT fotoğrafçısını bir balık gibi yakalamanın vakti geldi!', portrait: 'busra' },
-      { speaker: 'Özgür', text: 'Büşra dur dur dur — iş birliği yapalım, beraber çözelim...', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Büşra dur dur dur — iş birliği yapalım, beraber çözelim...', portrait: 'ozgur' },
     ],
     boss_win: [
       { speaker: 'Büşra', text: 'Tamam tamam. Hakkını vereyim. İyi kaçtın.', portrait: 'busra' },
       { speaker: 'Büşra', text: 'Ama bir daha burayı su basarsa seni çağırıyorum. Sen de geleceksin!', portrait: 'busra' },
-      { speaker: 'Özgür', text: '...Tabii ki gelirim Büşra. 😅', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: '...Tabii ki gelirim Büşra. 😅', portrait: 'ozgur' },
     ],
   },
   // Level 4: Çalış Plajı (Tanrıverdi boss)
@@ -237,17 +237,17 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
       { speaker: 'Necati Abi', text: 'Çalış Plajı evladım! Güneş var, deniz var, müşteri var. Mükemmel!', portrait: 'necati' },
       { speaker: 'Necati Abi', text: 'Ama dikkat — Bronz Tanrıverdi o sahili sahiplenmiş. Güneş kremi sıkıyor her tarafa!', portrait: 'necati' },
       { speaker: 'Necati Abi', text: 'Kardeşlerim, arkanızdayım! Sahilden iyi bir kare kap, gurur duyarız!', portrait: 'necati' },
-      { speaker: 'Özgür', text: 'Necati Abi haklı. Kumda biraz yavaş kalırsın, dikkatli ol. Haydi!', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Necati Abi haklı. Kumda biraz yavaş kalırsın, dikkatli ol. Haydi!', portrait: 'ozgur' },
     ],
     boss_intro: [
       { speaker: 'Bronz Tanrıverdi', text: 'Eyyy! Bu plajda çekim mi yapıyorsun sen?', portrait: 'tanriverdi' },
-      { speaker: 'Bronz Tanrıverdi', text: 'Burası benim alanım. Ben burada oluşmadan fotoğraf çekilmez.', portrait: 'tanriverdi' },
-      { speaker: 'Özgür', text: 'Anlıyorum ama... turistik fotoğrafçılık, iznim var...', portrait: 'ozgur' },
+      { speaker: 'Bronz Tanrıverdi', text: 'Burası benim alanım. Ben burada bronzlaşmadan burada fotoğraf çekilmez.', portrait: 'tanriverdi' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Anlıyorum ama... turistik fotoğrafçılık, iznim var...', portrait: 'ozgur' },
       { speaker: 'Bronz Tanrıverdi', text: 'Al bakalım şu güneş kremini! 🧴', portrait: 'tanriverdi' },
     ],
     boss_win: [
       { speaker: 'Bronz Tanrıverdi', text: 'Tamam... fena değilsin. Devam et.', portrait: 'tanriverdi' },
-      { speaker: 'Özgür', text: 'Sağ ol Bronz Tanrıverdi. Bir gün seninle fotoğraf çekeceğiz!', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Sağ ol Bronz Tanrıverdi. Bir gün seninle fotoğraf çekeceğiz!', portrait: 'ozgur' },
     ],
   },
   // Level 5: İki Duble (Kayhan boss)
@@ -256,7 +256,7 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
       { speaker: 'Necati Abi', text: 'İki Duble\'ye giriyorsun evladım. Gece kulübü, karanlık, gürültülü.', portrait: 'necati' },
       { speaker: 'Necati Abi', text: 'Kayhan orada her gece. Telefona sarıldı mı kızları çağırıyor, etraf dolup taşıyor.', portrait: 'necati' },
       { speaker: 'Necati Abi', text: 'Kardeşlerim arkanızdayım — fotoğrafı çek, kızlardan kaç, Kayhan\'ı yen!', portrait: 'necati' },
-      { speaker: 'Özgür', text: 'Kulaklar çınlıyor ama duyuyorum. Haydi!', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Kulaklar çınlıyor ama duyuyorum. Haydi!', portrait: 'ozgur' },
     ],
     boss_intro: [
       { speaker: 'Kayhan', text: 'Dur bakalım. Fotoğrafçı mı bu? İyi, iyi...', portrait: 'kayhan' },
@@ -265,7 +265,7 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
     ],
     boss_win: [
       { speaker: 'Kayhan', text: 'Vay be. Çevik adamsın. Tamam, bu kareyi hak ettin.', portrait: 'kayhan' },
-      { speaker: 'Özgür', text: 'Teşekkürler Kayhan. Mios\'a geçiyorum.', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Teşekkürler Kayhan. Mios\'a geçiyorum.', portrait: 'ozgur' },
     ],
   },
   // Level 6: Mios Restaurant (Aman Aman boss)
@@ -274,17 +274,17 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
       { speaker: 'Necati Abi', text: 'Mios\'a gidiyorsun evladım. Güzel mekan, ama Aman Aman bugün çok sinirli.', portrait: 'necati' },
       { speaker: 'Necati Abi', text: 'Sol kolu dövmeli, uzun boylu. Bağırdığında yer titriyor, şok dalgası çıkarıyor!', portrait: 'necati' },
       { speaker: 'Necati Abi', text: 'Kardeşlerim arkanızdayım! Bağırınca atlayın, yerde durma sakın!', portrait: 'necati' },
-      { speaker: 'Özgür', text: 'Kulağım çınlıyor ama tamam. Son iki durak! Devam!', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Kulağım çınlıyor ama tamam. Son iki durak! Devam!', portrait: 'ozgur' },
     ],
     boss_intro: [
       { speaker: 'Aman Aman', text: 'Aman aman... Ne bu karışıklık? Kim bu adam?', portrait: 'amanaman' },
       { speaker: 'Aman Aman', text: 'BURASI ÖZEL ALAN!', portrait: 'amanaman' },
-      { speaker: 'Özgür', text: 'Aman aman...', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Aman aman...', portrait: 'ozgur' },
       { speaker: 'Aman Aman', text: 'AMAN AMAN DEMEYECEKSİN BENİM ADIMI!', portrait: 'amanaman' },
     ],
     boss_win: [
       { speaker: 'Aman Aman', text: '...Tamam, tamam. İyi adamsın. Git.', portrait: 'amanaman' },
-      { speaker: 'Özgür', text: 'Son durak ASPECT HQ. Kendi ofisime gidiyorum. Ama orada da çile var...', portrait: 'ozgur' },
+      { speaker: 'Aspect Fotoğrafçısı', text: 'Son durak ASPECT HQ. Özgür\'ün ofisi. Ama orada da çile var...', portrait: 'ozgur' },
     ],
   },
   // Level 7: ASPECT HQ (Özgür Final Boss)
