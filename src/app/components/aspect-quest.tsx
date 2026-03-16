@@ -2404,7 +2404,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
           <canvas ref={canvasRef} width={CW} height={CH} style={{ imageRendering: 'pixelated', display: 'block' }} />
 
           {/* Cheat code input — bottom-right corner of canvas area */}
-          <div className="absolute bottom-1 right-2 z-30 flex items-center gap-1">
+          <div className="absolute bottom-28 right-3 z-30 flex items-center gap-1">
             <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>🔒</span>
             <input
               type="text"
