@@ -101,6 +101,7 @@ const ROLE_TITLES: Record<UserRole, string> = {
 interface AppHeaderProps {
   userName:         string;
   userRole:         UserRole;
+  userId?:          string;
   activeTab:        string;
   onNavigate:       (tab: string) => void;
   onLogout:         () => void;
@@ -110,6 +111,7 @@ interface AppHeaderProps {
 export function AppHeader({
   userName,
   userRole,
+  userId = '',
   activeTab,
   onNavigate,
   onLogout,
@@ -247,7 +249,7 @@ export function AppHeader({
               width:          40,
               height:         40,
               borderRadius:   9999,
-              background:     'rgba(10,5,30,0.92)',
+              background:     'rgba(10,5,30,0.9)',
               border:         hasNotification
                                 ? '1px solid rgba(251,146,60,0.5)'
                                 : '1px solid rgba(255,255,255,0.15)',
@@ -274,6 +276,7 @@ export function AppHeader({
           <HamburgerMenu
             userName={userName}
             userRole={userRole}
+            userId={userId}
             onLogout={onLogout}
             onNavigate={onNavigate}
             activeTab={activeTab}

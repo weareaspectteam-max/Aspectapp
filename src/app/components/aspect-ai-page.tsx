@@ -1755,6 +1755,11 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const isAdmin = roleConfig.loadOzet;
   const chips = roleConfig.chips;
 
+  // ── AI mod göstergesi (OpenAI mi, KV mi?) ────────────────────────────────
+  // Toggle ON  → sunucu OpenAI'ya gider
+  // Toggle OFF → mevcut KV tabanlı motor çalışır (hiçbir şey kilitlenmez)
+  const [useOpenAI, setUseOpenAI] = useState(false); // başlangıçta bilinmiyor, KV mod
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '0',
@@ -2066,7 +2071,49 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       return;
     }
 
-    // Simulate AI thinking delay
+    // ── OpenAI modu: sunucuya sor ──────────────────────────────────────────
+    try {
+      const headers = await authHeaders();
+      const recentMsgs = messages.slice(-6).map(m => ({
+        role: m.role,
+        text: m.text,
+      }));
+      recentMsgs.push({ role: 'user', text: text.trim() });
+
+      const res = await fetch(`${API_BASE}/ai/chat`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: recentMsgs,
+          userRole,
+          userName,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.use_kv && data.reply) {
+          // OpenAI yanıtı geldi
+          setUseOpenAI(true);
+          const aiMsg: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'ai',
+            text: data.reply,
+            ts: new Date(),
+          };
+          setMessages(prev => [...prev, aiMsg]);
+          setIsLoading(false);
+          return;
+        }
+        // use_kv: true → KV motoruna düş
+        setUseOpenAI(false);
+      }
+    } catch (e) {
+      console.error('[AI Chat] OpenAI isteği başarısız, KV moduna düşülüyor:', e);
+      setUseOpenAI(false);
+    }
+
+    // ── KV Motoru (Toggle OFF veya OpenAI hata) ────────────────────────────
     await new Promise(r => setTimeout(r, 700 + Math.random() * 600));
 
     const result = generateAIResponse(text.trim(), userRole, ozet, activeROLE_CONFIG);
@@ -2083,13 +2130,11 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       aiText = izinResult.text;
       aiCard = izinResult.card;
     } else if (result === 'LEAVE_REQUEST') {
-      // İzin talebi flow başlat
       const newFlow: LeaveFlowState = { step: 'type' };
       setLeaveFlow(newFlow);
       aiText = '🏖️ İzin talebi oluşturalım! Önce izin türünü seç:';
       aiCard = { type: 'leave_flow', data: newFlow };
     } else if (result === 'LEAVE_CONFIRM') {
-      // Onay sor
       aiText = 'İzin talebi oluşturmak mı istiyorsunuz? 🏖️';
       aiCard = { type: 'leave_confirm', data: { answered: false } };
     } else {
@@ -2107,7 +2152,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
 
     setMessages(prev => [...prev, aiMsg]);
     setIsLoading(false);
-  }, [isLoading, ozet, userRole, activeROLE_CONFIG, userName, userId, handleLeaveFlowCommand]);
+  }, [isLoading, ozet, userRole, activeROLE_CONFIG, userName, userId, handleLeaveFlowCommand, messages]);
 
   const initialMessage: Message = {
     id: '0',
@@ -2297,8 +2342,13 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
             <Brain className="w-4.5 h-4.5 text-white" />
           </div>
           {/* Title */}
-          <div>
+          <div className="flex flex-col">
             <span className="text-[15px] font-bold text-white leading-tight">Aspect AI</span>
+            {useOpenAI && (
+              <span style={{ fontSize: 9, color: '#a78bfa', fontWeight: 600, letterSpacing: '0.04em' }}>
+                ✦ GPT-4o mini
+              </span>
+            )}
           </div>
 
           {/* Right controls */}

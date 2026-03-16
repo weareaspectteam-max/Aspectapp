@@ -1,9 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Edit2, Trash2, Save, ChevronRight, Plus, RefreshCw, Loader2, Users, ChevronDown, Check } from 'lucide-react';
+import { ArrowLeft, Edit2, Trash2, Save, ChevronRight, Plus, RefreshCw, Loader2, Users, ChevronDown, Check, ArrowRight } from 'lucide-react';
 import { projectId } from '/utils/supabase/info';
 import { getToken, buildHeaders } from '../lib/api';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
+
+const glass: React.CSSProperties = {
+  background:           'rgba(255,255,255,0.05)',
+  border:               '1px solid rgba(255,255,255,0.10)',
+  backdropFilter:       'blur(20px)',
+  WebkitBackdropFilter: 'blur(20px)',
+  borderRadius:         20,
+};
 
 interface CostManagementProps {
   userName: string;
@@ -655,76 +663,84 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
 
     const totalRentsMonthly = (locations || []).reduce((sum, loc) => sum + (loc.yearlyRent / 12), 0);
 
+    const CATEGORY_CARDS = [
+      {
+        view: 'products' as ViewType,
+        emoji: '📸',
+        title: 'Ürün Maliyetleri',
+        subtitle: `${albumCosts.length} albüm • ${papers.length} kağıt tipi`,
+        color: '#9dd9ea',
+      },
+      {
+        view: 'recurring' as ViewType,
+        emoji: '🏢',
+        title: 'Düzenli Giderler',
+        subtitle: `${recurringCosts.length} gider • ₺${formatCurrency(totalRecurringMonthly)}/ay`,
+        color: '#ffd4a3',
+      },
+      {
+        view: 'salaries' as ViewType,
+        emoji: '👥',
+        title: 'Personel Maaşları',
+        subtitle: `${salaries.length} personel • ₺${formatCurrency(totalSalariesMonthly)}/ay`,
+        color: '#a8e6cf',
+      },
+      {
+        view: 'rents' as ViewType,
+        emoji: '📍',
+        title: 'Mekan Kiraları',
+        subtitle: `${(locations || []).length} mekan • ₺${formatCurrency(totalRentsMonthly)}/ay`,
+        color: '#d4b5f7',
+      },
+    ];
+
     return (
-      <div className="px-6 space-y-4">
-        {/* Exchange Rates Card */}
-        <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="text-2xl">💱</span>
-            <h3 className="font-bold text-white text-lg">Döviz Kurları</h3>
-          </div>
+      <div className="px-4 space-y-4">
 
-          {/* Toggle */}
+        {/* Döviz Kurları */}
+        <div style={{ ...glass, padding: 20, border: '1px solid rgba(157,217,234,0.25)', boxShadow: '0 4px 24px rgba(157,217,234,0.08)' }}>
           <div className="flex items-center gap-3 mb-4">
-            <span className="text-sm text-gray-300">Manuel Giriş</span>
-            <button
-              onClick={() => {
-                const newAuto = !isAutoExchange;
-                saveExchangeRates(exchangeRates, newAuto);
-              }}
-              className={`relative w-14 h-7 rounded-full transition-all ${
-                isAutoExchange ? 'bg-[#9dd9ea]' : 'bg-gray-600'
-              }`}
-            >
-              <div
-                className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-lg transition-all ${
-                  isAutoExchange ? 'right-1' : 'left-1'
-                }`}
-              />
-            </button>
-            <span className="text-sm text-gray-300">Otomatik API</span>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(157,217,234,0.15)', border: '1px solid rgba(157,217,234,0.30)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: 18 }}>💱</span>
+            </div>
+            <h3 className="font-bold text-white text-base">Döviz Kurları</h3>
           </div>
 
-          {/* Manual Mode */}
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>Manuel</span>
+            <button
+              onClick={() => { const newAuto = !isAutoExchange; saveExchangeRates(exchangeRates, newAuto); }}
+              style={{ position: 'relative', width: 52, height: 26, borderRadius: 9999, background: isAutoExchange ? '#9dd9ea' : 'rgba(255,255,255,0.15)', transition: 'background 0.2s', flexShrink: 0 }}
+            >
+              <div style={{ position: 'absolute', top: 3, width: 20, height: 20, background: 'white', borderRadius: 9999, boxShadow: '0 2px 4px rgba(0,0,0,0.3)', transition: 'all 0.2s', ...(isAutoExchange ? { right: 3 } : { left: 3 }) }} />
+            </button>
+            <span className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>Otomatik API</span>
+          </div>
+
           {!isAutoExchange && (
             <div className="space-y-3">
               {(['EUR', 'USD', 'GBP'] as const).map((currency) => (
                 <div key={currency} className="flex items-center gap-3">
-                  <span className="text-2xl">
-                    {currency === 'EUR' ? '🇪🇺' : currency === 'USD' ? '🇺🇸' : '🇬🇧'}
-                  </span>
+                  <span className="text-xl">{currency === 'EUR' ? '🇪🇺' : currency === 'USD' ? '🇺🇸' : '🇬🇧'}</span>
                   <span className="text-white font-semibold w-12">{currency}:</span>
                   <input
-                    type="number"
-                    step="0.01"
+                    type="number" step="0.01"
                     value={exchangeRates[currency].toFixed(2)}
-                    onChange={(e) => {
-                      const value = parseFloat(e.target.value);
-                      if (!isNaN(value)) {
-                        const newRates = { ...exchangeRates, [currency]: parseFloat(value.toFixed(2)) };
-                        saveExchangeRates(newRates, false);
-                      }
-                    }}
-                    onBlur={(e) => {
-                      const value = parseFloat(e.target.value);
-                      if (!isNaN(value)) {
-                        e.target.value = value.toFixed(2);
-                      }
-                    }}
-                    className="w-32 px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-[#9dd9ea] transition-all"
+                    onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) saveExchangeRates({ ...exchangeRates, [currency]: parseFloat(v.toFixed(2)) }, false); }}
+                    onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) e.target.value = v.toFixed(2); }}
+                    style={{ width: 110, padding: '8px 12px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: 'white', outline: 'none', fontSize: 14 }}
                   />
-                  <span className="text-gray-300">TL</span>
+                  <span style={{ color: 'rgba(255,255,255,0.4)' }}>TL</span>
                 </div>
               ))}
             </div>
           )}
 
-          {/* Auto Mode */}
           {isAutoExchange && (
             <div className="space-y-3">
               <div className="space-y-2">
                 {(['EUR', 'USD', 'GBP'] as const).map((currency) => (
-                  <div key={currency} className="flex items-center justify-between py-2 px-4 bg-white/5 rounded-xl">
+                  <div key={currency} className="flex items-center justify-between px-4 py-2" style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 12 }}>
                     <span className="text-white font-semibold">{currency}:</span>
                     <span className="text-white font-bold">{formatDecimal(exchangeRates[currency])} TL</span>
                   </div>
@@ -732,99 +748,51 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
               </div>
               <button
                 onClick={fetchExchangeRates}
-                className="w-full py-3 bg-gradient-to-r from-[#9dd9ea] to-[#7ec8dd] rounded-xl text-white font-bold hover:scale-105 transition-all active:scale-95 flex items-center justify-center gap-2"
+                className="w-full flex items-center justify-center gap-2 font-bold transition-all active:scale-95"
+                style={{ padding: '12px 0', borderRadius: 14, background: 'rgba(157,217,234,0.15)', border: '1px solid rgba(157,217,234,0.35)', color: '#9dd9ea' }}
               >
-                <RefreshCw className="w-5 h-5" />
+                <RefreshCw className="w-4 h-4" />
                 Kurları Güncelle
               </button>
             </div>
           )}
         </div>
 
-        {/* Total Cost Summary */}
-        <div className="backdrop-blur-xl bg-gradient-to-br from-[#ffd4a3]/20 to-[#ffc78f]/10 border border-[#ffd4a3]/30 rounded-2xl p-6 text-center">
-          <p className="text-sm text-gray-300 mb-2">Toplam Aylık Sabit Maliyet</p>
-          <p className="text-4xl font-bold text-white mb-2">₺{formatCurrency(totalMonthlyCost)}</p>
-          <p className="text-xs text-gray-400">Giderler + Maaşlar + Kiralar</p>
+        {/* Toplam Aylık Maliyet */}
+        <div style={{ ...glass, padding: 20, border: '1px solid #ffd4a3bb', boxShadow: '0 4px 32px #ffd4a350', textAlign: 'center' }}>
+          <p className="text-sm mb-2" style={{ color: 'rgba(255,255,255,0.45)' }}>Toplam Aylık Sabit Maliyet</p>
+          <p className="text-4xl font-black text-white mb-1">₺{formatCurrency(totalMonthlyCost)}</p>
+          <p className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>Giderler + Maaşlar + Kiralar</p>
         </div>
 
-        {/* Category Cards */}
+        {/* Kategori Kartları */}
         <div className="space-y-3">
-          {/* Product Costs */}
-          <button
-            onClick={() => setCurrentView('products')}
-            className="w-full backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5 hover:scale-[1.02] transition-all active:scale-95"
-          >
-            <div className="flex items-center justify-between">
+          {CATEGORY_CARDS.map((card) => (
+            <button
+              key={card.view}
+              onClick={() => setCurrentView(card.view)}
+              className="w-full text-left transition-all active:scale-[0.98]"
+              style={{
+                ...glass,
+                padding: 16,
+                border: `1px solid ${card.color}bb`,
+                boxShadow: `0 4px 32px ${card.color}50`,
+              }}
+            >
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center">
-                  <span className="text-2xl">📸</span>
+                <div style={{ width: 48, height: 48, borderRadius: 14, background: `${card.color}55`, border: `1px solid ${card.color}aa`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <span style={{ fontSize: 22 }}>{card.emoji}</span>
                 </div>
-                <div className="text-left">
-                  <h3 className="font-bold text-white text-lg mb-1">Ürün Maliyetleri</h3>
-                  <p className="text-sm text-gray-400">{albumCosts.length} albüm • {papers.length} kağıt tipi</p>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-white leading-snug" style={{ fontSize: '1rem' }}>{card.title}</p>
+                  <p className="text-xs mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>{card.subtitle}</p>
+                </div>
+                <div style={{ width: 32, height: 32, borderRadius: 10, background: `${card.color}55`, border: `1px solid ${card.color}aa`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <ArrowRight style={{ width: 15, height: 15, color: card.color }} />
                 </div>
               </div>
-              <ChevronRight className="w-6 h-6 text-gray-400" />
-            </div>
-          </button>
-
-          {/* Recurring Costs */}
-          <button
-            onClick={() => setCurrentView('recurring')}
-            className="w-full backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5 hover:scale-[1.02] transition-all active:scale-95"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#ffd4a3] to-[#ffc78f] flex items-center justify-center">
-                  <span className="text-2xl">🏢</span>
-                </div>
-                <div className="text-left">
-                  <h3 className="font-bold text-white text-lg mb-1">Düzenli Giderler</h3>
-                  <p className="text-sm text-gray-400">{recurringCosts.length} gider • ₺{formatCurrency(totalRecurringMonthly)}/ay</p>
-                </div>
-              </div>
-              <ChevronRight className="w-6 h-6 text-gray-400" />
-            </div>
-          </button>
-
-          {/* Salaries */}
-          <button
-            onClick={() => setCurrentView('salaries')}
-            className="w-full backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5 hover:scale-[1.02] transition-all active:scale-95"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#a8e6cf] to-[#8fd4b8] flex items-center justify-center">
-                  <span className="text-2xl">👥</span>
-                </div>
-                <div className="text-left">
-                  <h3 className="font-bold text-white text-lg mb-1">Personel Maaşları</h3>
-                  <p className="text-sm text-gray-400">{salaries.length} personel • ₺{formatCurrency(totalSalariesMonthly)}/ay</p>
-                </div>
-              </div>
-              <ChevronRight className="w-6 h-6 text-gray-400" />
-            </div>
-          </button>
-
-          {/* Location Rents */}
-          <button
-            onClick={() => setCurrentView('rents')}
-            className="w-full backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5 hover:scale-[1.02] transition-all active:scale-95"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#d4b5f7] to-[#c49fef] flex items-center justify-center">
-                  <span className="text-2xl">📍</span>
-                </div>
-                <div className="text-left">
-                  <h3 className="font-bold text-white text-lg mb-1">Mekan Kiraları</h3>
-                  <p className="text-sm text-gray-400">{(locations || []).length} mekan • ₺{formatCurrency(totalRentsMonthly)}/ay</p>
-                </div>
-              </div>
-              <ChevronRight className="w-6 h-6 text-gray-400" />
-            </div>
-          </button>
+            </button>
+          ))}
         </div>
       </div>
     );
@@ -1731,11 +1699,11 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
   };
 
   return (
-    <div className="pb-20 bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
+    <div className="pb-28 min-h-screen">
       {/* Header */}
-      <div className="sticky top-0 z-[5] backdrop-blur-xl bg-gradient-to-r from-[#2a2a3a]/95 to-[#3a3a4e]/95 border-b border-white/10">
-        <div className="px-6 py-4">
-          <div className="flex items-center gap-3 mb-2">
+      <div className="sticky top-0 z-[5]" style={{ backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', background: 'rgba(42,42,58,0.92)', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
+        <div className="px-4 py-4">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => {
                 if (currentView === 'main') {
@@ -1744,27 +1712,28 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
                   setCurrentView('main');
                 }
               }}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-colors active:scale-95"
+              style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
             >
-              <ArrowLeft className="w-6 h-6 text-white" />
+              <ArrowLeft className="w-4 h-4 text-white" />
             </button>
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-black text-white">
-                  {currentView === 'main' && '💰 Maliyet Yönetimi'}
-                  {currentView === 'products' && '📸 Ürün Maliyetleri'}
-                  {currentView === 'recurring' && '🏢 Düzenli Giderler'}
-                  {currentView === 'salaries' && '👥 Personel Maaşları'}
-                  {currentView === 'rents' && '📍 Mekan Kiraları'}
+                  {currentView === 'main'      && 'Maliyet Yönetimi'}
+                  {currentView === 'products'  && 'Ürün Maliyetleri'}
+                  {currentView === 'recurring' && 'Düzenli Giderler'}
+                  {currentView === 'salaries'  && 'Personel Maaşları'}
+                  {currentView === 'rents'     && 'Mekan Kiraları'}
                 </h1>
-                {isSaving && <Loader2 className="w-4 h-4 text-[#9dd9ea] animate-spin" />}
+                {currentView === 'main' && <span className="text-xl">💰</span>}
+                {isSaving && <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#9dd9ea' }} />}
               </div>
-              <p className="text-sm text-gray-400">
-                {currentView === 'main' && 'Sabit maliyetlerinizi yönetin'}
-                {currentView === 'products' && 'Albümler ve kağıt maliyetleri'}
+              <p className="text-xs font-medium" style={{ color: 'rgba(196,181,253,0.5)' }}>
+                {currentView === 'main'      && 'Sabit maliyetlerinizi yönetin'}
+                {currentView === 'products'  && 'Albümler ve kağıt maliyetleri'}
                 {currentView === 'recurring' && 'Düzenli gider takibi'}
-                {currentView === 'salaries' && 'Personel maaş yönetimi'}
-                {currentView === 'rents' && 'Mekan kiraları (Sadece görüntüleme)'}
+                {currentView === 'salaries'  && 'Personel maaş yönetimi'}
+                {currentView === 'rents'     && 'Mekan kiraları (Sadece görüntüleme)'}
               </p>
             </div>
           </div>
@@ -1774,26 +1743,26 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
       {/* Loading / Error / Content */}
       {isLoading ? (
         <div className="flex flex-col items-center justify-center py-24 gap-4">
-          <Loader2 className="w-10 h-10 text-[#9dd9ea] animate-spin" />
-          <p className="text-gray-400 text-sm">Veriler yükleniyor...</p>
+          <Loader2 className="w-10 h-10 animate-spin" style={{ color: '#9dd9ea' }} />
+          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Veriler yükleniyor...</p>
         </div>
       ) : apiError ? (
-        <div className="px-6 pt-8 text-center">
+        <div className="px-4 pt-8 text-center">
           <p className="text-red-400 mb-4">{apiError}</p>
           <button
             onClick={fetchData}
-            className="px-6 py-3 bg-[#9dd9ea]/20 border border-[#9dd9ea]/40 rounded-xl text-white font-semibold"
+            style={{ padding: '12px 24px', background: 'rgba(157,217,234,0.15)', border: '1px solid rgba(157,217,234,0.35)', borderRadius: 14, color: 'white', fontWeight: 600 }}
           >
             Tekrar Dene
           </button>
         </div>
       ) : (
         <div className="pt-4">
-          {currentView === 'main' && renderMainView()}
-          {currentView === 'products' && renderProductsView()}
+          {currentView === 'main'      && renderMainView()}
+          {currentView === 'products'  && renderProductsView()}
           {currentView === 'recurring' && renderRecurringView()}
-          {currentView === 'salaries' && renderSalariesView()}
-          {currentView === 'rents' && renderRentsView()}
+          {currentView === 'salaries'  && renderSalariesView()}
+          {currentView === 'rents'     && renderRentsView()}
         </div>
       )}
     </div>

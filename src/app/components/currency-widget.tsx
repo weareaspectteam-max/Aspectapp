@@ -15,20 +15,35 @@ export function CurrencyWidget() {
   const [tryAmount, setTryAmount] = useState('');
 
   useEffect(() => {
-    loadRates();
-    const interval = setInterval(() => loadRates(true), 10 * 60 * 1000);
-    return () => clearInterval(interval);
+    const controller = new AbortController();
+    loadRates(false, controller.signal);
+    const interval = setInterval(() => loadRates(true, controller.signal), 10 * 60 * 1000);
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+    };
   }, []);
 
-  const loadRates = async (silent = false) => {
+  const loadRates = async (silent = false, externalSignal?: AbortSignal) => {
     if (!silent) setLoading(true);
     try {
       const headers = await authHeaders();
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10000);
+
+      // Eğer dışarıdan bir signal varsa (unmount), onu dinle
+      const signal = externalSignal
+        ? (() => {
+            const merged = new AbortController();
+            externalSignal.addEventListener('abort', () => merged.abort());
+            controller.signal.addEventListener('abort', () => merged.abort());
+            return merged.signal;
+          })()
+        : controller.signal;
+
       let res: Response;
       try {
-        res = await fetch(`${SERVER_URL}/doviz/canli`, { headers, signal: controller.signal });
+        res = await fetch(`${SERVER_URL}/doviz/canli`, { headers, signal });
       } finally {
         clearTimeout(timer);
       }
@@ -43,7 +58,8 @@ export function CurrencyWidget() {
       } else {
         console.error('CurrencyWidget fetch failed:', res.status);
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return; // Beklenen iptal — hata loglamaya gerek yok
       console.error('CurrencyWidget load error:', err);
     } finally {
       setLoading(false);

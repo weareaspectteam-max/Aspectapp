@@ -1465,7 +1465,7 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
   }
 });
 
-// ──────────────────────────────────────────
+// ────────────────────────────────────���─────
 // HELPER: Personel rotasyon kontrolü
 // Personel rolündeki kullanıcının belirli mekana bugün atanmış olup olmadığını kontrol eder.
 // Yönetici rolleri için her zaman true döner.
@@ -2270,7 +2270,27 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       };
     }).sort((a: any, b: any) => b.ciro - a.ciro).slice(0, 5);
 
-    console.log(`Manager dashboard: ${today} — ciro:${toplamCiro} adet:${toplamAdet} kare:${toplamKare} anomali:${anomaliSayisi}`);
+    // ── Personel bazlı performans sıralaması ─────────────────────────────────
+    const personelMap: Record<string, { name: string; ciro: number; satisAdet: number; mekan: string }> = {};
+    for (const kayit of bugunKayitlar) {
+      const mekanP = mekanMap[kayit.mekanId] || { name: kayit.mekanId };
+      const satislarP = (kayit.satislar || []).filter((s: any) => !s.iptal);
+      for (const s of satislarP) {
+        const name = s.kaydeden || "Bilinmiyor";
+        const id = s.kaydedenId || name;
+        if (!personelMap[id]) {
+          personelMap[id] = { name, ciro: 0, satisAdet: 0, mekan: mekanP.name };
+        }
+        personelMap[id].ciro += s.finalPrice || 0;
+        personelMap[id].satisAdet += (s.items || []).reduce((a: number, i: any) => a + (i.quantity || 1), 0) || 1;
+        personelMap[id].mekan = mekanP.name;
+      }
+    }
+    const personelPerformans = Object.entries(personelMap)
+      .map(([id, v]) => ({ id, name: v.name, ciro: Math.round(v.ciro), satisAdet: v.satisAdet, mekan: v.mekan }))
+      .sort((a, b) => b.ciro - a.ciro);
+
+    console.log(`Manager dashboard: ${today} — ciro:${toplamCiro} adet:${toplamAdet} kare:${toplamKare} anomali:${anomaliSayisi} personel:${personelPerformans.length}`);
 
     return c.json({
       tarih: today,
@@ -2284,6 +2304,7 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       saatlikData: saatlikArray,
       albumDagilimi,
       mekanCiroList,
+      personelPerformans,
     });
   } catch (err) {
     console.log("Manager dashboard-summary error:", err);
@@ -3176,8 +3197,12 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
     const today = new Date().toISOString().split("T")[0];
     const kvKey = `stok_gunluk_${mekanId}_${today}`;
     const kayit: any = await kv.get(kvKey) || { mekanId, tarih: today };
+    // Hem acilis hem kapanish'e yaz; böylece hiç vardiya açılmamış
+    // mekanlarda da stok görünür ve fallback mantığı çalışır.
     kayit.acilis = { ...(kayit.acilis || {}), ...stokObj };
     kayit.acilisYapildi = true;
+    kayit.kapanish = { ...(kayit.kapanish || {}), ...stokObj };
+    kayit.kapanisYapildi = true;
     kayit.yoneticiGuncelleme = new Date().toISOString();
     await kv.set(kvKey, kayit);
 
@@ -6184,6 +6209,160 @@ app.delete("/make-server-4da0b637/vardiya/sil", async (c) => {
   } catch (err) {
     console.log("Vardiya sil error:", err);
     return c.json({ error: `Sunucu hatasi: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// AI STATUS — Herkese açık, sadece global durum okur
+// GET /make-server-4da0b637/ai/status
+// ──────────────────────────────────────────
+
+app.get("/make-server-4da0b637/ai/status", async (c) => {
+  try {
+    const globalEnabled = await kv.get("ai_global_enabled");
+    return c.json({ ai_global_enabled: globalEnabled !== null ? Boolean(globalEnabled) : true });
+  } catch (err) {
+    console.log("AI status GET error:", err);
+    return c.json({ ai_global_enabled: true }); // hata durumunda AI açık varsay
+  }
+});
+
+// ──────────────────────────────────────────
+// AI TOGGLE SETTINGS — Yönetici Ayarları
+// GET  /make-server-4da0b637/ai/toggle-settings
+// POST /make-server-4da0b637/ai/toggle-settings
+// KV keys:
+//   ai_global_enabled                  → boolean (tüm roller için)
+//   ai_personal_yonetici_{userId}      → boolean (yöneticinin kendi modu)
+// ──────────────────────────────────────────
+
+app.get("/make-server-4da0b637/ai/toggle-settings", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole !== "yonetici") {
+      return c.json({ error: "Bu ayara yalnızca Yönetici erişebilir." }, 403);
+    }
+    const globalEnabled   = await kv.get("ai_global_enabled");
+    const personalKey     = `ai_personal_yonetici_${user.id}`;
+    const personalEnabled = await kv.get(personalKey);
+    return c.json({
+      ai_global_enabled:    globalEnabled  !== null ? Boolean(globalEnabled)  : true,
+      ai_personal_yonetici: personalEnabled !== null ? Boolean(personalEnabled) : true,
+    });
+  } catch (err) {
+    console.log("AI toggle-settings GET error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+app.post("/make-server-4da0b637/ai/toggle-settings", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole !== "yonetici") {
+      return c.json({ error: "Bu ayarı yalnızca Yönetici değiştirebilir." }, 403);
+    }
+    const body = await c.req.json();
+    if (typeof body.ai_global_enabled !== "undefined") {
+      await kv.set("ai_global_enabled", Boolean(body.ai_global_enabled));
+      console.log(`[AI Toggle] ai_global_enabled → ${body.ai_global_enabled} | ${user.user_metadata?.full_name}`);
+    }
+    if (typeof body.ai_personal_yonetici !== "undefined") {
+      await kv.set(`ai_personal_yonetici_${user.id}`, Boolean(body.ai_personal_yonetici));
+      console.log(`[AI Toggle] ai_personal_yonetici_${user.id} → ${body.ai_personal_yonetici} | ${user.user_metadata?.full_name}`);
+    }
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("AI toggle-settings POST error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// AI CHAT — OpenAI entegrasyonu
+// POST /make-server-4da0b637/ai/chat
+// Toggle ON  → OpenAI GPT-4o-mini kullanır
+// Toggle OFF → { use_kv: true } döner, frontend KV motorunu kullanır
+// ══════════════════════════════════════════
+
+app.post("/make-server-4da0b637/ai/chat", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    // Body'yi önce parse et — userRole toggle kararı için gerekli
+    const body = await c.req.json();
+    const { messages, userRole, userName, systemContext } = body;
+
+    // Toggle durumunu belirle (userRole body'den, user.id KV key için güvenli)
+    let useOpenAI = false;
+    if (userRole === "yonetici") {
+      const personalKey = `ai_personal_yonetici_${user.id}`;
+      const personalEnabled = await kv.get(personalKey);
+      useOpenAI = personalEnabled !== null ? Boolean(personalEnabled) : true;
+    } else {
+      const globalEnabled = await kv.get("ai_global_enabled");
+      useOpenAI = globalEnabled !== null ? Boolean(globalEnabled) : true;
+    }
+
+    if (!useOpenAI) {
+      return c.json({ use_kv: true }, 200);
+    }
+
+    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!apiKey) {
+      console.log("[AI Chat] OPENAI_API_KEY eksik, KV moduna düşülüyor.");
+      return c.json({ use_kv: true }, 200);
+    }
+
+    if (!messages || !Array.isArray(messages)) {
+      return c.json({ error: "messages dizisi gerekli." }, 400);
+    }
+
+    const systemPrompt = `Sen "Aspect AI" adlı bir turistik fotoğrafçılık işletmesi asistanısın. 
+İşletme adı: Aspect Operations. Kullanıcı adı: ${userName || "Kullanıcı"}. Rol: ${userRole || "personel"}.
+Türkçe yanıt ver. Kısa, net ve profesyonel ol. Operasyonel sorularda verilerle destekle.
+${systemContext || ""}`;
+
+    const openAIMessages = [
+      { role: "system", content: systemPrompt },
+      ...messages.map((m: any) => ({
+        role: m.role === "ai" ? "assistant" : "user",
+        content: m.content || m.text || "",
+      })),
+    ];
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: openAIMessages,
+        max_tokens: 600,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.log("[AI Chat] OpenAI hata:", response.status, errText);
+      return c.json({ use_kv: true, error: `OpenAI hatası: ${response.status}` }, 200);
+    }
+
+    const data = await response.json();
+    const replyContent = data.choices?.[0]?.message?.content || "";
+    console.log(`[AI Chat] OpenAI yanıt: ${userName} → ${replyContent.slice(0, 80)}...`);
+
+    return c.json({ reply: replyContent });
+  } catch (err) {
+    console.log("[AI Chat] Hata:", err);
+    return c.json({ use_kv: true, error: `Sunucu hatası: ${err}` }, 200);
   }
 });
 

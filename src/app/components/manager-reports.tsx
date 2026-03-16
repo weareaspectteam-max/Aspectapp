@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { FileText, TrendingUp, ArrowLeft, Calendar, Users, ArrowRight, Plus, Star, MapPin, Camera, User, Award, Loader2, TrendingDown, Minus } from 'lucide-react';
+import { motion } from 'motion/react';
+import { FileText, TrendingUp, ArrowLeft, ArrowRight, Calendar, Users, Plus, Star, MapPin, Camera, User, Award, Loader2, TrendingDown, Minus } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { LocationVisits } from './location-visits';
 import { StaffInterviews } from './staff-interviews';
@@ -9,6 +10,14 @@ import { getToken, buildHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
+
+const glass: React.CSSProperties = {
+  background:           'rgba(255,255,255,0.05)',
+  border:               '1px solid rgba(255,255,255,0.10)',
+  backdropFilter:       'blur(20px)',
+  WebkitBackdropFilter: 'blur(20px)',
+  borderRadius:         20,
+};
 
 interface ManagerReportsProps {
   userName?: string;
@@ -151,103 +160,116 @@ export function ManagerReports({
 
   // Ana ekran - 3 kategori kartı
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] pb-20">
-      {/* Header */}
-      <div className="sticky top-0 z-10 backdrop-blur-xl bg-[#2a2a3a]/95 border-b border-white/10">
-        <div className="px-4 py-4">
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={onBack}
-              className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-all active:scale-95"
-            >
-              <ArrowLeft className="w-5 h-5 text-white" />
-            </button>
-            <div className="flex-1">
-              <h1 className="text-xl font-bold text-white flex items-center gap-2">
-                <span className="text-2xl">📋</span>
-                Müdür Raporları
-              </h1>
-              <p className="text-sm text-gray-400">Müdür aktiviteleri ve raporlar</p>
+    <div className="min-h-screen pb-28 px-4 pt-4 space-y-4">
+
+      {/* Başlık — business-panel ile birebir */}
+      <div>
+        <div className="flex items-center gap-3 mb-0.5">
+          <button
+            onClick={onBack}
+            style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <ArrowLeft style={{ width: 16, height: 16, color: 'white' }} />
+          </button>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-black text-white">Müdür Raporları</h1>
+              <span className="text-xl">📋</span>
             </div>
+            <p className="text-xs font-medium" style={{ color: 'rgba(196,181,253,0.5)' }}>
+              {userName} · Müdür aktiviteleri ve raporlar
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Kategori Kartları */}
-      <div className="px-4 py-6 space-y-4">
-        {/* Mekan Ziyaretleri Kartı - Sadece Yönetici, Üst Müdür ve Müdür görebilir */}
-        {(userRole === 'yonetici' || userRole === 'ust-mudur' || userRole === 'mudur') && (
+      {/* Kartlar — business-panel ile birebir aynı stil */}
+      <div className="space-y-3">
+        {[
+          ...(userRole === 'yonetici' || userRole === 'ust-mudur' || userRole === 'mudur'
+            ? [{
+                emoji: '📍',
+                title: 'Mekan Ziyaretleri',
+                description: 'Ziyaret kayıtları ve performans analizi',
+                color: '#9dd9ea',
+                cat: 'location-visits' as ReportCategory,
+              }]
+            : []),
+          {
+            emoji: '📊',
+            title: 'Haftalık ve Aylık Raporlar',
+            description: 'Periyodik performans raporları',
+            color: '#d4b5f7',
+            cat: 'weekly-monthly' as ReportCategory,
+          },
+          {
+            emoji: '👥',
+            title: 'Personel Görüşmeleri',
+            description: 'Müdür-personel görüşme kayıtları',
+            color: '#ffd4a3',
+            cat: 'staff-interviews' as ReportCategory,
+          },
+        ].map((item) => (
           <button
-            onClick={() => setSelectedCategory('location-visits')}
-            className="w-full backdrop-blur-xl bg-gradient-to-br from-indigo-600/30 to-indigo-700/20 border-2 border-indigo-500/40 rounded-2xl p-6 hover:scale-[1.02] transition-all active:scale-95"
+            key={item.cat}
+            onClick={() => setSelectedCategory(item.cat)}
+            className="w-full text-left transition-all active:scale-[0.98]"
+            style={{
+              ...glass,
+              padding: 16,
+              border: `1px solid ${item.color}bb`,
+              boxShadow: `0 4px 32px ${item.color}50`,
+            }}
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                {/* Icon Circle */}
-                <div className="w-16 h-16 rounded-2xl bg-indigo-500/30 border-2 border-indigo-400/40 flex items-center justify-center shadow-lg">
-                  <span className="text-3xl">📍</span>
-                </div>
-
-                {/* Text */}
-                <div className="text-left">
-                  <h3 className="text-xl font-bold text-white mb-1">Mekan Ziyaretleri</h3>
-                  <p className="text-sm text-gray-300">Ziyaret kayıtları ve performans analizi</p>
-                </div>
+            <div className="flex items-center gap-4">
+              {/* İkon kutusu */}
+              <div style={{
+                width: 48,
+                height: 48,
+                borderRadius: 14,
+                background: `${item.color}26`,
+                border: `1px solid ${item.color}4d`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <span style={{ fontSize: 22 }}>{item.emoji}</span>
               </div>
 
-              {/* Arrow */}
-              <ArrowRight className="w-6 h-6 text-gray-300" />
+              {/* Metin */}
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-white leading-snug" style={{ fontSize: '1rem' }}>
+                  {item.title}
+                </p>
+                <p className="text-xs mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                  {item.description}
+                </p>
+              </div>
+
+              {/* Ok */}
+              <div style={{
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                background: `${item.color}55`,
+                border: `1px solid ${item.color}aa`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <ArrowRight style={{ width: 15, height: 15, color: item.color }} />
+              </div>
             </div>
           </button>
-        )}
-
-        {/* Haftalık ve Aylık Raporlar Kartı */}
-        <button
-          onClick={() => setSelectedCategory('weekly-monthly')}
-          className="w-full backdrop-blur-xl bg-gradient-to-br from-purple-600/30 to-purple-700/20 border-2 border-purple-500/40 rounded-2xl p-6 hover:scale-[1.02] transition-all active:scale-95"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              {/* Icon Circle */}
-              <div className="w-16 h-16 rounded-2xl bg-purple-500/30 border-2 border-purple-400/40 flex items-center justify-center shadow-lg">
-                <span className="text-3xl">📊</span>
-              </div>
-
-              {/* Text */}
-              <div className="text-left">
-                <h3 className="text-xl font-bold text-white mb-1">Haftalık ve Aylık Raporlar</h3>
-                <p className="text-sm text-gray-300">Periyodik performans raporları</p>
-              </div>
-            </div>
-
-            {/* Arrow */}
-            <ArrowRight className="w-6 h-6 text-gray-300" />
-          </div>
-        </button>
-
-        {/* Personel Görüşmeleri Kartı */}
-        <button
-          onClick={() => setSelectedCategory('staff-interviews')}
-          className="w-full backdrop-blur-xl bg-gradient-to-br from-blue-600/30 to-blue-700/20 border-2 border-blue-500/40 rounded-2xl p-6 hover:scale-[1.02] transition-all active:scale-95"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              {/* Icon Circle */}
-              <div className="w-16 h-16 rounded-2xl bg-blue-500/30 border-2 border-blue-400/40 flex items-center justify-center shadow-lg">
-                <span className="text-3xl">👥</span>
-              </div>
-
-              {/* Text */}
-              <div className="text-left">
-                <h3 className="text-xl font-bold text-white mb-1">Personel Görüşmeleri</h3>
-                <p className="text-sm text-gray-300">Müdür-personel görüşme kayıtları</p>
-              </div>
-            </div>
-
-            {/* Arrow */}
-            <ArrowRight className="w-6 h-6 text-gray-300" />
-          </div>
-        </button>
+        ))}
       </div>
     </div>
   );

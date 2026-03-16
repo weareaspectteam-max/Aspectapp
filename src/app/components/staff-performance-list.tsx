@@ -8,34 +8,53 @@ interface StaffMember {
   project: string;
   sales: number;
   revenue: number;
-  discount: string;
+  discount?: string;
+}
+
+interface LivePersonelItem {
+  id: string;
+  name: string;
+  ciro: number;
+  satisAdet: number;
+  mekan: string;
 }
 
 interface StaffPerformanceListProps {
   isOpen: boolean;
   onClose: () => void;
   onSendMessage: (selectedStaff: string[]) => void;
+  liveData?: LivePersonelItem[];
 }
 
-export function StaffPerformanceList({ isOpen, onClose, onSendMessage }: StaffPerformanceListProps) {
+export function StaffPerformanceList({ isOpen, onClose, onSendMessage, liveData }: StaffPerformanceListProps) {
   const [selectedStaff, setSelectedStaff] = useState<Set<string>>(new Set());
   const [messageInput, setMessageInput] = useState('');
 
-  // Tüm personel listesi
-  const allStaff: StaffMember[] = [
-    { id: '1', name: 'Ahmet Yılmaz', project: 'ZOKA', sales: 18, revenue: 8400, discount: '10%' },
-    { id: '2', name: 'Ayşe Demir', project: 'ZOKA', sales: 15, revenue: 7200, discount: '9%' },
-    { id: '3', name: 'Mehmet Kaya', project: 'Balık Hali', sales: 14, revenue: 6800, discount: '12%' },
-    { id: '4', name: 'Zeynep Şahin', project: 'Hamdi', sales: 12, revenue: 5600, discount: '15%' },
-    { id: '5', name: 'Can Yücel', project: 'Tekne', sales: 11, revenue: 4800, discount: '11%' },
-    { id: '6', name: 'Elif Arslan', project: 'ZOKA', sales: 10, revenue: 4500, discount: '8%' },
-    { id: '7', name: 'Burak Tekin', project: 'Balık Hali', sales: 9, revenue: 4200, discount: '13%' },
-    { id: '8', name: 'Selin Öztürk', project: 'Hamdi', sales: 8, revenue: 3800, discount: '10%' },
-    { id: '9', name: 'Emre Çelik', project: 'Tekne', sales: 7, revenue: 3400, discount: '14%' },
-    { id: '10', name: 'Deniz Aydın', project: 'ZOKA', sales: 6, revenue: 2800, discount: '9%' },
-    { id: '11', name: 'Gizem Koç', project: 'Balık Hali', sales: 5, revenue: 2400, discount: '12%' },
-    { id: '12', name: 'Oğuz Yurt', project: 'Hamdi', sales: 4, revenue: 2000, discount: '7%' },
-  ];
+  // Gerçek veri varsa kullan, yoksa fallback olarak örnek liste göster
+  const allStaff: StaffMember[] = liveData && liveData.length > 0
+    ? liveData.map(p => ({
+        id: p.id,
+        name: p.name,
+        project: p.mekan,
+        sales: p.satisAdet,
+        revenue: p.ciro,
+      }))
+    : [
+        { id: '1', name: 'Ahmet Yılmaz',  project: 'ZOKA',       sales: 18, revenue: 8400, discount: '10%' },
+        { id: '2', name: 'Ayşe Demir',    project: 'ZOKA',       sales: 15, revenue: 7200, discount: '9%'  },
+        { id: '3', name: 'Mehmet Kaya',   project: 'Balık Hali', sales: 14, revenue: 6800, discount: '12%' },
+        { id: '4', name: 'Zeynep Şahin',  project: 'Hamdi',      sales: 12, revenue: 5600, discount: '15%' },
+        { id: '5', name: 'Can Yücel',     project: 'Tekne',      sales: 11, revenue: 4800, discount: '11%' },
+        { id: '6', name: 'Elif Arslan',   project: 'ZOKA',       sales: 10, revenue: 4500, discount: '8%'  },
+        { id: '7', name: 'Burak Tekin',   project: 'Balık Hali', sales: 9,  revenue: 4200, discount: '13%' },
+        { id: '8', name: 'Selin Öztürk', project: 'Hamdi',      sales: 8,  revenue: 3800, discount: '10%' },
+        { id: '9', name: 'Emre Çelik',   project: 'Tekne',      sales: 7,  revenue: 3400, discount: '14%' },
+        { id: '10', name: 'Deniz Aydın', project: 'ZOKA',       sales: 6,  revenue: 2800, discount: '9%'  },
+        { id: '11', name: 'Gizem Koç',   project: 'Balık Hali', sales: 5,  revenue: 2400, discount: '12%' },
+        { id: '12', name: 'Oğuz Yurt',   project: 'Hamdi',      sales: 4,  revenue: 2000, discount: '7%'  },
+      ];
+
+  const isLive = !!(liveData && liveData.length > 0);
 
   const toggleStaff = (staffId: string) => {
     setSelectedStaff((prev) => {
@@ -90,6 +109,11 @@ export function StaffPerformanceList({ isOpen, onClose, onSendMessage }: StaffPe
                 <div className="flex items-center gap-2">
                   <span className="text-2xl">🏆</span>
                   <h2 className="text-xl font-bold text-white">En İyi Performans</h2>
+                  {isLive && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(52,211,153,0.2)', color: '#34d399', border: '1px solid rgba(52,211,153,0.3)' }}>
+                      🟢 CANLI
+                    </span>
+                  )}
                 </div>
                 <button
                   onClick={onClose}
@@ -143,7 +167,7 @@ export function StaffPerformanceList({ isOpen, onClose, onSendMessage }: StaffPe
                         {/* Staff Info */}
                         <div className="flex-1 text-left">
                           <div className="font-bold text-white text-base">{staff.name}</div>
-                          <div className="text-xs text-[#ffd4a3]">İskonto: {staff.discount}</div>
+                          <div className="text-xs text-[#ffd4a3]">{isLive ? staff.project : `İskonto: ${staff.discount}`}</div>
                         </div>
 
                         {/* Stats */}

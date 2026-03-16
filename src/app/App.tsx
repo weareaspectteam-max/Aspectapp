@@ -860,6 +860,7 @@ export default function App() {
           <AppHeader
             userName={userName}
             userRole={userRole}
+            userId={userId}
             activeTab={activeTab}
             onNavigate={handleNavigate}
             onLogout={handleLogout}

@@ -1,4 +1,4 @@
-import { MapPin, Users, Briefcase, Package, BarChart3, DollarSign, FileText, ArrowRight } from 'lucide-react';
+import { ArrowRight, TrendingUp, BarChart3, Settings, FileText } from 'lucide-react';
 
 interface BusinessPanelProps {
   userName: string;
@@ -7,91 +7,125 @@ interface BusinessPanelProps {
   onNavigate: (tab: string) => void;
 }
 
+const glass: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.05)',
+  border: '1px solid rgba(255,255,255,0.10)',
+  backdropFilter: 'blur(20px)',
+  WebkitBackdropFilter: 'blur(20px)',
+  borderRadius: 20,
+};
+
 export function BusinessPanel({ userName, onNavigate }: BusinessPanelProps) {
   const managementCards = [
     {
       title: 'İşletme Genel Durum',
       description: 'Gelir, gider ve kar/zarar takibi',
-      icon: Briefcase,
+      Icon: TrendingUp,
       emoji: '💼',
-      bgColor: 'bg-stone-700/40',
-      borderColor: 'border-stone-600/50',
-      iconBg: 'bg-stone-600/60',
-      action: () => onNavigate('isletme-genel-durum'),
+      color: '#34d399',
     },
     {
       title: 'Stok Dağılımı',
       description: 'Albüm ve baskı kağıdı stok analizi',
-      icon: BarChart3,
+      Icon: BarChart3,
       emoji: '📊',
-      bgColor: 'bg-pink-700/40',
-      borderColor: 'border-pink-600/50',
-      iconBg: 'bg-pink-600/60',
-      action: () => onNavigate('stock-distribution'),
+      color: '#ffd4a3',
     },
     {
       title: 'Mekan - Malzeme - Kullanıcı - Maliyet Yönetimi',
       description: 'Tüm kaynakları tek yerden yönetin',
-      icon: DollarSign,
+      Icon: Settings,
       emoji: '⚙️',
-      bgColor: 'bg-green-700/40',
-      borderColor: 'border-green-600/50',
-      iconBg: 'bg-green-600/60',
-      action: () => onNavigate('resource-management'),
+      color: '#c4b5fd',
     },
     {
       title: 'Müdür Raporları',
       description: 'Müdür ziyaretleri ve faaliyetleri',
-      icon: FileText,
+      Icon: FileText,
       emoji: '📋',
-      bgColor: 'bg-indigo-700/40',
-      borderColor: 'border-indigo-600/50',
-      iconBg: 'bg-indigo-600/60',
-      action: () => onNavigate('manager-reports'),
+      color: '#9dd9ea',
     },
   ];
 
+  const actions = [
+    { ...managementCards[0], action: () => onNavigate('isletme-genel-durum') },
+    { ...managementCards[1], action: () => onNavigate('stock-distribution') },
+    { ...managementCards[2], action: () => onNavigate('resource-management') },
+    { ...managementCards[3], action: () => onNavigate('manager-reports') },
+  ];
+
   return (
-    <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
-      {/* Header */}
-      <div className="px-6 pt-6 pb-4">
-        <div className="flex items-center gap-2 mb-2">
-          <h1 className="text-3xl font-bold text-white">Yönetici Paneli</h1>
-          <span className="text-3xl">⚙️</span>
+    <div className="min-h-screen pb-28 px-4 pt-4 space-y-4">
+
+      {/* Başlık */}
+      <div>
+        <div className="flex items-center gap-2 mb-0.5">
+          <h1 className="text-2xl font-black text-white">Yönetici Paneli</h1>
+          <span className="text-xl">⚙️</span>
         </div>
-        <p className="text-sm text-gray-400">İşletme yönetim araçları</p>
+        <p className="text-xs font-medium" style={{ color: 'rgba(196,181,253,0.5)' }}>
+          {userName} · İşletme yönetim araçları
+        </p>
       </div>
 
-      {/* Menu Cards */}
-      <div className="px-6 space-y-4">
-        {managementCards.map((item) => {
-          const IconComponent = item.icon;
-          return (
-            <button
-              key={item.title}
-              onClick={item.action}
-              className={`w-full backdrop-blur-xl ${item.bgColor} border-2 ${item.borderColor} rounded-2xl p-6 hover:scale-[1.02] transition-all active:scale-95`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  {/* Icon Circle */}
-                  <div className={`w-16 h-16 rounded-2xl ${item.iconBg} border-2 ${item.borderColor} flex items-center justify-center shadow-lg`}>
-                    <span className="text-3xl">{item.emoji}</span>
-                  </div>
-
-                  {/* Text */}
-                  <div className="text-left">
-                    <h3 className="text-xl font-bold text-white mb-1">{item.title}</h3>
-                    <p className="text-sm text-gray-400">{item.description}</p>
-                  </div>
-                </div>
-
-                {/* Arrow */}
-                <ArrowRight className="w-6 h-6 text-gray-400" />
+      {/* Kartlar */}
+      <div className="space-y-3">
+        {actions.map((item) => (
+          <button
+            key={item.title}
+            onClick={item.action}
+            className="w-full text-left transition-all active:scale-[0.98]"
+            style={{
+              ...glass,
+              padding: 16,
+              border: `1px solid ${item.color}bb`,
+              boxShadow: `0 4px 32px ${item.color}50`,
+            }}
+          >
+            <div className="flex items-center gap-4">
+              {/* İkon kutusu */}
+              <div style={{
+                width: 48,
+                height: 48,
+                borderRadius: 14,
+                background: `${item.color}26`,
+                border: `1px solid ${item.color}4d`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <span style={{ fontSize: 22 }}>{item.emoji}</span>
               </div>
-            </button>
-          );
-        })}
+
+              {/* Metin */}
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-white leading-snug"
+                  style={{ fontSize: item.title.length > 30 ? '0.88rem' : '1rem' }}>
+                  {item.title}
+                </p>
+                <p className="text-xs mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                  {item.description}
+                </p>
+              </div>
+
+              {/* Ok */}
+              <div style={{
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                background: `${item.color}55`,
+                border: `1px solid ${item.color}aa`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <ArrowRight style={{ width: 15, height: 15, color: item.color }} />
+              </div>
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   );
