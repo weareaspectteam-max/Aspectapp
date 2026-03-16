@@ -1,7 +1,7 @@
 /**
  * ASPECT QUEST — 8 Bölümlü Platformer
  * Türkiye · Fethiye · ASPECT Operations
- * Bosses: Celil & Selçuk, Zuhal, Büşra, Tanrıverdi, Kayhan, Aman Aman, Özgür
+ * Bosses: Celil & Selçuk, Zuhal, Büşra, Bronz Tanrıverdi, Kayhan, Aman Aman, Özgür
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -56,7 +56,7 @@ interface Enemy {
 }
 interface Projectile {
   id: number; x: number; y: number; vx: number; vy: number;
-  type: 'plate' | 'ice' | 'net' | 'surfboard' | 'album' | 'shockwave' | 'camshot';
+  type: 'plate' | 'ice' | 'net' | 'surfboard' | 'suncream' | 'album' | 'shockwave' | 'camshot';
   w: number; h: number; active: boolean; timer: number;
   netActive?: boolean; // net caught player
   fromPlayer?: boolean; // player-fired projectile
@@ -235,19 +235,19 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
   {
     intro: [
       { speaker: 'Necati Abi', text: 'Çalış Plajı evladım! Güneş var, deniz var, müşteri var. Mükemmel!', portrait: 'necati' },
-      { speaker: 'Necati Abi', text: 'Ama dikkat — Tanrıverdi o sahili sahiplenmiş. Sörf tahtasını fırlatıyor.', portrait: 'necati' },
+      { speaker: 'Necati Abi', text: 'Ama dikkat — Bronz Tanrıverdi o sahili sahiplenmiş. Güneş kremi sıkıyor her tarafa!', portrait: 'necati' },
       { speaker: 'Necati Abi', text: 'Kardeşlerim, arkanızdayım! Sahilden iyi bir kare kap, gurur duyarız!', portrait: 'necati' },
       { speaker: 'Özgür', text: 'Necati Abi haklı. Kumda biraz yavaş kalırsın, dikkatli ol. Haydi!', portrait: 'ozgur' },
     ],
     boss_intro: [
-      { speaker: 'Tanrıverdi', text: 'Eyyy! Bu plajda çekim mi yapıyorsun sen?', portrait: 'tanriverdi' },
-      { speaker: 'Tanrıverdi', text: 'Burası benim alanım. Ben burada oluşmadan fotoğraf çekilmez.', portrait: 'tanriverdi' },
+      { speaker: 'Bronz Tanrıverdi', text: 'Eyyy! Bu plajda çekim mi yapıyorsun sen?', portrait: 'tanriverdi' },
+      { speaker: 'Bronz Tanrıverdi', text: 'Burası benim alanım. Ben burada oluşmadan fotoğraf çekilmez.', portrait: 'tanriverdi' },
       { speaker: 'Özgür', text: 'Anlıyorum ama... turistik fotoğrafçılık, iznim var...', portrait: 'ozgur' },
-      { speaker: 'Tanrıverdi', text: 'Şu sörf tahtasını al bakalım!', portrait: 'tanriverdi' },
+      { speaker: 'Bronz Tanrıverdi', text: 'Al bakalım şu güneş kremini! 🧴', portrait: 'tanriverdi' },
     ],
     boss_win: [
-      { speaker: 'Tanrıverdi', text: 'Tamam... fena değilsin. Devam et.', portrait: 'tanriverdi' },
-      { speaker: 'Özgür', text: 'Sağ ol Tanrıverdi. Bir gün seninle fotoğraf çekeceğiz!', portrait: 'ozgur' },
+      { speaker: 'Bronz Tanrıverdi', text: 'Tamam... fena değilsin. Devam et.', portrait: 'tanriverdi' },
+      { speaker: 'Özgür', text: 'Sağ ol Bronz Tanrıverdi. Bir gün seninle fotoğraf çekeceğiz!', portrait: 'ozgur' },
     ],
   },
   // Level 5: İki Duble (Kayhan boss)
@@ -769,17 +769,41 @@ function drawBoss(ctx: CanvasRenderingContext2D, e: Enemy, sx: number, t: number
       break;
     }
     case 'boss_tanriverdi': {
-      // Uzun boylu, yakışıklı, sakallı
-      ctx.fillStyle = '#2255aa';
-      ctx.fillRect(sx + 3, cy + 26 + bob, e.w - 6, e.h - 34);
-      ctx.fillStyle = '#FDBCB4';
+      // Bronz Tanrıverdi — bronz tenli, mayo, güneş kremi tutan
+      // Vücut (mayo — koyu mavi)
+      ctx.fillStyle = '#1144aa';
+      ctx.fillRect(sx + 5, cy + 28 + bob, e.w - 10, e.h - 36);
+      // Bronz ten
+      ctx.fillStyle = '#C8773A';
+      // Kol sol
+      ctx.fillRect(sx, cy + 28 + bob, 8, 20);
+      // Kol sağ — güneş kremi tutan
+      ctx.fillRect(sx + e.w - 8, cy + 28 + bob, 8, 18);
+      // Güneş kremi şişesi (sağ elde)
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(sx + e.w - 6, cy + 36 + bob, 8, 16);
+      ctx.fillStyle = '#FF6600';
+      ctx.fillRect(sx + e.w - 5, cy + 37 + bob, 6, 6);
+      ctx.fillStyle = '#EEEEEE';
+      ctx.fillRect(sx + e.w - 5, cy + 44 + bob, 6, 6);
+      // Kafa (bronz)
+      ctx.fillStyle = '#C8773A';
       ctx.beginPath(); ctx.arc(cx, cy + 14 + bob, 14, 0, Math.PI * 2); ctx.fill();
+      // Saç (koyu)
       ctx.fillStyle = '#2a1a0a';
       ctx.beginPath(); ctx.arc(cx, cy + 14 + bob, 14, Math.PI, 0); ctx.fill();
       ctx.fillRect(cx - 14, cy + bob, 28, 7);
-      // Beard
+      // Sakal
       ctx.fillStyle = '#2a1a0a';
       ctx.beginPath(); ctx.arc(cx, cy + 24 + bob, 10, 0, Math.PI); ctx.fill();
+      // Güneş gözlüğü
+      ctx.fillStyle = '#111';
+      ctx.fillRect(cx - 12, cy + 12 + bob, 9, 5);
+      ctx.fillRect(cx + 3, cy + 12 + bob, 9, 5);
+      ctx.fillStyle = '#0088FF'; ctx.globalAlpha = 0.5;
+      ctx.fillRect(cx - 11, cy + 13 + bob, 7, 3);
+      ctx.fillRect(cx + 4, cy + 13 + bob, 7, 3);
+      ctx.globalAlpha = 1;
       break;
     }
     case 'boss_kayhan': {
@@ -1200,7 +1224,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
           let ptype: Projectile['type'] = 'plate';
           if (e.type === 'boss_zuhal') ptype = 'ice';
           else if (e.type === 'boss_busra') ptype = 'net';
-          else if (e.type === 'boss_tanriverdi') ptype = 'surfboard';
+          else if (e.type === 'boss_tanriverdi') ptype = 'suncream';
           else if (e.type === 'boss_amanaman') ptype = 'shockwave';
           else if (e.type === 'boss_ozgur') ptype = 'album';
 
@@ -1213,8 +1237,8 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
               vx: (dx / dist) * spd,
               vy: (dy / dist) * spd,
               type: ptype,
-              w: ptype === 'surfboard' ? 60 : ptype === 'album' ? 28 : 20,
-              h: ptype === 'surfboard' ? 14 : 20,
+              w: ptype === 'surfboard' ? 60 : ptype === 'suncream' ? 14 : ptype === 'album' ? 28 : 20,
+              h: ptype === 'surfboard' ? 14 : ptype === 'suncream' ? 28 : 20,
               active: true, timer: 200,
             });
           }
@@ -1870,9 +1894,23 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       drawBoss(ctx, e, ex2, t, ld);
       // HP bar above boss
       if (e.maxHp && e.maxHp > 0) {
-        const barW = 60, barH = 6;
+        const barW = 70, barH = 6;
         const bx = ex2 + e.w / 2 - barW / 2;
-        const by = e.y - 16;
+        const by = e.y - 22;
+        // Boss name label
+        const bossNameMap: Record<string, string> = {
+          boss_celil: 'Celil', boss_selcuk: 'Selçuk', boss_zuhal: 'Zuhal',
+          boss_busra: 'Büşra', boss_tanriverdi: 'Bronz Tanrıverdi',
+          boss_kayhan: 'Kayhan', boss_amanaman: 'Aman Aman', boss_ozgur: 'Özgür',
+        };
+        const bossLabel = bossNameMap[e.type] ?? 'BOSS';
+        ctx.save();
+        ctx.font = 'bold 7px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillText(bossLabel, ex2 + e.w / 2, by - 3);
+        ctx.fillStyle = '#FFD700';
+        ctx.fillText(bossLabel, ex2 + e.w / 2, by - 4);
+        ctx.restore();
         ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx - 1, by - 1, barW + 2, barH + 2);
         ctx.fillStyle = '#FF4444'; ctx.fillRect(bx, by, barW, barH);
         ctx.fillStyle = '#44FF44'; ctx.fillRect(bx, by, barW * (e.hp! / e.maxHp!), barH);
@@ -2076,7 +2114,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
         return;
       }
 
-      const rot = p.type === 'surfboard' ? Math.atan2(p.vy, p.vx) : (t * 0.15);
+      const rot = p.type === 'surfboard' ? Math.atan2(p.vy, p.vx) : p.type === 'suncream' ? (t * 0.22) : (t * 0.15);
       ctx.translate(px2, p.y);
       ctx.rotate(rot);
       if (p.type === 'plate') {
@@ -2093,6 +2131,32 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       } else if (p.type === 'surfboard') {
         ctx.fillStyle = '#FF8822'; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
         ctx.fillStyle = '#FFCC44'; ctx.fillRect(-p.w / 2 + 4, -p.h / 4, p.w - 8, p.h / 2);
+      } else if (p.type === 'suncream') {
+        // Güneş kremi şişesi — beyaz tüp, turuncu kapak, dönerek uçar
+        const sw = p.w, sh = p.h;
+        // Şişe gövdesi
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.roundRect(-sw / 2, -sh / 2 + 4, sw, sh - 4, 3);
+        ctx.fill();
+        ctx.strokeStyle = '#DDDDDD'; ctx.lineWidth = 1;
+        ctx.stroke();
+        // Turuncu etiket şeridi
+        ctx.fillStyle = '#FF6600';
+        ctx.fillRect(-sw / 2, -sh / 2 + 10, sw, 7);
+        // SPF yazısı
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 4px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('SPF50', 0, -sh / 2 + 16);
+        // Beyaz krem lekesi (fırlıyor etkisi)
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.beginPath(); ctx.arc(sw / 2 + 3, -sh / 4, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(sw / 2 + 7, 0, 2.5, 0, Math.PI * 2); ctx.fill();
+        // Kapak (turuncu)
+        ctx.fillStyle = '#FF6600';
+        ctx.beginPath();
+        ctx.roundRect(-sw / 2 + 1, -sh / 2, sw - 2, 6, 2);
+        ctx.fill();
       } else if (p.type === 'album') {
         ctx.fillStyle = '#8B4513'; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
         ctx.fillStyle = '#FDBCB4'; ctx.fillRect(-p.w / 2 + 3, -p.h / 2 + 3, p.w - 6, p.h - 6);
