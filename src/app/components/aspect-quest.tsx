@@ -33,6 +33,7 @@ const SFX = {
   star:    () => { tone(880, 0.05); setTimeout(() => tone(1100, 0.07), 30); setTimeout(() => tone(1320, 0.1), 65); },
   hit:     () => tone(130, 0.35, 0.28, 'sawtooth'),
   photo:   () => { tone(880, 0.04); setTimeout(() => tone(1240, 0.07), 32); setTimeout(() => tone(660, 0.12), 75); },
+  flash:   () => { tone(1200, 0.06, 0.3, 'sine'); setTimeout(() => tone(800, 0.12, 0.2, 'sine'), 60); setTimeout(() => tone(1600, 0.1, 0.25, 'triangle'), 100); },
   lvlWin:  () => [350, 440, 550, 660, 880].forEach((f, i) => setTimeout(() => tone(f, 0.18, 0.22), i * 72)),
   gameOver:() => { tone(320, 0.18, 0.25, 'sawtooth'); setTimeout(() => tone(220, 0.22, 0.25, 'sawtooth'), 200); setTimeout(() => tone(110, 0.4, 0.25, 'sawtooth'), 460); },
   boss:    () => { tone(80, 0.5, 0.3, 'sawtooth'); setTimeout(() => tone(60, 0.5, 0.3, 'sawtooth'), 300); },
@@ -55,20 +56,37 @@ interface Enemy {
 }
 interface Projectile {
   id: number; x: number; y: number; vx: number; vy: number;
-  type: 'plate' | 'ice' | 'net' | 'surfboard' | 'album' | 'shockwave';
+  type: 'plate' | 'ice' | 'net' | 'surfboard' | 'album' | 'shockwave' | 'camshot';
   w: number; h: number; active: boolean; timer: number;
   netActive?: boolean; // net caught player
+  fromPlayer?: boolean; // player-fired projectile
 }
 interface SpawnedGirl {
   id: number; x: number; y: number; vx: number; alive: boolean; vy: number; onGround: boolean;
 }
 interface Collectable {
   id: number; x: number; y: number; w: number; h: number;
-  type: 'lens' | 'frame' | 'card' | 'battery' | 'star';
+  type: 'tl' | 'dolar' | 'euro' | 'star';
   pts: number; got: boolean;
+}
+interface NPC {
+  id: number; x: number; y: number; vx: number;
+  minX: number; maxX: number; face: number;
+  type: 'enemy_tourist' | 'named_minion';
+  alive: boolean;
+  quote: string; quoteTimer: number; bobOffset: number;
+  skinColor: string; clothColor: string;
+  // named_minion extras
+  name?: string; quotes?: string[]; quoteIdx?: number; quoteInterval?: number;
+  // enemy extras
+  chasing?: boolean; angerTimer?: number;
+}
+interface PhotoSpot {
+  id: number; x: number; used: boolean;
 }
 interface Spark { x: number; y: number; vx: number; vy: number; life: number; maxl: number; col: string; sz: number; }
 interface FloatText { x: number; y: number; text: string; life: number; col: string; }
+interface Bird { id: number; x: number; y: number; baseY: number; vx: number; phase: number; alive: boolean; col: string; sz: number; }
 interface Dialog { speaker: string; text: string; portrait: string; }
 
 type Screen = 'menu' | 'dialog' | 'play' | 'boss_fight' | 'boss_dead' | 'lvlwin' | 'over' | 'victory';
@@ -92,6 +110,15 @@ interface GS {
   bossSpawned: boolean;
   projId: number; girlId: number;
   levelComplete: boolean;
+  npcs: NPC[];
+  photoSpots: PhotoSpot[];
+  flashCooldown: number; // frames remaining on flash cooldown
+  nearPhotoSpot: boolean;
+  flashWhite: number; // frames of white flash overlay
+  shootCooldown: number; // frames remaining on player shoot cooldown
+  birds: Bird[]; birdId: number;
+  birdSpawnTimer: number;
+  _finishBlockedShown?: boolean;
 }
 
 // ─────────────────────────── CONSTANTS ───────────────────────────────────────
@@ -223,8 +250,8 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
   {
     intro: [
       { speaker: 'Özgür', text: 'İki Duble. Karanlık, müzik yüksek. Ama kare burada da var.', portrait: 'ozgur' },
-      { speaker: 'Özgür', text: 'Kayhan burada takılıyor her gece. Kısa boylu, siyah giyimli, beyaz ayakkabı.', portrait: 'ozgur' },
-      { speaker: 'Özgür', text: 'Telefona sarılırsa dur! Telefonda kızları çağırıyor, etraf dolup taşıyor.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Kayhan her gece burada. Adamın yerinden ayrıldığı görülmemiş. Dikkat et ona.', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Telefona sarıldı mı bitti. Kızları çağırıyor — ortalık dolup taşıyor.', portrait: 'ozgur' },
     ],
     boss_intro: [
       { speaker: 'Kayhan', text: 'Dur bakalım. Fotoğrafçı mı bu? İyi, iyi...', portrait: 'kayhan' },
@@ -293,8 +320,75 @@ interface LevelDef {
 const W1 = '#8B6914', M1 = '#1e4a72', S1 = '#4a3a6a', R1 = '#1a5c1a';
 const B1 = '#2a4a2a', P1 = '#6a2a6a';
 
+const ANGRY_QUOTES = [
+  "PAHALIII! 😡",
+  "DOLANDIRICII!",
+  "İADE İSTİYORUM!",
+  "200 TL Ç-O-K!",
+  "MÜDÜR ÇAĞIRIRIM!",
+  "BERBAT ÇIKTI!!",
+  "SİZİ ŞİKAYET..!",
+  "FACEBOOK'A YAZARIM!",
+];
+
 function makePlatItems(xs: number[], y: number, types: Collectable['type'][]): { x: number; y: number; type: Collectable['type']; pts: number }[] {
-  return xs.map((x, i) => ({ x, y: y - 20, type: types[i % types.length], pts: types[i % types.length] === 'star' ? 300 : types[i % types.length] === 'card' ? 100 : 75 }));
+  const PTS: Record<Collectable['type'], number> = { tl: 200, dolar: 99, euro: 38, star: 500 };
+  return xs.map((x, i) => ({ x, y: y - 20, type: types[i % types.length], pts: PTS[types[i % types.length]] }));
+}
+
+// Balık Hali minion dialogues
+const EZGI_QUOTES   = ["Ay telefonuma mesaj geldi..", "Dur dur bakayım...", "Kime yazmış acaba 🤔", "Off kaç mesaj var..."];
+const ZELIHA_QUOTES = ["Hani müşteri yok gitmiyormuyuz..", "Pff.. Niye buradayız ki?", "Ben burada duramam...", "Uff.. Çok sıkıldım."];
+const AYSE_QUOTES   = ["İnstagramıma bakmadım.", "Son postum kaç beğendi?", "Story atmadım daha.. 😮", "Filtre mi koyayım acaba..."];
+
+function makeNPCs(ww: number, lvlIdx: number): NPC[] {
+  const npcs: NPC[] = [];
+  let nid = 0;
+
+  // ── Level 2 (Balık Hali): Ezgi, Zeliha, Ayşe standing near boss area ────
+  if (lvlIdx === 2) {
+    const minionDefs = [
+      { name: 'Ezgi',   x: 2820, quotes: EZGI_QUOTES,   skin: '#FDBCB4', cloth: '#E87040' },
+      { name: 'Zeliha', x: 2960, quotes: ZELIHA_QUOTES, skin: '#F5CBA7', cloth: '#5566BB' },
+      { name: 'Ayşe',  x: 3100, quotes: AYSE_QUOTES,   skin: '#FDBCB4', cloth: '#CC4477' },
+    ];
+    minionDefs.forEach(m => {
+      npcs.push({
+        id: nid++, x: m.x, y: GY - 34, vx: 0.3,
+        minX: m.x - 22, maxX: m.x + 22, face: -1,
+        type: 'named_minion', alive: true,
+        name: m.name, quotes: m.quotes, quoteIdx: 0, quoteInterval: 240,
+        quote: m.quotes[0], quoteTimer: 120,
+        bobOffset: nid * 10,
+        skinColor: m.skin, clothColor: m.cloth,
+      });
+    });
+  }
+
+  // ── Sinirli Müşteri (enemy) — 3-4 per level, spaced across the level ─────
+  const enemyCount = 3 + (lvlIdx % 2); // 3 or 4
+  for (let ei = 0; ei < enemyCount; ei++) {
+    const ex = 600 + Math.floor((ww - 900) / enemyCount) * ei + 200 + (ei * 73 % 150);
+    npcs.push({
+      id: nid++, x: ex, y: GY - 34, vx: 1.4,
+      minX: ex - 100, maxX: ex + 100, face: 1,
+      type: 'enemy_tourist', alive: true,
+      quote: ANGRY_QUOTES[(ei + lvlIdx * 2) % ANGRY_QUOTES.length],
+      quoteTimer: 0, bobOffset: ei * 30,
+      skinColor: '#FDBCB4', clothColor: '#CC2222',
+      chasing: false, angerTimer: 0,
+    });
+  }
+
+  return npcs;
+}
+
+function makePhotoSpots(ww: number): PhotoSpot[] {
+  return [
+    { id: 0, x: Math.floor(ww * 0.22), used: false },
+    { id: 1, x: Math.floor(ww * 0.48), used: false },
+    { id: 2, x: Math.floor(ww * 0.73), used: false },
+  ];
 }
 
 const LEVELS: LevelDef[] = [
@@ -315,7 +409,7 @@ const LEVELS: LevelDef[] = [
       mplX(1580, 265, 72, S1, 120), mplX(2800, 240, 72, S1, 140),
     ],
     items: [
-      ...makePlatItems([140, 300, 470, 640, 810, 990, 1160, 1340, 1510, 1690, 1860, 2040, 2220, 2410, 2600, 2780, 2960, 3140], 255, ['lens', 'frame', 'card', 'battery', 'star', 'lens', 'frame', 'card', 'battery', 'star', 'lens', 'frame', 'card', 'battery', 'star', 'lens', 'frame', 'card']),
+      ...makePlatItems([140, 300, 470, 640, 810, 990, 1160, 1340, 1510, 1690, 1860, 2040, 2220, 2410, 2600, 2780, 2960, 3140], 255, ['tl', 'dolar', 'euro', 'tl', 'star', 'dolar', 'tl', 'euro', 'tl', 'star', 'dolar', 'tl', 'euro', 'tl', 'dolar', 'star', 'tl', 'euro']),
     ],
   },
   // ── LEVEL 1: Fethiye Sokakları (escape)
@@ -335,7 +429,7 @@ const LEVELS: LevelDef[] = [
       mplX(1480, 265, 70, B1, 100), mplX(2650, 235, 70, B1, 120),
     ],
     items: [
-      ...makePlatItems([110, 270, 430, 590, 760, 930, 1100, 1280, 1460, 1650, 1840, 2030, 2220, 2420, 2610], 255, ['lens', 'star', 'card', 'battery', 'frame', 'lens', 'star', 'card', 'battery', 'frame', 'lens', 'star', 'card', 'battery', 'frame']),
+      ...makePlatItems([110, 270, 430, 590, 760, 930, 1100, 1280, 1460, 1650, 1840, 2030, 2220, 2420, 2610], 255, ['tl', 'star', 'dolar', 'euro', 'tl', 'star', 'dolar', 'tl', 'euro', 'tl', 'star', 'dolar', 'tl', 'euro', 'tl']),
     ],
   },
   // ── LEVEL 2: Balık Hali
@@ -355,7 +449,7 @@ const LEVELS: LevelDef[] = [
       mplX(1600, 272, 72, W1, 110), mplX(2850, 245, 72, W1, 130),
     ],
     items: [
-      ...makePlatItems([150, 320, 500, 670, 840, 1020, 1190, 1380, 1560, 1740, 1920, 2110, 2290, 2480, 2660, 2850, 3040, 3200], 265, ['lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'card']),
+      ...makePlatItems([150, 320, 500, 670, 840, 1020, 1190, 1380, 1560, 1740, 1920, 2110, 2290, 2480, 2660, 2850, 3040, 3200], 265, ['euro', 'tl', 'star', 'dolar', 'tl', 'euro', 'tl', 'star', 'dolar', 'tl', 'euro', 'tl', 'star', 'dolar', 'tl', 'euro', 'tl', 'dolar']),
     ],
   },
   // ── LEVEL 3: Müjgan Restaurant (rising water)
@@ -376,7 +470,7 @@ const LEVELS: LevelDef[] = [
       mplX(1560, 258, 72, M1, 110), mplX(2760, 238, 72, M1, 130),
     ],
     items: [
-      ...makePlatItems([120, 290, 460, 630, 800, 980, 1150, 1330, 1510, 1690, 1870, 2050, 2230, 2420, 2600, 2780, 2960, 3120], 248, ['lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'card']),
+      ...makePlatItems([120, 290, 460, 630, 800, 980, 1150, 1330, 1510, 1690, 1870, 2050, 2230, 2420, 2600, 2780, 2960, 3120], 248, ['tl', 'dolar', 'star', 'euro', 'tl', 'tl', 'dolar', 'star', 'euro', 'tl', 'tl', 'dolar', 'star', 'euro', 'tl', 'dolar', 'tl', 'euro']),
     ],
   },
   // ── LEVEL 4: Çalış Plajı
@@ -402,7 +496,7 @@ const LEVELS: LevelDef[] = [
       mplX(1590, 268, 70, '#C8944A', 100), mplX(2800, 248, 70, '#C8944A', 120),
     ],
     items: [
-      ...makePlatItems([130, 300, 470, 640, 810, 990, 1160, 1340, 1520, 1700, 1880, 2060, 2240, 2430, 2610, 2790, 2980, 3150], 258, ['lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'card']),
+      ...makePlatItems([130, 300, 470, 640, 810, 990, 1160, 1340, 1520, 1700, 1880, 2060, 2240, 2430, 2610, 2790, 2980, 3150], 258, ['dolar', 'tl', 'star', 'euro', 'tl', 'dolar', 'tl', 'star', 'euro', 'tl', 'dolar', 'tl', 'star', 'euro', 'tl', 'dolar', 'tl', 'euro']),
     ],
   },
   // ── LEVEL 5: İki Duble
@@ -425,7 +519,7 @@ const LEVELS: LevelDef[] = [
       mplX(1540, 268, 72, M1, 100), mplX(2750, 248, 72, M1, 120),
     ],
     items: [
-      ...makePlatItems([100, 260, 420, 580, 750, 920, 1100, 1280, 1460, 1640, 1820, 2000, 2180, 2370, 2560, 2740, 2920, 3090], 258, ['lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'card']),
+      ...makePlatItems([100, 260, 420, 580, 750, 920, 1100, 1280, 1460, 1640, 1820, 2000, 2180, 2370, 2560, 2740, 2920, 3090], 258, ['tl', 'euro', 'star', 'dolar', 'tl', 'tl', 'euro', 'star', 'dolar', 'tl', 'tl', 'euro', 'star', 'dolar', 'tl', 'euro', 'tl', 'dolar']),
     ],
   },
   // ── LEVEL 6: Mios
@@ -447,7 +541,7 @@ const LEVELS: LevelDef[] = [
       mplX(1570, 268, 72, M1, 110), mplX(2760, 248, 72, M1, 130),
     ],
     items: [
-      ...makePlatItems([110, 280, 450, 620, 790, 970, 1140, 1320, 1500, 1680, 1860, 2040, 2220, 2410, 2590, 2770, 2950, 3120], 258, ['lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'star', 'card', 'battery', 'lens', 'frame', 'card']),
+      ...makePlatItems([110, 280, 450, 620, 790, 970, 1140, 1320, 1500, 1680, 1860, 2040, 2220, 2410, 2590, 2770, 2950, 3120], 258, ['euro', 'tl', 'star', 'dolar', 'tl', 'euro', 'tl', 'star', 'dolar', 'tl', 'euro', 'tl', 'star', 'dolar', 'tl', 'euro', 'tl', 'tl']),
     ],
   },
   // ── LEVEL 7: ASPECT HQ (Final Boss Özgür)
@@ -471,7 +565,7 @@ const LEVELS: LevelDef[] = [
       mplX(3430, 238, 72, R1, 130),
     ],
     items: [
-      ...makePlatItems([110, 285, 465, 640, 820, 1010, 1190, 1380, 1570, 1760, 1950, 2140, 2330, 2530, 2720, 2920, 3110, 3310, 3510, 3700], 258, ['star', 'frame', 'star', 'card', 'star', 'lens', 'star', 'card', 'star', 'battery', 'star', 'frame', 'star', 'card', 'star', 'lens', 'star', 'card', 'star', 'battery']),
+      ...makePlatItems([110, 285, 465, 640, 820, 1010, 1190, 1380, 1570, 1760, 1950, 2140, 2330, 2530, 2720, 2920, 3110, 3310, 3510, 3700], 258, ['star', 'tl', 'star', 'dolar', 'star', 'euro', 'star', 'tl', 'star', 'dolar', 'star', 'euro', 'star', 'tl', 'star', 'dolar', 'star', 'euro', 'star', 'tl']),
     ],
   },
 ];
@@ -799,10 +893,10 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
   const wrapRef    = useRef<HTMLDivElement>(null);
   const rafRef     = useRef<number>(0);
   const gsRef      = useRef<GS>(null!);
-  const inputRef   = useRef({ left: false, right: false, jump: false, jumpPress: false });
+  const inputRef   = useRef({ left: false, right: false, jump: false, jumpPress: false, shoot: false });
   const scaleRef   = useRef(1);
   const soundRef   = useRef(true);
-  const touchRef   = useRef({ left: false, right: false, jump: false });
+  const touchRef   = useRef({ left: false, right: false, jump: false, shoot: false });
 
   const [screen, setScreen]     = useState<Screen>('menu');
   const [saveData, setSaveData] = useState<SaveData>(() => loadSave());
@@ -810,7 +904,11 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
   const [currentDialog, setCurrentDialog] = useState<Dialog | null>(null);
   const [dialogIdx, setDialogIdx] = useState(0);
   const [dialogQueue, setDialogQueue] = useState<Dialog[]>([]);
-  const [uiSnap, setUiSnap]     = useState({ score: 0, lives: 3, lvl: 0, bossHp: 0, bossMaxHp: 0, waterY: CH });
+  const [uiSnap, setUiSnap]     = useState({ score: 0, lives: 3, lvl: 0, bossHp: 0, bossMaxHp: 0, waterY: CH, nearPhotoSpot: false, flashCooldown: 0, shootCooldown: 0 });
+  const flashRef = useRef({ flash: false });
+  const godModeRef = useRef(false);
+  const [godMode, setGodMode] = useState(false);
+  const [cheatInput, setCheatInput] = useState('');
   const [bossFightPhase, setBossFightPhase] = useState<'approaching' | 'fighting'>('approaching');
 
   // ── Init a level ──────────────────────────────────────────────────────────
@@ -827,8 +925,8 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
     if (ld.hasBoss) {
       enemies.push({
         id: eid++, x: ld.bossX, y: GY - 60, w: 50, h: 60,
-        type: ld.bossType, vx: 1.5, alive: true, minX: ld.bossX - 80, maxX: ld.bossX + 80,
-        oy: GY - 60, hp: 6, maxHp: 6, attackTimer: 120, phase: 0, hitTimer: 0, stunTimer: 0,
+        type: ld.bossType, vx: 2.4, alive: true, minX: ld.bossX - 110, maxX: ld.bossX + 110,
+        oy: GY - 60, hp: 10, maxHp: 10, attackTimer: 90, phase: 0, hitTimer: 0, stunTimer: 0,
       });
     }
 
@@ -857,6 +955,10 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       bossSpawned: true,
       projId: 0, girlId: 0,
       levelComplete: false,
+      npcs: makeNPCs(ld.ww, lvlIdx),
+      photoSpots: makePhotoSpots(ld.ww),
+      flashCooldown: 0, nearPhotoSpot: false, flashWhite: 0, shootCooldown: 0,
+      birds: [], birdId: 0, birdSpawnTimer: 60,
     };
   }, []);
 
@@ -916,13 +1018,15 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
     if (gs.pinv > 0) gs.pinv--;
     if (gs.pcamAnim > 0) gs.pcamAnim--;
     if (gs.netTimer > 0) gs.netTimer--;
+    if (!gs.shootCooldown) gs.shootCooldown = 0;
+    if (gs.shootCooldown > 0) gs.shootCooldown--;
 
     // Death handling
     if (gs.pdead) {
       gs.pdeadT++;
       if (gs.pdeadT > 90) {
-        gs.lives--;
-        if (gs.lives <= 0) {
+        if (!godModeRef.current) gs.lives--;
+        if (gs.lives <= 0 && !godModeRef.current) {
           gs.screen = 'over'; setScreen('over');
           if (soundRef.current) SFX.gameOver(); return;
         }
@@ -951,8 +1055,11 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
     const goLeft  = inp.left  || tc.left;
     const goRight = inp.right || tc.right;
     const doJump  = inp.jumpPress || tc.jump;
+    const doShoot = inp.shoot || tc.shoot;
     inp.jumpPress = false;
+    inp.shoot = false;
     tc.jump = false;
+    tc.shoot = false;
 
     const netSlow = gs.netTimer > 0 ? 0.45 : 1;
     const ld = LEVELS[gs.lvl];
@@ -1008,10 +1115,8 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
 
     // Fall death
     if (gs.py > GY + 120) {
-      gs.pdead = true; gs.pdeadT = 0;
-      if (soundRef.current) SFX.hit();
-      spawnSparks(gs, gs.px + PW / 2, GY, '#FF4444', 10);
-      return;
+      if (godModeRef.current) { gs.py = GY - PH; gs.pvy = 0; } // god mode: no fall death
+      else { gs.pdead = true; gs.pdeadT = 0; if (soundRef.current) SFX.hit(); spawnSparks(gs, gs.px + PW / 2, GY, '#FF4444', 10); return; }
     }
 
     // Water death
@@ -1021,11 +1126,10 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       if (gs.waterLevel < CH - 50) gs.waterLevel = CH - 50; // cap
       // Check if player hit water
       if (gs.py + PH > gs.waterLevel) {
-        gs.pdead = true; gs.pdeadT = 0;
-        gs.waterLevel = CH + 50;
-        if (soundRef.current) SFX.hit();
+        if (godModeRef.current) { gs.py = gs.waterLevel - PH - 2; gs.pvy = -8; } // bounce up in god mode
+        else { gs.pdead = true; gs.pdeadT = 0; gs.waterLevel = CH + 50; if (soundRef.current) SFX.hit();
         spawnSparks(gs, gs.px + PW / 2, gs.py, '#0088FF', 10);
-        return;
+        return; }
       }
     }
 
@@ -1050,11 +1154,11 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       if (gs.pinv === 0) {
         for (const z of gs.zabitas) {
           if (aabb(gs.px, gs.py, PW, PH, z.x, z.y, 24, 30)) {
-            gs.pinv = 100; gs.lives--;
+            gs.pinv = 100; if (!godModeRef.current) gs.lives--;
             spawnSparks(gs, gs.px, gs.py, '#FF4444', 8);
-            gs.floats.push({ x: gs.px, y: gs.py - 15, text: '-1 💔', life: 60, col: '#FF4444' });
+            gs.floats.push({ x: gs.px, y: gs.py - 15, text: godModeRef.current ? '🛡️ GOD!' : '-1 💔', life: 60, col: godModeRef.current ? '#00FFFF' : '#FF4444' });
             if (soundRef.current) SFX.hit();
-            if (gs.lives <= 0) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
+            if (gs.lives <= 0 && !godModeRef.current) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
           }
         }
       }
@@ -1066,8 +1170,10 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       if (e.hitTimer !== undefined && e.hitTimer > 0) e.hitTimer--;
       if (e.stunTimer !== undefined && e.stunTimer > 0) { e.stunTimer--; return; }
 
-      // Boss movement
-      e.x += e.vx;
+      // Boss movement — speed up in phase 2
+      const bossSpeedMult = (e.hp! < (e.maxHp ?? 10) * 0.5) ? 1.7 : 1.0;
+      const bossVxDir = e.vx > 0 ? 1 : -1;
+      e.x += bossVxDir * 2.4 * bossSpeedMult;
       if (e.x < e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); }
       if (e.x + e.w > e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); }
 
@@ -1075,13 +1181,14 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       if (e.attackTimer !== undefined) {
         e.attackTimer--;
         if (e.attackTimer <= 0) {
-          const attackInterval = (e.hp! < e.maxHp! / 2) ? 80 : 130;
+          // Phase 2 (below 50% HP): much faster attacks
+          const attackInterval = (e.hp! < e.maxHp! * 0.5) ? 55 : 90;
           e.attackTimer = attackInterval;
           const pid = gs.projId++;
           const bx = e.x + e.w / 2, by = e.y + 20;
           const dx = gs.px - bx, dy = gs.py - by;
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const spd = 4;
+          const spd = (e.hp! < e.maxHp! * 0.5) ? 6.5 : 4.5;
 
           let ptype: Projectile['type'] = 'plate';
           if (e.type === 'boss_zuhal') ptype = 'ice';
@@ -1105,13 +1212,20 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
             });
           }
 
-          // Kayhan spawns girls every attack
+          // Kayhan spawns girls — max 3 alive at once, slow speed
           if (e.type === 'boss_kayhan') {
-            for (let gi = 0; gi < 2; gi++) {
-              gs.spawnedGirls.push({
-                id: gs.girlId++, x: e.x + e.w / 2 + (gi === 0 ? -40 : 40),
-                y: e.y, vx: gi === 0 ? -2 : 2, alive: true, vy: 0, onGround: false,
-              });
+            const aliveGirls = gs.spawnedGirls.filter(g => g.alive).length;
+            if (aliveGirls < 3) {
+              const spawnCount = Math.min(2, 3 - aliveGirls);
+              for (let gi = 0; gi < spawnCount; gi++) {
+                gs.spawnedGirls.push({
+                  id: gs.girlId++,
+                  x: e.x + e.w / 2 + (gi === 0 ? -50 : 50),
+                  y: e.y,
+                  vx: gi === 0 ? -0.55 : 0.55, // much slower
+                  alive: true, vy: 0, onGround: false,
+                });
+              }
             }
           }
 
@@ -1155,15 +1269,43 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
             }
           } else {
             // Boss touches player
-            gs.pinv = 100; gs.lives--;
+            gs.pinv = 100; if (!godModeRef.current) gs.lives--;
             spawnSparks(gs, gs.px + PW / 2, gs.py + PH / 2, '#FF4444', 8);
-            gs.floats.push({ x: gs.px, y: gs.py - 15, text: '-1 💔', life: 60, col: '#FF4444' });
+            gs.floats.push({ x: gs.px, y: gs.py - 15, text: godModeRef.current ? '🛡️ GOD!' : '-1 💔', life: 60, col: godModeRef.current ? '#00FFFF' : '#FF4444' });
             if (soundRef.current) SFX.hit();
-            if (gs.lives <= 0) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
+            if (gs.lives <= 0 && !godModeRef.current) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
           }
         }
       }
     });
+
+    // ── Player camera shot ────────────────────────────────────────────────
+    if (doShoot && gs.shootCooldown === 0) {
+      gs.shootCooldown = 28; // ~0.45s cooldown
+      gs.pcamAnim = 12; // camera flash animation
+      const shotVx = gs.pface * 11;
+      gs.projectiles.push({
+        id: gs.projId++,
+        x: gs.px + (gs.pface > 0 ? PW + 4 : -4),
+        y: gs.py + PH / 2,
+        vx: shotVx, vy: 0,
+        type: 'camshot',
+        w: 18, h: 14,
+        active: true, timer: 55,
+        fromPlayer: true,
+      });
+      if (soundRef.current) {
+        // Camera click SFX
+        const ctx2 = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const o = ctx2.createOscillator(); const g2 = ctx2.createGain();
+        o.connect(g2); g2.connect(ctx2.destination);
+        o.frequency.setValueAtTime(1800, ctx2.currentTime);
+        o.frequency.exponentialRampToValueAtTime(400, ctx2.currentTime + 0.08);
+        g2.gain.setValueAtTime(0.22, ctx2.currentTime);
+        g2.gain.exponentialRampToValueAtTime(0.001, ctx2.currentTime + 0.1);
+        o.start(); o.stop(ctx2.currentTime + 0.12);
+      }
+    }
 
     // ── Projectiles ───────────────────────────────────────────────────────
     gs.projectiles.forEach(p => {
@@ -1173,19 +1315,57 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       p.vy += 0.15; // gravity on projectiles
       p.timer--;
       if (p.timer <= 0 || p.y > GY + 50) { p.active = false; return; }
-      // Player hit
-      if (gs.pinv === 0 && aabb(gs.px, gs.py, PW, PH, p.x - p.w / 2, p.y - p.h / 2, p.w, p.h)) {
+      // Player hit (only enemy projectiles)
+      if (!p.fromPlayer && gs.pinv === 0 && aabb(gs.px, gs.py, PW, PH, p.x - p.w / 2, p.y - p.h / 2, p.w, p.h)) {
         p.active = false;
         if (p.type === 'net') {
-          gs.netTimer = 180; // slowed for 3 seconds
+          gs.netTimer = 180;
           gs.floats.push({ x: gs.px, y: gs.py - 15, text: 'AĞA TAKILDIK! 🕸️', life: 80, col: '#88FF88' });
         } else {
-          gs.pinv = 80; gs.lives--;
+          gs.pinv = 80; if (!godModeRef.current) gs.lives--;
           spawnSparks(gs, gs.px, gs.py, '#FF4444', 8);
-          gs.floats.push({ x: gs.px, y: gs.py - 15, text: '-1 💔', life: 60, col: '#FF4444' });
+          gs.floats.push({ x: gs.px, y: gs.py - 15, text: godModeRef.current ? '🛡️ GOD!' : '-1 💔', life: 60, col: godModeRef.current ? '#00FFFF' : '#FF4444' });
           if (soundRef.current) SFX.hit();
-          if (gs.lives <= 0) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
+          if (gs.lives <= 0 && !godModeRef.current) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
         }
+      }
+
+      // Camshot hits enemies & NPCs
+      if (p.fromPlayer && p.type === 'camshot' && p.active) {
+        // Hit boss/enemies
+        gs.enemies.forEach(e => {
+          if (!e.alive || !p.active) return;
+          if (aabb(p.x - p.w / 2, p.y - p.h / 2, p.w, p.h, e.x, e.y, e.w, e.h)) {
+            p.active = false;
+            e.stunTimer = (e.stunTimer ?? 0) + 80; // stun ~1.3s
+            e.hitTimer = 20;
+            gs.score += 80;
+            spawnSparks(gs, p.x, p.y, '#FFFF44', 12);
+            gs.floats.push({ x: p.x, y: p.y - 10, text: '📸 STUN! +80', life: 70, col: '#FFFF44' });
+          }
+        });
+        // Hit spawned girls
+        gs.spawnedGirls.forEach(g => {
+          if (!g.alive || !p.active) return;
+          if (aabb(p.x - p.w / 2, p.y - p.h / 2, p.w, p.h, g.x, g.y, 24, 34)) {
+            p.active = false;
+            g.alive = false;
+            gs.score += 50;
+            spawnSparks(gs, p.x, p.y, '#FFD700', 8);
+            gs.floats.push({ x: p.x, y: p.y - 10, text: '📸 +50', life: 60, col: '#FFD700' });
+          }
+        });
+        // Hit enemy NPCs
+        gs.npcs.forEach(npc => {
+          if (!npc.alive || npc.type !== 'enemy_tourist' || !p.active) return;
+          if (aabb(p.x - p.w / 2, p.y - p.h / 2, p.w, p.h, npc.x - 11, npc.y - 30, 22, 34)) {
+            p.active = false;
+            npc.alive = false;
+            gs.score += 100;
+            spawnSparks(gs, p.x, p.y, '#FF8800', 10);
+            gs.floats.push({ x: p.x, y: p.y - 10, text: '📸 +100!', life: 65, col: '#FF8800' });
+          }
+        });
       }
     });
     gs.projectiles = gs.projectiles.filter(p => p.active);
@@ -1196,11 +1376,11 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       if (gs.pinv === 0) {
         // shockwave hits if player is on ground
         if (gs.ponG) {
-          gs.pinv = 80; gs.lives--;
+          gs.pinv = 80; if (!godModeRef.current) gs.lives--;
           spawnSparks(gs, gs.px, gs.py, '#FF4444', 8);
-          gs.floats.push({ x: gs.px, y: gs.py - 15, text: 'SHOCKWAVE! 💥', life: 60, col: '#FF8800' });
+          gs.floats.push({ x: gs.px, y: gs.py - 15, text: godModeRef.current ? '🛡️ GOD!' : 'SHOCKWAVE! 💥', life: 60, col: godModeRef.current ? '#00FFFF' : '#FF8800' });
           if (soundRef.current) SFX.hit();
-          if (gs.lives <= 0) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
+          if (gs.lives <= 0 && !godModeRef.current) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
         }
       }
     }
@@ -1213,37 +1393,196 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       g.y += g.vy;
       // Simple ground landing
       if (g.y + 34 > GY) { g.y = GY - 34; g.vy = 0; g.onGround = true; }
-      // Chase player
+      // Chase player — Kayhan girls move slowly (0.7), Özgür personel faster (2.2)
       if (g.onGround) {
         const dx2 = gs.px - g.x;
-        g.vx = dx2 > 0 ? 2.2 : -2.2;
+        const isKayhanLevel = gsRef.current?.lvl === 5;
+        const chaseSpd = isKayhanLevel ? 0.7 : 2.2;
+        g.vx = dx2 > 0 ? chaseSpd : -chaseSpd;
       }
       if (gs.pinv === 0 && aabb(gs.px, gs.py, PW, PH, g.x, g.y, 24, 34)) {
         g.alive = false;
-        gs.pinv = 80; gs.lives--;
+        gs.pinv = 80; if (!godModeRef.current) gs.lives--;
         spawnSparks(gs, gs.px, gs.py, '#FF4444', 8);
-        gs.floats.push({ x: gs.px, y: gs.py - 15, text: '-1 💔', life: 60, col: '#FF4444' });
+        gs.floats.push({ x: gs.px, y: gs.py - 15, text: godModeRef.current ? '🛡️ GOD!' : '-1 💔', life: 60, col: godModeRef.current ? '#00FFFF' : '#FF4444' });
         if (soundRef.current) SFX.hit();
-        if (gs.lives <= 0) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
+        if (gs.lives <= 0 && !godModeRef.current) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
       }
     });
     gs.spawnedGirls = gs.spawnedGirls.filter(g => g.alive && g.x > gs.camX - 200 && g.x < gs.camX + CW + 200);
 
     // ── Collectibles ──────────────────────────────────────────────────────
+    const MONEY_LABEL: Record<string, string> = { tl: '₺200', dolar: '$3', euro: '€1', star: '⭐500' };
+    const MONEY_COL:   Record<string, string> = { tl: '#FFD700', dolar: '#44FF88', euro: '#44AAFF', star: '#FFD700' };
     gs.items.forEach(it => {
       if (it.got) return;
       if (aabb(gs.px, gs.py, PW, PH, it.x, it.y, it.w, it.h)) {
         it.got = true;
         gs.score += it.pts;
+        const col3 = MONEY_COL[it.type] || '#88EEFF';
         if (soundRef.current) it.type === 'star' ? SFX.star() : SFX.collect();
-        spawnSparks(gs, it.x, it.y, it.type === 'star' ? '#FFD700' : '#88EEFF', 6);
-        gs.floats.push({ x: it.x, y: it.y - 16, text: `+${it.pts}`, life: 50, col: it.type === 'star' ? '#FFD700' : '#88EEFF' });
+        spawnSparks(gs, it.x, it.y, col3, 6);
+        gs.floats.push({ x: it.x, y: it.y - 16, text: MONEY_LABEL[it.type] || `+${it.pts}`, life: 60, col: col3 });
       }
     });
 
+    // ── NPCs ─────────────────────────────────────────────────────────────
+    gs.npcs.forEach(npc => {
+      if (!npc.alive) return;
+
+      if (npc.type === 'named_minion') {
+        npc.x += npc.vx * npc.face;
+        if (npc.x >= npc.maxX) npc.face = -1;
+        if (npc.x <= npc.minX) npc.face = 1;
+        if (npc.quotes && npc.quotes.length > 0) {
+          const interval = npc.quoteInterval ?? 260;
+          if (gs.t % interval === (npc.id * 41) % interval) {
+            npc.quoteIdx = ((npc.quoteIdx ?? 0) + 1) % npc.quotes.length;
+            npc.quote = npc.quotes[npc.quoteIdx];
+            npc.quoteTimer = 200;
+          }
+        }
+        if (npc.quoteTimer > 0) npc.quoteTimer--;
+
+      } else if (npc.type === 'enemy_tourist') {
+        const dx = gs.px - npc.x;
+        const dist = Math.abs(dx);
+        // Start chasing when player within 180px
+        if (dist < 180) {
+          npc.chasing = true;
+          npc.face = dx > 0 ? 1 : -1;
+        } else if (dist > 260) {
+          npc.chasing = false;
+        }
+
+        if (npc.chasing) {
+          // Chase at speed 2.2, show angry quote
+          npc.x += 2.2 * npc.face;
+          if (npc.quoteTimer === 0) {
+            npc.quote = ANGRY_QUOTES[(Math.floor(gs.t / 90) + npc.id) % ANGRY_QUOTES.length];
+            npc.quoteTimer = 90;
+          }
+        } else {
+          // Patrol normally
+          npc.x += npc.vx * npc.face;
+          if (npc.x >= npc.maxX) npc.face = -1;
+          if (npc.x <= npc.minX) npc.face = 1;
+        }
+        if (npc.quoteTimer > 0) npc.quoteTimer--;
+
+        // Damage player on contact
+        if (gs.pinv === 0 && aabb(gs.px, gs.py, PW, PH, npc.x - 10, npc.y - 30, 22, 34)) {
+          gs.pinv = 90;
+          if (!godModeRef.current) gs.lives--;
+          npc.alive = false; // disappear after hitting
+          spawnSparks(gs, npc.x, npc.y, '#FF2200', 10);
+          gs.floats.push({ x: npc.x, y: npc.y - 20, text: godModeRef.current ? '🛡️ GOD!' : '😡 -1 CAN!', life: 70, col: godModeRef.current ? '#00FFFF' : '#FF2200' });
+          if (soundRef.current) SFX.hit();
+          if (gs.lives <= 0 && !godModeRef.current) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
+        }
+      }
+    });
+
+    // ── Birds (flying + obstacles) ────────────────────────────────────────
+    if (!gs.birds) gs.birds = [];
+    if (gs.birdId === undefined) gs.birdId = 0;
+    if (!gs.birdSpawnTimer) gs.birdSpawnTimer = 60;
+    const BIRD_COLS = ['#FF4488', '#FF8800', '#FFDD00', '#44FFAA', '#88AAFF'];
+    gs.birdSpawnTimer--;
+    if (gs.birdSpawnTimer <= 0) {
+      gs.birdSpawnTimer = 140 + Math.floor(Math.random() * 80);
+      const fromRight = Math.random() > 0.5;
+      const birdBaseY = 60 + Math.random() * 160;
+      gs.birds.push({
+        id: gs.birdId++,
+        x: fromRight ? gs.camX + CW + 20 : gs.camX - 20,
+        y: birdBaseY,
+        baseY: birdBaseY,
+        vx: fromRight ? -(2.2 + Math.random() * 1.8) : (2.2 + Math.random() * 1.8),
+        phase: Math.random() * Math.PI * 2,
+        alive: true,
+        col: BIRD_COLS[gs.birdId % BIRD_COLS.length],
+        sz: 8 + Math.floor(Math.random() * 6),
+      });
+    }
+    gs.birds.forEach(b => {
+      if (!b.alive) return;
+      b.x += b.vx;
+      b.phase += 0.07;
+      b.y = b.baseY + Math.sin(b.phase) * 28;
+      // Hurt player on contact
+      const bx = b.x - b.sz, by = b.y - b.sz;
+      if (gs.pinv === 0 && aabb(gs.px, gs.py, PW, PH, bx, by, b.sz * 2, b.sz * 2)) {
+        b.alive = false;
+        gs.pinv = 75; if (!godModeRef.current) gs.lives--;
+        spawnSparks(gs, b.x, b.y, b.col, 10);
+        gs.floats.push({ x: b.x, y: b.y - 15, text: godModeRef.current ? '🛡️ GOD!' : '🐦 -1!', life: 60, col: godModeRef.current ? '#00FFFF' : b.col });
+        if (soundRef.current) SFX.hit();
+        if (gs.lives <= 0 && !godModeRef.current) { gs.screen = 'over'; setScreen('over'); if (soundRef.current) SFX.gameOver(); }
+      }
+    });
+    // camshot kills birds
+    gs.projectiles.forEach(p => {
+      if (!p.fromPlayer || p.type !== 'camshot' || !p.active) return;
+      (gs.birds ?? []).forEach(b => {
+        if (!b.alive) return;
+        if (aabb(p.x - p.w / 2, p.y - p.h / 2, p.w, p.h, b.x - b.sz, b.y - b.sz, b.sz * 2, b.sz * 2)) {
+          b.alive = false; p.active = false;
+          gs.score += 60;
+          spawnSparks(gs, b.x, b.y, b.col, 8);
+          gs.floats.push({ x: b.x, y: b.y - 12, text: '📸 +60', life: 55, col: '#FFD700' });
+        }
+      });
+    });
+    // Remove off-screen birds
+    gs.birds = gs.birds.filter(b => b.alive && b.x > gs.camX - 60 && b.x < gs.camX + CW + 60);
+
+    // ── Photo spots ───────────────────────────────────────────────────────
+    gs.nearPhotoSpot = false;
+    if (gs.flashCooldown > 0) gs.flashCooldown--;
+    gs.photoSpots.forEach(ps => {
+      if (ps.used) return;
+      if (Math.abs(gs.px - ps.x) < 55) {
+        gs.nearPhotoSpot = true;
+        // Flash triggered?
+        if (flashRef.current.flash && gs.flashCooldown === 0) {
+          ps.used = true;
+          gs.flashCooldown = 1200; // 20s
+          gs.flashWhite = 30;
+          gs.score += 300;
+          gs.pcamAnim = 20;
+          if (soundRef.current) SFX.flash();
+          spawnSparks(gs, gs.px, gs.py, '#FFFFFF', 20);
+          gs.floats.push({ x: gs.px, y: gs.py - 20, text: '📸 +300!', life: 80, col: '#FFFFFF' });
+          // Stun boss
+          gs.enemies.forEach(e => {
+            if (e.alive && e.stunTimer !== undefined) {
+              e.stunTimer = 150; // 2.5s
+              gs.floats.push({ x: e.x, y: e.y - 20, text: '😵 STUN!', life: 70, col: '#FFD700' });
+            }
+          });
+        }
+      }
+    });
+    flashRef.current.flash = false;
+
+    // ── Flash white overlay decay ─────────────────────────────────────────
+    if (gs.flashWhite > 0) gs.flashWhite--;
+
     // ── Finish check ──────────────────────────────────────────────────────
+    // Guard: if this level has a boss that is still alive, block the finish
+    const bossStillAlive = ld.hasBoss && !gs.bossDefeated;
     if (gs.px > ld.fx) {
-      if (!gs.levelComplete) {
+      if (bossStillAlive) {
+        // Bounce the player back — can't leave without defeating boss
+        gs.pvx = -3;
+        gs.px = ld.fx - PW - 4;
+        if (!gs._finishBlockedShown) {
+          gs._finishBlockedShown = true;
+          gs.floats.push({ x: gs.px, y: gs.py - 20, text: '⚠️ Önce boss\'u yen!', life: 100, col: '#FF8800' });
+        }
+      } else if (!gs.levelComplete) {
+        gs._finishBlockedShown = false;
         gs.levelComplete = true;
         const timeBonus = Math.max(0, 3000 - Math.floor(gs.levelT / 60) * 10);
         gs.score += timeBonus + gs.lives * 200;
@@ -1257,6 +1596,8 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
           setTimeout(() => { setScreen('lvlwin'); }, 600);
         }
       }
+    } else {
+      gs._finishBlockedShown = false;
     }
 
     // ── Boss intro dialog ─────────────────────────────────────────────────
@@ -1287,6 +1628,9 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
         score: gs.score, lives: gs.lives, lvl: gs.lvl,
         bossHp: boss2?.hp ?? 0, bossMaxHp: boss2?.maxHp ?? 0,
         waterY: gs.waterLevel,
+        nearPhotoSpot: gs.nearPhotoSpot,
+        flashCooldown: gs.flashCooldown,
+        shootCooldown: gs.shootCooldown,
       });
     }
   }, [showDialogs]);
@@ -1403,33 +1747,88 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       ctx.restore();
     }
 
+    // Photo spots
+    gs.photoSpots.forEach(ps => {
+      if (ps.used) return;
+      const psx2 = ps.x - camX;
+      if (psx2 < -40 || psx2 > CW + 40) return;
+      const pulse = 0.7 + 0.3 * Math.sin(t * 0.1);
+      ctx.save();
+      ctx.shadowColor = '#FFFFFF'; ctx.shadowBlur = 16 * pulse;
+      // Ground marker
+      ctx.strokeStyle = `rgba(255,255,255,${0.5 * pulse})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(psx2, GY - 2, 18, Math.PI, 0); ctx.stroke();
+      // Camera icon
+      ctx.fillStyle = `rgba(255,255,220,${0.9 * pulse})`;
+      ctx.font = '16px serif'; ctx.textAlign = 'center';
+      ctx.fillText('📷', psx2, GY - 8);
+      // Glow ring
+      ctx.strokeStyle = `rgba(255,240,100,${0.4 * pulse})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(psx2, GY - 16, 20, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    });
+
+    // ── Birds ─────────────────────────────────────────────────────────────
+    (gs.birds ?? []).forEach(b => {
+      if (!b.alive) return;
+      const bsx = b.x - camX;
+      if (bsx < -40 || bsx > CW + 40) return;
+      ctx.save();
+      ctx.translate(bsx, b.y);
+      // Flap animation — squish vertically
+      const flap = Math.abs(Math.sin(b.phase * 3));
+      ctx.shadowColor = b.col; ctx.shadowBlur = 10;
+      ctx.strokeStyle = b.col;
+      ctx.lineWidth = b.sz * 0.55;
+      ctx.lineCap = 'round';
+      // "+" cross shape
+      const arm = b.sz * (0.8 + flap * 0.4);
+      ctx.beginPath(); ctx.moveTo(-arm, 0); ctx.lineTo(arm, 0); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, -arm * (1 - flap * 0.5)); ctx.lineTo(0, arm * (1 - flap * 0.5)); ctx.stroke();
+      // Body dot center
+      ctx.fillStyle = b.col;
+      ctx.beginPath(); ctx.arc(0, 0, b.sz * 0.32, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    });
+
     // Collectibles
     gs.items.forEach(it => {
       if (it.got) return;
       const sx4 = it.x - camX;
       if (sx4 < -20 || sx4 > CW + 20) return;
       const bob = Math.sin(t * 0.08 + it.id) * 3;
-      const colors: Record<string, string> = { lens: '#64B5F6', frame: '#FFD54F', card: '#81C784', battery: '#FF8A65', star: '#FFD700' };
-      const col2 = colors[it.type] || '#FFF';
+      const coinCols: Record<string, string> = { tl: '#FFD700', dolar: '#44FF88', euro: '#44AAFF', star: '#FFD700' };
+      const col2 = coinCols[it.type] || '#FFF';
+      const cx5 = sx4 + it.w / 2;
+      const cy5 = it.y + bob + it.h / 2;
       ctx.save();
-      ctx.shadowColor = col2; ctx.shadowBlur = 8;
-      ctx.fillStyle = col2;
+      ctx.shadowColor = col2; ctx.shadowBlur = 10;
       if (it.type === 'star') {
-        const cy2 = it.y + bob + it.h / 2;
+        ctx.fillStyle = col2;
         const r1 = it.w / 2, r2 = r1 * 0.45;
         ctx.beginPath();
         for (let si = 0; si < 10; si++) {
           const angle = (si * Math.PI) / 5 - Math.PI / 2;
           const rr = si % 2 === 0 ? r1 : r2;
-          si === 0 ? ctx.moveTo(sx4 + it.w / 2 + Math.cos(angle) * rr, cy2 + Math.sin(angle) * rr)
-                   : ctx.lineTo(sx4 + it.w / 2 + Math.cos(angle) * rr, cy2 + Math.sin(angle) * rr);
+          si === 0 ? ctx.moveTo(cx5 + Math.cos(angle) * rr, cy5 + Math.sin(angle) * rr)
+                   : ctx.lineTo(cx5 + Math.cos(angle) * rr, cy5 + Math.sin(angle) * rr);
         }
         ctx.closePath(); ctx.fill();
-      } else if (it.type === 'lens') {
-        ctx.strokeStyle = col2; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(sx4 + 9, it.y + bob + 9, 8, 0, Math.PI * 2); ctx.stroke();
       } else {
-        ctx.fillRect(sx4 + 2, it.y + bob + 2, it.w - 4, it.h - 4);
+        // Coin circle
+        ctx.fillStyle = col2;
+        ctx.beginPath(); ctx.arc(cx5, cy5, 8, 0, Math.PI * 2); ctx.fill();
+        // Dark inner
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath(); ctx.arc(cx5, cy5, 6, 0, Math.PI * 2); ctx.fill();
+        // Currency symbol
+        ctx.fillStyle = col2;
+        ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const sym = it.type === 'tl' ? '₺' : it.type === 'dolar' ? '$' : '€';
+        ctx.fillText(sym, cx5, cy5);
+        ctx.textBaseline = 'alphabetic';
       }
       ctx.restore();
     });
@@ -1465,12 +1864,189 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       ctx.restore();
     });
 
+    // NPCs
+    gs.npcs.forEach(npc => {
+      if (!npc.alive) return;
+      const nx = npc.x - camX;
+      if (nx < -80 || nx > CW + 80) return;
+      ctx.save();
+      if (npc.type === 'enemy_tourist') {
+        const ny = npc.y;
+        const angerBob = npc.chasing ? Math.sin(t * 0.35 + npc.id) * 3 : 0;
+        const legSpd = npc.chasing ? 0.35 : 0.14;
+        const legBob = Math.sin(t * legSpd + npc.id) * 5;
+        // Red glow when chasing
+        if (npc.chasing) {
+          ctx.shadowColor = '#FF2200'; ctx.shadowBlur = 16;
+        }
+        // Body — red shirt
+        ctx.fillStyle = '#CC2222';
+        ctx.fillRect(nx - 9, ny + 12 + angerBob, 18, 22);
+        // Head — flushed red face
+        ctx.fillStyle = '#F08070';
+        ctx.beginPath(); ctx.arc(nx, ny + 6 + angerBob, 10, 0, Math.PI * 2); ctx.fill();
+        // Vein line on forehead when chasing
+        if (npc.chasing) {
+          ctx.strokeStyle = '#CC0000'; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(nx - 4, ny - 2 + angerBob); ctx.lineTo(nx - 2, ny + 1 + angerBob); ctx.lineTo(nx + 1, ny + angerBob); ctx.stroke();
+        }
+        // Hair — short, dark
+        ctx.fillStyle = '#2a1a0a';
+        ctx.beginPath(); ctx.arc(nx, ny + 6 + angerBob, 10, Math.PI, 0); ctx.fill();
+        ctx.fillRect(nx - 10, ny - 4 + angerBob, 20, 5);
+        // Angry eyes — thick brows, small pupils
+        ctx.fillStyle = '#111';
+        ctx.fillRect(nx - 5 + (npc.face < 0 ? 2 : 0), ny + 4 + angerBob, 4, 4);
+        ctx.fillRect(nx + 1 + (npc.face < 0 ? 2 : 0), ny + 4 + angerBob, 4, 4);
+        // Angry brows slanted
+        ctx.fillStyle = '#2a1a0a'; ctx.lineWidth = 2;
+        if (npc.face > 0) {
+          ctx.fillRect(nx - 6, ny + 1 + angerBob, 5, 2);
+          ctx.fillRect(nx + 1, ny + 2 + angerBob, 5, 2);
+        } else {
+          ctx.fillRect(nx - 6, ny + 2 + angerBob, 5, 2);
+          ctx.fillRect(nx + 1, ny + 1 + angerBob, 5, 2);
+        }
+        // Mouth — open shouting O
+        ctx.fillStyle = '#111';
+        ctx.beginPath(); ctx.ellipse(nx, ny + 12 + angerBob, 3, 4, 0, 0, Math.PI * 2); ctx.fill();
+        // Legs
+        ctx.fillStyle = '#555';
+        ctx.fillRect(nx - 7, ny + 34, 6, 11 + legBob);
+        ctx.fillRect(nx + 1, ny + 34, 6, 11 - legBob);
+        // Fist arm extended when chasing
+        if (npc.chasing) {
+          ctx.fillStyle = '#F08070';
+          const armX = npc.face > 0 ? nx + 10 : nx - 18;
+          ctx.fillRect(armX, ny + 16 + angerBob, 10, 6);
+          ctx.beginPath(); ctx.arc(armX + (npc.face > 0 ? 10 : 0), ny + 19 + angerBob, 5, 0, Math.PI * 2); ctx.fill();
+        }
+        // Quote bubble
+        if (npc.quoteTimer > 0) {
+          const alpha = Math.min(1, npc.quoteTimer / 30);
+          const bw3 = 88; const bh3 = 18;
+          const bx3 = nx - bw3 / 2; const by3 = ny - 42 + angerBob;
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = 'rgba(255,30,0,0.92)';
+          drawRoundRect(ctx, bx3, by3, bw3, bh3, 5); ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+          ctx.fillText(npc.quote, bx3 + bw3 / 2, by3 + 13);
+          ctx.globalAlpha = 1;
+        }
+      } else if (npc.type === 'named_minion') {
+        const ny = npc.y;
+        // Slight weight-shift bob
+        const idleBob = Math.sin(t * 0.07 + npc.id * 1.1) * 1.5;
+        // Body
+        ctx.fillStyle = npc.clothColor;
+        ctx.fillRect(nx - 9, ny + 12 + idleBob, 18, 22);
+        // Head
+        ctx.fillStyle = npc.skinColor;
+        ctx.beginPath(); ctx.arc(nx, ny + 7 + idleBob, 10, 0, Math.PI * 2); ctx.fill();
+        // Hair (dişi - longer)
+        ctx.fillStyle = npc.name === 'Ezgi' ? '#C87941' : npc.name === 'Zeliha' ? '#1a1a1a' : '#8B4513';
+        ctx.beginPath(); ctx.arc(nx, ny + 7 + idleBob, 10, Math.PI, 0); ctx.fill();
+        ctx.fillRect(nx - 10, ny - 3 + idleBob, 20, 5);
+        // Shoulder-length hair sides
+        ctx.fillRect(nx - 10, ny + 7 + idleBob, 4, 12);
+        ctx.fillRect(nx + 6, ny + 7 + idleBob, 4, 12);
+        // Eyes (feminine, slightly larger)
+        ctx.fillStyle = '#222';
+        ctx.beginPath(); ctx.arc(nx - 3.5, ny + 6 + idleBob, 2.2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(nx + 3.5, ny + 6 + idleBob, 2.2, 0, Math.PI * 2); ctx.fill();
+        // Phone in hand (Ezgi always has phone)
+        if (npc.name === 'Ezgi') {
+          ctx.fillStyle = '#111';
+          ctx.fillRect(nx + 10, ny + 18 + idleBob, 6, 10);
+          ctx.fillStyle = '#4FC3F7';
+          ctx.fillRect(nx + 11, ny + 19 + idleBob, 4, 7);
+          // screen glow
+          ctx.save(); ctx.shadowColor = '#4FC3F7'; ctx.shadowBlur = 6;
+          ctx.fillStyle = 'rgba(79,195,247,0.3)';
+          ctx.fillRect(nx + 11, ny + 19 + idleBob, 4, 7);
+          ctx.restore();
+        }
+        // Legs (standing, slight sway)
+        ctx.fillStyle = '#333';
+        const legSway = Math.sin(t * 0.04 + npc.id) * 1;
+        ctx.fillRect(nx - 7, ny + 34, 6, 12 + legSway);
+        ctx.fillRect(nx + 1, ny + 34, 6, 12 - legSway);
+        // Name tag above head
+        const nameColor = npc.name === 'Ezgi' ? '#E87040' : npc.name === 'Zeliha' ? '#5566BB' : '#CC4477';
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillRect(nx - 17, ny - 18 + idleBob, 34, 12);
+        ctx.fillStyle = nameColor;
+        ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center';
+        ctx.fillText(npc.name ?? '', nx, ny - 9 + idleBob);
+        ctx.restore();
+        // Quote bubble (always visible for named minions, color-coded)
+        if (npc.quoteTimer > 0) {
+          const alpha = Math.min(1, npc.quoteTimer / 40);
+          const bw2 = 115; const bh2 = 30;
+          const bx2 = nx - bw2 / 2; const by2 = ny - 58 + idleBob;
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = 'rgba(255,255,255,0.95)';
+          drawRoundRect(ctx, bx2, by2, bw2, bh2, 7); ctx.fill();
+          ctx.strokeStyle = nameColor; ctx.lineWidth = 1.5; ctx.stroke();
+          // Tail
+          ctx.fillStyle = 'rgba(255,255,255,0.95)';
+          ctx.beginPath(); ctx.moveTo(nx - 5, by2 + bh2); ctx.lineTo(nx + 5, by2 + bh2); ctx.lineTo(nx, by2 + bh2 + 8); ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = nameColor; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(nx - 5, by2 + bh2); ctx.lineTo(nx, by2 + bh2 + 8); ctx.lineTo(nx + 5, by2 + bh2); ctx.stroke();
+          // Text (split into 2 lines)
+          ctx.fillStyle = '#111';
+          ctx.font = 'bold 7px sans-serif'; ctx.textAlign = 'center';
+          const words2 = npc.quote.split(' ');
+          const mid2 = Math.ceil(words2.length / 2);
+          const l1 = words2.slice(0, mid2).join(' ');
+          const l2 = words2.slice(mid2).join(' ');
+          ctx.fillText(l1, nx, by2 + 13);
+          if (l2) ctx.fillText(l2, nx, by2 + 23);
+          ctx.restore();
+        }
+      }
+      ctx.restore();
+    });
+
     // Projectiles
     gs.projectiles.forEach(p => {
       if (!p.active) return;
       const px2 = p.x - camX;
       if (px2 < -60 || px2 > CW + 60) return;
       ctx.save();
+
+      // Camshot — player's camera bullet
+      if (p.type === 'camshot') {
+        const life01 = p.timer / 55;
+        ctx.translate(px2, p.y);
+        // Glow halo
+        ctx.shadowColor = '#FFFF88'; ctx.shadowBlur = 16;
+        // Main flash oval
+        ctx.fillStyle = '#FFFFAA';
+        ctx.globalAlpha = 0.92 * life01;
+        ctx.beginPath(); ctx.ellipse(0, 0, p.w / 2, p.h / 2, 0, 0, Math.PI * 2); ctx.fill();
+        // Bright white center
+        ctx.fillStyle = '#FFFFFF'; ctx.globalAlpha = life01;
+        ctx.beginPath(); ctx.ellipse(0, 0, p.w / 4, p.h / 4, 0, 0, Math.PI * 2); ctx.fill();
+        // Speed lines
+        ctx.strokeStyle = '#FFE033'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.65 * life01;
+        const dir = p.vx > 0 ? 1 : -1;
+        for (let li = 0; li < 3; li++) {
+          const ly = (li - 1) * 4;
+          ctx.beginPath(); ctx.moveTo(-dir * 6, ly); ctx.lineTo(-dir * (12 + li * 4), ly); ctx.stroke();
+        }
+        // Camera shutter icon (tiny)
+        ctx.globalAlpha = 0.8 * life01;
+        ctx.fillStyle = '#333';
+        ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('📸', 0, 3);
+        ctx.restore();
+        return;
+      }
+
       const rot = p.type === 'surfboard' ? Math.atan2(p.vy, p.vx) : (t * 0.15);
       ctx.translate(px2, p.y);
       ctx.rotate(rot);
@@ -1601,6 +2177,24 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       ctx.fillText(`🕸️ AĞ: ${Math.ceil(gs.netTimer / 60)}s`, CW / 2, 30);
       ctx.restore();
     }
+
+    // Flash white overlay (photo flash effect)
+    if (gs.flashWhite > 0) {
+      ctx.save();
+      ctx.globalAlpha = gs.flashWhite / 30;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, CW, CH);
+      ctx.restore();
+    }
+
+    // Flash cooldown indicator
+    if (gs.flashCooldown > 0) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.font = 'bold 9px monospace'; ctx.textAlign = 'right';
+      ctx.fillText(`📷 ${Math.ceil(gs.flashCooldown / 60)}s`, CW - 6, 30);
+      ctx.restore();
+    }
   }, []);
 
   // ── Game loop ────────────────────────────────────────────────────────────
@@ -1645,6 +2239,8 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       if (e.key === 'ArrowLeft'  || e.key === 'a') inputRef.current.left = true;
       if (e.key === 'ArrowRight' || e.key === 'd') inputRef.current.right = true;
       if ((e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') && !e.repeat) inputRef.current.jumpPress = true;
+      if ((e.key === 'f' || e.key === 'F') && !e.repeat) flashRef.current.flash = true;
+      if ((e.key === 'z' || e.key === 'Z' || e.key === 'x' || e.key === 'X') && !e.repeat) inputRef.current.shoot = true;
     };
     const ku = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft'  || e.key === 'a') inputRef.current.left = false;
@@ -1793,6 +2389,40 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
             </div>
           )}
           <div className="text-yellow-400 text-xs font-bold shrink-0">{uiSnap.score.toLocaleString()}</div>
+          {/* God mode indicator */}
+          {godMode && (
+            <div className="text-xs font-black px-2 py-0.5 rounded-full shrink-0 animate-pulse"
+              style={{ background: 'rgba(0,255,255,0.2)', border: '1px solid #00FFFF88', color: '#00FFFF' }}>
+              🛡️ GOD
+            </div>
+          )}
+          {/* Hidden cheat input — nearly invisible, small, corner */}
+          <input
+            type="text"
+            value={cheatInput}
+            onChange={e => {
+              const val = e.target.value.toLowerCase();
+              setCheatInput(val);
+              if (val.endsWith('aspect')) {
+                const next = !godModeRef.current;
+                godModeRef.current = next;
+                setGodMode(next);
+                setCheatInput('');
+                if (gsRef.current) {
+                  gsRef.current.floats.push({ x: gsRef.current.px, y: gsRef.current.py - 30, text: next ? '🛡️ GOD MODE ON!' : '💀 GOD MODE OFF', life: 120, col: next ? '#00FFFF' : '#FF8800' });
+                }
+              }
+              // Clear if too long
+              if (val.length > 10) setCheatInput(val.slice(-6));
+            }}
+            className="w-8 h-4 text-xs bg-transparent border-none outline-none select-none shrink-0"
+            style={{ color: 'rgba(255,255,255,0.08)', caretColor: 'transparent', WebkitTapHighlightColor: 'transparent' }}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            tabIndex={-1}
+          />
         </div>
 
         {/* Canvas + overlaid controls — fills all remaining space */}
@@ -1807,13 +2437,13 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
             </div>
           )}
 
-          {/* Touch controls — overlaid inside canvas area, never overlaps bottom nav */}
-          <div className="absolute bottom-0 left-0 right-0 flex items-end justify-between px-4 pb-3 pt-6 z-20"
-            style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.7) 60%, transparent)' }}>
+          {/* Touch controls */}
+          <div className="absolute bottom-20 left-0 right-0 flex items-end justify-between px-5 pb-2 z-20">
+            {/* Left: directional */}
             <div className="flex gap-3">
               <button
-                className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl font-bold select-none active:scale-95"
-                style={{ background: 'rgba(255,255,255,0.13)', border: '1px solid rgba(255,255,255,0.28)', WebkitTapHighlightColor: 'transparent' }}
+                className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl font-bold select-none active:scale-90 transition-transform"
+                style={{ background: 'rgba(255,255,255,0.16)', border: '1.5px solid rgba(255,255,255,0.32)', WebkitTapHighlightColor: 'transparent', backdropFilter: 'blur(6px)' }}
                 onTouchStart={e => { e.preventDefault(); touchRef.current.left = true; }}
                 onTouchEnd={e => { e.preventDefault(); touchRef.current.left = false; }}
                 onTouchCancel={e => { e.preventDefault(); touchRef.current.left = false; }}
@@ -1822,8 +2452,8 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
                 onMouseLeave={() => touchRef.current.left = false}
               >◀</button>
               <button
-                className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl font-bold select-none active:scale-95"
-                style={{ background: 'rgba(255,255,255,0.13)', border: '1px solid rgba(255,255,255,0.28)', WebkitTapHighlightColor: 'transparent' }}
+                className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl font-bold select-none active:scale-90 transition-transform"
+                style={{ background: 'rgba(255,255,255,0.16)', border: '1.5px solid rgba(255,255,255,0.32)', WebkitTapHighlightColor: 'transparent', backdropFilter: 'blur(6px)' }}
                 onTouchStart={e => { e.preventDefault(); touchRef.current.right = true; }}
                 onTouchEnd={e => { e.preventDefault(); touchRef.current.right = false; }}
                 onTouchCancel={e => { e.preventDefault(); touchRef.current.right = false; }}
@@ -1832,18 +2462,82 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
                 onMouseLeave={() => touchRef.current.right = false}
               >▶</button>
             </div>
-            <button
-              className="w-24 h-16 rounded-2xl flex items-center justify-center text-xl font-black select-none active:scale-95"
-              style={{ background: `linear-gradient(135deg,${accent}66,${accent}33)`, border: `2px solid ${accent}88`, WebkitTapHighlightColor: 'transparent', boxShadow: `0 0 18px ${accent}55` }}
-              onTouchStart={e => { e.preventDefault(); touchRef.current.jump = true; inputRef.current.jumpPress = true; }}
-              onTouchEnd={e => { e.preventDefault(); touchRef.current.jump = false; }}
-              onTouchCancel={e => { e.preventDefault(); touchRef.current.jump = false; }}
-              onMouseDown={() => { touchRef.current.jump = true; inputRef.current.jumpPress = true; }}
-              onMouseUp={() => touchRef.current.jump = false}
-              onMouseLeave={() => touchRef.current.jump = false}
-            >
-              <span className="text-white tracking-wide">JUMP</span>
-            </button>
+            {/* Right: FLASH + SHOOT + JUMP */}
+            <div className="flex gap-2 items-end">
+              {/* FLASH — always visible, active only when near spot & off cooldown */}
+              {(() => {
+                const gs = gsRef.current;
+                const canFlash = gs && gs.nearPhotoSpot && gs.flashCooldown === 0;
+                const onCD = gs && gs.flashCooldown > 0;
+                const cdSec = gs ? Math.ceil(gs.flashCooldown / 60) : 0;
+                return (
+                  <button
+                    className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center select-none active:scale-90 transition-all"
+                    style={{
+                      background: canFlash
+                        ? 'linear-gradient(135deg,#fff84499,#ffaa0099)'
+                        : 'rgba(255,255,255,0.07)',
+                      border: canFlash ? '2px solid #FFD700' : '1.5px solid rgba(255,255,255,0.15)',
+                      WebkitTapHighlightColor: 'transparent',
+                      boxShadow: canFlash ? '0 0 22px #FFD70099' : 'none',
+                      opacity: onCD ? 0.45 : 1,
+                    }}
+                    onTouchStart={e => { e.preventDefault(); if (canFlash) flashRef.current.flash = true; }}
+                    onTouchEnd={e => e.preventDefault()}
+                    onMouseDown={() => { if (canFlash) flashRef.current.flash = true; }}
+                  >
+                    <span className="text-lg leading-none">📷</span>
+                    <span className="text-xs font-black leading-none mt-0.5"
+                      style={{ color: canFlash ? '#78350f' : 'rgba(255,255,255,0.35)' }}>
+                      {onCD ? `${cdSec}s` : 'FLASH'}
+                    </span>
+                  </button>
+                );
+              })()}
+
+              {/* SHOOT — camera attack button */}
+              {(() => {
+                const onCD = uiSnap.shootCooldown > 0;
+                const cdSec = Math.ceil(uiSnap.shootCooldown / 60 * 10) / 10;
+                return (
+                  <button
+                    className="w-14 h-14 rounded-2xl flex flex-col items-center justify-center select-none active:scale-90 transition-all"
+                    style={{
+                      background: onCD
+                        ? 'rgba(255,255,255,0.07)'
+                        : 'linear-gradient(135deg,#ff550077,#ff990077)',
+                      border: onCD ? '1.5px solid rgba(255,255,255,0.15)' : '2px solid #FF7755',
+                      WebkitTapHighlightColor: 'transparent',
+                      boxShadow: onCD ? 'none' : '0 0 18px #FF775588',
+                      opacity: onCD ? 0.5 : 1,
+                      backdropFilter: 'blur(6px)',
+                    }}
+                    onTouchStart={e => { e.preventDefault(); inputRef.current.shoot = true; }}
+                    onTouchEnd={e => e.preventDefault()}
+                    onMouseDown={() => { inputRef.current.shoot = true; }}
+                  >
+                    <span className="text-lg leading-none">📸</span>
+                    <span className="text-xs font-black leading-none mt-0.5"
+                      style={{ color: onCD ? 'rgba(255,255,255,0.3)' : '#fff' }}>
+                      {onCD ? `${cdSec}s` : 'ÇEK'}
+                    </span>
+                  </button>
+                );
+              })()}
+
+              <button
+                className="w-20 h-16 rounded-2xl flex items-center justify-center text-xl font-black select-none active:scale-90 transition-transform"
+                style={{ background: `linear-gradient(135deg,${accent}77,${accent}44)`, border: `2px solid ${accent}99`, WebkitTapHighlightColor: 'transparent', boxShadow: `0 0 20px ${accent}66`, backdropFilter: 'blur(6px)' }}
+                onTouchStart={e => { e.preventDefault(); touchRef.current.jump = true; inputRef.current.jumpPress = true; }}
+                onTouchEnd={e => { e.preventDefault(); touchRef.current.jump = false; }}
+                onTouchCancel={e => { e.preventDefault(); touchRef.current.jump = false; }}
+                onMouseDown={() => { touchRef.current.jump = true; inputRef.current.jumpPress = true; }}
+                onMouseUp={() => touchRef.current.jump = false}
+                onMouseLeave={() => touchRef.current.jump = false}
+              >
+                <span className="text-white font-black tracking-wide">ZIPla</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
