@@ -2080,6 +2080,32 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       }));
       recentMsgs.push({ role: 'user', text: text.trim() });
 
+      // Rol bazlı filtrelenmiş ozet verisini hazırla
+      // yonetici → tüm veriler | diğerleri → sadece stok (kişisel veriler server'da KV'den çekilir)
+      const isYonetici = userRole === 'yonetici';
+      const ozetPayload = ozet ? (isYonetici ? {
+        tarih: ozet.tarihTR,
+        toplamCiro: ozet.toplamCiro,
+        toplamSatisAdet: ozet.toplamSatisAdet,
+        toplamIskonto: ozet.toplamIskonto,
+        toplamKare: ozet.toplamKare,
+        mekanSayisi: ozet.mekanSayisi,
+        aktifMekanSayisi: ozet.aktifMekanSayisi,
+        mekanlar: ozet.mekanlar.map(m => ({
+          id: m.id, name: m.name, emoji: m.emoji,
+          ciro: m.ciro, satisAdet: m.satisAdet, iskonto: m.iskonto,
+          acilisYapildi: m.acilisYapildi, kapanisYapildi: m.kapanisYapildi,
+        })),
+        stokDurum: ozet.stokDurum,
+        anomaliler: ozet.anomaliler,
+        personelSiralama: ozet.personelSiralama,
+        odemeDagilimi: ozet.odemeDagilimi,
+        guncellemeZamani: ozet.guncellemeZamani,
+      } : {
+        // Diğer roller için sadece stok — finansal veri gönderilmez
+        stokDurum: ozet.stokDurum,
+      }) : null;
+
       const res = await fetch(`${API_BASE}/ai/chat`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -2087,6 +2113,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
           messages: recentMsgs,
           userRole,
           userName,
+          ozet: ozetPayload,
         }),
       });
 

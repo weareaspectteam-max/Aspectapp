@@ -6295,7 +6295,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
 
     // Body'yi önce parse et — userRole toggle kararı için gerekli
     const body = await c.req.json();
-    const { messages, userRole, userName, systemContext } = body;
+    const { messages, userRole, userName, systemContext, ozet } = body;
 
     // Toggle durumunu belirle (userRole body'den, user.id KV key için güvenli)
     let useOpenAI = false;
@@ -6322,9 +6322,184 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       return c.json({ error: "messages dizisi gerekli." }, 400);
     }
 
-    const systemPrompt = `Sen "Aspect AI" adlı bir turistik fotoğrafçılık işletmesi asistanısın. 
-İşletme adı: Aspect Operations. Kullanıcı adı: ${userName || "Kullanıcı"}. Rol: ${userRole || "personel"}.
-Türkçe yanıt ver. Kısa, net ve profesyonel ol. Operasyonel sorularda verilerle destekle.
+    // ── Rol bazlı bağlam kurgusu ──────────────────────────────────────────────
+    let ozetContext = "";
+
+    if (userRole === "yonetici") {
+      // ─ YÖNETİCİ: tüm operasyonel veriler ─
+      if (ozet) {
+        const mekanlarStr = Array.isArray(ozet.mekanlar)
+          ? ozet.mekanlar.map((m: any) =>
+              `  • ${m.emoji} ${m.name}: ${m.satisAdet} satış, ₺${Number(m.ciro).toLocaleString("tr-TR")} ciro${m.iskonto > 0 ? `, ₺${Number(m.iskonto).toLocaleString("tr-TR")} iskonto` : ""}, Açılış: ${m.acilisYapildi ? "✅" : "❌"}, Kapanış: ${m.kapanisYapildi ? "✅" : "❌"}`
+            ).join("\n")
+          : "  Veri yok.";
+
+        const stokStr = Array.isArray(ozet.stokDurum)
+          ? ozet.stokDurum.map((s: any) => `  • ${s.name}: ${s.count} adet (${s.status})`).join("\n")
+          : "  Veri yok.";
+
+        const anomaliStr = Array.isArray(ozet.anomaliler) && ozet.anomaliler.length > 0
+          ? ozet.anomaliler.map((a: any) => `  ⚠️ ${a.mekanEmoji} ${a.mekan}: ${a.type}`).join("\n")
+          : "  Anomali yok.";
+
+        const personelStr = Array.isArray(ozet.personelSiralama)
+          ? ozet.personelSiralama.map((p: any) => `  • ${p.ad}: ${p.satis} satış, ₺${Number(p.ciro).toLocaleString("tr-TR")}`).join("\n")
+          : "  Veri yok.";
+
+        const odemeStr = ozet.odemeDagilimi
+          ? `Nakit: ₺${Number(ozet.odemeDagilimi.cash).toLocaleString("tr-TR")}, Kart: ₺${Number(ozet.odemeDagilimi.card).toLocaleString("tr-TR")}, IBAN: ₺${Number(ozet.odemeDagilimi.iban).toLocaleString("tr-TR")}, Döviz: ₺${Number(ozet.odemeDagilimi.foreign).toLocaleString("tr-TR")}`
+          : "Veri yok.";
+
+        ozetContext = `
+--- BUGÜNKÜ OPERASYON VERİLERİ (${ozet.tarih || "bugün"}) ---
+Toplam Ciro: ₺${Number(ozet.toplamCiro).toLocaleString("tr-TR")} | Satış: ${ozet.toplamSatisAdet} adet | İskonto: ₺${Number(ozet.toplamIskonto).toLocaleString("tr-TR")} | Fotoğraf: ${ozet.toplamKare} kare
+Aktif Mekan: ${ozet.aktifMekanSayisi}/${ozet.mekanSayisi}
+
+MEKANLAR:
+${mekanlarStr}
+
+STOK DURUMU:
+${stokStr}
+
+ANOMALİLER:
+${anomaliStr}
+
+PERSONEL SIRALAMASI (ciro bazlı):
+${personelStr}
+
+ÖDEME DAĞILIMI: ${odemeStr}
+--- VERİ SONU ---`;
+      }
+    } else {
+      // ─ DİĞER ROLLER: sadece stok + kişisel veriler ─
+      // 1. Stok durumu (ozet'ten geldi)
+      const stokStr = Array.isArray(ozet?.stokDurum)
+        ? ozet.stokDurum.map((s: any) => `  • ${s.name}: ${s.count} adet (${s.status})`).join("\n")
+        : "  Veri yok.";
+
+      // 2. Kişisel izin talepleri (KV'den çek, user.id ile filtrele)
+      let izinStr = "  Veri yok.";
+      try {
+        const allLeaves: any[] = await kv.getByPrefix("rotation_leave_") || [];
+        const myLeaves = allLeaves.filter((l: any) =>
+          l.personnelId === user.id || l.staffId === user.id || l.created_by === user.id
+        );
+        if (myLeaves.length > 0) {
+          izinStr = myLeaves.slice(-10).map((l: any) =>
+            `  • ${l.leaveType || l.type || "İzin"}: ${l.startDate || l.date || "?"} → ${l.endDate || l.date || "?"} | Durum: ${l.status === "approved" ? "✅ Onaylı" : l.status === "rejected" ? "❌ Reddedildi" : "⏳ Bekliyor"}`
+          ).join("\n");
+        }
+      } catch (e) {
+        console.log("[AI] İzin çekme hatası:", e);
+      }
+
+      // 3. Kişisel prim verileri (KV'den çek, userName ile filtrele)
+      let primStr = "  Veri yok.";
+      try {
+        const safeAd = encodeURIComponent(userName || "");
+        const allPrimler: any[] = await kv.getByPrefix("prim_odendi_") || [];
+        // prim key formatı: prim_odendi_{mekanId}_{tarih}_{ki}_{safeAd}
+        // stok_gunluk_ kayıtlarından bu kullanıcının prim verilerini bulmak için
+        // personelPrimTakip endpoint'indeki mantığı kullanalım
+        const mekanlarList: any[] = await kv.getByPrefix("mekan_").catch(() => []);
+        const stokKayitlar: any[] = await kv.getByPrefix("stok_gunluk_").catch(() => []);
+        const odemeMap: Record<string, any> = {};
+        for (const o of allPrimler) {
+          if (o.key) odemeMap[o.key] = o;
+        }
+
+        const myPrimler: any[] = [];
+        const son30gun = new Date();
+        son30gun.setDate(son30gun.getDate() - 30);
+
+        for (const kayit of stokKayitlar) {
+          if (!kayit.fotografcilar || !Array.isArray(kayit.fotografcilar)) continue;
+          const isInvolved = kayit.fotografcilar.some((ad: string) =>
+            encodeURIComponent(ad) === safeAd || ad === (userName || "")
+          );
+          if (!isInvolved) continue;
+
+          const kayitTarih = new Date(kayit.tarih || "");
+          if (kayitTarih < son30gun) continue;
+
+          const mekan = mekanlarList.find((m: any) => m.id === kayit.mekanId);
+          if (!mekan?.primKademeleri) continue;
+
+          const ciro = Number(kayit.toplamTutar || 0);
+          const kademeler = mekan.primKademeleri;
+          for (let ki = 0; ki < kademeler.length; ki++) {
+            const kademe = kademeler[ki];
+            if (ciro >= Number(kademe.hedef)) {
+              const coklu = kayit.fotografcilar.length > 1;
+              const primMiktar = (coklu ? Number(kademe.primCoklu) : Number(kademe.primTek)) || 0;
+              const odemeKey = `prim_odendi_${kayit.mekanId}_${kayit.tarih}_${ki}_${safeAd}`;
+              const odemeData = odemeMap[odemeKey];
+              myPrimler.push({
+                mekan: mekan.name || kayit.mekanId,
+                tarih: kayit.tarih,
+                primMiktar,
+                odendi: odemeData?.odendi || false,
+              });
+            }
+          }
+        }
+
+        if (myPrimler.length > 0) {
+          const toplamHak = myPrimler.reduce((s: number, p: any) => s + p.primMiktar, 0);
+          const odenen = myPrimler.filter((p: any) => p.odendi).reduce((s: number, p: any) => s + p.primMiktar, 0);
+          const bekleyen = toplamHak - odenen;
+          primStr = `Son 30 gün hak edilen: ₺${toplamHak.toLocaleString("tr-TR")} | Ödenen: ₺${odenen.toLocaleString("tr-TR")} | Bekleyen: ₺${bekleyen.toLocaleString("tr-TR")}\n` +
+            myPrimler.slice(-5).map((p: any) =>
+              `  • ${p.mekan} (${p.tarih}): ₺${p.primMiktar.toLocaleString("tr-TR")} — ${p.odendi ? "✅ Ödendi" : "⏳ Bekliyor"}`
+            ).join("\n");
+        }
+      } catch (e) {
+        console.log("[AI] Prim çekme hatası:", e);
+      }
+
+      // 4. Kişisel görevler (rotation_task'tan)
+      let gorevStr = "  Veri yok.";
+      try {
+        const allTasks: any[] = await kv.getByPrefix("rotation_task_") || [];
+        const myTasks = allTasks.filter((t: any) => {
+          const personList: any[] = Array.isArray(t.personnel) ? t.personnel : [];
+          return personList.some((p: any) => p.id === user.id || p.name === userName);
+        });
+        if (myTasks.length > 0) {
+          gorevStr = myTasks.slice(-8).map((t: any) =>
+            `  • ${t.mekanName || t.mekanId || "Mekan"} — ${t.date || "?"} | ${t.completed ? "✅ Tamamlandı" : "⏳ Devam"}`
+          ).join("\n");
+        }
+      } catch (e) {
+        console.log("[AI] Görev çekme hatası:", e);
+      }
+
+      ozetContext = `
+--- KİŞİSEL VERİLER: ${userName || "Kullanıcı"} ---
+ÖNEMLİ: Bu kullanıcının yalnızca kendi verileri aşağıdadır. Başka personelin finansal veya kişisel bilgilerini paylaşma.
+
+STOK DURUMU (genel):
+${stokStr}
+
+İZİN TALEPLERİM:
+${izinStr}
+
+PRİM BİLGİLERİM:
+${primStr}
+
+ATANMIŞ GÖREVLERİM:
+${gorevStr}
+--- VERİ SONU ---`;
+    }
+
+    const rolKisitlamasi = userRole !== "yonetici"
+      ? `\nKRİTİK KISITLAMA: Finansal veriler (ciro, gelir, ödeme dağılımı, diğer personelin primleri, işletme gelirleri) kesinlikle paylaşılmaz. Sadece stok durumu ve kullanıcının kendi kişisel verileri (izin, prim, görev) hakkında yanıt ver.`
+      : "";
+
+    const systemPrompt = `Sen "Aspect AI" adlı bir turistik fotoğrafçılık işletmesi asistanısın. İşletme adı: Aspect Operations.
+Kullanıcı: ${userName || "Kullanıcı"} | Rol: ${userRole || "personel"}
+Türkçe yanıt ver. Kısa ve net ol. Sayısal verileri kullanarak somut cevaplar ver. Markdown bold (**) kullanabilirsin.${rolKisitlamasi}
+${ozetContext}
 ${systemContext || ""}`;
 
     const openAIMessages = [
@@ -6344,8 +6519,8 @@ ${systemContext || ""}`;
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: openAIMessages,
-        max_tokens: 600,
-        temperature: 0.7,
+        max_tokens: 800,
+        temperature: 0.65,
       }),
     });
 
