@@ -2758,6 +2758,108 @@ app.get("/make-server-4da0b637/stok/anomali/:mekanId", async (c) => {
   }
 });
 
+// ──────────────────────────────────────────
+// STOK: Tüm mekanlar anomali raporu (tarih aralıklı)
+// GET /stok/anomali-raporu?baslangic=YYYY-MM-DD&bitis=YYYY-MM-DD
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/stok/anomali-raporu", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur", "mudur", "operasyon"].includes(callerRole)) {
+      return c.json({ error: "Yetki yok." }, 403);
+    }
+
+    const baslangic = c.req.query("baslangic") || "";
+    const bitis = c.req.query("bitis") || "";
+
+    const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanMap: Record<string, any> = {};
+    for (const m of mekanlarList) mekanMap[m.id] = m;
+
+    const stokEtiket: Record<string, string> = {
+      album3:"3 Kare Albüm", album5:"5 Kare Albüm", album7:"7 Kare Albüm",
+      album9:"9 Kare Albüm", album11:"11 Kare Albüm", album13:"13 Kare Albüm",
+      album15:"15 Kare Albüm", paspartu:"Paspartu", ribon:"Ribon Takımı",
+    };
+    const fmtDetail = (d: Record<string, number>) =>
+      Object.entries(d).filter(([, v]) => v !== 0)
+        .map(([k, v]) => `${stokEtiket[k] || k}: ${v > 0 ? "+" : ""}${v} adet`).join(", ");
+
+    const anomaliler: any[] = [];
+    let stokAnomali = 0, yaziciAnomali = 0;
+
+    for (const kayit of tumKayitlar) {
+      if (!kayit.tarih) continue;
+      if (baslangic && kayit.tarih < baslangic) continue;
+      if (bitis && kayit.tarih > bitis) continue;
+
+      const mekan = mekanMap[kayit.mekanId] || { name: kayit.mekanId, emoji: "📍" };
+
+      if (kayit.acilisAnomali && Object.keys(kayit.acilisAnomali).length > 0) {
+        anomaliler.push({
+          tarih: kayit.tarih,
+          mekan: mekan.name,
+          mekanEmoji: mekan.emoji,
+          type: "acilis",
+          detailStr: fmtDetail(kayit.acilisAnomali),
+          detail: kayit.acilisAnomali,
+        });
+        stokAnomali++;
+      }
+      if (kayit.kapanisAnomali && Object.keys(kayit.kapanisAnomali).length > 0) {
+        anomaliler.push({
+          tarih: kayit.tarih,
+          mekan: mekan.name,
+          mekanEmoji: mekan.emoji,
+          type: "kapanis",
+          detailStr: fmtDetail(kayit.kapanisAnomali),
+          detail: kayit.kapanisAnomali,
+        });
+        stokAnomali++;
+      }
+      if (Array.isArray(kayit.acilisYaziciAnomali) && kayit.acilisYaziciAnomali.length > 0) {
+        for (const pa of kayit.acilisYaziciAnomali) {
+          anomaliler.push({
+            tarih: kayit.tarih,
+            mekan: mekan.name,
+            mekanEmoji: mekan.emoji,
+            type: "yazici_acilis",
+            detailStr: `${pa.label || "Yazıcı"}: beklenen ${pa.beklenenCounter}, girilen ${pa.startCounter} (fark: ${pa.fark > 0 ? "+" : ""}${pa.fark})`,
+            detail: pa,
+          });
+          yaziciAnomali++;
+        }
+      }
+      if (kayit.kapanisYaziciAnomali && Math.abs(kayit.kapanisYaziciAnomali.fark || 0) > 0) {
+        const kya = kayit.kapanisYaziciAnomali;
+        anomaliler.push({
+          tarih: kayit.tarih,
+          mekan: mekan.name,
+          mekanEmoji: mekan.emoji,
+          type: "yazici_kapanis",
+          detailStr: `Net basılan ${kya.netBasilan || 0}, satış ${kya.satisAdet || 0} (fark: ${kya.fark > 0 ? "+" : ""}${kya.fark} kare)`,
+          detail: kya,
+        });
+        yaziciAnomali++;
+      }
+    }
+
+    anomaliler.sort((a, b) => b.tarih.localeCompare(a.tarih));
+
+    console.log(`Anomali raporu: ${baslangic}–${bitis} — ${anomaliler.length} anomali (stok:${stokAnomali} yazıcı:${yaziciAnomali})`);
+    return c.json({
+      anomaliler,
+      ozet: { toplam: anomaliler.length, stokAnomali, yaziciAnomali, baslangic, bitis },
+    });
+  } catch (err) {
+    console.log("Anomali raporu error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 // ══════════════════════════════════════════
 // DUYURULAR
 // ══════════════════════════════════════════
@@ -4008,15 +4110,66 @@ app.get("/make-server-4da0b637/ai/ozet", async (c) => {
       toplamSatisAdet += mekanSatis;
       toplamIskonto += mekanIskonto;
 
-      // Anomali kontrolü
+      // Anomali kontrolü — stok + yazıcı anomalileri
+      const stokEtiketlerAnomali: Record<string, string> = {
+        album3:"3 Kare Albüm", album5:"5 Kare Albüm", album7:"7 Kare Albüm",
+        album9:"9 Kare Albüm", album11:"11 Kare Albüm", album13:"13 Kare Albüm",
+        album15:"15 Kare Albüm", paspartu:"Paspartu", ribon:"Ribon Takımı",
+      };
+      const formatAnomaliDetail = (detail: Record<string, number>) =>
+        Object.entries(detail)
+          .filter(([, v]) => v !== 0)
+          .map(([k, v]) => `${stokEtiketlerAnomali[k] || k}: ${v > 0 ? "+" : ""}${v} adet`)
+          .join(", ");
+
       const acilisAnomali = kayit.acilisAnomali && Object.keys(kayit.acilisAnomali).length > 0;
       const kapanisAnomali = kayit.kapanisAnomali && Object.keys(kayit.kapanisAnomali).length > 0;
-      if (acilisAnomali || kapanisAnomali) {
+
+      if (acilisAnomali) {
         anomaliler.push({
           mekan: mekan.name,
           mekanEmoji: mekan.emoji,
-          type: acilisAnomali ? "acilis" : "kapanis",
-          detail: kayit.acilisAnomali || kayit.kapanisAnomali,
+          type: "acilis",
+          detail: kayit.acilisAnomali,
+          detailStr: formatAnomaliDetail(kayit.acilisAnomali),
+          tarih: kayit.tarih,
+        });
+      }
+      if (kapanisAnomali) {
+        anomaliler.push({
+          mekan: mekan.name,
+          mekanEmoji: mekan.emoji,
+          type: "kapanis",
+          detail: kayit.kapanisAnomali,
+          detailStr: formatAnomaliDetail(kayit.kapanisAnomali),
+          tarih: kayit.tarih,
+        });
+      }
+
+      // Yazıcı anomalileri (açılış)
+      if (Array.isArray(kayit.acilisYaziciAnomali) && kayit.acilisYaziciAnomali.length > 0) {
+        for (const pa of kayit.acilisYaziciAnomali) {
+          anomaliler.push({
+            mekan: mekan.name,
+            mekanEmoji: mekan.emoji,
+            type: "yazici_acilis",
+            detail: pa,
+            detailStr: `${pa.label || "Yazıcı"}: beklenen ${pa.beklenenCounter}, girilen ${pa.startCounter} (fark: ${pa.fark > 0 ? "+" : ""}${pa.fark})`,
+            tarih: kayit.tarih,
+          });
+        }
+      }
+
+      // Yazıcı anomalisi (kapanış — net basılan vs satış farkı)
+      if (kayit.kapanisYaziciAnomali && Math.abs(kayit.kapanisYaziciAnomali.fark || 0) > 0) {
+        const kya = kayit.kapanisYaziciAnomali;
+        anomaliler.push({
+          mekan: mekan.name,
+          mekanEmoji: mekan.emoji,
+          type: "yazici_kapanis",
+          detail: kya,
+          detailStr: `Net basılan (${kya.netBasilan || 0}) ile satış (${kya.satisAdet || 0}) farkı: ${kya.fark > 0 ? "+" : ""}${kya.fark} kare`,
+          tarih: kayit.tarih,
         });
       }
 
@@ -4109,6 +4262,20 @@ app.get("/make-server-4da0b637/ai/ozet", async (c) => {
       else odemeTipi.foreign += satis.finalPrice;
     }
 
+    // ── Albüm bazlı satış dökümü (bugün) ──────────────────────────────────────
+    const albumSatisMap: Record<string, { adet: number; ciro: number }> = {};
+    for (const satis of tumSatislar) {
+      for (const item of (satis.items || [])) {
+        const tip = item.product || "Diğer";
+        if (!albumSatisMap[tip]) albumSatisMap[tip] = { adet: 0, ciro: 0 };
+        albumSatisMap[tip].adet += Number(item.quantity) || 1;
+        albumSatisMap[tip].ciro += (Number(item.unitPrice) || 0) * (Number(item.quantity) || 1);
+      }
+    }
+    const albumSatisDokumu = Object.entries(albumSatisMap)
+      .map(([product, d]) => ({ product, ...d }))
+      .sort((a, b) => b.adet - a.adet);
+
     // Mekan sıralaması (ciro)
     mekanOzetleri.sort((a, b) => b.ciro - a.ciro);
 
@@ -4128,6 +4295,7 @@ app.get("/make-server-4da0b637/ai/ozet", async (c) => {
       mekanBazliStok,
       anomaliler,
       personelSiralama,
+      albumSatisDokumu,
       odemeDagilimi: odemeTipi,
       callerName,
       callerRole,
@@ -6475,9 +6643,56 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
             ).join("\n")
           : "  Mekan bazlı stok verisi yok.";
 
+        const typeLabel = (t: string) => t === "acilis" ? "Açılış Stok" : t === "kapanis" ? "Kapanış Stok" : t === "yazici_acilis" ? "Yazıcı Açılış" : t === "yazici_kapanis" ? "Yazıcı Kapanış" : t;
         const anomaliStr = Array.isArray(ozet.anomaliler) && ozet.anomaliler.length > 0
-          ? ozet.anomaliler.map((a: any) => `  ⚠️ ${a.mekanEmoji} ${a.mekan}: ${a.type}`).join("\n")
-          : "  Anomali yok.";
+          ? ozet.anomaliler.map((a: any) =>
+              `  ⚠️ ${a.mekanEmoji} ${a.mekan} — ${typeLabel(a.type)}${a.detailStr ? `: ${a.detailStr}` : ""}`
+            ).join("\n")
+          : "  Bugün anomali yok.";
+
+        // Geçmiş anomaliler (son 30 gün)
+        let gecmisAnomaliStr = "";
+        try {
+          const tumKayitlarAnomali: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+          const mekanlarAnomali: any[] = await kv.getByPrefix("mekan_") || [];
+          const mekanMapAnomali: Record<string, any> = {};
+          for (const m of mekanlarAnomali) mekanMapAnomali[m.id] = m;
+          const today_aichat = new Date().toISOString().split("T")[0];
+          const otuzGunOnce = new Date();
+          otuzGunOnce.setDate(otuzGunOnce.getDate() - 30);
+          const otuzGunStr = otuzGunOnce.toISOString().split("T")[0];
+          const stokEtAnomali: Record<string, string> = {
+            album3:"3 Kare", album5:"5 Kare", album7:"7 Kare", album9:"9 Kare",
+            album11:"11 Kare", album13:"13 Kare", album15:"15 Kare", paspartu:"Paspartu", ribon:"Ribon",
+          };
+          const gecmisAnomaliList: string[] = [];
+          for (const kayit of tumKayitlarAnomali) {
+            if (!kayit.tarih || kayit.tarih >= today_aichat || kayit.tarih < otuzGunStr) continue;
+            const mekanAdGecmis = mekanMapAnomali[kayit.mekanId]?.name || kayit.mekanId;
+            const mekanEmojiGecmis = mekanMapAnomali[kayit.mekanId]?.emoji || "📍";
+            const fmtDetail = (d: Record<string, number>) =>
+              Object.entries(d).filter(([, v]) => v !== 0)
+                .map(([k, v]) => `${stokEtAnomali[k] || k}: ${v > 0 ? "+" : ""}${v}`).join(", ");
+            if (kayit.acilisAnomali && Object.keys(kayit.acilisAnomali).length > 0)
+              gecmisAnomaliList.push(`  • ${kayit.tarih} ${mekanEmojiGecmis} ${mekanAdGecmis} — Açılış Stok: ${fmtDetail(kayit.acilisAnomali)}`);
+            if (kayit.kapanisAnomali && Object.keys(kayit.kapanisAnomali).length > 0)
+              gecmisAnomaliList.push(`  • ${kayit.tarih} ${mekanEmojiGecmis} ${mekanAdGecmis} — Kapanış Stok: ${fmtDetail(kayit.kapanisAnomali)}`);
+            if (Array.isArray(kayit.acilisYaziciAnomali) && kayit.acilisYaziciAnomali.length > 0) {
+              for (const pa of kayit.acilisYaziciAnomali)
+                gecmisAnomaliList.push(`  • ${kayit.tarih} ${mekanEmojiGecmis} ${mekanAdGecmis} — Yazıcı Açılış (${pa.label || "Yazıcı"}): beklenen ${pa.beklenenCounter} girilen ${pa.startCounter} (fark: ${pa.fark > 0 ? "+" : ""}${pa.fark})`);
+            }
+            if (kayit.kapanisYaziciAnomali && Math.abs(kayit.kapanisYaziciAnomali.fark || 0) > 0) {
+              const kya = kayit.kapanisYaziciAnomali;
+              gecmisAnomaliList.push(`  • ${kayit.tarih} ${mekanEmojiGecmis} ${mekanAdGecmis} — Yazıcı Kapanış: net basılan ${kya.netBasilan || 0}, satış ${kya.satisAdet || 0} (fark: ${kya.fark > 0 ? "+" : ""}${kya.fark} kare)`);
+            }
+          }
+          gecmisAnomaliStr = gecmisAnomaliList.length > 0
+            ? `\nSON 30 GÜN ANOMALİ GEÇMİŞİ (${otuzGunStr} → dün):\n` + gecmisAnomaliList.sort().reverse().slice(0, 60).join("\n")
+            : "\nSON 30 GÜN: Stok veya yazıcı anomalisi yok.";
+        } catch (e) {
+          console.log("[AI] Geçmiş anomali çekme hatası:", e);
+          gecmisAnomaliStr = "";
+        }
 
         const personelStr = Array.isArray(ozet.personelSiralama)
           ? ozet.personelSiralama.map((p: any) => `  • ${p.ad}: ${p.satis} satış, ₺${Number(p.ciro).toLocaleString("tr-TR")}`).join("\n")
@@ -6486,6 +6701,58 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
         const odemeStr = ozet.odemeDagilimi
           ? `Nakit: ₺${Number(ozet.odemeDagilimi.cash).toLocaleString("tr-TR")}, Kart: ₺${Number(ozet.odemeDagilimi.card).toLocaleString("tr-TR")}, IBAN: ₺${Number(ozet.odemeDagilimi.iban).toLocaleString("tr-TR")}, Döviz: ₺${Number(ozet.odemeDagilimi.foreign).toLocaleString("tr-TR")}`
           : "Veri yok.";
+
+        // Albüm/ürün bazlı satış dökümü
+        const albumSatisStr = Array.isArray(ozet.albumSatisDokumu) && ozet.albumSatisDokumu.length > 0
+          ? ozet.albumSatisDokumu.map((a: any) =>
+              `  • ${a.product}: ${a.adet} adet, ₺${Number(a.ciro).toLocaleString("tr-TR")} ciro`
+            ).join("\n")
+          : "  Bugün albüm/ürün satışı yok veya veri girilmemiş.";
+
+        // Son 7 günlük satış özeti (bugün hariç)
+        let sonYediGunStr = "";
+        try {
+          const tumKayitlarHafta: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+          const yediGunOnce = new Date();
+          yediGunOnce.setDate(yediGunOnce.getDate() - 7);
+          const yediGunStr = yediGunOnce.toISOString().split("T")[0];
+          const haftalikAlbumMap: Record<string, Record<string, { adet: number; ciro: number }>> = {};
+          let haftalikCiro = 0, haftalikSatis = 0;
+
+          const todayAichat2 = new Date().toISOString().split("T")[0];
+          for (const kayit of tumKayitlarHafta) {
+            if (!kayit.tarih || kayit.tarih < yediGunStr || kayit.tarih >= todayAichat2) continue;
+            const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
+            haftalikSatis += satislar.length;
+            for (const satis of satislar) {
+              haftalikCiro += Number(satis.finalPrice) || 0;
+              for (const item of (satis.items || [])) {
+                const tip = item.product || "Diğer";
+                if (!haftalikAlbumMap[tip]) haftalikAlbumMap[tip] = {};
+                if (!haftalikAlbumMap[tip][kayit.tarih]) haftalikAlbumMap[tip][kayit.tarih] = { adet: 0, ciro: 0 };
+                haftalikAlbumMap[tip][kayit.tarih].adet += Number(item.quantity) || 1;
+                haftalikAlbumMap[tip][kayit.tarih].ciro += (Number(item.unitPrice) || 0) * (Number(item.quantity) || 1);
+              }
+            }
+          }
+
+          // Albüm toplamları
+          const haftalikAlbumToplam = Object.entries(haftalikAlbumMap).map(([product, gunler]) => {
+            const topAdet = Object.values(gunler).reduce((s, d) => s + d.adet, 0);
+            const topCiro = Object.values(gunler).reduce((s, d) => s + d.ciro, 0);
+            return { product, adet: topAdet, ciro: topCiro };
+          }).sort((a, b) => b.adet - a.adet);
+
+          if (haftalikSatis > 0) {
+            sonYediGunStr = `\nSON 7 GÜN SATIŞ ÖZETİ (${yediGunStr} → dün):\nToplam: ${haftalikSatis} satış, ₺${Number(haftalikCiro).toLocaleString("tr-TR")} ciro\nÜrün bazlı:\n` +
+              haftalikAlbumToplam.map(a => `  • ${a.product}: ${a.adet} adet, ₺${Number(a.ciro).toLocaleString("tr-TR")}`).join("\n");
+          } else {
+            sonYediGunStr = "\nSON 7 GÜN: Satış verisi yok.";
+          }
+        } catch (e) {
+          console.log("[AI] Haftalık satış özeti hatası:", e);
+          sonYediGunStr = "";
+        }
 
         ozetContext = `
 --- BUGÜNKÜ OPERASYON VERİLERİ (${ozet.tarih || "bugün"}) ---
@@ -6501,11 +6768,15 @@ ${stokStr}
 MEKAN BAZLI STOK DETAYI:
 ${mekanStokStr}
 
-ANOMALİLER:
+ANOMALİLER (bugün):
 ${anomaliStr}
+${gecmisAnomaliStr}
 
 PERSONEL SIRALAMASI (ciro bazlı):
 ${personelStr}
+
+BUGÜN ÜRÜN/ALBÜM BAZLI SATIŞ DÖKÜMÜ:
+${albumSatisStr}
 
 BUGÜN İZİNLİ PERSONEL:
 ${izinlerStr}
@@ -6514,9 +6785,10 @@ ${izinlerStr}
 ${izinGecmisiStr}
 
 ÖDEME DAĞILIMI: ${odemeStr}
+${sonYediGunStr}
 --- VERİ SONU ---`;
       } else {
-        // Ozet yoksa sadece izin bilgisini ver
+        // Ozet yoksa sadece izin + haftalık satış bilgisini ver
         ozetContext = `
 --- YÖNETİCİ VERİLERİ ---
 Bugün için satış/stok verisi henüz girilmemiş veya yüklenmemiş.
@@ -6668,7 +6940,10 @@ ${gorevStr}
     const systemPrompt = `Sen "Aspect AI" adlı bir turistik fotoğrafçılık işletmesi asistanısın. İşletme adı: Aspect Operations.
 Kullanıcı: ${userName || "Kullanıcı"} | Rol: ${userRole || "personel"}
 Türkçe yanıt ver. Kısa ve net ol. Sayısal verileri kullanarak somut cevaplar ver. Markdown bold (**) kullanabilirsin.
-STOK SORULARI: "Genel stok" veya "toplam stok" sorulunca GENEL STOK bölümünü kullan. "[Mekan adı] stok" veya "[Mekan adı] stoğu" gibi mekan adı geçen sorularda MEKAN BAZLI STOK DETAYI bölümünü kullan. Her iki bölüm de ayrıdır — karıştırma.${rolKisitlamasi}
+STOK SORULARI: "Genel stok" veya "toplam stok" sorulunca GENEL STOK bölümünü kullan. "[Mekan adı] stok" veya "[Mekan adı] stoğu" gibi mekan adı geçen sorularda MEKAN BAZLI STOK DETAYI bölümünü kullan. Her iki bölüm de ayrıdır — karıştırma.
+SATIŞ VE ÜRÜN SORULARI: Albüm tiplerini (3 Kare, 5 Kare, 7 Kare, 9 Kare, 11 Kare, 13 Kare, 15 Kare, Ribon, Paspartu) tanıyorsun. "BUGÜN ÜRÜN/ALBÜM BAZLI SATIŞ DÖKÜMÜ" bölümünden bugünün verilerini, "SON 7 GÜN SATIŞ ÖZETİ" bölümünden geçmiş hafta verisini kullan.
+ANOMALİ SORULARI: "ANOMALİLER (bugün)" bölümünden bugünkü anomalileri — stok farkları (hangi ürün, kaç adet artı/eksi) ve yazıcı sayaç farklılıkları dahil — detaylıca cevaplayabilirsin. "SON 30 GÜN ANOMALİ GEÇMİŞİ" bölümünden tarihsel anomali sorgularını yanıtla. Anomali tiplerini biliyorsun: Açılış Stok (sayım farkı), Kapanış Stok (beklenen ile gerçek fark), Yazıcı Açılış (sayaç tutarsızlığı), Yazıcı Kapanış (basılan kare ile satış farkı).
+İZİN SORULARI: "İZİN GEÇMİŞİ" bölümünden geçmiş tarihli izin sorgularını cevaplayabilirsin — tarih aralığı, kişi adı veya ay bazlı filtreleyerek yanıtla.${rolKisitlamasi}
 ${ozetContext}
 ${systemContext || ""}`;
 

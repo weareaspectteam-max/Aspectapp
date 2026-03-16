@@ -91,6 +91,7 @@ interface AIOzet {
   mekanBazliStok: { mekanId: string; mekanAdi: string; mekanEmoji: string; stokTipi: string; urunler: { alan: string; name: string; count: number; status: string }[] }[];
   anomaliler: { mekan: string; mekanEmoji: string; type: string; detail: any }[];
   personelSiralama: { ad: string; ciro: number; satis: number }[];
+  albumSatisDokumu?: { product: string; adet: number; ciro: number }[];
   odemeDagilimi: { cash: number; card: number; iban: number; foreign: number };
   callerName: string;
   callerRole: string;
@@ -118,9 +119,12 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
     chips: [
       { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
       { icon: '💰', label: 'Ciro & Kâr', q: 'Bugün toplam ciro ne kadar?' },
+      { icon: '🛍️', label: 'Albüm Satışları', q: 'Bugün ürün bazlı satış dökümü nedir?' },
+      { icon: '📈', label: 'Haftalık Satış', q: 'Bu hafta satış raporu nedir?' },
       { icon: '🏆', label: 'En İyi Mekan', q: 'Bugün hangi mekan en iyi performansı gösterdi?' },
       { icon: '💳', label: 'Ödeme Dağılımı', q: 'Ödeme yöntemleri nasıl dağılmış?' },
       { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
+      { icon: '📋', label: 'Anomali Raporu', q: 'Son 30 günlük anomali raporu nedir?' },
       { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
       { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
       { icon: '🏖️', label: 'İzin Talebi', q: '__LEAVE_REQUEST__' },
@@ -137,6 +141,8 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
   'ust-mudur': {
     chips: [
       { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
+      { icon: '🛍️', label: 'Albüm Satışları', q: 'Bugün ürün bazlı satış dökümü nedir?' },
+      { icon: '📈', label: 'Haftalık Satış', q: 'Bu hafta satış raporu nedir?' },
       { icon: '🏆', label: 'En İyi Mekan', q: 'Bugün hangi mekan en iyi performansı gösterdi?' },
       { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
       { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
@@ -156,6 +162,7 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
   mudur: {
     chips: [
       { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
+      { icon: '🛍️', label: 'Albüm Satışları', q: 'Bugün ürün bazlı satış dökümü nedir?' },
       { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
       { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
       { icon: '🌅', label: 'Altın Saat', q: 'Bugün Fethiye altın saat kaçta?' },
@@ -478,6 +485,216 @@ async function fetchIzinGecmisi(userId: string, userName: string): Promise<{ tex
 
 // ─── AI Response Engine (gerçek KV verisi kullanır) ───────────────────────────
 
+// ─── Anomali Analizi — tarihsel, mekan/tip bazlı (yönetici/müdür) ────────────
+async function fetchAnomaliAnalizi(soru: string): Promise<{ text: string }> {
+  try {
+    const now = new Date();
+    const trOffset = 3 * 60;
+    const nowTR = new Date(now.getTime() + (trOffset - now.getTimezoneOffset()) * 60000);
+    const todayStr = nowTR.toISOString().split('T')[0];
+    const lower = soru.toLowerCase();
+
+    const AYLAR: Record<string, number> = {
+      'ocak': 0, 'şubat': 1, 'mart': 2, 'nisan': 3, 'mayıs': 4, 'haziran': 5,
+      'temmuz': 6, 'ağustos': 7, 'eylül': 8, 'ekim': 9, 'kasım': 10, 'aralık': 11
+    };
+
+    // Tarih aralığı belirle
+    let baslangic = '', bitis = todayStr, rangeLabel = 'bugün';
+    const isGecen = lower.includes('geçen') || lower.includes('gecen');
+
+    if (lower.includes('dün') || lower.includes('dun')) {
+      const dun = new Date(nowTR); dun.setDate(dun.getDate() - 1);
+      baslangic = bitis = dun.toISOString().split('T')[0];
+      rangeLabel = 'dün';
+    } else if (lower.includes('bu hafta') || lower.includes('geçen hafta') || lower.includes('gecen hafta')) {
+      const p = new Date(nowTR);
+      const g = p.getDay();
+      const fark = (isGecen ? 7 : 0) + (g === 0 ? 6 : g - 1);
+      p.setDate(p.getDate() - fark);
+      baslangic = p.toISOString().split('T')[0];
+      const pe = new Date(p); pe.setDate(pe.getDate() + 6);
+      bitis = pe.toISOString().split('T')[0] > todayStr ? todayStr : pe.toISOString().split('T')[0];
+      rangeLabel = isGecen ? 'geçen hafta' : 'bu hafta';
+    } else {
+      const ayAdi = Object.keys(AYLAR).find(a => lower.includes(a));
+      if (lower.includes('bu ay') || lower.includes('geçen ay') || lower.includes('gecen ay') || ayAdi) {
+        const ay = ayAdi ? AYLAR[ayAdi] : nowTR.getMonth();
+        const gercekAy = (isGecen && !ayAdi) ? (ay === 0 ? 11 : ay - 1) : ay;
+        const yil = (isGecen && !ayAdi && gercekAy === 11) ? nowTR.getFullYear() - 1 : nowTR.getFullYear();
+        baslangic = `${yil}-${String(gercekAy + 1).padStart(2, '0')}-01`;
+        const sonGun = new Date(yil, gercekAy + 1, 0).getDate();
+        bitis = `${yil}-${String(gercekAy + 1).padStart(2, '0')}-${sonGun}`;
+        if (bitis > todayStr) bitis = todayStr;
+        rangeLabel = `${Object.keys(AYLAR)[gercekAy]} ${yil}`;
+      } else if (lower.includes('bu yıl') || lower.includes('bu yil')) {
+        baslangic = `${nowTR.getFullYear()}-01-01`;
+        rangeLabel = `${nowTR.getFullYear()} yılı`;
+      } else {
+        // Son 30 gün varsayılan
+        const otuz = new Date(nowTR); otuz.setDate(otuz.getDate() - 30);
+        baslangic = otuz.toISOString().split('T')[0];
+        rangeLabel = 'son 30 gün';
+      }
+    }
+
+    // API çağrısı
+    const headers = await authHeaders();
+    const url = `${API_BASE}/stok/anomali-raporu?baslangic=${baslangic}&bitis=${bitis}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) return { text: `Anomali raporu alınamadı (${res.status}).` };
+    const data = await res.json();
+
+    const anomaliler: any[] = data.anomaliler || [];
+    const ozet = data.ozet || {};
+
+    if (anomaliler.length === 0) {
+      return { text: `✅ **${rangeLabel}** (${baslangic}${bitis !== baslangic ? ` → ${bitis}` : ''}) için anomali kaydı bulunamadı.` };
+    }
+
+    // Tip filtresi
+    const isYazici = lower.includes('yazıcı') || lower.includes('yazici');
+    const isStok = lower.includes('stok anomali') && !isYazici;
+    let filtrelenmis = anomaliler;
+    if (isYazici) filtrelenmis = anomaliler.filter((a: any) => a.type.startsWith('yazici'));
+    else if (isStok) filtrelenmis = anomaliler.filter((a: any) => !a.type.startsWith('yazici'));
+
+    // En çok anomali olan mekan
+    const mekanSayac: Record<string, number> = {};
+    for (const a of filtrelenmis) {
+      mekanSayac[a.mekan] = (mekanSayac[a.mekan] || 0) + 1;
+    }
+    const enCokMekan = Object.entries(mekanSayac).sort((a, b) => b[1] - a[1])[0];
+
+    const typeLabel = (t: string) =>
+      t === 'acilis' ? 'Açılış Stok' : t === 'kapanis' ? 'Kapanış Stok' :
+      t === 'yazici_acilis' ? 'Yazıcı Açılış' : t === 'yazici_kapanis' ? 'Yazıcı Kapanış' : t;
+
+    const liste = filtrelenmis.slice(0, 20).map((a: any) =>
+      `  • ${a.tarih} ${a.mekanEmoji || '📍'} **${a.mekan}** — ${typeLabel(a.type)}: ${a.detailStr || '-'}`
+    ).join('\n');
+
+    const ozetStr = `Toplam: **${filtrelenmis.length} anomali** | Stok: ${ozet.stokAnomali || 0} | Yazıcı: ${ozet.yaziciAnomali || 0}`;
+
+    return {
+      text: `⚠️ **${rangeLabel}** anomali raporu (${baslangic}${bitis !== baslangic ? ` → ${bitis}` : ''}):\n${ozetStr}` +
+        (enCokMekan ? `\nEn çok anomali: **${enCokMekan[0]}** (${enCokMekan[1]}x)` : '') +
+        `\n\n${filtrelenmis.length > 20 ? `İlk 20 gösteriliyor (toplam ${filtrelenmis.length}):\n` : ''}${liste}`
+    };
+  } catch (e) {
+    console.error('fetchAnomaliAnalizi error:', e);
+    return { text: 'Anomali analizi şu an kullanılamıyor.' };
+  }
+}
+
+// ─── Satış Analizi — ürün/albüm bazlı, tarihsel (yönetici/müdür) ─────────────
+async function fetchSatisAnalizi(soru: string): Promise<{ text: string }> {
+  try {
+    const now = new Date();
+    const trOffset = 3 * 60;
+    const nowTR = new Date(now.getTime() + (trOffset - now.getTimezoneOffset()) * 60000);
+    const todayStr = nowTR.toISOString().split('T')[0];
+    const lower = soru.toLowerCase();
+
+    const AYLAR: Record<string, number> = {
+      'ocak': 0, 'şubat': 1, 'mart': 2, 'nisan': 3, 'mayıs': 4, 'haziran': 5,
+      'temmuz': 6, 'ağustos': 7, 'eylül': 8, 'ekim': 9, 'kasım': 10, 'aralık': 11
+    };
+
+    // Tarih aralığı belirle
+    let baslangic = '', bitis = todayStr, rangeLabel = 'bugün';
+    const isGecen = lower.includes('geçen') || lower.includes('gecen');
+
+    if (lower.includes('bu hafta') || lower.includes('geçen hafta') || lower.includes('gecen hafta')) {
+      const p = new Date(nowTR);
+      const g = p.getDay();
+      const fark = (isGecen ? 7 : 0) + (g === 0 ? 6 : g - 1);
+      p.setDate(p.getDate() - fark);
+      baslangic = p.toISOString().split('T')[0];
+      const pe = new Date(p); pe.setDate(pe.getDate() + 6);
+      bitis = pe.toISOString().split('T')[0] > todayStr ? todayStr : pe.toISOString().split('T')[0];
+      rangeLabel = isGecen ? 'geçen hafta' : 'bu hafta';
+    } else {
+      const ayAdi = Object.keys(AYLAR).find(a => lower.includes(a));
+      if (lower.includes('bu ay') || lower.includes('geçen ay') || lower.includes('gecen ay') || ayAdi) {
+        const ay = ayAdi ? AYLAR[ayAdi] : nowTR.getMonth();
+        const gercekAy = (isGecen && !ayAdi) ? (ay === 0 ? 11 : ay - 1) : ay;
+        const yil = (isGecen && !ayAdi && gercekAy === 11) ? nowTR.getFullYear() - 1 : nowTR.getFullYear();
+        baslangic = `${yil}-${String(gercekAy + 1).padStart(2, '0')}-01`;
+        const sonGun = new Date(yil, gercekAy + 1, 0).getDate();
+        bitis = `${yil}-${String(gercekAy + 1).padStart(2, '0')}-${sonGun}`;
+        if (bitis > todayStr) bitis = todayStr;
+        rangeLabel = `${Object.keys(AYLAR)[gercekAy]} ${yil}`;
+      } else if (lower.includes('bu yıl') || lower.includes('bu yil')) {
+        baslangic = `${nowTR.getFullYear()}-01-01`;
+        rangeLabel = `${nowTR.getFullYear()} yılı`;
+      } else {
+        // Varsayılan: bugün
+        baslangic = todayStr;
+        rangeLabel = 'bugün';
+      }
+    }
+
+    // API çağrısı
+    const headers = await authHeaders();
+    const url = `${API_BASE}/isletme/satis-raporu?baslangic=${baslangic}&bitis=${bitis}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) return { text: 'Satış raporuna ulaşılamadı.' };
+    const data = await res.json();
+
+    const albumler: { tip: string; adet: number; ciro: number }[] = (data.albumler || data.albumListesi || []);
+    const mekanlar: any[] = data.mekanlar || data.mekanListesi || [];
+    const personel: any[] = data.personeller || data.personelListesi || [];
+    const toplamCiro = data.toplamCiro || 0;
+    const toplamSatis = data.toplamSatisAdet || 0;
+
+    if (toplamSatis === 0) {
+      return { text: `📊 **${rangeLabel}** (${baslangic}${bitis !== baslangic ? ` → ${bitis}` : ''}) için satış kaydı bulunamadı.` };
+    }
+
+    // Belirli ürün sorgusu
+    const urunMatch = [
+      { key: '3 kare', name: '3 Kare' }, { key: '5 kare', name: '5 Kare' },
+      { key: '7 kare', name: '7 Kare' }, { key: '9 kare', name: '9 Kare' },
+      { key: '11 kare', name: '11 Kare' }, { key: '13 kare', name: '13 Kare' },
+      { key: '15 kare', name: '15 Kare' }, { key: 'ribon', name: 'Ribon' },
+      { key: 'paspartu', name: 'Paspartu' },
+    ].find(u => lower.includes(u.key));
+
+    if (urunMatch) {
+      const urun = albumler.find(a => a.tip.toLowerCase().includes(urunMatch.key) || a.tip.toLowerCase().includes(urunMatch.name.toLowerCase()));
+      if (!urun) return { text: `📦 **${rangeLabel}** için **${urunMatch.name}** satışı bulunamadı.` };
+      return {
+        text: `📦 **${urunMatch.name}** — **${rangeLabel}**:\n• Satış adedi: **${urun.adet} adet**\n• Ciro: **₺${Number(urun.ciro).toLocaleString('tr-TR')}**\n• Birim başına ort.: **₺${urun.adet > 0 ? Math.round(urun.ciro / urun.adet).toLocaleString('tr-TR') : 0}**`
+      };
+    }
+
+    // Genel ürün/albüm dökümü
+    const albumStr = albumler.length > 0
+      ? albumler.map((a, i) => `  ${i + 1}. **${a.tip}**: ${a.adet} adet — ₺${Number(a.ciro).toLocaleString('tr-TR')}`).join('\n')
+      : '  Ürün detayı yok.';
+
+    const mekanStr = mekanlar.slice(0, 5).map(m =>
+      `  • ${m.emoji || '📍'} **${m.name}**: ${m.satisAdet} satış, ₺${Number(m.ciro).toLocaleString('tr-TR')}`
+    ).join('\n');
+
+    const personelStr = personel.slice(0, 5).map(p =>
+      `  • **${p.name}**: ${p.satisAdet} satış, ₺${Number(p.ciro).toLocaleString('tr-TR')}`
+    ).join('\n');
+
+    return {
+      text: `📊 **${rangeLabel}** satış raporu (${baslangic}${bitis !== baslangic ? ` → ${bitis}` : ''}):\n` +
+        `Toplam: **${toplamSatis} satış** | **₺${Number(toplamCiro).toLocaleString('tr-TR')}** ciro\n\n` +
+        `🛍️ Ürün bazlı:\n${albumStr}\n\n` +
+        (mekanStr ? `📍 Mekan bazlı:\n${mekanStr}\n\n` : '') +
+        (personelStr ? `👤 Personel:\n${personelStr}` : '')
+    };
+  } catch (e) {
+    console.error('fetchSatisAnalizi error:', e);
+    return { text: 'Satış analizi şu an kullanılamıyor.' };
+  }
+}
+
 // ─── İzin Analizi — tarihsel/kişi/aylık/sıralama sorgular (yönetici) ─────────
 async function fetchIzinAnalizi(soru: string, staffMembers: any[]): Promise<{ text: string }> {
   try {
@@ -632,7 +849,7 @@ async function fetchIzinAnalizi(soru: string, staffMembers: any[]): Promise<{ te
   }
 }
 
-function generateAIResponse(q: string, role: string, ozet: AIOzet | null, configMap?: Record<string, RoleConfig>): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' | 'IZIN_GECMISI' | 'BUGUN_IZINLILER' | 'IZIN_ANALIZI' | 'LEAVE_REQUEST' | 'LEAVE_CONFIRM' {
+function generateAIResponse(q: string, role: string, ozet: AIOzet | null, configMap?: Record<string, RoleConfig>): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' | 'IZIN_GECMISI' | 'BUGUN_IZINLILER' | 'IZIN_ANALIZI' | 'SATIS_ANALIZI' | 'ANOMALI_ANALIZI' | 'LEAVE_REQUEST' | 'LEAVE_CONFIRM' {
   const lower = q.toLowerCase();
   const map = configMap ?? ROLE_CONFIG;
   const config = map[role] ?? ROLE_CONFIG['personel'];
@@ -700,6 +917,47 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
     return 'IZIN_GECMISI';
   }
 
+  // Anomali analizi — tarihsel, mekan bazlı, detaylı (yönetici/müdür)
+  if (
+    isAdmin && (
+      lower.includes('anomali geçmiş') || lower.includes('anomali gecmis') ||
+      lower.includes('geçen hafta anomali') || lower.includes('bu hafta anomali') ||
+      lower.includes('bu ay anomali') || lower.includes('geçen ay anomali') ||
+      lower.includes('toplam anomali') || lower.includes('kaç anomali') ||
+      lower.includes('hangi mekan anomali') || lower.includes('en çok anomali') ||
+      lower.includes('en cok anomali') || lower.includes('anomali raporu') ||
+      lower.includes('yazıcı anomali') || lower.includes('yazici anomali') ||
+      lower.includes('stok anomali') ||
+      (lower.includes('anomali') && (
+        lower.includes('ocak') || lower.includes('şubat') || lower.includes('mart') ||
+        lower.includes('nisan') || lower.includes('mayıs') || lower.includes('haziran') ||
+        lower.includes('temmuz') || lower.includes('ağustos') || lower.includes('eylül') ||
+        lower.includes('ekim') || lower.includes('kasım') || lower.includes('aralık') ||
+        lower.includes('dün') || lower.includes('hafta') || lower.includes('ay')
+      ))
+    )
+  ) {
+    return 'ANOMALI_ANALIZI';
+  }
+
+  // Satış analizi — ürün/albüm bazlı veya tarihsel (yönetici/müdür)
+  if (
+    isAdmin && (
+      lower.includes('albüm') || lower.includes('album') ||
+      lower.includes('kare satı') || lower.includes('ürün satı') ||
+      lower.includes('hangi ürün') || lower.includes('hangi albüm') ||
+      lower.includes('en çok satan') || lower.includes('en cok satan') ||
+      lower.includes('satış raporu') || lower.includes('satis raporu') ||
+      lower.includes('geçen hafta satış') || lower.includes('bu hafta satış') ||
+      lower.includes('bu ay satış') || lower.includes('geçen ay satış') ||
+      lower.includes('satış geçmiş') || lower.includes('satis gecmis') ||
+      lower.includes('toplam satış') || lower.includes('günlük satış') ||
+      lower.includes('satış dökümü') || lower.includes('ürün bazlı')
+    )
+  ) {
+    return 'SATIS_ANALIZI';
+  }
+
   // Rol bazlı erişim engeli
   if (config.blockedKeywords.length > 0 && config.blockedKeywords.some(k => lower.includes(k))) {
     return { text: config.blockedMessage };
@@ -765,7 +1023,7 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
     };
   }
 
-  // Anomali
+  // Anomali (bugün — detaylı)
   if (lower.includes('anomali') || lower.includes('sorun') || lower.includes('uyarı') || lower.includes('problem')) {
     if (d.anomaliler.length === 0) {
       return {
@@ -773,8 +1031,19 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
         card: { type: 'anomaly', data: [] },
       };
     }
+    const typeLabel = (t: string) =>
+      t === 'acilis' ? 'Açılış Stok' : t === 'kapanis' ? 'Kapanış Stok' :
+      t === 'yazici_acilis' ? 'Yazıcı Açılış' : t === 'yazici_kapanis' ? 'Yazıcı Kapanış' : t;
+    const stokAnom = d.anomaliler.filter(a => !a.type.startsWith('yazici'));
+    const yaziciAnom = d.anomaliler.filter(a => a.type.startsWith('yazici'));
+    const detaylar = d.anomaliler.map(a =>
+      `  • ${a.mekanEmoji} **${a.mekan}** — ${typeLabel(a.type)}${(a as any).detailStr ? `: ${(a as any).detailStr}` : ''}`
+    ).join('\n');
     return {
-      text: `⚠️ Bugün **${d.anomaliler.length} anomali** tespit edildi: ${d.anomaliler.map(a => `${a.mekanEmoji} ${a.mekan} (${a.type === 'acilis' ? 'Açılış' : 'Kapanış'})`).join(', ')}. Detaylara bak ve önlem al.`,
+      text: `⚠️ Bugün **${d.anomaliler.length} anomali** tespit edildi` +
+        (stokAnom.length ? ` (${stokAnom.length} stok` : '') +
+        (yaziciAnom.length ? `, ${yaziciAnom.length} yazıcı)` : (stokAnom.length ? ')' : '')) +
+        `:\n${detaylar}`,
       card: { type: 'anomaly', data: d.anomaliler },
     };
   }
@@ -816,7 +1085,26 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
     };
   }
 
-  // Kare
+  // Albüm/ürün bazlı satış — bugün (KV ozet'ten)
+  if (
+    lower.includes('albüm') || lower.includes('album') ||
+    lower.includes('hangi ürün') || lower.includes('hangi albüm') ||
+    lower.includes('ürün bazlı') || lower.includes('satış dökümü') ||
+    lower.includes('en çok satan') || lower.includes('en cok satan') ||
+    (lower.includes('kare') && lower.includes('satı'))
+  ) {
+    const dok = d.albumSatisDokumu;
+    if (!dok || dok.length === 0) {
+      return { text: `Bugün için ürün bazlı satış kaydı henüz yok.` };
+    }
+    const liste = dok.map((a, i) => `  ${i + 1}. **${a.product}**: ${a.adet} adet — ₺${Number(a.ciro).toLocaleString('tr-TR')}`).join('\n');
+    const enCok = dok[0];
+    return {
+      text: `🛍️ Bugün ürün bazlı satış dökümü:\n${liste}\n\nEn çok satan: **${enCok.product}** (${enCok.adet} adet)`,
+    };
+  }
+
+  // Kare (albüm karışıklığı için önce albüm kontrolü yapıldı, sonra kare)
   if (lower.includes('kare') || lower.includes('fotoğraf') || lower.includes('çekim sayısı')) {
     return {
       text: d.toplamKare > 0
@@ -2364,6 +2652,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
         mekanBazliStok: ozet.mekanBazliStok,
         anomaliler: ozet.anomaliler,
         personelSiralama: ozet.personelSiralama,
+        albumSatisDokumu: ozet.albumSatisDokumu,
         odemeDagilimi: ozet.odemeDagilimi,
         guncellemeZamani: ozet.guncellemeZamani,
       } : {
@@ -2422,6 +2711,12 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       const izinlilerResult = await fetchBugunIzinliler();
       aiText = izinlilerResult.text;
       aiCard = izinlilerResult.card;
+    } else if (result === 'ANOMALI_ANALIZI') {
+      const anomaliResult = await fetchAnomaliAnalizi(text.trim());
+      aiText = anomaliResult.text;
+    } else if (result === 'SATIS_ANALIZI') {
+      const satisResult = await fetchSatisAnalizi(text.trim());
+      aiText = satisResult.text;
     } else if (result === 'IZIN_ANALIZI') {
       const staff = await getStaffMembers();
       const analizResult = await fetchIzinAnalizi(text.trim(), staff);
