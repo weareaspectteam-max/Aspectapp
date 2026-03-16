@@ -90,7 +90,7 @@ interface AIOzet {
   stokDurum: { alan: string; name: string; count: number; status: string }[];
   mekanBazliStok: { mekanId: string; mekanAdi: string; mekanEmoji: string; stokTipi: string; urunler: { alan: string; name: string; count: number; status: string }[] }[];
   anomaliler: { mekan: string; mekanEmoji: string; type: string; detail: any }[];
-  personelSiralama: { ad: string; ciro: number; satis: number }[];
+  personelSiralama: { ad: string; ciro: number; satis: number; iskonto?: number; brutoCiro?: number; indirimOrani?: number }[];
   albumSatisDokumu?: { product: string; adet: number; ciro: number }[];
   odemeDagilimi: { cash: number; card: number; iban: number; foreign: number };
   callerName: string;
@@ -125,6 +125,10 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
       { icon: '💳', label: 'Ödeme Dağılımı', q: 'Ödeme yöntemleri nasıl dağılmış?' },
       { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
       { icon: '📋', label: 'Anomali Raporu', q: 'Son 30 günlük anomali raporu nedir?' },
+      { icon: '💸', label: 'İndirim Analizi', q: 'Bu ay kimin indirim oranları nedir?' },
+      { icon: '🏠', label: 'Mekan Kiraları', q: 'Mekanlarımızın kira bilgileri nedir?' },
+      { icon: '💲', label: 'Fiyat Listesi', q: 'Albüm ve ürün fiyat listemiz nedir?' },
+      { icon: '⚙️', label: 'Maliyet Özeti', q: 'Aylık sabit giderlerimiz ve malzeme maliyetleri nedir?' },
       { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
       { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
       { icon: '🏖️', label: 'İzin Talebi', q: '__LEAVE_REQUEST__' },
@@ -484,6 +488,107 @@ async function fetchIzinGecmisi(userId: string, userName: string): Promise<{ tex
 }
 
 // ─── AI Response Engine (gerçek KV verisi kullanır) ───────────────────────────
+
+// ─── İndirim Analizi — kişi bazlı, tarihsel, oran sıralaması ────────────────
+async function fetchIndirimAnalizi(soru: string): Promise<{ text: string }> {
+  try {
+    const lower = soru.toLowerCase();
+    const headers = await authHeaders();
+
+    // Tarih aralığı — son 30 gün varsayılan, aylık/haftalık destek
+    const now = new Date();
+    const trOffset = 3 * 60;
+    const nowTR = new Date(now.getTime() + (trOffset - now.getTimezoneOffset()) * 60000);
+    const todayStr = nowTR.toISOString().split('T')[0];
+
+    let baslangic = '', bitis = todayStr, rangeLabel = 'son 30 gün';
+    const AYLAR: Record<string, number> = {
+      'ocak': 0, 'şubat': 1, 'mart': 2, 'nisan': 3, 'mayıs': 4, 'haziran': 5,
+      'temmuz': 6, 'ağustos': 7, 'eylül': 8, 'ekim': 9, 'kasım': 10, 'aralık': 11
+    };
+    const isGecen = lower.includes('geçen') || lower.includes('gecen');
+
+    if (lower.includes('bugün') || lower.includes('bugun')) {
+      baslangic = bitis = todayStr;
+      rangeLabel = 'bugün';
+    } else if (lower.includes('bu hafta') || lower.includes('geçen hafta') || lower.includes('gecen hafta')) {
+      const p = new Date(nowTR);
+      const g = p.getDay();
+      const fark = (isGecen ? 7 : 0) + (g === 0 ? 6 : g - 1);
+      p.setDate(p.getDate() - fark);
+      baslangic = p.toISOString().split('T')[0];
+      const pe = new Date(p); pe.setDate(pe.getDate() + 6);
+      bitis = pe.toISOString().split('T')[0] > todayStr ? todayStr : pe.toISOString().split('T')[0];
+      rangeLabel = isGecen ? 'geçen hafta' : 'bu hafta';
+    } else {
+      const ayAdi = Object.keys(AYLAR).find(a => lower.includes(a));
+      if (lower.includes('bu ay') || lower.includes('geçen ay') || lower.includes('gecen ay') || ayAdi) {
+        const ay = ayAdi ? AYLAR[ayAdi] : nowTR.getMonth();
+        const gercekAy = (isGecen && !ayAdi) ? (ay === 0 ? 11 : ay - 1) : ay;
+        const yil = (isGecen && !ayAdi && gercekAy === 11) ? nowTR.getFullYear() - 1 : nowTR.getFullYear();
+        baslangic = `${yil}-${String(gercekAy + 1).padStart(2, '0')}-01`;
+        const sonGun = new Date(yil, gercekAy + 1, 0).getDate();
+        bitis = `${yil}-${String(gercekAy + 1).padStart(2, '0')}-${sonGun}`;
+        if (bitis > todayStr) bitis = todayStr;
+        rangeLabel = `${Object.keys(AYLAR)[gercekAy]} ${yil}`;
+      } else {
+        const otuz = new Date(nowTR); otuz.setDate(otuz.getDate() - 30);
+        baslangic = otuz.toISOString().split('T')[0];
+      }
+    }
+
+    const url = `${API_BASE}/personel/indirim-istatistik?baslangic=${baslangic}&bitis=${bitis}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) return { text: `İndirim verisi alınamadı (${res.status}).` };
+    const data = await res.json();
+    const liste: any[] = data.personeller || [];
+
+    if (liste.length === 0) {
+      return { text: `📊 **${rangeLabel}** (${baslangic} → ${bitis}) için indirim verisi bulunamadı.` };
+    }
+
+    // Belirli kişi filtresi
+    const kisiFiltreAday = liste.find((p: any) => lower.includes((p.name || '').toLowerCase().split(' ')[0]));
+
+    if (kisiFiltreAday) {
+      const p = kisiFiltreAday;
+      const uzun = p.uzunDonem || {};
+      const kisa = p.kisaDonem || {};
+      return {
+        text: `👤 **${p.name}** — ${rangeLabel} indirim analizi:\n` +
+          `  • Uzun dönem: ${uzun.toplamSatis || 0} işlem | İndirim: ${uzun.indirimliSatisOrani || 0}% | Ort. indirim: %${uzun.ortalamaIndirimYuzde || 0} | Toplam ₺${Number(uzun.toplamIndirimTL || 0).toLocaleString('tr-TR')}\n` +
+          `  • Son ${kisa.gun || 7} gün: ${kisa.toplamSatis || 0} işlem | İndirim: ${kisa.indirimliSatisOrani || 0}% | Ort. indirim: %${kisa.ortalamaIndirimYuzde || 0} | Toplam ₺${Number(kisa.toplamIndirimTL || 0).toLocaleString('tr-TR')}`
+      };
+    }
+
+    // Sıralama türü belirle
+    const sortByTL = lower.includes('toplam') || lower.includes('tutar') || lower.includes('tl') || lower.includes('lira');
+    const sortBy = sortByTL ? 'toplamIndirimTL' : 'ortalamaIndirimYuzde';
+
+    const sirali = [...liste].sort((a: any, b: any) => {
+      const av = a.uzunDonem?.[sortBy] || 0;
+      const bv = b.uzunDonem?.[sortBy] || 0;
+      return bv - av;
+    });
+
+    const enCok = sirali[0];
+    const enAz = sirali[sirali.length - 1];
+
+    const satirlar = sirali.map((p: any, i: number) => {
+      const u = p.uzunDonem || {};
+      return `  ${i + 1}. **${p.name}**: %${u.ortalamaIndirimYuzde || 0} ort. oran | ${u.indirimliSatisOrani || 0}% işlemde indirim | ₺${Number(u.toplamIndirimTL || 0).toLocaleString('tr-TR')} toplam`;
+    }).join('\n');
+
+    return {
+      text: `💸 **${rangeLabel}** personel indirim sıralaması (${sortByTL ? 'toplam TL' : 'oran'} bazlı):\n\n${satirlar}\n\n` +
+        `🔴 En yüksek: **${enCok?.name}** (%${enCok?.uzunDonem?.ortalamaIndirimYuzde || 0})\n` +
+        `🟢 En düşük: **${enAz?.name}** (%${enAz?.uzunDonem?.ortalamaIndirimYuzde || 0})`
+    };
+  } catch (e) {
+    console.error('fetchIndirimAnalizi error:', e);
+    return { text: 'İndirim analizi şu an kullanılamıyor.' };
+  }
+}
 
 // ─── Anomali Analizi — tarihsel, mekan/tip bazlı (yönetici/müdür) ────────────
 async function fetchAnomaliAnalizi(soru: string): Promise<{ text: string }> {
@@ -849,7 +954,7 @@ async function fetchIzinAnalizi(soru: string, staffMembers: any[]): Promise<{ te
   }
 }
 
-function generateAIResponse(q: string, role: string, ozet: AIOzet | null, configMap?: Record<string, RoleConfig>): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' | 'IZIN_GECMISI' | 'BUGUN_IZINLILER' | 'IZIN_ANALIZI' | 'SATIS_ANALIZI' | 'ANOMALI_ANALIZI' | 'LEAVE_REQUEST' | 'LEAVE_CONFIRM' {
+function generateAIResponse(q: string, role: string, ozet: AIOzet | null, configMap?: Record<string, RoleConfig>): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' | 'IZIN_GECMISI' | 'BUGUN_IZINLILER' | 'IZIN_ANALIZI' | 'SATIS_ANALIZI' | 'ANOMALI_ANALIZI' | 'INDIRIM_ANALIZI' | 'LEAVE_REQUEST' | 'LEAVE_CONFIRM' {
   const lower = q.toLowerCase();
   const map = configMap ?? ROLE_CONFIG;
   const config = map[role] ?? ROLE_CONFIG['personel'];
@@ -917,6 +1022,21 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
     return 'IZIN_GECMISI';
   }
 
+  // İndirim analizi — kişi bazlı, tarihsel, oran karşılaştırma (yönetici/müdür)
+  if (
+    isAdmin && (
+      lower.includes('indirim') || lower.includes('iskonto') ||
+      lower.includes('indirimli') || lower.includes('indirim oranı') ||
+      lower.includes('kimin indirim') || lower.includes('indirim kim') ||
+      lower.includes('en çok indirim') || lower.includes('en cok indirim') ||
+      lower.includes('indirim istatistik') || lower.includes('indirim raporu') ||
+      lower.includes('indirim sırala') || lower.includes('indirim ranking') ||
+      lower.includes('discount')
+    )
+  ) {
+    return 'INDIRIM_ANALIZI';
+  }
+
   // Anomali analizi — tarihsel, mekan bazlı, detaylı (yönetici/müdür)
   if (
     isAdmin && (
@@ -982,8 +1102,9 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
         text: `**${d.tarihTR}** için henüz aktif vardiya kaydı yok. Vardiya açılışı yapıldığında satış ve stok verileri burada görünecek.`,
       };
     }
+    const toplamItemAdet = (d.albumSatisDokumu || []).reduce((s: number, a: any) => s + a.adet, 0);
     return {
-      text: `**${d.tarihTR}** — **${d.mekanSayisi} mekanda** toplam **${d.toplamSatisAdet} satış** gerçekleşti. ${bestMekan ? `En yüksek ciro **${bestMekan.emoji} ${bestMekan.name}** mekanından (₺${bestMekan.ciro.toLocaleString('tr-TR')}).` : ''} ${d.anomaliler.length > 0 ? `⚠️ **${d.anomaliler.length} anomali** dikkat bekliyor.` : ''}`,
+      text: `**${d.tarihTR}** — **${d.mekanSayisi} mekanda** toplam **${d.toplamSatisAdet} işlem** (**${toplamItemAdet} ürün**) gerçekleşti. ${bestMekan ? `En yüksek ciro **${bestMekan.emoji} ${bestMekan.name}** mekanından (₺${bestMekan.ciro.toLocaleString('tr-TR')}).` : ''} ${d.anomaliler.length > 0 ? `⚠️ **${d.anomaliler.length} anomali** dikkat bekliyor.` : ''}`,
       card: { type: 'briefing', data: d },
     };
   }
@@ -996,7 +1117,7 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
       };
     }
     return {
-      text: `**${d.tarihTR}** ciro: **₺${d.toplamCiro.toLocaleString('tr-TR')}** — ${d.toplamSatisAdet} satıştan elde edildi. İskonto kaybı **₺${d.toplamIskonto.toLocaleString('tr-TR')}**. ${bestMekan ? `En iyi mekan **${bestMekan.emoji} ${bestMekan.name}** ile ₺${bestMekan.ciro.toLocaleString('tr-TR')}.` : ''}`,
+      text: `**${d.tarihTR}** ciro: **₺${d.toplamCiro.toLocaleString('tr-TR')}** — ${d.toplamSatisAdet} işlemden elde edildi${d.toplamIskonto > 0 ? `, iskonto: **₺${d.toplamIskonto.toLocaleString('tr-TR')}** (liste fiyatı ₺${(d.toplamCiro + d.toplamIskonto).toLocaleString('tr-TR')})` : ''}. ${bestMekan ? `En iyi mekan **${bestMekan.emoji} ${bestMekan.name}** ile ₺${bestMekan.ciro.toLocaleString('tr-TR')}.` : ''}`,
       card: { type: 'profit', data: d },
     };
   }
@@ -1020,6 +1141,56 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
           ? `Stok genel iyi durumda. **${az.map(s => s.name).join(', ')}** biraz azalmış — takipte tut.`
           : `Tüm ürünler yeterli seviyede. 👍`,
       card: { type: 'stock', data: d.stokDurum },
+    };
+  }
+
+  // Mekan detay / kira bilgisi (KV motoru — hızlı cevap, admin/yönetici)
+  if (
+    isAdmin && (
+      lower.includes('kira') || lower.includes('mekan bilgi') ||
+      lower.includes('tam sayfa') || lower.includes('yarım sayfa') ||
+      lower.includes('baskı tipi') || lower.includes('fotoğraf fiyatı') ||
+      lower.includes('çalışma saati') || lower.includes('mekanlar hakkında') ||
+      lower.includes('mekan detay') || lower.includes('mekan özellikleri')
+    ) && !lower.includes('indirim') && !lower.includes('anomali')
+  ) {
+    const mekanlar = d.mekanlar || [];
+    if (mekanlar.length === 0) {
+      return { text: `Mekan verisi henüz yüklenemedi. OpenAI modunu açık tutarak daha detaylı bilgi alabilirsin.` };
+    }
+    // Mekanlar listesi — sadece bugünkü operasyonel veri var, detaylar için OpenAI gerekli
+    return {
+      text: `📍 Bu soru için **mekan detay bilgileri** (kira, baskı tipi, fotoğraf fiyatı) OpenAI üzerinden yanıtlanabilir — şu an **${mekanlar.length} aktif mekanda** operasyon devam ediyor.\n\nOpenAI açıkken aynı soruyu sor; kira, baskı tipi ve tüm detayları verebilirim! 🔍`,
+      card: { type: 'briefing', data: d },
+    };
+  }
+
+  // Fiyat listesi (KV motoru — kısa cevap)
+  if (
+    isAdmin && (
+      lower.includes('fiyat listesi') || lower.includes('fiyat listemi') ||
+      lower.includes('albüm fiyat') || lower.includes('album fiyat') ||
+      lower.includes('kaç kare ne kadar') || lower.includes('ürün fiyatı') ||
+      lower.includes('ribon fiyat') || lower.includes('paspartu fiyat')
+    )
+  ) {
+    return {
+      text: `💲 Fiyat listeleri mekan bazlı (photoPrice × kare adedi) belirlenir. OpenAI modunu açık bırakarak "Fiyat listesi nedir?" diye sorduğunda her mekanın tam fiyat tablosunu görebilirsin. 📊`,
+    };
+  }
+
+  // Maliyet / malzeme sorguları (KV motoru — kısa cevap)
+  if (
+    isAdmin && (
+      lower.includes('maliyet') || lower.includes('malzeme') ||
+      lower.includes('kağıt fiyatı') || lower.includes('sabit gider') ||
+      lower.includes('aylık gider') || lower.includes('maas') || lower.includes('maaş') ||
+      lower.includes('döviz kuru') || lower.includes('kur bilgisi') ||
+      lower.includes('albüm maliyeti') || lower.includes('üretim maliyet')
+    )
+  ) {
+    return {
+      text: `⚙️ Maliyet verileri (albüm üretim maliyetleri, kağıt, giderler, maaşlar) OpenAI üzerinden detaylı yanıtlanır. OpenAI modunu açık bırakarak "Aylık sabit giderlerimiz ne kadar?" veya "7 kare albümün maliyeti ne?" diye sorabilirsin. 📊`,
     };
   }
 
@@ -1056,6 +1227,27 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
     return {
       text: `Bugünün şampiyonu **${bestMekan.emoji} ${bestMekan.name}**! ₺${bestMekan.ciro.toLocaleString('tr-TR')} ciro ile ${bestMekan.satisAdet} satış yaptı.${bestMekan.kapanisYapildi ? ' Vardiya kapanışı tamamlandı.' : ' Vardiya devam ediyor.'}`,
       card: { type: 'briefing', data: d },
+    };
+  }
+
+  // İndirim — bugün, kişi/oran bazlı
+  if (lower.includes('indirim') || lower.includes('iskonto')) {
+    if (d.personelSiralama.length === 0 || d.toplamIskonto === 0) {
+      return { text: `Bugün hiç indirimli satış yapılmamış. Tüm satışlar liste fiyatından gerçekleşmiş.` };
+    }
+    const sirali = [...d.personelSiralama]
+      .filter((p: any) => (p.iskonto || 0) > 0)
+      .sort((a: any, b: any) => (b.indirimOrani || 0) - (a.indirimOrani || 0));
+    if (sirali.length === 0) {
+      return { text: `Bugün indirimli satış yapan personel yok.` };
+    }
+    const liste = sirali.map((p: any) =>
+      `  • **${p.ad}**: %${p.indirimOrani || 0} ort. oran | ₺${Number(p.iskonto || 0).toLocaleString('tr-TR')} iskonto / ₺${Number(p.brutoCiro || p.ciro).toLocaleString('tr-TR')} brüt`
+    ).join('\n');
+    const enCok = sirali[0];
+    return {
+      text: `💸 Bugün toplam **₺${d.toplamIskonto.toLocaleString('tr-TR')} iskonto** verildi (brüt ₺${(d.toplamCiro + d.toplamIskonto).toLocaleString('tr-TR')} → net ₺${d.toplamCiro.toLocaleString('tr-TR')}).\n\nPersonel indirim sıralaması:\n${liste}\n\n🔴 En yüksek oran: **${enCok.ad}** (%${enCok.indirimOrani || 0})`,
+      card: { type: 'personnel', data: d },
     };
   }
 
@@ -2711,6 +2903,9 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       const izinlilerResult = await fetchBugunIzinliler();
       aiText = izinlilerResult.text;
       aiCard = izinlilerResult.card;
+    } else if (result === 'INDIRIM_ANALIZI') {
+      const indirimResult = await fetchIndirimAnalizi(text.trim());
+      aiText = indirimResult.text;
     } else if (result === 'ANOMALI_ANALIZI') {
       const anomaliResult = await fetchAnomaliAnalizi(text.trim());
       aiText = anomaliResult.text;
