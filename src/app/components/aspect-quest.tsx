@@ -2403,9 +2403,10 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
         <div ref={wrapRef} className="flex-1 overflow-hidden relative" style={{ minHeight: 0 }}>
           <canvas ref={canvasRef} width={CW} height={CH} style={{ imageRendering: 'pixelated', display: 'block' }} />
 
-          {/* Cheat code input — bottom-right corner of canvas area */}
-          <div className="absolute bottom-28 right-3 z-30 flex items-center gap-1">
-            <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>🔒</span>
+          {/* Cheat code input — top-right corner, clearly visible */}
+          <div className="absolute top-2 right-2 z-30 flex items-center gap-1 px-2 py-1 rounded-lg"
+            style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.3)' }}>
+            <span style={{ fontSize: 14 }}>🔒</span>
             <input
               type="text"
               value={cheatInput}
@@ -2423,17 +2424,18 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
                 }
                 if (val.length > 10) setCheatInput(val.slice(-6));
               }}
-              placeholder="···"
+              placeholder="cheat..."
               className="bg-transparent outline-none"
               style={{
-                width: 44,
-                color: 'rgba(255,255,255,0.28)',
-                caretColor: 'rgba(255,255,255,0.35)',
-                border: 'none',
-                borderBottom: '1px dotted rgba(255,255,255,0.18)',
-                WebkitTapHighlightColor: 'transparent',
-                fontSize: 10,
-                letterSpacing: 3,
+                width: 60,
+                color: 'rgba(255,255,255,0.8)',
+                caretColor: '#fff',
+                borderTop: 'none',
+                borderLeft: 'none',
+                borderRight: 'none',
+                borderBottom: 'none',
+                fontSize: 12,
+                letterSpacing: 2,
               }}
               autoComplete="off"
               autoCorrect="off"
