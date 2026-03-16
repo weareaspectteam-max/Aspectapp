@@ -6746,6 +6746,176 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
         console.log("[AI] Maliyet veri hatası:", e);
       }
 
+      // ── Merkez Depo Stok ──
+      let depoStokStr = "  Veri yok.";
+      try {
+        const depoStok: any = await kv.get("depo_stok") || {};
+        const albumEtikDepo: Record<string, string> = {
+          album3: "3 Kare", album5: "5 Kare", album7: "7 Kare", album9: "9 Kare",
+          album11: "11 Kare", album13: "13 Kare", album15: "15 Kare",
+          paspartu: "Paspartu", ribon: "Ribon (takım)"
+        };
+        const depoLines = Object.entries(albumEtikDepo).map(([key, label]) => {
+          const adet = Number(depoStok[key]) || 0;
+          return `  • ${label}: ${adet} adet`;
+        });
+        if (depoLines.length > 0) depoStokStr = depoLines.join("\n");
+      } catch (e) { console.log("[AI] Depo stok hatası:", e); }
+
+      // ── İşletme Gider Kayıtları (son 30 gün) ──
+      let isletmeGiderStr = "  Veri yok.";
+      try {
+        const tumGiderlerAI: any[] = await kv.getByPrefix("isletme_gider_") || [];
+        if (tumGiderlerAI.length > 0) {
+          const son30gAI = new Date(); son30gAI.setDate(son30gAI.getDate() - 30);
+          const son30StrAI = son30gAI.toISOString().split("T")[0];
+          const filtreGiderAI = tumGiderlerAI.filter((g: any) => (g.date || g.created_at || "") >= son30StrAI);
+          const siraliGiderAI = filtreGiderAI.sort((a: any, b: any) => (b.date || "").localeCompare(a.date || ""));
+          const toplamGiderAI = filtreGiderAI.reduce((s: number, g: any) => s + (Number(g.amount) || 0), 0);
+          const katBazli: Record<string, number> = {};
+          for (const g of filtreGiderAI) {
+            const kat = g.odemeTipi || g.category || "Diğer";
+            katBazli[kat] = (katBazli[kat] || 0) + (Number(g.amount) || 0);
+          }
+          const katStr = Object.entries(katBazli).sort(([,a],[,b]) => b - a)
+            .map(([kat, top]) => `${kat}: ₺${Number(top).toLocaleString("tr-TR")}`).join(" | ");
+          const sonKayitlarGider = siraliGiderAI.slice(0, 20).map((g: any) =>
+            `  • ${(g.date || g.created_at || "?").slice(0,10)} — ${g.description || g.category || "?"}: ₺${Number(g.amount || 0).toLocaleString("tr-TR")}${g.currency && g.currency !== "TRY" ? ` ${g.currency}` : ""}${g.personelAdi ? ` (${g.personelAdi})` : ""}`
+          ).join("\n");
+          isletmeGiderStr = `Son 30 gün toplam: ₺${toplamGiderAI.toLocaleString("tr-TR")} | Kategori: ${katStr}\nSon kayıtlar:\n${sonKayitlarGider}`;
+        }
+      } catch (e) { console.log("[AI] İşletme gider hatası:", e); }
+
+      // ── Ekipman / Malzeme Listesi ──
+      let ekipmanStr = "  Veri yok.";
+      try {
+        const tumEkipmanlarAI: any[] = await kv.getByPrefix("ekipman_") || [];
+        if (tumEkipmanlarAI.length > 0) {
+          const statusLabelAI: Record<string, string> = {
+            active: "✅ Aktif", maintenance: "🔧 Bakımda", broken: "❌ Arızalı", retired: "⬛ Emekli"
+          };
+          const katEkipman: Record<string, any[]> = {};
+          for (const e of tumEkipmanlarAI) {
+            const kat = e.category || "Diğer";
+            if (!katEkipman[kat]) katEkipman[kat] = [];
+            katEkipman[kat].push(e);
+          }
+          const ekipmanLines: string[] = [];
+          for (const [kat, liste] of Object.entries(katEkipman)) {
+            const aktifSayisi = liste.filter((e: any) => e.status === "active").length;
+            const arizaliSayisi = liste.filter((e: any) => e.status === "broken").length;
+            ekipmanLines.push(`  ${kat} — ${liste.length} adet (${aktifSayisi} aktif${arizaliSayisi > 0 ? `, ${arizaliSayisi} arızalı` : ""}):`);
+            for (const e of liste.slice(0, 25)) {
+              const durum = statusLabelAI[e.status] || e.status || "?";
+              ekipmanLines.push(`    - ${e.brand || ""} ${e.model || ""} | S/N: ${e.serialNumber || "?"} | Konum: ${e.location || "?"} | ${durum}${e.notes ? ` | Not: ${e.notes}` : ""}`);
+            }
+          }
+          ekipmanStr = ekipmanLines.join("\n");
+        }
+      } catch (e) { console.log("[AI] Ekipman listesi hatası:", e); }
+
+      // ── Mekan Ziyaret Kayıtları (son 90 gün) ──
+      let ziyaretStr = "  Veri yok.";
+      try {
+        const tumZiyaretlerAI: any[] = await kv.getByPrefix("mekan_ziyaret_") || [];
+        if (tumZiyaretlerAI.length > 0) {
+          const son90z = new Date(); son90z.setDate(son90z.getDate() - 90);
+          const son90zStr = son90z.toISOString().split("T")[0];
+          const filtreZ = tumZiyaretlerAI
+            .filter((z: any) => (z.visitDate || z.date || z.created_at || "") >= son90zStr)
+            .sort((a: any, b: any) => (b.visitDate || b.date || "").localeCompare(a.visitDate || a.date || ""));
+          if (filtreZ.length > 0) {
+            ziyaretStr = filtreZ.slice(0, 20).map((z: any) =>
+              `  • ${(z.visitDate || z.date || "?").slice(0,10)} — ${z.locationName || z.mekanAdi || z.location || "?"}: ${z.notes || z.note || z.description || "Not yok"} (Ziyaretçi: ${z.visitorName || z.created_by || "?"})`
+            ).join("\n");
+          } else {
+            ziyaretStr = "  Son 90 günde ziyaret kaydı yok.";
+          }
+        }
+      } catch (e) { console.log("[AI] Ziyaret hatası:", e); }
+
+      // ── Müdür Raporları (son 90 gün) ──
+      let mudurRaporStr = "  Veri yok.";
+      try {
+        const tumRaporlarAI: any[] = await kv.getByPrefix("mudur_rapor_") || [];
+        if (tumRaporlarAI.length > 0) {
+          const son90r = new Date(); son90r.setDate(son90r.getDate() - 90);
+          const son90rStr = son90r.toISOString().split("T")[0];
+          const filtreR = tumRaporlarAI
+            .filter((r: any) => (r.created_at || r.startDate || "") >= son90rStr)
+            .sort((a: any, b: any) => (b.created_at || b.startDate || "").localeCompare(a.created_at || a.startDate || ""));
+          if (filtreR.length > 0) {
+            mudurRaporStr = filtreR.slice(0, 20).map((r: any) =>
+              `  • ${(r.created_at || r.startDate || "?").slice(0,10)} — Müdür: ${r.managerName || "?"} | Başlık: ${r.title || r.type || r.reportType || "?"} | ${r.summary || r.notes || r.content || r.description || "İçerik yok"}`
+            ).join("\n");
+          } else {
+            mudurRaporStr = "  Son 90 günde müdür raporu yok.";
+          }
+        }
+      } catch (e) { console.log("[AI] Müdür raporu hatası:", e); }
+
+      // ── Aktif Duyurular ──
+      let duyuruStr = "  Aktif duyuru yok.";
+      try {
+        const tumDuyurularAI: any[] = await kv.getByPrefix("announcement_") || [];
+        if (tumDuyurularAI.length > 0) {
+          const bugunDuyuru = new Date().toISOString().split("T")[0];
+          const aktifDuyurular = tumDuyurularAI
+            .filter((d: any) => {
+              if (d.isActive === false) return false;
+              const bitis = d.endDate || d.expiresAt || "";
+              if (bitis && bitis < bugunDuyuru) return false;
+              return true;
+            })
+            .sort((a: any, b: any) => (b.created_at || "").localeCompare(a.created_at || ""));
+          if (aktifDuyurular.length > 0) {
+            duyuruStr = aktifDuyurular.slice(0, 15).map((d: any) =>
+              `  • [${d.type || d.category || d.targetRole || "Genel"}] ${d.title || d.subject || "?"}: ${d.content || d.message || d.description || d.body || ""} (${(d.created_at || "?").slice(0,10)})`
+            ).join("\n");
+          }
+        }
+      } catch (e) { console.log("[AI] Duyuru hatası:", e); }
+
+      // ── Stok Aktarım Geçmişi (son 30 gün) ──
+      let stokAktarimStr = "";
+      try {
+        const tumAktarimlarAI: any[] = await kv.getByPrefix("stok_aktarim_") || [];
+        const son30a = new Date(); son30a.setDate(son30a.getDate() - 30);
+        const son30aStr = son30a.toISOString().split("T")[0];
+        const filtreA = tumAktarimlarAI
+          .filter((a: any) => (a.created_at || a.tarih || "") >= son30aStr && a.status !== "rejected")
+          .sort((a: any, b: any) => (b.created_at || "").localeCompare(a.created_at || ""));
+        if (filtreA.length > 0) {
+          stokAktarimStr = `\nSTOK AKTARIM GEÇMİŞİ (son 30 gün — ${filtreA.length} kayıt):\n` +
+            filtreA.slice(0, 15).map((a: any) => {
+              const urunlerA = Array.isArray(a.items)
+                ? a.items.map((it: any) => `${it.product || it.name || "?"}: ${it.quantity || it.adet || "?"}adet`).join(", ")
+                : (a.urun || "");
+              return `  • ${(a.created_at || a.tarih || "?").slice(0,10)} — ${a.fromName || a.from || a.kaynakAdi || "?"} → ${a.toName || a.to || a.hedefAdi || "?"}: ${urunlerA} | ${a.status || a.durum || "?"}`;
+            }).join("\n");
+        }
+      } catch (e) { console.log("[AI] Stok aktarım hatası:", e); }
+
+      // ── Stok Ekleme Geçmişi (son 30 gün) ──
+      let stokEklemeStr = "";
+      try {
+        const tumEklemelerAI: any[] = await kv.getByPrefix("stok_ekleme_") || [];
+        const son30e = new Date(); son30e.setDate(son30e.getDate() - 30);
+        const son30eStr = son30e.toISOString().split("T")[0];
+        const filtreE = tumEklemelerAI
+          .filter((e: any) => (e.created_at || e.tarih || "") >= son30eStr)
+          .sort((a: any, b: any) => (b.created_at || "").localeCompare(a.created_at || ""));
+        if (filtreE.length > 0) {
+          stokEklemeStr = `\nSTOK EKLEME GEÇMİŞİ (son 30 gün — ${filtreE.length} kayıt):\n` +
+            filtreE.slice(0, 15).map((e: any) => {
+              const urunlerE = Array.isArray(e.items)
+                ? e.items.map((it: any) => `${it.product || it.name || "?"}: ${it.quantity || it.adet || "?"}adet`).join(", ")
+                : (e.urun || "");
+              return `  • ${(e.created_at || e.tarih || "?").slice(0,10)} — ${e.toName || e.mekanAdi || e.hedefAdi || "Depo"}: ${urunlerE} (Ekleyen: ${e.created_by || "?"})`;
+            }).join("\n");
+        }
+      } catch (e) { console.log("[AI] Stok ekleme hatası:", e); }
+
       if (ozet) {
         const mekanlarStr = Array.isArray(ozet.mekanlar)
           ? ozet.mekanlar.map((m: any) =>
@@ -6903,6 +7073,9 @@ ${stokStr}
 MEKAN BAZLI STOK DETAYI:
 ${mekanStokStr}
 
+MERKEZ DEPO STOĞU:
+${depoStokStr}
+
 ANOMALİLER (bugün):
 ${anomaliStr}
 ${gecmisAnomaliStr}
@@ -6930,12 +7103,32 @@ ${albumFiyatStr}
 
 MALİYET / MALZEME YÖNETİMİ:
 ${maliyetStr}
+
+İŞLETME GİDER KAYITLARI (son 30 gün):
+${isletmeGiderStr}
+
+EKİPMAN / MALZEME LİSTESİ:
+${ekipmanStr}
+
+MEKAN ZİYARET KAYITLARI (son 90 gün):
+${ziyaretStr}
+
+MÜDÜR RAPORLARI (son 90 gün):
+${mudurRaporStr}
+
+AKTİF DUYURULAR:
+${duyuruStr}
+${stokAktarimStr}
+${stokEklemeStr}
 --- VERİ SONU ---`;
       } else {
         // Ozet yoksa sadece izin + temel mekan/maliyet bilgisi ver
         ozetContext = `
 --- YÖNETİCİ VERİLERİ ---
 Bugün için satış/stok verisi henüz girilmemiş veya yüklenmemiş.
+
+MERKEZ DEPO STOĞU:
+${depoStokStr}
 
 MEKAN DETAYLARI (kira, fiyat, baskı tipi):
 ${mekanDetayStr}
@@ -6945,6 +7138,23 @@ ${albumFiyatStr}
 
 MALİYET / MALZEME YÖNETİMİ:
 ${maliyetStr}
+
+İŞLETME GİDER KAYITLARI (son 30 gün):
+${isletmeGiderStr}
+
+EKİPMAN / MALZEME LİSTESİ:
+${ekipmanStr}
+
+MEKAN ZİYARET KAYITLARI (son 90 gün):
+${ziyaretStr}
+
+MÜDÜR RAPORLARI (son 90 gün):
+${mudurRaporStr}
+
+AKTİF DUYURULAR:
+${duyuruStr}
+${stokAktarimStr}
+${stokEklemeStr}
 
 BUGÜN İZİNLİ PERSONEL:
 ${izinlerStr}
@@ -7093,13 +7303,19 @@ ${gorevStr}
     const systemPrompt = `Sen "Aspect AI" adlı bir turistik fotoğrafçılık işletmesi asistanısın. İşletme adı: Aspect Operations.
 Kullanıcı: ${userName || "Kullanıcı"} | Rol: ${userRole || "personel"}
 Türkçe yanıt ver. Kısa ve net ol. Sayısal verileri kullanarak somut cevaplar ver. Markdown bold (**) kullanabilirsin.
-STOK SORULARI: "Genel stok" veya "toplam stok" sorulunca GENEL STOK bölümünü kullan. "[Mekan adı] stok" veya "[Mekan adı] stoğu" gibi mekan adı geçen sorularda MEKAN BAZLI STOK DETAYI bölümünü kullan. Her iki bölüm de ayrıdır — karıştırma.
+STOK SORULARI: "Genel stok" veya "toplam stok" sorulunca GENEL STOK bölümünü kullan. "[Mekan adı] stok" veya "[Mekan adı] stoğu" gibi mekan adı geçen sorularda MEKAN BAZLI STOK DETAYI bölümünü kullan. "Depo stok", "depoda kaç" veya "merkez depo" gibi sorularda MERKEZ DEPO STOĞU bölümünü kullan. Her bölüm ayrıdır — karıştırma.
 SATIŞ VE ÜRÜN SORULARI: Albüm tiplerini (3 Kare, 5 Kare, 7 Kare, 9 Kare, 11 Kare, 13 Kare, 15 Kare, Ribon, Paspartu) tanıyorsun. "BUGÜN ÜRÜN/ALBÜM BAZLI SATIŞ DÖKÜMÜ" bölümünden bugünün verilerini, "SON 7 GÜN SATIŞ ÖZETİ" bölümünden geçmiş hafta verisini kullan.
-İNDİRİM SORULARI: "PERSONEL SIRALAMASI" bölümünde her personelin Net ciro, İskonto ₺ ve indirim yüzdesi (%oran) var. "Kimin indirim oranı en yüksek?", "Ahmet bugün ne kadar indirim yaptı?", "Toplam iskonto ne kadar?" gibi soruları bu veriden cevaplayabilirsin. Tarihsel/dönemsel indirim analizleri için ayrıca detaylı veri çekilip sunulacak.
+İNDİRİM SORULARI: "PERSONEL SIRALAMASI" bölümünde her personelin Net ciro, İskonto ₺ ve indirim yüzdesi (%oran) var. "Kimin indirim oranı en yüksek?", "Ahmet bugün ne kadar indirim yaptı?", "Toplam iskonto ne kadar?" gibi soruları bu veriden cevaplayabilirsin.
 MEKAN SORULARI: "MEKAN DETAYLARI" bölümünde her mekanın fotoğraf birim fiyatı, baskı tipi (tam/yarım sayfa), kağıt tipi, yıllık/aylık/günlük kira ve çalışma saatleri var. "Kaç mekanda tam sayfa kullanıyoruz?", "En pahalı mekan hangisi?", "Aylık toplam kira ne kadar?" sorularını bu veriden cevaplayabilirsin.
 FİYAT SORULARI: "ALBÜM/ÜRÜN SATIŞ FİYAT LİSTESİ" bölümünde mekan bazlı tüm albüm fiyatları var (1 Kare, 3 Kare, … 15 Kare). "3 kare ne kadar?", "Hangi mekanda fiyatlar farklı?" sorularını cevaplayabilirsin.
 MALİYET SORULARI: "MALİYET / MALZEME YÖNETİMİ" bölümünde albüm üretim maliyetleri (tam/yarım boy, döviz cinsinden), kağıt/malzeme maliyetleri, düzenli giderler ve maaş listesi var. "Bir 7 kare albümün maliyeti ne?", "Aylık sabit giderimiz ne kadar?", "Kur ne?", "En pahalı kağıt hangisi?" sorularını bu veriden cevaplayabilirsin. Satış fiyatı ile üretim maliyetini karşılaştırarak marj da hesaplayabilirsin.
-ANOMALİ SORULARI: "ANOMALİLER (bugün)" bölümünden bugünkü anomalileri — stok farkları (hangi ürün, kaç adet artı/eksi) ve yazıcı sayaç farklılıkları dahil — detaylıca cevaplayabilirsin. "SON 30 GÜN ANOMALİ GEÇMİŞİ" bölümünden tarihsel anomali sorgularını yanıtla. Anomali tiplerini biliyorsun: Açılış Stok (sayım farkı), Kapanış Stok (beklenen ile gerçek fark), Yazıcı Açılış (sayaç tutarsızlığı), Yazıcı Kapanış (basılan kare ile satış farkı).
+İŞLETME GİDER SORULARI: "İŞLETME GİDER KAYITLARI" bölümünde son 30 günün fiili harcama kayıtları var (kategori bazlı toplam + tek tek kayıtlar). "Bu ay toplam ne kadar harcadık?", "En büyük gider kalemi nedir?", "Prim ödemeleri ne kadar tuttu?", "Personel giderleri toplamı?" gibi soruları bu veriden cevaplayabilirsin.
+EKİPMAN SORULARI: "EKİPMAN / MALZEME LİSTESİ" bölümünde tüm ekipmanların kategori, marka/model, seri numarası, konum ve durumu (aktif/bakımda/arızalı/emekli) var. "Hangi mekanın yazıcısı arızalı?", "Kaç adet kamera var?", "Bakımdaki ekipmanlar neler?", "Toplam kaç ekipman var?" sorularını bu veriden cevaplayabilirsin.
+ZİYARET SORULARI: "MEKAN ZİYARET KAYITLARI" bölümünde son 90 günün mekan ziyaret notları ve tarihleri var. "Son mekan ziyareti ne zamandı?", "Hangi mekanlar ziyaret edildi?", "Ziyaret notları neler?" sorularını cevaplayabilirsin.
+MÜDÜR RAPORU SORULARI: "MÜDÜR RAPORLARI" bölümünde son 90 günün müdür raporları var. "Son raporda ne yazıyor?", "Hangi müdür kaç rapor yazdı?", "Bu ay rapor var mı?" sorularını cevaplayabilirsin.
+DUYURU SORULARI: "AKTİF DUYURULAR" bölümünde şu an yürürlükteki tüm duyurular var. "Aktif duyurular neler?", "Yeni bir duyuru var mı?", "Hangi role duyuru yapılmış?" sorularını cevaplayabilirsin.
+STOK HAREKETİ SORULARI: "STOK AKTARIM GEÇMİŞİ" bölümünde son 30 günün mekanlar arası stok transferleri var. "STOK EKLEME GEÇMİŞİ" bölümünde ise depoya veya mekanlara yapılan stok eklemeleri var. "Son 30 günde depoya ne eklendi?", "Mekanlar arası aktarımlar neler?", "Kim stok aktardı?" sorularını cevaplayabilirsin.
+ANOMALİ SORULARI: "ANOMALİLER (bugün)" bölümünden bugünkü anomalileri — stok farkları ve yazıcı sayaç farklılıkları dahil — detaylıca cevaplayabilirsin. "SON 30 GÜN ANOMALİ GEÇMİŞİ" bölümünden tarihsel anomali sorgularını yanıtla. Anomali tipleri: Açılış Stok (sayım farkı), Kapanış Stok (beklenen ile gerçek fark), Yazıcı Açılış (sayaç tutarsızlığı), Yazıcı Kapanış (basılan kare ile satış farkı).
 İZİN SORULARI: "İZİN GEÇMİŞİ" bölümünden geçmiş tarihli izin sorgularını cevaplayabilirsin — tarih aralığı, kişi adı veya ay bazlı filtreleyerek yanıtla.${rolKisitlamasi}
 ${ozetContext}
 ${systemContext || ""}`;
