@@ -217,7 +217,7 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
       { speaker: 'Necati Abi', text: 'Kardeşlerim arkanızdayım — ama suya girmeyin, yüksekte kalın!', portrait: 'necati' },
       { speaker: 'Özgür', text: 'Su yükseliyor. Platformlara atla, yukarıda kal. Ve Büşra\'ya dikkat.', portrait: 'ozgur' },
       { speaker: 'Büşra', text: 'Özgür! Bu ne saçmalık? Burada ne arıyorsun sen?!', portrait: 'busra' },
-      { speaker: 'Özgür', text: 'Merhaba ortağım... kamera... fotoğraf... iş gereği...', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: 'Merhaba Büşra... kamera... fotoğraf... iş gereği...', portrait: 'ozgur' },
       { speaker: 'Büşra', text: 'İş gereği?! Su bastı mekanı, sen fotoğraf çekiyorsun!', portrait: 'busra' },
     ],
     boss_intro: [
@@ -228,7 +228,7 @@ const LEVEL_DIALOGS: LevelDialogSet[] = [
     boss_win: [
       { speaker: 'Büşra', text: 'Tamam tamam. Hakkını vereyim. İyi kaçtın.', portrait: 'busra' },
       { speaker: 'Büşra', text: 'Ama bir daha burayı su basarsa seni çağırıyorum. Sen de geleceksin!', portrait: 'busra' },
-      { speaker: 'Özgür', text: '...Tabii ki gelirim ortağım. 😅', portrait: 'ozgur' },
+      { speaker: 'Özgür', text: '...Tabii ki gelirim Büşra. 😅', portrait: 'ozgur' },
     ],
   },
   // Level 4: Çalış Plajı (Tanrıverdi boss)
@@ -1183,9 +1183,10 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
       if (e.x < e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); }
       if (e.x + e.w > e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); }
 
-      // Boss attacks
+      // Boss attacks — only when player is close enough (within 400px)
+      const bossDistToPlayer = Math.abs(gs.px - (e.x + e.w / 2));
       if (e.attackTimer !== undefined) {
-        e.attackTimer--;
+        if (bossDistToPlayer < 400) e.attackTimer--;
         if (e.attackTimer <= 0) {
           // Phase 2 (below 50% HP): much faster attacks
           const attackInterval = (e.hp! < e.maxHp! * 0.5) ? 55 : 90;
@@ -1400,8 +1401,9 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
     // ── Shockwave ─────────────────────────────────────────────────────────
     if (gs.shockwaveTimer > 0) {
       gs.shockwaveTimer--;
-      if (gs.pinv === 0) {
-        // shockwave hits if player is on ground
+      const swDist = Math.abs(gs.px - gs.shockwaveX);
+      if (gs.pinv === 0 && swDist < 380) {
+        // shockwave hits if player is on ground and within range
         if (gs.ponG) {
           gs.pinv = 80; if (!godModeRef.current) gs.lives--;
           spawnSparks(gs, gs.px, gs.py, '#FF4444', 8);
