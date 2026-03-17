@@ -7,10 +7,11 @@ import * as kv from "./kv_store.tsx";
 
 // ── Sadece gerçek mekan objelerini döndüren helper ──────────────────────────
 // kv.getByPrefix("mekan_") çağrısı "mekan_ziyaret_*" kayıtlarını da eşleştirir.
-// Gerçek mekan objeleri her zaman `printType` ve `photoPrice` alanına sahiptir.
+// Gerçek mekan objeleri `name` ve `emoji` alanına sahiptir; ziyaret kayıtları sahip değildir.
+// `printType` bazı mekanlarda henüz set edilmemiş olabilir, bu yüzden o koşula bağlamıyoruz.
 const getMekanlar = async (): Promise<any[]> => {
   const all: any[] = await kv.getByPrefix("mekan_") || [];
-  return all.filter((m: any) => m && m.name && typeof m.photoPrice !== "undefined" && typeof m.printType !== "undefined");
+  return all.filter((m: any) => m && m.name && m.emoji);
 };
 
 const app = new Hono();
