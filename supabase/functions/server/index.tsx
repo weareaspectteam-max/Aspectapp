@@ -1254,6 +1254,7 @@ app.put("/make-server-4da0b637/rotasyon/gorevler/:id", async (c) => {
 
     // Personel değişiklik bildirimleri
     if (['sent', 'revised'].includes(task.status || '')) {
+      const oldStatus = existing.status || 'draft';
       const oldPersonnelIds = new Set((existing.personnel || []).map((p: any) => p.id));
       const newPersonnelIds = new Set((task.personnel || []).map((p: any) => p.id));
       const dateStr = task.date || 'Bilinmeyen Tarih';
@@ -1261,9 +1262,12 @@ app.put("/make-server-4da0b637/rotasyon/gorevler/:id", async (c) => {
       const oldLocation = existing.location || location;
       const oldDate = existing.date || dateStr;
 
+      // draft → sent geçişi: TÜM personeli bildir (daha önce bildirim almadılar)
+      const statusBecameSent = ['draft'].includes(oldStatus) && task.status === 'sent';
+
       for (const p of (task.personnel || [])) {
         if (!p.id) continue;
-        if (!oldPersonnelIds.has(p.id)) {
+        if (statusBecameSent || !oldPersonnelIds.has(p.id)) {
           await createNotification(p.id, 'rotation_assigned', 'Yeni Görev Atandı',
             `${dateStr} — ${location} görevine atandınız.`,
             { taskId: id, date: task.date, location: task.location }
@@ -1275,13 +1279,16 @@ app.put("/make-server-4da0b637/rotasyon/gorevler/:id", async (c) => {
           );
         }
       }
-      for (const p of (existing.personnel || [])) {
-        if (!p.id) continue;
-        if (!newPersonnelIds.has(p.id)) {
-          await createNotification(p.id, 'rotation_removed', 'Görevden Alındınız',
-            `${oldDate} — ${oldLocation} görevi güncellendi, bu görevde yer almıyorsunuz.`,
-            { taskId: id, date: oldDate, location: oldLocation }
-          );
+      // Görevden çıkarılanlar (draft→sent geçişinde değil)
+      if (!statusBecameSent) {
+        for (const p of (existing.personnel || [])) {
+          if (!p.id) continue;
+          if (!newPersonnelIds.has(p.id)) {
+            await createNotification(p.id, 'rotation_removed', 'Görevden Alındınız',
+              `${oldDate} — ${oldLocation} görevi güncellendi, bu görevde yer almıyorsunuz.`,
+              { taskId: id, date: oldDate, location: oldLocation }
+            );
+          }
         }
       }
     }
