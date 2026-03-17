@@ -746,62 +746,59 @@ function SubAccordion({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1">
+    <div style={{ borderRadius: 14, overflow: 'hidden', border: open ? `1px solid ${color}40` : `1px solid ${color}18`, background: open ? `${color}0d` : `${color}07`, transition: 'all 0.2s' }}>
       {/* Başlık butonu */}
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-3 rounded-xl transition-all"
-        style={{
-          padding:    '9px 11px',
-          background: open ? `${color}15` : 'rgba(255,255,255,0.04)',
-          border: open ? `1px solid ${color}35` : '1px solid rgba(255,255,255,0.06)',
-        }}
+        className="w-full flex items-center gap-2.5 transition-all"
+        style={{ padding: '9px 11px' }}
       >
-        {/* İkon kabı */}
+        {/* Sol renk çizgisi */}
+        <div style={{ width: 3, height: 28, borderRadius: 4, background: open ? color : `${color}50`, flexShrink: 0, transition: 'all 0.2s', boxShadow: open ? `0 0 8px ${color}80` : 'none' }} />
+
+        {/* İkon */}
         <div
           className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
           style={{
-            background: open ? `${color}25` : 'rgba(255,255,255,0.06)',
-            border: open ? `1px solid ${color}40` : '1px solid rgba(255,255,255,0.08)',
+            background: open ? `${color}30` : `${color}18`,
+            border: `1px solid ${open ? color + '60' : color + '30'}`,
+            boxShadow: open ? `0 0 10px ${color}40` : 'none',
+            transition: 'all 0.2s',
           }}
         >
-          <span className="text-xl" style={{ color: open ? color : 'rgba(255,255,255,0.45)' }}>{icon}</span>
+          <span style={{ fontSize: 14 }}>{icon}</span>
         </div>
 
         {/* Label */}
         <span
           className="flex-1 text-left font-semibold"
           style={{
-            fontSize: 13,
-            color: open ? '#fff' : 'rgba(226,232,240,0.85)',
-            fontWeight: open ? 700 : 500,
+            fontSize: 12,
+            color: open ? '#fff' : `${color}cc`,
+            fontWeight: open ? 700 : 600,
+            transition: 'color 0.2s',
           }}
         >
           {label}
         </span>
 
-        {/* Sağ ok / aktif nokta */}
-        {open ? (
-          <div
-            className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-            style={{ background: color, boxShadow: `0 0 6px ${color}` }}
-          />
-        ) : (
-          <ChevronRight
-            style={{ width: 13, height: 13, flexShrink: 0 }}
-            className="text-white/20"
-          />
-        )}
-
         {/* Badge */}
         {badge && (
-          <span
-            className="text-xs font-bold px-1.5 py-0.5 rounded-full"
-            style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}
-          >
+          <span style={{ fontSize: 8, fontWeight: 700, color: color, background: `${color}18`, border: `1px solid ${color}35`, borderRadius: 5, padding: '2px 5px', letterSpacing: '0.05em', flexShrink: 0 }}>
             {badge}
           </span>
         )}
+
+        {/* Chevron */}
+        <ChevronDown
+          style={{
+            width: 13, height: 13,
+            color: open ? color : `${color}60`,
+            transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.2s, color 0.2s',
+            flexShrink: 0,
+          }}
+        />
       </button>
 
       {/* Alt içerik */}
@@ -814,7 +811,7 @@ function SubAccordion({
             transition={{ duration: 0.18, ease: 'easeInOut' }}
             style={{ overflow: 'hidden' }}
           >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingTop: 4, paddingLeft: 4 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 8px 8px 8px', borderTop: `1px solid ${color}20` }}>
               {children}
             </div>
           </motion.div>
@@ -842,19 +839,19 @@ function NavItem({
     <motion.button
       onClick={onClick}
       whileTap={{ scale: 0.97 }}
-      className="w-full flex items-center gap-3 rounded-xl transition-all"
+      className="w-full flex items-center gap-2.5 rounded-xl transition-all"
       style={{
-        padding:    '9px 11px',
-        background: 'rgba(255,255,255,0.04)',
-        border: '1px solid rgba(255,255,255,0.06)',
+        padding:    '8px 10px',
+        background: `${color}10`,
+        border: `1px solid ${color}25`,
       }}
     >
       {/* İkon kabı */}
       <div
-        className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+        className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
         style={{
-          background: 'rgba(255,255,255,0.06)',
-          border: '1px solid rgba(255,255,255,0.08)',
+          background: `${color}22`,
+          border: `1px solid ${color}40`,
         }}
       >
         {icon}
@@ -862,12 +859,12 @@ function NavItem({
 
       {/* Label */}
       <div className="flex-1 min-w-0 text-left">
-        <p style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>{label}</p>
+        <p style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0', margin: 0 }}>{label}</p>
         <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>{desc}</p>
       </div>
 
       {/* Sağ ok */}
-      <ChevronRight style={{ width: 13, height: 13, color: 'rgba(255,255,255,0.5)', flexShrink: 0 }} />
+      <ChevronRight style={{ width: 12, height: 12, color: `${color}80`, flexShrink: 0 }} />
     </motion.button>
   );
 }
