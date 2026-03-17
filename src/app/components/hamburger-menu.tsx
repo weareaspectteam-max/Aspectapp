@@ -497,6 +497,7 @@ export function HamburgerMenu({
                             >
                               <div style={{ borderTop: '1px solid rgba(168,85,247,0.15)', padding: '8px 10px 10px' }}>
                                 {/* ── GENEL AYARLAR sub-accordion ── */}
+                                {isYonetici && (
                                 <div className="rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
                                   <button onClick={() => setGenelAyarlarOpen(v => !v)} className="w-full flex items-center gap-2.5 transition-all" style={{ padding: '9px 11px' }}>
                                     <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid rgba(99,102,241,0.3)' }}>
@@ -534,6 +535,7 @@ export function HamburgerMenu({
                                     )}
                                   </AnimatePresence>
                                 </div>
+                                )}
                                 {/* ── Kullanıcı Yönetimi butonu ── */}
                                 <div style={{ marginTop: 8 }}>
                                   <motion.button onClick={() => { onNavigate('user-management'); close(); }} whileTap={{ scale: 0.97 }} className="w-full flex items-center gap-3 rounded-xl transition-all" style={{ padding: '9px 11px', background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.22)' }}>
