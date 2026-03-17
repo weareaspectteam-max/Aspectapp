@@ -94,47 +94,47 @@ function getSections(
       title: 'YÖNETİCİ HIZLI ERİŞİM',
       color: '#34d399',
       items: [
-        { icon: Activity,      label: 'Canlı Feed',          roles: ['yonetici','ust-mudur'] as UserRole[],                      action: () => go('live-feed')              },
-        { icon: ClipboardList, label: 'İzin Çizelgesi',       roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],       action: () => go('personel-izin-cetveli')  },
-        { icon: TrendingUp,    label: 'Prim Takip',           roles: ['yonetici','ust-mudur','mudur'] as UserRole[],               action: () => go('prim-takip')             },
-        { icon: FileBarChart,  label: 'Vardiya Raporları',    roles: ['yonetici','ust-mudur','mudur'] as UserRole[],               action: () => go('vardiya-raporlari')      },
-        { icon: BarChart2,     label: 'İşletme Genel Durum',  roles: ['yonetici','ust-mudur','mudur'] as UserRole[],               action: () => go('isletme-genel-durum')    },
+        { icon: Activity,      label: 'Canlı Feed',          roles: ['yonetici','ust-mudur'] as UserRole[],                                   action: () => go('live-feed')              },
+        { icon: ClipboardList, label: 'İzin Çizelgesi',       roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],                    action: () => go('personel-izin-cetveli')  },
+        { icon: TrendingUp,    label: 'Prim Takip',           roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],                    action: () => go('prim-takip')             },
+        { icon: FileBarChart,  label: 'Vardiya Raporları',    roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],                    action: () => go('vardiya-raporlari')      },
+        { icon: BarChart2,     label: 'İşletme Genel Durum',  roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],                    action: () => go('isletme-genel-durum')    },
       ],
     },
     {
       title: 'GENEL',
       color: '#a78bfa',
       items: [
-        { icon: Home,          label: 'Dashboard',        roles: ['operasyon','idari','personel','bekleyen'] as UserRole[],  action: () => go('dashboard')   },
-        { icon: MessageCircle, label: 'Mesajlar',          roles: ['operasyon','idari','personel','bekleyen'] as UserRole[],  action: () => go('messaging')   },
+        { icon: Home,          label: 'Dashboard',        roles: all,  action: () => go('dashboard')   },
+        { icon: MessageCircle, label: 'Mesajlar',          roles: all,  action: () => go('messaging')   },
         { icon: Trophy,        label: 'Liderlik Tablosu',  roles: all,  action: () => go('leaderboard') },
-        { icon: Sparkles,      label: 'Aspect AI',         roles: ['operasyon','idari','personel','bekleyen'] as UserRole[],  action: () => go('aspect-ai')   },
-        { icon: FileBarChart,  label: 'Vardiya Raporları', roles: ['yonetici'] as UserRole[], action: () => go('vardiya-raporlari') },
-        { icon: GraduationCap, label: 'Akademi',           roles: all,  action: () => go('academy')           },
+        { icon: Sparkles,      label: 'Aspect AI',         roles: all,  action: () => go('aspect-ai')   },
+        { icon: GraduationCap, label: 'Akademi',           roles: all,  action: () => go('academy')     },
       ],
     },
     {
       title: 'OPERASYON',
       color: '#fb923c',
       items: [
-        { icon: Zap,          label: 'Operasyon Paneli',  roles: all,  action: () => go('quick-sales')     },
-        { icon: RotateCcw,    label: 'Rotasyon',           roles: all,  action: () => go('rotation')        },
-        { icon: Bell,         label: 'Duyurular',          roles: all,  action: () => go('announcements')   },
+        { icon: Zap,       label: 'Operasyon Paneli', roles: all, action: () => go('quick-sales')   },
+        { icon: RotateCcw, label: 'Rotasyon',          roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('rotation')       },
+        { icon: Bell,      label: 'Duyurular',         roles: all,                                                              action: () => go('announcements') },
       ],
     },
     {
       title: 'MALZEME & STOK',
       color: '#38bdf8',
       items: [
-        { icon: Package,  label: 'Malzeme Yönetimi', roles: all, action: () => go('equipment-page')      },
-        { icon: BarChart2,label: 'Stok Dağılımı',    roles: all, action: () => go('stock-distribution') },
+        { icon: Package,   label: 'Malzeme Yönetimi', roles: all, action: () => go('equipment-page')      },
+        { icon: BarChart2, label: 'Stok Dağılımı',    roles: all, action: () => go('stock-distribution') },
       ],
     },
     {
       title: 'PERSONEL PANELİ',
       color: '#fbbf24',
       items: [
-        { icon: Wallet,       label: 'Primlerim',             roles: all, action: () => go('personel-prim-takip') },
+        { icon: Wallet,       label: 'Primlerim',              roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('personel-prim-takip')  },
+        { icon: CalendarDays, label: 'İzin Talebi',            roles: ['operasyon','personel'] as UserRole[],                                        action: () => go('personel-izin-talebi') },
         { icon: CalendarDays, label: 'Kişisel İzin Çizelgesi', roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('kisisel-izin-cetveli') },
       ],
     },
@@ -142,8 +142,8 @@ function getSections(
       title: 'OYUN',
       color: '#22d3ee',
       items: [
-        { icon: Gamepad2, label: 'Aspect Runner 🏃', roles: all, action: () => go('aspect-runner') },
-        { icon: Gamepad2, label: 'Aspect Quest 🗺️',  roles: all, action: () => go('aspect-quest')  },
+        { icon: Gamepad2, label: 'Aspect Runner 🏃', roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('aspect-runner') },
+        { icon: Gamepad2, label: 'Aspect Quest 🗺️',  roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('aspect-quest')  },
       ],
     },
     {
@@ -151,8 +151,8 @@ function getSections(
       color: '#60a5fa',
       items: [
         { icon: User,     label: 'Profil',     roles: all, action: () => go('profile') },
-        { icon: Settings, label: 'Ayarlar',   roles: all, action: () => go('settings') },
-        { icon: LogOut,   label: 'Çıkış Yap', roles: all, danger: true, action: () => { close(); onLogout(); } },
+        { icon: Settings, label: 'Ayarlar',    roles: all, action: () => go('settings') },
+        { icon: LogOut,   label: 'Çıkış Yap',  roles: all, danger: true, action: () => { close(); onLogout(); } },
       ],
     },
   ];
@@ -254,7 +254,7 @@ export function HamburgerMenu({
   const roleAvatar= ROLE_AVATARS[userRole] ?? '👤';
 
   const isYonetici = userRole === 'yonetici';
-  const showAdminPanel = userRole === 'yonetici' || userRole === 'ust-mudur' || userRole === 'mudur';
+  const showAdminPanel = userRole === 'yonetici' || userRole === 'ust-mudur' || userRole === 'mudur' || userRole === 'idari';
 
   /* ── Ayarları yükle (menü açılınca, yonetici ise) ── */
   useEffect(() => {
@@ -436,7 +436,20 @@ export function HamburgerMenu({
                   {/* moved to bottom — see below */}
 
                   {sections.filter(s => s.title !== 'HESAP').map((section) => (
-                    <div key={section.title}>
+                    <div
+                      key={section.title}
+                      style={
+                        section.title === 'YÖNETİCİ HIZLI ERİŞİM'
+                          ? {
+                              background: `linear-gradient(135deg, ${section.color}08, ${section.color}04)`,
+                              border: `1px solid ${section.color}22`,
+                              borderLeft: `3px solid ${section.color}70`,
+                              borderRadius: 14,
+                              padding: '10px 8px 8px',
+                            }
+                          : undefined
+                      }
+                    >
 
                       {/* Bölüm başlığı */}
                       <div className="flex items-center gap-2 px-1 mb-1.5">
@@ -446,7 +459,16 @@ export function HamburgerMenu({
                         />
                         <span
                           className="font-black tracking-widest flex-shrink-0"
-                          style={{ fontSize: 9, color: section.color, letterSpacing: '0.15em', opacity: 0.8 }}
+                          style={{
+                            fontSize: 9,
+                            color: section.color,
+                            letterSpacing: '0.15em',
+                            background: `${section.color}18`,
+                            border: `1px solid ${section.color}35`,
+                            borderRadius: 20,
+                            padding: '2px 8px',
+                            boxShadow: `0 0 8px ${section.color}20`,
+                          }}
                         >
                           {section.title}
                         </span>
@@ -475,13 +497,13 @@ export function HamburgerMenu({
                                 background: item.danger
                                   ? 'rgba(239,68,68,0.07)'
                                   : isActive
-                                    ? `${section.color}15`
-                                    : 'rgba(255,255,255,0.04)',
+                                    ? `${section.color}18`
+                                    : `${section.color}07`,
                                 border: item.danger
                                   ? '1px solid rgba(239,68,68,0.18)'
                                   : isActive
-                                    ? `1px solid ${section.color}35`
-                                    : '1px solid rgba(255,255,255,0.06)',
+                                    ? `1px solid ${section.color}45`
+                                    : `1px solid ${section.color}18`,
                               }}
                             >
                               {/* İkon kabı */}
@@ -491,20 +513,25 @@ export function HamburgerMenu({
                                   background: item.danger
                                     ? 'rgba(239,68,68,0.12)'
                                     : isActive
-                                      ? `${section.color}25`
-                                      : 'rgba(255,255,255,0.06)',
+                                      ? `${section.color}30`
+                                      : `${section.color}18`,
                                   border: item.danger
                                     ? '1px solid rgba(239,68,68,0.2)'
                                     : isActive
-                                      ? `1px solid ${section.color}40`
-                                      : '1px solid rgba(255,255,255,0.08)',
+                                      ? `1px solid ${section.color}55`
+                                      : `1px solid ${section.color}35`,
+                                  boxShadow: isActive ? `0 0 8px ${section.color}30` : 'none',
                                 }}
                               >
                                 <Icon
                                   style={{
                                     width:  14,
                                     height: 14,
-                                    color:  item.danger ? '#f87171' : isActive ? section.color : 'rgba(255,255,255,0.45)',
+                                    color: item.danger
+                                      ? '#f87171'
+                                      : isActive
+                                        ? section.color
+                                        : `${section.color}cc`,
                                   }}
                                   strokeWidth={isActive ? 2.2 : 1.8}
                                 />
@@ -512,14 +539,14 @@ export function HamburgerMenu({
 
                               {/* Label */}
                               <span
-                                className="flex-1 text-left font-semibold"
+                                className="flex-1 text-left"
                                 style={{
                                   fontSize: 13,
                                   color: item.danger
                                     ? '#f87171'
                                     : isActive
                                       ? '#fff'
-                                      : 'rgba(226,232,240,0.85)',
+                                      : `${section.color}cc`,
                                   fontWeight: isActive ? 700 : 500,
                                 }}
                               >
@@ -534,8 +561,10 @@ export function HamburgerMenu({
                                 />
                               ) : (
                                 <ChevronRight
-                                  style={{ width: 13, height: 13, flexShrink: 0 }}
-                                  className={item.danger ? 'text-red-400/60' : 'text-white/20'}
+                                  style={{
+                                    width: 13, height: 13, flexShrink: 0,
+                                    color: item.danger ? 'rgba(248,113,113,0.5)' : `${section.color}60`,
+                                  }}
                                 />
                               )}
                             </motion.button>
@@ -547,7 +576,16 @@ export function HamburgerMenu({
 
                   {/* ── YÖNETİCİ PANELİ — en alta, HESAP'ın üstü ── */}
                   {showAdminPanel && (
-                    <div style={{ marginTop: 0 }}>
+                    <div
+                      style={{
+                        marginTop: 0,
+                        background: 'linear-gradient(135deg, rgba(168,85,247,0.08), rgba(168,85,247,0.04))',
+                        border: '1px solid rgba(168,85,247,0.22)',
+                        borderLeft: '3px solid rgba(168,85,247,0.65)',
+                        borderRadius: 14,
+                        padding: '10px 8px 8px',
+                      }}
+                    >
 
                       {/* Bölüm ayırıcı */}
                       <div className="flex items-center gap-2 px-1 mb-2">
@@ -557,7 +595,16 @@ export function HamburgerMenu({
                         />
                         <span
                           className="font-black tracking-widest flex-shrink-0"
-                          style={{ fontSize: 9, color: '#a855f7', letterSpacing: '0.15em', opacity: 0.8 }}
+                          style={{
+                            fontSize: 9,
+                            color: '#a855f7',
+                            letterSpacing: '0.15em',
+                            background: 'rgba(168,85,247,0.18)',
+                            border: '1px solid rgba(168,85,247,0.35)',
+                            borderRadius: 20,
+                            padding: '2px 8px',
+                            boxShadow: '0 0 8px rgba(168,85,247,0.2)',
+                          }}
                         >
                           YÖNETİCİ PANELİ
                         </span>
@@ -571,8 +618,10 @@ export function HamburgerMenu({
                       <div
                         className="rounded-2xl overflow-hidden"
                         style={{
-                          background: 'rgba(168,85,247,0.06)',
-                          border: '1px solid rgba(168,85,247,0.2)',
+                          background: adminOpen ? 'rgba(168,85,247,0.10)' : 'rgba(168,85,247,0.05)',
+                          border: adminOpen ? '1px solid rgba(168,85,247,0.35)' : '1px solid rgba(168,85,247,0.18)',
+                          boxShadow: adminOpen ? '0 0 20px rgba(168,85,247,0.15)' : 'none',
+                          transition: 'all 0.25s',
                         }}
                       >
                         {/* Accordion başlık butonu */}
@@ -584,20 +633,26 @@ export function HamburgerMenu({
                           <div
                             className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
                             style={{
-                              background: 'rgba(168,85,247,0.18)',
-                              border: '1px solid rgba(168,85,247,0.35)',
+                              background: adminOpen ? 'rgba(168,85,247,0.30)' : 'rgba(168,85,247,0.18)',
+                              border: adminOpen ? '1px solid rgba(168,85,247,0.60)' : '1px solid rgba(168,85,247,0.35)',
+                              boxShadow: adminOpen ? '0 0 12px rgba(168,85,247,0.45)' : 'none',
+                              transition: 'all 0.2s',
                             }}
                           >
-                            <Crown style={{ width: 14, height: 14, color: '#a855f7' }} strokeWidth={2} />
+                            <Crown style={{ width: 14, height: 14, color: adminOpen ? '#d8b4fe' : '#a855f7' }} strokeWidth={2} />
                           </div>
-                          <span className="flex-1 text-left font-bold" style={{ fontSize: 13, color: '#c084fc' }}>
+                          <span
+                            className="flex-1 text-left font-bold"
+                            style={{ fontSize: 13, color: adminOpen ? '#e9d5ff' : '#c084fc', transition: 'color 0.2s' }}
+                          >
                             Yönetici Paneli
                           </span>
                           <ChevronDown
                             style={{
-                              width: 15, height: 15, color: '#a855f780',
+                              width: 15, height: 15,
+                              color: adminOpen ? '#a855f7' : '#a855f780',
                               transform: adminOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                              transition: 'transform 0.2s', flexShrink: 0,
+                              transition: 'transform 0.2s, color 0.2s', flexShrink: 0,
                             }}
                           />
                         </button>
@@ -666,7 +721,20 @@ export function HamburgerMenu({
                                   <NavItem icon={<MapPin style={{ width: 13, height: 13, color: '#a78bfa' }} />} label="Mekan Yönetimi" desc="Proje mekanlarını yönet" color="#a78bfa" onClick={() => { onNavigate('mekan-management'); close(); }} />
                                 </SubAccordion>
 
-                                {/* ── 5. Sistem Ayarları (sadece yonetici) ── */}
+                                {/* ── 5. Malzeme & Stok ── */}
+                                <SubAccordion
+                                  id="malzeme"
+                                  open={openSubSection === 'malzeme'}
+                                  onToggle={() => setOpenSubSection(p => p === 'malzeme' ? null : 'malzeme')}
+                                  icon="📦"
+                                  label="Malzeme & Stok"
+                                  color="#38bdf8"
+                                >
+                                  <NavItem icon={<Package style={{ width: 13, height: 13, color: '#38bdf8' }} />} label="Malzeme Yönetimi" desc="Ekipman ve malzemeleri yönet" color="#38bdf8" onClick={() => { onNavigate('equipment-page'); close(); }} />
+                                  <NavItem icon={<BarChart2 style={{ width: 13, height: 13, color: '#7dd3fc' }} />} label="Stok Dağılımı" desc="Stok durumu ve dağılımı" color="#7dd3fc" onClick={() => { onNavigate('stock-distribution'); close(); }} />
+                                </SubAccordion>
+
+                                {/* ── 6. Sistem Ayarları (sadece yonetici) ── */}
                                 {isYonetici && (
                                   <SubAccordion
                                     id="sistem"
@@ -698,19 +766,55 @@ export function HamburgerMenu({
                     <div key={section.title}>
                       <div className="flex items-center gap-2 px-1 mb-1.5">
                         <div className="h-px flex-1 rounded-full" style={{ background: `linear-gradient(to right, ${section.color}40, transparent)` }} />
-                        <span className="font-black tracking-widest flex-shrink-0" style={{ fontSize: 9, color: section.color, letterSpacing: '0.15em', opacity: 0.8 }}>{section.title}</span>
+                        <span
+                          className="font-black tracking-widest flex-shrink-0"
+                          style={{
+                            fontSize: 9,
+                            color: section.color,
+                            letterSpacing: '0.15em',
+                            background: `${section.color}18`,
+                            border: `1px solid ${section.color}35`,
+                            borderRadius: 20,
+                            padding: '2px 8px',
+                            boxShadow: `0 0 8px ${section.color}20`,
+                          }}
+                        >{section.title}</span>
                         <div className="h-px flex-1 rounded-full" style={{ background: `linear-gradient(to left, ${section.color}40, transparent)` }} />
                       </div>
                       <div className="space-y-1">
                         {section.items.map(item => {
                           const Icon = item.icon;
                           return (
-                            <motion.button key={item.label} onClick={item.action} whileTap={{ scale: 0.97 }} className="w-full flex items-center gap-3 rounded-xl transition-all" style={{ padding: '9px 11px', background: item.danger ? 'rgba(239,68,68,0.07)' : 'rgba(255,255,255,0.04)', border: item.danger ? '1px solid rgba(239,68,68,0.18)' : '1px solid rgba(255,255,255,0.06)' }}>
-                              <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: item.danger ? 'rgba(239,68,68,0.12)' : 'rgba(255,255,255,0.06)', border: item.danger ? '1px solid rgba(239,68,68,0.2)' : '1px solid rgba(255,255,255,0.08)' }}>
-                                <Icon style={{ width: 14, height: 14, color: item.danger ? '#f87171' : 'rgba(255,255,255,0.45)' }} strokeWidth={1.8} />
+                            <motion.button
+                              key={item.label}
+                              onClick={item.action}
+                              whileTap={{ scale: 0.97 }}
+                              className="w-full flex items-center gap-3 rounded-xl transition-all"
+                              style={{
+                                padding: '9px 11px',
+                                background: item.danger ? 'rgba(239,68,68,0.07)' : `${section.color}07`,
+                                border: item.danger ? '1px solid rgba(239,68,68,0.18)' : `1px solid ${section.color}18`,
+                              }}
+                            >
+                              <div
+                                className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                                style={{
+                                  background: item.danger ? 'rgba(239,68,68,0.12)' : `${section.color}18`,
+                                  border: item.danger ? '1px solid rgba(239,68,68,0.2)' : `1px solid ${section.color}35`,
+                                }}
+                              >
+                                <Icon style={{ width: 14, height: 14, color: item.danger ? '#f87171' : `${section.color}cc` }} strokeWidth={1.8} />
                               </div>
-                              <span className="flex-1 text-left font-semibold" style={{ fontSize: 13, color: item.danger ? '#f87171' : 'rgba(226,232,240,0.85)', fontWeight: 500 }}>{item.label}</span>
-                              <ChevronRight style={{ width: 13, height: 13, flexShrink: 0 }} className={item.danger ? 'text-red-400/60' : 'text-white/20'} />
+                              <span
+                                className="flex-1 text-left"
+                                style={{ fontSize: 13, color: item.danger ? '#f87171' : `${section.color}cc`, fontWeight: 500 }}
+                              >{item.label}</span>
+                              <ChevronRight
+                                style={{
+                                  width: 13, height: 13, flexShrink: 0,
+                                  color: item.danger ? 'rgba(248,113,113,0.5)' : `${section.color}60`,
+                                }}
+                              />
                             </motion.button>
                           );
                         })}
@@ -763,37 +867,65 @@ function SubAccordion({
   children?: React.ReactNode;
 }) {
   return (
-    <div style={{ borderRadius: 14, overflow: 'hidden', border: open ? `1px solid ${color}40` : `1px solid ${color}18`, background: open ? `${color}0d` : `${color}07`, transition: 'all 0.2s' }}>
+    <div style={{
+      borderRadius: 14,
+      overflow: 'hidden',
+      border: open ? `1px solid ${color}55` : `1px solid ${color}20`,
+      background: open ? `${color}0f` : `${color}07`,
+      boxShadow: open ? `0 4px 20px ${color}18, inset 0 0 0 1px ${color}10` : 'none',
+      transition: 'all 0.25s',
+    }}>
+      {/* Üst renkli şerit */}
+      <div style={{
+        height: open ? 2 : 0,
+        background: `linear-gradient(to right, ${color}00, ${color}, ${color}00)`,
+        transition: 'height 0.25s',
+      }} />
+
       {/* Başlık butonu */}
       <button
         onClick={onToggle}
         className="w-full flex items-center gap-2.5 transition-all"
-        style={{ padding: '9px 11px' }}
+        style={{
+          padding: '9px 11px',
+          background: open
+            ? `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)`
+            : 'transparent',
+          transition: 'background 0.25s',
+        }}
       >
         {/* Sol renk çizgisi */}
-        <div style={{ width: 3, height: 28, borderRadius: 4, background: open ? color : `${color}50`, flexShrink: 0, transition: 'all 0.2s', boxShadow: open ? `0 0 8px ${color}80` : 'none' }} />
+        <div style={{
+          width: 3, height: 28, borderRadius: 4,
+          background: open ? `linear-gradient(to bottom, ${color}, ${color}80)` : `${color}40`,
+          flexShrink: 0, transition: 'all 0.2s',
+          boxShadow: open ? `0 0 10px ${color}90` : 'none',
+        }} />
 
         {/* İkon */}
         <div
           className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
           style={{
-            background: open ? `${color}30` : `${color}18`,
-            border: `1px solid ${open ? color + '60' : color + '30'}`,
-            boxShadow: open ? `0 0 10px ${color}40` : 'none',
-            transition: 'all 0.2s',
+            background: open
+              ? `radial-gradient(circle at center, ${color}45, ${color}20)`
+              : `${color}18`,
+            border: `1px solid ${open ? color + '70' : color + '30'}`,
+            boxShadow: open ? `0 0 14px ${color}55, inset 0 0 8px ${color}15` : 'none',
+            transition: 'all 0.25s',
           }}
         >
-          <span style={{ fontSize: 14 }}>{icon}</span>
+          <span style={{ fontSize: 14, filter: open ? `drop-shadow(0 0 4px ${color})` : 'none', transition: 'filter 0.2s' }}>{icon}</span>
         </div>
 
         {/* Label */}
         <span
-          className="flex-1 text-left font-semibold"
+          className="flex-1 text-left"
           style={{
             fontSize: 12,
             color: open ? '#fff' : `${color}cc`,
             fontWeight: open ? 700 : 600,
             transition: 'color 0.2s',
+            textShadow: open ? `0 0 12px ${color}60` : 'none',
           }}
         >
           {label}
@@ -801,21 +933,32 @@ function SubAccordion({
 
         {/* Badge */}
         {badge && (
-          <span style={{ fontSize: 8, fontWeight: 700, color: color, background: `${color}18`, border: `1px solid ${color}35`, borderRadius: 5, padding: '2px 5px', letterSpacing: '0.05em', flexShrink: 0 }}>
+          <span style={{
+            fontSize: 8, fontWeight: 800, color: color,
+            background: `${color}20`, border: `1px solid ${color}45`,
+            borderRadius: 6, padding: '2px 6px', letterSpacing: '0.06em', flexShrink: 0,
+            boxShadow: `0 0 8px ${color}25`,
+          }}>
             {badge}
           </span>
         )}
 
         {/* Chevron */}
-        <ChevronDown
-          style={{
-            width: 13, height: 13,
-            color: open ? color : `${color}60`,
-            transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-            transition: 'transform 0.2s, color 0.2s',
-            flexShrink: 0,
-          }}
-        />
+        <div style={{
+          width: 20, height: 20, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          background: open ? `${color}25` : 'transparent',
+          border: open ? `1px solid ${color}40` : '1px solid transparent',
+          transition: 'all 0.2s',
+        }}>
+          <ChevronDown
+            style={{
+              width: 12, height: 12,
+              color: open ? color : `${color}55`,
+              transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 0.2s, color 0.2s',
+            }}
+          />
+        </div>
       </button>
 
       {/* Alt içerik */}
@@ -828,7 +971,12 @@ function SubAccordion({
             transition={{ duration: 0.18, ease: 'easeInOut' }}
             style={{ overflow: 'hidden' }}
           >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 8px 8px 8px', borderTop: `1px solid ${color}20` }}>
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: 4,
+              padding: '4px 8px 8px 8px',
+              borderTop: `1px solid ${color}25`,
+              background: `linear-gradient(to bottom, ${color}06, transparent)`,
+            }}>
               {children}
             </div>
           </motion.div>
@@ -858,17 +1006,25 @@ function NavItem({
       whileTap={{ scale: 0.97 }}
       className="w-full flex items-center gap-2.5 rounded-xl transition-all"
       style={{
-        padding:    '8px 10px',
-        background: `${color}10`,
-        border: `1px solid ${color}25`,
+        padding: '8px 10px',
+        background: `${color}12`,
+        border: `1px solid ${color}30`,
       }}
     >
+      {/* Sol ince accent bar */}
+      <div style={{
+        width: 2, height: 28, borderRadius: 4, flexShrink: 0,
+        background: `linear-gradient(to bottom, ${color}, ${color}50)`,
+        boxShadow: `0 0 6px ${color}60`,
+      }} />
+
       {/* İkon kabı */}
       <div
         className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
         style={{
-          background: `${color}22`,
-          border: `1px solid ${color}40`,
+          background: `${color}25`,
+          border: `1px solid ${color}50`,
+          boxShadow: `0 0 8px ${color}20`,
         }}
       >
         {icon}
@@ -876,8 +1032,8 @@ function NavItem({
 
       {/* Label */}
       <div className="flex-1 min-w-0 text-left">
-        <p style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0', margin: 0 }}>{label}</p>
-        <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>{desc}</p>
+        <p style={{ fontSize: 12, fontWeight: 600, color: `${color}ee`, margin: 0 }}>{label}</p>
+        <p style={{ fontSize: 9, color: `${color}70`, marginTop: 1 }}>{desc}</p>
       </div>
 
       {/* Sağ ok */}
@@ -907,24 +1063,36 @@ function AiToggleRow({
       className="flex items-center gap-3 rounded-xl"
       style={{
         padding: '9px 11px',
-        background: enabled ? `${color}15` : 'rgba(255,255,255,0.03)',
-        border: enabled ? `1px solid ${color}35` : '1px solid rgba(255,255,255,0.07)',
+        background: enabled
+          ? `linear-gradient(135deg, ${color}20 0%, ${color}0a 100%)`
+          : 'rgba(255,255,255,0.03)',
+        border: enabled ? `1px solid ${color}45` : '1px solid rgba(255,255,255,0.07)',
+        boxShadow: enabled ? `0 0 12px ${color}15` : 'none',
         transition: 'all 0.2s',
       }}
     >
+      {/* Sol accent bar */}
+      <div style={{
+        width: 2, height: 26, borderRadius: 4, flexShrink: 0,
+        background: enabled ? `linear-gradient(to bottom, ${color}, ${color}60)` : 'rgba(255,255,255,0.1)',
+        boxShadow: enabled ? `0 0 8px ${color}70` : 'none',
+        transition: 'all 0.2s',
+      }} />
+
       <div
         className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
         style={{
-          background: enabled ? `${color}28` : 'rgba(255,255,255,0.06)',
-          border: enabled ? `1px solid ${color}50` : '1px solid rgba(255,255,255,0.1)',
+          background: enabled ? `${color}30` : 'rgba(255,255,255,0.06)',
+          border: enabled ? `1px solid ${color}60` : '1px solid rgba(255,255,255,0.1)',
+          boxShadow: enabled ? `0 0 10px ${color}40` : 'none',
           transition: 'all 0.2s',
         }}
       >
         <Brain style={{ width: 12, height: 12, color: enabled ? color : 'rgba(255,255,255,0.35)' }} strokeWidth={1.8} />
       </div>
       <div className="flex-1 min-w-0">
-        <p style={{ fontSize: 11, fontWeight: 600, color: enabled ? '#e2e8f0' : 'rgba(226,232,240,0.55)', margin: 0 }}>{label}</p>
-        <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>{desc}</p>
+        <p style={{ fontSize: 11, fontWeight: 600, color: enabled ? `${color}ee` : 'rgba(226,232,240,0.45)', margin: 0, transition: 'color 0.2s' }}>{label}</p>
+        <p style={{ fontSize: 9, color: enabled ? `${color}80` : 'rgba(255,255,255,0.25)', marginTop: 1, transition: 'color 0.2s' }}>{desc}</p>
       </div>
       <ToggleSwitch enabled={enabled} onToggle={onToggle} loading={loading} color={color} />
     </div>

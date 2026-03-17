@@ -12,7 +12,7 @@ import {
   stokAlanAdi, stokAlanEmoji,
   type StokSayim, type StokGunluk, type StokEkleme, type PrinterKapanis, type VardiyaSatis, type KareKayit,
 } from '../services/stock-service';
-import { buildHeaders } from '../lib/api';
+import { buildHeaders, authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 import { localDateStr } from '../lib/date';
 
@@ -190,17 +190,29 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       // Canlı kur çek
       try {
         setRatesLoading(true);
-        const { authHeaders } = await import('../lib/api');
         const headers = await authHeaders();
-        const res = await fetch(`${API_BASE_QS}/doviz/canli`, { headers });
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        let res: Response;
+        try {
+          res = await fetch(`${API_BASE_QS}/doviz/canli`, { headers, signal: controller.signal });
+        } finally {
+          clearTimeout(timer);
+        }
         if (res.ok) {
           const data = await res.json();
           if (data.rates) {
             setExchangeRates({ USD: Number(data.rates.USD), EUR: Number(data.rates.EUR), GBP: Number(data.rates.GBP) });
           }
         }
-      } catch (err) {
-        console.error('QuickSales exchange rate fetch error:', err);
+      } catch (err: any) {
+        if (err?.name === 'AbortError') {
+          console.warn('QuickSales exchange rate fetch timeout — fallback kurlar kullanılıyor.');
+        } else {
+          console.warn('QuickSales exchange rate fetch hatası — fallback kurlar kullanılıyor:', err?.message ?? err);
+        }
+        // Fallback: yaklaşık kurlar (sunucu erişilemezse)
+        setExchangeRates({ USD: 32.5, EUR: 35.2, GBP: 41.0 });
       } finally {
         setRatesLoading(false);
       }
@@ -801,7 +813,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
           onOzelIsSelect={onOzelIsSelect}
           refreshTrigger={saleRefreshTrigger}
           onLiveFeed={
-            ['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole) && selectedProject
+            ['yonetici', 'ust-mudur', 'mudur', 'operasyon'].includes(userRole) && selectedProject
               ? () => setShowLiveFeed(true)
               : undefined
           }

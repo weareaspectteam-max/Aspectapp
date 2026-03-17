@@ -120,10 +120,11 @@ export function StaffProfile({ userName, userRole, onLogout, onNavigate }: Staff
           <div className="h-48">
             <ResponsiveContainer width="100%" height={192} minWidth={0}>
               <AreaChart data={weeklyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff20" />
-                <XAxis dataKey="day" stroke="#9ca3af" style={{ fontSize: '12px' }} />
-                <YAxis stroke="#9ca3af" style={{ fontSize: '12px' }} />
+                <CartesianGrid key="grid" strokeDasharray="3 3" stroke="#ffffff20" />
+                <XAxis key="xaxis" dataKey="day" stroke="#9ca3af" style={{ fontSize: '12px' }} />
+                <YAxis key="yaxis" stroke="#9ca3af" style={{ fontSize: '12px' }} />
                 <Tooltip
+                  key="tooltip"
                   contentStyle={{
                     backgroundColor: '#1f2937',
                     border: '1px solid #374151',
@@ -133,6 +134,7 @@ export function StaffProfile({ userName, userRole, onLogout, onNavigate }: Staff
                   }}
                 />
                 <Area
+                  key="area-revenue"
                   type="monotone"
                   dataKey="revenue"
                   stroke="#9dd9ea"

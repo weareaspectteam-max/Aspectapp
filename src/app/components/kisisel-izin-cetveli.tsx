@@ -295,13 +295,6 @@ export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, onBa
         className="sticky top-0 z-30 px-4 py-3 flex items-center gap-3"
         style={{ background: 'rgba(10,5,30,0.88)', backdropFilter: 'blur(24px)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}
       >
-        <button
-          onClick={onBack}
-          className="w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90"
-          style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)' }}
-        >
-          <ArrowLeft className="w-4 h-4 text-white/70" />
-        </button>
         <div className="flex-1 min-w-0">
           <p className="text-[10px] text-white/40 uppercase tracking-widest font-semibold">Kişisel</p>
           <h1 className="text-sm font-black text-white tracking-tight">İzin Çizelgesi</h1>

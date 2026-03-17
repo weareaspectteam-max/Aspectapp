@@ -37,6 +37,7 @@ import { IsletmeIstatistikleri } from './components/isletme-istatistikleri';
 import { CostManagement } from './components/cost-management';
 import { PersonelIzinCetveli } from './components/personel-izin-cetveli';
 import { KisiselIzinCetveli } from './components/kisisel-izin-cetveli';
+import { PersonelIzinTalebi } from './components/personel-izin-talebi';
 import { LocationVisits } from './components/location-visits';
 import { SatisRaporu } from './components/satis-raporu';
 import { ManagerReports } from './components/manager-reports';
@@ -727,6 +728,17 @@ export default function App() {
             userId={userId}
             userRole={userRole}
             onBack={() => handleNavigate('aspect-ai')}
+            onNavigate={handleNavigate}
+          />
+        );
+      
+      case 'personel-izin-talebi':
+        return (
+          <PersonelIzinTalebi
+            userName={userName}
+            userRole={userRole}
+            accessToken={accessToken}
+            onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
         );
