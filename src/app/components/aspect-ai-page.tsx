@@ -331,7 +331,7 @@ async function fetchAltiSaat(): Promise<{ text: string; card: ResponseCard }> {
 
 // ─── Bugün tüm izinliler (yönetici/müdür için) ───────────────────────────────
 
-async function fetchBugunIzinliler(): Promise<{ text: string; card?: ResponseCard }> {
+async function fetchBugunIzinliler(targetDate?: string): Promise<{ text: string; card?: ResponseCard }> {
   try {
     const [leaves, dailyOnLeave, staffMembers] = await Promise.all([
       getLeaveRequests(),
@@ -343,7 +343,7 @@ async function fetchBugunIzinliler(): Promise<{ text: string; card?: ResponseCar
     const now = new Date();
     const trOffset = 3 * 60;
     const nowTR = new Date(now.getTime() + (trOffset - now.getTimezoneOffset()) * 60000);
-    const todayStr = nowTR.toISOString().split('T')[0];
+    const todayStr = targetDate || nowTR.toISOString().split('T')[0];
 
     const izinliler: { ad: string; tip: string; kaynak: string; bas?: string; bit?: string; durum?: string }[] = [];
     const eklenenIds   = new Set<string>();  // auth user ID bazlı dedup
@@ -382,8 +382,19 @@ async function fetchBugunIzinliler(): Promise<{ text: string; card?: ResponseCar
       }
     }
 
+    const tarihLabel = (() => {
+      const now2 = new Date();
+      const trOff = 3 * 60;
+      const nowTR2 = new Date(now2.getTime() + (trOff - now2.getTimezoneOffset()) * 60000);
+      const realToday = nowTR2.toISOString().split('T')[0];
+      const realYesterday = new Date(nowTR2.getTime() - 86400000).toISOString().split('T')[0];
+      if (todayStr === realToday) return 'Bugün';
+      if (todayStr === realYesterday) return 'Dün';
+      return todayStr;
+    })();
+
     if (izinliler.length === 0) {
-      return { text: `📅 Bugün (**${todayStr}**) izinli personel yok — tüm ekip aktif! 💪` };
+      return { text: `📅 **${tarihLabel}** (**${todayStr}**) izinli personel yok — tüm ekip aktif! 💪` };
     }
 
     const liste = izinliler.map(p => {
@@ -392,7 +403,7 @@ async function fetchBugunIzinliler(): Promise<{ text: string; card?: ResponseCar
     }).join('\n');
 
     return {
-      text: `📅 Bugün (**${todayStr}**) izinli **${izinliler.length} personel** var:\n${liste}`,
+      text: `📅 **${tarihLabel}** (**${todayStr}**) izinli **${izinliler.length} personel** var:\n${liste}`,
     };
   } catch (e) {
     console.error('fetchBugunIzinliler error:', e);
@@ -954,7 +965,7 @@ async function fetchIzinAnalizi(soru: string, staffMembers: any[]): Promise<{ te
   }
 }
 
-function generateAIResponse(q: string, role: string, ozet: AIOzet | null, configMap?: Record<string, RoleConfig>): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' | 'IZIN_GECMISI' | 'BUGUN_IZINLILER' | 'IZIN_ANALIZI' | 'SATIS_ANALIZI' | 'ANOMALI_ANALIZI' | 'INDIRIM_ANALIZI' | 'LEAVE_REQUEST' | 'LEAVE_CONFIRM' {
+function generateAIResponse(q: string, role: string, ozet: AIOzet | null, configMap?: Record<string, RoleConfig>): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' | 'IZIN_GECMISI' | 'BUGUN_IZINLILER' | 'DUN_IZINLILER' | 'IZIN_ANALIZI' | 'SATIS_ANALIZI' | 'ANOMALI_ANALIZI' | 'INDIRIM_ANALIZI' | 'LEAVE_REQUEST' | 'LEAVE_CONFIRM' {
   const lower = q.toLowerCase();
   const map = configMap ?? ROLE_CONFIG;
   const config = map[role] ?? ROLE_CONFIG['personel'];
@@ -981,7 +992,7 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
     return 'LEAVE_CONFIRM';
   }
 
-  // Bugün izinliler (sadece bugün)
+  // Bugün izinliler
   if (
     isAdmin && (
       (lower.includes('bugün') || lower.includes('bugun')) &&
@@ -989,6 +1000,17 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
     )
   ) {
     return 'BUGUN_IZINLILER';
+  }
+
+  // Dün izinliler
+  if (
+    isAdmin && (
+      (lower.includes('dün') || lower.includes('dun')) &&
+      (lower.includes('izin') || lower.includes('izinde') || lower.includes('izinli') ||
+       lower.includes('göster') || lower.includes('goster') || lower.includes('kim'))
+    )
+  ) {
+    return 'DUN_IZINLILER';
   }
 
   // Tarihsel izin analizi — yönetici/müdür: geçmiş, belirli kişi, ay, hafta, sıralama
@@ -2905,6 +2927,14 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       const izinlilerResult = await fetchBugunIzinliler();
       aiText = izinlilerResult.text;
       aiCard = izinlilerResult.card;
+    } else if (result === 'DUN_IZINLILER') {
+      const now2 = new Date();
+      const trOff = 3 * 60;
+      const nowTR2 = new Date(now2.getTime() + (trOff - now2.getTimezoneOffset()) * 60000);
+      const dunStr = new Date(nowTR2.getTime() - 86400000).toISOString().split('T')[0];
+      const dunResult = await fetchBugunIzinliler(dunStr);
+      aiText = dunResult.text;
+      aiCard = dunResult.card;
     } else if (result === 'INDIRIM_ANALIZI') {
       const indirimResult = await fetchIndirimAnalizi(text.trim());
       aiText = indirimResult.text;
