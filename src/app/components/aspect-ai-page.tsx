@@ -1055,13 +1055,24 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
   if (
     isAdmin && (
       q === '__ROT_CREATE__' ||
-      lower.includes('rotasyon oluştur') || lower.includes('görev oluştur') ||
+      lower.includes('rotasyon oluştur') || lower.includes('rotasyon olustur') ||
+      lower.includes('görev oluştur') || lower.includes('gorev olustur') ||
       lower.includes('vardiya oluştur') || lower.includes('atama yap') ||
-      lower.includes('personel ata') || lower.includes('ai rotasyon') ||
-      (lower.includes('gönder') && (lower.includes('personel') || lower.includes('mekan') || lower.includes('kim'))) ||
+      lower.includes('görev at') || lower.includes('görev ata') || lower.includes('gorev ata') ||
+      lower.includes('personel ata') || lower.includes('personel atama') ||
+      lower.includes('ai rotasyon') || lower.includes('yeni atama') ||
+      lower.includes('rotasyon başlat') || lower.includes('rotasyon baslat') ||
+      lower.includes('rotasyon ekle') || lower.includes('yeni rotasyon') ||
+      lower.includes('rotasyon yaz') || lower.includes('rotasyon aç') ||
       lower.includes('bugün kim gitsin') || lower.includes('yarın kim gitsin') ||
-      (lower.includes('sokağa gönder') || lower.includes('mekana gönder')) ||
-      lower.includes('rotasyon yaz') || lower.includes('yeni rotasyon')
+      lower.includes('bugun kim gitsin') || lower.includes('yarin kim gitsin') ||
+      lower.includes('mekana gönder') || lower.includes('mekana gonder') ||
+      lower.includes('sokağa gönder') || lower.includes('sokaga gonder') ||
+      lower.includes('balık haline') || lower.includes('balik haline') ||
+      lower.includes('göreve gönder') || lower.includes('goreve gonder') ||
+      (lower.includes('gönder') && (lower.includes('personel') || lower.includes('mekan') || lower.includes('kim'))) ||
+      (lower.includes('görev') && (lower.includes('oluştur') || lower.includes('ekle') || lower.includes('ver') || lower.includes('yeni'))) ||
+      (lower.includes('rotasyon') && (lower.includes('oluştur') || lower.includes('ekle') || lower.includes('yeni') || lower.includes('yap') || lower.includes('aç') || lower.includes('başlat')))
     )
   ) {
     return 'ROTATION_CREATE';
@@ -3730,6 +3741,19 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     const rotCmd = text.trim();
     if (rotCmd.startsWith('__ROT_')) {
       await handleRotationFlowCommand(rotCmd);
+      return;
+    }
+
+    // ── Erken KV kontrolü: Rotasyon/İzin doğal dil → GPT'yi bypass et ────
+    const earlyCheck = generateAIResponse(text.trim(), userRole, ozet, activeROLE_CONFIG);
+    if (earlyCheck === 'ROTATION_CREATE') { await handleRotationFlowCommand('__ROT_CREATE__'); return; }
+    if (earlyCheck === 'ROTATION_CANCEL') { await handleRotationFlowCommand('__ROT_CANCEL_START__'); return; }
+    if (earlyCheck === 'ROTATION_SUGGEST') { await handleRotationFlowCommand('__ROT_SUGGEST__'); return; }
+    if (earlyCheck === 'LEAVE_REQUEST') {
+      const lf: LeaveFlowState = { step: 'type' };
+      setLeaveFlow(lf);
+      setMessages(prev => [...prev, { id: (Date.now()+1).toString(), role: 'ai', text: '🏖️ İzin talebi oluşturalım! Önce izin türünü seç:', ts: new Date(), card: { type: 'leave_flow', data: lf } }]);
+      setIsLoading(false);
       return;
     }
 
