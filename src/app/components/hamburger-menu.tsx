@@ -99,6 +99,8 @@ function getSections(
         { icon: Trophy,        label: 'Liderlik Tablosu',  roles: all,  action: () => go('leaderboard') },
         { icon: Sparkles,      label: 'Aspect AI',         roles: ['operasyon','idari','personel','bekleyen'] as UserRole[],  action: () => go('aspect-ai')   },
         { icon: FileBarChart,  label: 'Vardiya Raporları', roles: ['yonetici'] as UserRole[], action: () => go('vardiya-raporlari') },
+        { icon: GraduationCap, label: 'Akademi',           roles: all,  action: () => go('academy')           },
+        { icon: Cake,          label: 'Doğum Günleri',     roles: mgmt, action: () => go('birthday-calendar') },
       ],
     },
     {
@@ -106,19 +108,25 @@ function getSections(
       color: '#fb923c',
       items: [
         { icon: Zap,          label: 'Operasyon Paneli',  roles: all,  action: () => go('quick-sales')     },
-        { icon: Activity,     label: 'Canlı Feed',         roles: ['yonetici','ust-mudur'] as UserRole[], action: () => go('live-feed')       },
         { icon: RotateCcw,    label: 'Rotasyon',           roles: all,  action: () => go('rotation')        },
-        { icon: Package,      label: 'Malzeme Yönetimi',   roles: all,  action: () => go('equipment-page')  },
-        { icon: BarChart2,    label: 'Stok Dağılımı',      roles: all,  action: () => go('stock-distribution')   },
         { icon: Bell,         label: 'Duyurular',          roles: all,  action: () => go('announcements')   },
-        { icon: ClipboardList,label: 'İzin Çizelgesi',     roles: all,  action: () => go('personel-izin-cetveli') },
       ],
     },
     {
-      title: 'PRİM',
+      title: 'MALZEME & STOK',
+      color: '#38bdf8',
+      items: [
+        { icon: Package,  label: 'Malzeme Yönetimi', roles: all, action: () => go('equipment-page')      },
+        { icon: BarChart2,label: 'Stok Dağılımı',    roles: all, action: () => go('stock-distribution') },
+      ],
+    },
+    {
+      title: 'PERSONEL PANELİ',
       color: '#fbbf24',
       items: [
-        { icon: Wallet, label: 'Primlerim',  roles: all, action: () => go('personel-prim-takip') },
+        { icon: Wallet,       label: 'Primlerim',             roles: all, action: () => go('personel-prim-takip') },
+        { icon: CalendarDays, label: 'Kişisel İzin Çizelgesi', roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('kisisel-izin-cetveli') },
+        { icon: User,         label: 'Profil',                roles: all, action: () => go('profile') },
       ],
     },
     {
@@ -133,18 +141,14 @@ function getSections(
       title: 'YÖNETİCİ HIZLI ERİŞİM',
       color: '#34d399',
       items: [
-        { icon: Bell,          label: 'Duyurular',          roles: all,  action: () => go('announcements')      },
-        { icon: GraduationCap, label: 'Akademi',            roles: all,  action: () => go('academy')            },
-        { icon: Cake,          label: 'Doğum Günleri',      roles: mgmt, action: () => go('birthday-calendar')  },
-        { icon: ClipboardList, label: 'İzin Çizelgesi',     roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[], action: () => go('personel-izin-cetveli') },
-        { icon: CalendarDays,  label: 'Kişisel İzin Çizelgesi', roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('kisisel-izin-cetveli') },
+        { icon: Activity,      label: 'Canlı Feed',    roles: ['yonetici','ust-mudur'] as UserRole[], action: () => go('live-feed')            },
+        { icon: ClipboardList, label: 'İzin Çizelgesi', roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[], action: () => go('personel-izin-cetveli') },
       ],
     },
     {
       title: 'HESAP',
       color: '#60a5fa',
       items: [
-        { icon: User,    label: 'Profil',    roles: all, action: () => go('profile')  },
         { icon: Settings,label: 'Ayarlar',   roles: all, action: () => go('settings') },
         { icon: LogOut,  label: 'Çıkış Yap', roles: all, danger: true, action: () => { close(); onLogout(); } },
       ],
