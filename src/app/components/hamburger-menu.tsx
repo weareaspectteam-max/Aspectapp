@@ -234,8 +234,11 @@ export function HamburgerMenu({
   const [adminOpen, setAdminOpen]             = useState(false);
   const [openSubSection, setOpenSubSection]   = useState<string | null>(null);
   const [aiPersonal, setAiPersonal]           = useState(true);
-  const [aiGlobal, setAiGlobal]               = useState(true);
-  const [toggleLoading, setToggleLoading]     = useState<'personal' | 'global' | null>(null);
+  const [aiYonetim, setAiYonetim]             = useState(true);
+  const [aiIdari, setAiIdari]                 = useState(true);
+  const [aiPersonel, setAiPersonel]           = useState(true);
+  const [aiOperasyon, setAiOperasyon]         = useState(true);
+  const [toggleLoading, setToggleLoading]     = useState<string | null>(null);
   const [settingsLoaded, setSettingsLoaded]   = useState(false);
 
   const sections  = getSections(userRole, onNavigate, onLogout, close, activeTab);
@@ -255,7 +258,10 @@ export function HamburgerMenu({
         .then(data => {
           if (data) {
             setAiPersonal(data.ai_personal_yonetici !== false);
-            setAiGlobal(data.ai_global_enabled !== false);
+            setAiYonetim(data.ai_yonetim_enabled !== false);
+            setAiIdari(data.ai_idari_enabled !== false);
+            setAiPersonel(data.ai_personel_enabled !== false);
+            setAiOperasyon(data.ai_operasyon_enabled !== false);
           }
           setSettingsLoaded(true);
         })
@@ -263,44 +269,35 @@ export function HamburgerMenu({
     ).catch(() => {});
   }, [isOpen, isYonetici, settingsLoaded]);
 
-  /* ── Toggle handlers ── */
-  const handleTogglePersonal = async () => {
-    const newVal = !aiPersonal;
-    setToggleLoading('personal');
-    setAiPersonal(newVal);
+  /* ── Toggle handler factory ── */
+  const makeToggle = (
+    key: string,
+    val: boolean,
+    setter: (v: boolean) => void,
+  ) => async () => {
+    const newVal = !val;
+    setToggleLoading(key);
+    setter(newVal);
     try {
       const headers = await authHeaders();
       await fetch(`${API_BASE}/ai/toggle-settings`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ ai_personal_yonetici: newVal }),
+        body: JSON.stringify({ [key]: newVal }),
       });
     } catch (e) {
-      console.error('AI personal toggle hatası:', e);
-      setAiPersonal(!newVal); // geri al
+      console.error(`AI toggle hatası (${key}):`, e);
+      setter(!newVal);
     } finally {
       setToggleLoading(null);
     }
   };
 
-  const handleToggleGlobal = async () => {
-    const newVal = !aiGlobal;
-    setToggleLoading('global');
-    setAiGlobal(newVal);
-    try {
-      const headers = await authHeaders();
-      await fetch(`${API_BASE}/ai/toggle-settings`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ ai_global_enabled: newVal }),
-      });
-    } catch (e) {
-      console.error('AI global toggle hatası:', e);
-      setAiGlobal(!newVal); // geri al
-    } finally {
-      setToggleLoading(null);
-    }
-  };
+  const handleTogglePersonal  = makeToggle('ai_personal_yonetici', aiPersonal,  setAiPersonal);
+  const handleToggleYonetim   = makeToggle('ai_yonetim_enabled',   aiYonetim,   setAiYonetim);
+  const handleToggleIdari     = makeToggle('ai_idari_enabled',      aiIdari,     setAiIdari);
+  const handleTogglePersonel  = makeToggle('ai_personel_enabled',   aiPersonel,  setAiPersonel);
+  const handleToggleOperasyon = makeToggle('ai_operasyon_enabled',  aiOperasyon, setAiOperasyon);
 
   return (
     <>
@@ -558,27 +555,50 @@ export function HamburgerMenu({
                                     badge="SADECE YÖNETİCİ"
                                   >
                                     {/* AI — Benim İçin */}
-                                    <div className="flex items-center gap-3 rounded-xl" style={{ padding: '9px 11px', background: aiPersonal ? 'rgba(168,85,247,0.10)' : 'rgba(255,255,255,0.03)', border: aiPersonal ? '1px solid rgba(168,85,247,0.25)' : '1px solid rgba(255,255,255,0.07)', transition: 'all 0.2s' }}>
-                                      <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: aiPersonal ? 'rgba(168,85,247,0.20)' : 'rgba(255,255,255,0.06)', border: aiPersonal ? '1px solid rgba(168,85,247,0.4)' : '1px solid rgba(255,255,255,0.1)' }}>
-                                        <Brain style={{ width: 12, height: 12, color: aiPersonal ? '#c084fc' : 'rgba(255,255,255,0.35)' }} strokeWidth={1.8} />
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <p style={{ fontSize: 11, fontWeight: 600, color: aiPersonal ? '#e2e8f0' : 'rgba(226,232,240,0.55)', margin: 0 }}>AI — Benim İçin</p>
-                                        <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>Kendi AI modun</p>
-                                      </div>
-                                      <ToggleSwitch enabled={aiPersonal} onToggle={handleTogglePersonal} loading={toggleLoading === 'personal'} color="#a855f7" />
-                                    </div>
-                                    {/* AI — Herkes İçin */}
-                                    <div className="flex items-center gap-3 rounded-xl" style={{ padding: '9px 11px', background: aiGlobal ? 'rgba(34,211,238,0.08)' : 'rgba(255,255,255,0.03)', border: aiGlobal ? '1px solid rgba(34,211,238,0.20)' : '1px solid rgba(255,255,255,0.07)', transition: 'all 0.2s' }}>
-                                      <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: aiGlobal ? 'rgba(34,211,238,0.15)' : 'rgba(255,255,255,0.06)', border: aiGlobal ? '1px solid rgba(34,211,238,0.35)' : '1px solid rgba(255,255,255,0.1)' }}>
-                                        <Globe style={{ width: 12, height: 12, color: aiGlobal ? '#22d3ee' : 'rgba(255,255,255,0.35)' }} strokeWidth={1.8} />
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <p style={{ fontSize: 11, fontWeight: 600, color: aiGlobal ? '#e2e8f0' : 'rgba(226,232,240,0.55)', margin: 0 }}>AI — Herkes İçin</p>
-                                        <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>Tüm roller için global AI</p>
-                                      </div>
-                                      <ToggleSwitch enabled={aiGlobal} onToggle={handleToggleGlobal} loading={toggleLoading === 'global'} color="#22d3ee" />
-                                    </div>
+                                    <AiToggleRow
+                                      label="AI — Benim İçin"
+                                      desc="Sadece yönetici"
+                                      enabled={aiPersonal}
+                                      loading={toggleLoading === 'ai_personal_yonetici'}
+                                      color="#a855f7"
+                                      onToggle={handleTogglePersonal}
+                                    />
+                                    {/* AI — Yönetim İçin */}
+                                    <AiToggleRow
+                                      label="AI — Yönetim İçin"
+                                      desc="Üst müdür + müdür"
+                                      enabled={aiYonetim}
+                                      loading={toggleLoading === 'ai_yonetim_enabled'}
+                                      color="#6366f1"
+                                      onToggle={handleToggleYonetim}
+                                    />
+                                    {/* AI — İdari İçin */}
+                                    <AiToggleRow
+                                      label="AI — İdari İçin"
+                                      desc="İdari görevliler"
+                                      enabled={aiIdari}
+                                      loading={toggleLoading === 'ai_idari_enabled'}
+                                      color="#60a5fa"
+                                      onToggle={handleToggleIdari}
+                                    />
+                                    {/* AI — Personel İçin */}
+                                    <AiToggleRow
+                                      label="AI — Personel İçin"
+                                      desc="Personel rolü"
+                                      enabled={aiPersonel}
+                                      loading={toggleLoading === 'ai_personel_enabled'}
+                                      color="#34d399"
+                                      onToggle={handleTogglePersonel}
+                                    />
+                                    {/* AI — Operasyon İçin */}
+                                    <AiToggleRow
+                                      label="AI — Operasyon İçin"
+                                      desc="Operasyon rolü"
+                                      enabled={aiOperasyon}
+                                      loading={toggleLoading === 'ai_operasyon_enabled'}
+                                      color="#fb923c"
+                                      onToggle={handleToggleOperasyon}
+                                    />
                                   </SubAccordion>
                                 )}
 
@@ -866,5 +886,50 @@ function NavItem({
       {/* Sağ ok */}
       <ChevronRight style={{ width: 12, height: 12, color: `${color}80`, flexShrink: 0 }} />
     </motion.button>
+  );
+}
+
+/* ─────────────────────── AiToggleRow ──────────────────── */
+function AiToggleRow({
+  label,
+  desc,
+  enabled,
+  loading,
+  color,
+  onToggle,
+}: {
+  label: string;
+  desc: string;
+  enabled: boolean;
+  loading: boolean;
+  color: string;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      className="flex items-center gap-3 rounded-xl"
+      style={{
+        padding: '9px 11px',
+        background: enabled ? `${color}15` : 'rgba(255,255,255,0.03)',
+        border: enabled ? `1px solid ${color}35` : '1px solid rgba(255,255,255,0.07)',
+        transition: 'all 0.2s',
+      }}
+    >
+      <div
+        className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+        style={{
+          background: enabled ? `${color}28` : 'rgba(255,255,255,0.06)',
+          border: enabled ? `1px solid ${color}50` : '1px solid rgba(255,255,255,0.1)',
+          transition: 'all 0.2s',
+        }}
+      >
+        <Brain style={{ width: 12, height: 12, color: enabled ? color : 'rgba(255,255,255,0.35)' }} strokeWidth={1.8} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p style={{ fontSize: 11, fontWeight: 600, color: enabled ? '#e2e8f0' : 'rgba(226,232,240,0.55)', margin: 0 }}>{label}</p>
+        <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>{desc}</p>
+      </div>
+      <ToggleSwitch enabled={enabled} onToggle={onToggle} loading={loading} color={color} />
+    </div>
   );
 }
