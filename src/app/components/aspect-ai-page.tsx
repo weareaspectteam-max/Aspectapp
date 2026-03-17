@@ -1710,11 +1710,12 @@ function IzinGecmisiCard({ data, onNavigate }: {
 
 // ─── RotationFlowCard ────────────────────────────────────────────────────────
 
-function RotationFlowCard({ data, onAction, isActive, onNavigate }: {
+function RotationFlowCard({ data, onAction, isActive, onNavigate, onDirectSave }: {
   data: RotationFlowState;
   onAction: (command: string) => void;
   isActive: boolean;
   onNavigate?: (tab: string) => void;
+  onDirectSave?: (data: RotationFlowState, status: 'sent' | 'draft') => Promise<void>;
 }) {
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
   const [customStart, setCustomStart] = useState('10:00');
@@ -1972,6 +1973,24 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate }: {
 
   // ── Confirm ───────────────────────────────────────────────────────────────
   if (data.step === 'confirm') {
+    const [saving, setSaving] = useState(false);
+    const [saveErr, setSaveErr] = useState('');
+
+    const handleSave = async (status: 'sent' | 'draft') => {
+      if (saving) return;
+      setSaving(true); setSaveErr('');
+      try {
+        if (onDirectSave) {
+          await onDirectSave(data, status);
+        } else {
+          onAction(status === 'sent' ? '__ROT_SAVE_sent__' : '__ROT_SAVE_draft__');
+        }
+      } catch (e: any) {
+        setSaveErr(e?.message || 'Kayıt hatası. Tekrar dene.');
+        setSaving(false);
+      }
+    };
+
     return (
       <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
         <div className="px-4 py-2.5 border-b border-white/8 bg-white/3 flex items-center gap-2">
@@ -1981,9 +2000,9 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate }: {
         <div className="p-3 space-y-1.5">
           {[
             { icon: '📅', label: 'Tarih', val: fmtDate(data.date || '') },
-            { icon: '📍', label: 'Mekan', val: `${data.locationIcon} ${data.locationName}` },
-            { icon: '👥', label: 'Personel', val: data.selectedPersonnel?.map(p => p.name).join(', ') || '-' },
-            { icon: '⏰', label: 'Saat', val: `${data.startTime} – ${data.endTime}` },
+            { icon: '📍', label: 'Mekan', val: `${data.locationIcon || ''} ${data.locationName || '—'}` },
+            { icon: '👥', label: 'Personel', val: data.selectedPersonnel?.map(p => p.name).join(', ') || '—' },
+            { icon: '⏰', label: 'Saat', val: `${data.startTime || '?'} – ${data.endTime || '?'}` },
           ].map(item => (
             <div key={item.label} className="flex items-start gap-2.5 bg-white/5 rounded-xl px-3 py-2">
               <span className="text-base shrink-0">{item.icon}</span>
@@ -1994,16 +2013,24 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate }: {
             </div>
           ))}
         </div>
+        {saveErr && (
+          <div className="mx-3 mb-2 px-3 py-2 rounded-xl bg-red-500/15 border border-red-500/25 text-xs text-red-300">{saveErr}</div>
+        )}
         <div className="p-3 border-t border-white/8 space-y-2">
-          <button onClick={() => onAction('__ROT_SAVE_sent__')}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-500/30 to-indigo-500/20 border border-violet-500/40 text-violet-200 text-sm font-bold hover:from-violet-500/45 hover:to-indigo-500/35 transition-all flex items-center justify-center gap-2">
-            <Send className="w-4 h-4" /> Gönder (Personel Bilgilendirilir)
+          <button
+            onClick={() => handleSave('sent')}
+            disabled={saving}
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-500/30 to-indigo-500/20 border border-violet-500/40 text-violet-200 text-sm font-bold hover:from-violet-500/45 hover:to-indigo-500/35 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {saving ? 'Kaydediliyor...' : 'Gönder (Personel Bilgilendirilir)'}
           </button>
-          <button onClick={() => onAction('__ROT_SAVE_draft__')}
-            className="w-full py-2.5 rounded-xl bg-white/8 border border-white/15 text-white/60 text-sm font-semibold hover:bg-white/14 transition-colors">
+          <button
+            onClick={() => handleSave('draft')}
+            disabled={saving}
+            className="w-full py-2.5 rounded-xl bg-white/8 border border-white/15 text-white/60 text-sm font-semibold hover:bg-white/14 transition-colors disabled:opacity-40">
             📝 Taslak Olarak Kaydet
           </button>
-          <button onClick={() => onAction('__ROT_CANCEL__')} className="w-full text-center text-[11px] text-white/30 hover:text-white/50 py-1 transition-colors">İptal</button>
+          <button onClick={() => onAction('__ROT_CANCEL__')} disabled={saving} className="w-full text-center text-[11px] text-white/30 hover:text-white/50 py-1 transition-colors">İptal</button>
         </div>
       </div>
     );
@@ -2386,11 +2413,12 @@ function AnomalyCard({ data }: { data: any[] }) {
   );
 }
 
-function MessageBubble({ msg, onFlowAction, isLastMsg, onNavigate }: {
+function MessageBubble({ msg, onFlowAction, isLastMsg, onNavigate, onDirectSave }: {
   msg: Message;
   onFlowAction?: (command: string) => void;
   isLastMsg?: boolean;
   onNavigate?: (tab: string) => void;
+  onDirectSave?: (data: RotationFlowState, status: 'sent' | 'draft') => Promise<void>;
 }) {
   const isUser = msg.role === 'user';
   return (
@@ -2437,6 +2465,7 @@ function MessageBubble({ msg, onFlowAction, isLastMsg, onNavigate }: {
                 onAction={onFlowAction ?? (() => {})}
                 isActive={!!isLastMsg && !msg.card.data.completed}
                 onNavigate={onNavigate}
+                onDirectSave={onDirectSave}
               />
             )}
             {msg.card.type === 'rotation_cancel_flow' && (
@@ -3028,6 +3057,12 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const [rotationFlow, setRotationFlow] = useState<RotationFlowState | null>(null);
   const [rotationCancelFlow, setRotationCancelFlow] = useState<RotationCancelFlowState | null>(null);
 
+  // useRef ile her zaman güncel rotationFlow değerine eriş — stale closure engeli
+  const rotationFlowRef = useRef<RotationFlowState | null>(null);
+  const rotationCancelFlowRef = useRef<RotationCancelFlowState | null>(null);
+  const setRotFlow = (flow: RotationFlowState | null) => { rotationFlowRef.current = flow; setRotationFlow(flow); };
+  const setRotCancelFlow = (flow: RotationCancelFlowState | null) => { rotationCancelFlowRef.current = flow; setRotationCancelFlow(flow); };
+
   // KV'den config yükle ve ROLE_CONFIG'i override et
   useEffect(() => {
     authHeaders().then(headers =>
@@ -3239,24 +3274,40 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     return false;
   }, [leaveFlow, userId, userName, userAvatar, userRole]);
 
-  // ── Rotasyon flow komutlarını işle ────────────────────────────────────────
+  // ── Rotasyon flow komutlarını işle — REF tabanlı (stale closure yok) ──────
   const handleRotationFlowCommand = useCallback(async (command: string): Promise<boolean> => {
     if (!command.startsWith('__ROT_')) return false;
     const makeId = () => Date.now().toString();
 
-    // ── Rotasyon oluşturma başlat (__ROT_CREATE__) ──────────────────────────
+    // Her zaman güncel değer için ref kullan
+    const curFlow = rotationFlowRef.current;
+    const curCancelFlow = rotationCancelFlowRef.current;
+
+    // ── Rotasyon oluşturma başlat ─────────────────────────────────────────
     if (command === '__ROT_CREATE__') {
       try {
-        // Yükleniyor placeholder
         const loadingFlow: RotationFlowState = { step: 'loading' };
-        setRotationFlow(loadingFlow);
+        setRotFlow(loadingFlow);
         setMessages(prev => [...prev, {
           id: makeId(), role: 'ai',
-          text: '🗓️ Rotasyon verileri yükleniyor...',
+          text: '🗓️ Mekan ve personel verileri yükleniyor...',
           ts: new Date(), card: { type: 'rotation_flow', data: loadingFlow },
         }]);
 
         const [locs, staff] = await Promise.all([getLocations(), getStaffMembers()]);
+        console.log('[ROT_CREATE] Yüklendi — lokasyon:', locs.length, 'personel:', staff.length);
+
+        if (locs.length === 0 && staff.length === 0) {
+          setRotFlow(null);
+          setMessages(prev => [...prev.slice(0, -1), {
+            id: makeId(), role: 'ai',
+            text: '❌ Mekan ve personel verileri yüklenemedi. Sunucu bağlantısını kontrol et ve tekrar dene.',
+            ts: new Date(),
+          }]);
+          setIsLoading(false);
+          return true;
+        }
+
         const nowTR = new Date(Date.now() + (3 * 60 - new Date().getTimezoneOffset()) * 60000);
         const todayStr = nowTR.toISOString().split('T')[0];
         const [todayLeaves, todayDaily] = await Promise.all([getLeaveRequests(), getDailyOnLeave()]);
@@ -3268,35 +3319,31 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
         staff.filter((s: StaffMember) => s.status === 'on_leave').forEach((s: StaffMember) => onLeaveSet.add(s.id));
 
         const readyFlow: RotationFlowState = { step: 'date', locations: locs, staffMembers: staff, onLeaveIds: Array.from(onLeaveSet) };
-        setRotationFlow(readyFlow);
-
-        // Placeholder mesajı güncelle
+        setRotFlow(readyFlow);
         setMessages(prev => {
           const last = prev[prev.length - 1];
-          if (last && last.card?.type === 'rotation_flow') {
+          if (last?.card?.type === 'rotation_flow') {
             return [...prev.slice(0, -1), { ...last, text: '🗓️ Rotasyon oluşturalım! Önce tarihi seç:', card: { type: 'rotation_flow', data: readyFlow } }];
           }
           return [...prev, { id: makeId(), role: 'ai', text: '🗓️ Rotasyon oluşturalım! Önce tarihi seç:', ts: new Date(), card: { type: 'rotation_flow', data: readyFlow } }];
         });
-      } catch (e) {
-        console.error('ROT_CREATE veri yükleme hatası:', e);
-        setRotationFlow(null);
-        setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: '❌ Rotasyon verileri yüklenirken hata oluştu. Lütfen tekrar dene.', ts: new Date() }]);
+      } catch (e: any) {
+        console.error('[ROT_CREATE] Hata:', e?.message || e);
+        setRotFlow(null);
+        setMessages(prev => [...prev.slice(0, -1), { id: makeId(), role: 'ai', text: `❌ Rotasyon verisi yüklenemedi: ${e?.message || 'Bağlantı hatası'}. Tekrar dene.`, ts: new Date() }]);
       }
       setIsLoading(false);
       return true;
     }
 
-    // ── Rotasyon önerisi (__ROT_SUGGEST__) ─────────────────────────────────
+    // ── Rotasyon önerisi ──────────────────────────────────────────────────
     if (command === '__ROT_SUGGEST__') {
       try {
         const nowTR = new Date(Date.now() + (3 * 60 - new Date().getTimezoneOffset()) * 60000);
         const todayStr = nowTR.toISOString().split('T')[0];
         const tomorrowStr = new Date(nowTR.getTime() + 86400000).toISOString().split('T')[0];
-
         const [locs, staff, leaves, daily] = await Promise.all([getLocations(), getStaffMembers(), getLeaveRequests(), getDailyOnLeave()]);
 
-        // Bugün ve yarın için müsait personel
         const buildAvail = (targetDate: string) => {
           const s = new Set<string>();
           for (const l of leaves) {
@@ -3320,10 +3367,10 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
             const izinAdlar = staff.filter((x: StaffMember) => data.onLeave.has(x.id)).map((x: StaffMember) => x.name.split(' ')[0]).join(', ');
             s += `🏖️ İzinli (${data.onLeave.size} kişi): ${izinAdlar}\n`;
           }
-          s += `📍 Mekan dağılımı önerisi (~${avgPerLoc} kişi/mekan):\n`;
+          s += `📍 Önerilen dağılım (~${avgPerLoc} kişi/mekan):\n`;
           locs.forEach((loc: Location, i: number) => {
             const assigned = data.available.slice(i * avgPerLoc, (i + 1) * avgPerLoc);
-            s += `  • ${loc.icon || '📍'} **${loc.name}**: ${assigned.length > 0 ? assigned.map(x => x.name.split(' ')[0]).join(', ') : '— (mekan boş kalacak)'}\n`;
+            s += `  • ${loc.icon || '📍'} **${loc.name}**: ${assigned.length > 0 ? assigned.map(x => x.name.split(' ')[0]).join(', ') : '— boş kalacak'}\n`;
           });
           return s;
         };
@@ -3332,17 +3379,16 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
         text += buildSection('Bugün', todayStr, todayData) + '\n';
         text += buildSection('Yarın', tomorrowStr, tomorrowData) + '\n';
         text += `Rotasyon oluşturmak için 🗓️ **Rotasyon Oluştur** chip'ini kullan veya "rotasyon oluştur" yaz.`;
-
         setMessages(prev => [...prev, { id: makeId(), role: 'ai', text, ts: new Date() }]);
-      } catch (e) {
-        console.error('ROT_SUGGEST hatası:', e);
-        setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: '❌ Rotasyon önerisi oluşturulurken hata oluştu.', ts: new Date() }]);
+      } catch (e: any) {
+        console.error('[ROT_SUGGEST] Hata:', e?.message || e);
+        setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: '❌ Rotasyon önerisi oluşturulamadı.', ts: new Date() }]);
       }
       setIsLoading(false);
       return true;
     }
 
-    // ── İptal flow başlat (ROTATION_CANCEL natural language → buraya yönlendirildi) ─
+    // ── İptal flow başlat ─────────────────────────────────────────────────
     if (command === '__ROT_CANCEL_START__') {
       try {
         const nowTR = new Date(Date.now() + (3 * 60 - new Date().getTimezoneOffset()) * 60000);
@@ -3350,7 +3396,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
         const tasks = await getTasks();
         const todayTasks = tasks.filter((t: Task) => t.date === todayStr && t.status !== 'cancelled');
         const cancelState: RotationCancelFlowState = { step: 'select', date: todayStr, tasks: todayTasks };
-        setRotationCancelFlow(cancelState);
+        setRotCancelFlow(cancelState);
         if (todayTasks.length === 0) {
           setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: `📅 Bugün iptal edilebilecek aktif görev bulunamadı.`, ts: new Date() }]);
         } else {
@@ -3360,84 +3406,94 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
             ts: new Date(), card: { type: 'rotation_cancel_flow', data: cancelState },
           }]);
         }
-      } catch (e) {
-        console.error('ROT_CANCEL_START hatası:', e);
+      } catch (e: any) {
+        console.error('[ROT_CANCEL_START] Hata:', e?.message || e);
         setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: '❌ Görev listesi yüklenirken hata oluştu.', ts: new Date() }]);
       }
       setIsLoading(false);
       return true;
     }
 
-    // İptal
+    // ── İptal (flow iptal) ────────────────────────────────────────────────
     if (command === '__ROT_CANCEL__') {
-      setRotationFlow(null);
+      setRotFlow(null);
       setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: 'Rotasyon oluşturma iptal edildi. Başka bir konuda yardımcı olabilir miyim? 😊', ts: new Date() }]);
       setIsLoading(false);
       return true;
     }
 
-    // İptal flow'u vazgeç
     if (command === '__ROT_CANCEL_ABORT__') {
-      setRotationCancelFlow(null);
+      setRotCancelFlow(null);
       setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: 'İptal işleminden vazgeçildi. Görev aktif kalmaya devam ediyor.', ts: new Date() }]);
       setIsLoading(false);
       return true;
     }
 
-    // Tarih seçimi
+    // ── Tarih seçimi ──────────────────────────────────────────────────────
     if (command.startsWith('__ROT_DATE_')) {
       const date = command.replace('__ROT_DATE_', '').replace(/__$/, '');
-      // İzinli IDs'i seçilen tarihe göre güncelle
-      const allLeaves = await getLeaveRequests();
-      const daily = await getDailyOnLeave();
-      const staff = rotationFlow?.staffMembers || await getStaffMembers();
-      const onLeaveSet = new Set<string>();
-      for (const l of allLeaves) {
-        if (l.status !== 'rejected' && date >= l.startDate && date <= l.endDate) onLeaveSet.add(l.personnelId);
-      }
-      const dailyIds: string[] = Array.isArray(daily[date]) ? daily[date] : [];
-      dailyIds.forEach(id => onLeaveSet.add(id));
-      staff.filter(s => s.status === 'on_leave').forEach(s => onLeaveSet.add(s.id));
+      try {
+        const [allLeaves, daily] = await Promise.all([getLeaveRequests(), getDailyOnLeave()]);
+        const staff = curFlow?.staffMembers?.length ? curFlow.staffMembers : await getStaffMembers();
+        const onLeaveSet = new Set<string>();
+        for (const l of allLeaves) {
+          if (l.status !== 'rejected' && date >= l.startDate && date <= l.endDate) onLeaveSet.add(l.personnelId);
+        }
+        (Array.isArray(daily[date]) ? daily[date] : []).forEach((id: string) => onLeaveSet.add(id));
+        staff.filter((s: StaffMember) => s.status === 'on_leave').forEach((s: StaffMember) => onLeaveSet.add(s.id));
 
-      const newFlow: RotationFlowState = { ...rotationFlow, step: 'location', date, onLeaveIds: Array.from(onLeaveSet), staffMembers: staff };
-      setRotationFlow(newFlow);
-      const fmtDate = (d: string) => new Date(d).toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' });
-      setMessages(prev => [...prev, {
-        id: makeId(), role: 'ai',
-        text: `📅 **${fmtDate(date)}** seçildi. Hangi mekana görevlendirme yapılacak?`,
-        ts: new Date(), card: { type: 'rotation_flow', data: newFlow },
-      }]);
+        const newFlow: RotationFlowState = {
+          ...(curFlow || {}),
+          step: 'location', date,
+          onLeaveIds: Array.from(onLeaveSet),
+          staffMembers: staff,
+          locations: curFlow?.locations || [],
+        };
+        setRotFlow(newFlow);
+        const fmtDate = (d: string) => new Date(d).toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' });
+        setMessages(prev => [...prev, {
+          id: makeId(), role: 'ai',
+          text: `📅 **${fmtDate(date)}** seçildi. Hangi mekana görevlendirme yapılacak? (${(curFlow?.locations || []).length} mekan mevcut)`,
+          ts: new Date(), card: { type: 'rotation_flow', data: newFlow },
+        }]);
+      } catch (e: any) {
+        console.error('[ROT_DATE] Hata:', e?.message || e);
+        setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: '❌ İzin verileri yüklenirken hata. Tekrar dene.', ts: new Date() }]);
+      }
       setIsLoading(false);
       return true;
     }
 
-    // Mekan seçimi
+    // ── Mekan seçimi ──────────────────────────────────────────────────────
     if (command.startsWith('__ROT_LOC_')) {
       const raw = command.replace('__ROT_LOC_', '').replace(/__$/, '');
       const [locationId, locationName, locationIcon] = raw.split('|');
-      const onLeaveCount = (rotationFlow?.onLeaveIds || []).length;
-      const newFlow: RotationFlowState = { ...rotationFlow, step: 'personnel', locationId, locationName, locationIcon };
-      setRotationFlow(newFlow);
+      const onLeaveCount = (curFlow?.onLeaveIds || []).length;
+      const newFlow: RotationFlowState = {
+        ...(curFlow || {}),
+        step: 'personnel', locationId, locationName, locationIcon,
+      };
+      setRotFlow(newFlow);
       setMessages(prev => [...prev, {
         id: makeId(), role: 'ai',
-        text: `📍 **${locationIcon} ${locationName}** seçildi. Kimleri görevlendireceksin?${onLeaveCount > 0 ? ` *(${onLeaveCount} kişi bugün izinli — otomatik gri gösterilecek)*` : ''}`,
+        text: `📍 **${locationIcon} ${locationName}** seçildi. Kimleri görevlendireceksin?${onLeaveCount > 0 ? ` (${onLeaveCount} kişi izinli — gri gösterilecek)` : ''}`,
         ts: new Date(), card: { type: 'rotation_flow', data: newFlow },
       }]);
       setIsLoading(false);
       return true;
     }
 
-    // Personel seçimi tamamlandı
+    // ── Personel seçimi tamamlandı ────────────────────────────────────────
     if (command.startsWith('__ROT_STAFF_DONE_')) {
       const raw = command.replace('__ROT_STAFF_DONE_', '').replace(/__$/, '');
       const ids = raw.split(',').filter(Boolean);
-      const allStaff = rotationFlow?.staffMembers || [];
+      const allStaff = curFlow?.staffMembers || [];
       const selectedPersonnel = ids.map(id => {
-        const s = allStaff.find(x => x.id === id);
-        return s ? { id: s.id, name: s.name, avatar: s.avatar, role: s.role } : { id, name: id, avatar: '👤', role: 'personel' };
+        const s = allStaff.find((x: StaffMember) => x.id === id);
+        return s ? { id: s.id, name: s.name, avatar: s.avatar, role: s.role } : { id, name: id, avatar: '👤', role: 'personel' as const };
       });
-      const newFlow: RotationFlowState = { ...rotationFlow, step: 'time', selectedPersonnel };
-      setRotationFlow(newFlow);
+      const newFlow: RotationFlowState = { ...(curFlow || {}), step: 'time', selectedPersonnel };
+      setRotFlow(newFlow);
       setMessages(prev => [...prev, {
         id: makeId(), role: 'ai',
         text: `👥 **${selectedPersonnel.map(p => p.name).join(', ')}** seçildi. Çalışma saatleri nedir?`,
@@ -3447,66 +3503,68 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       return true;
     }
 
-    // Saat seçimi
+    // ── Saat seçimi ───────────────────────────────────────────────────────
     if (command.startsWith('__ROT_TIME_')) {
       const raw = command.replace('__ROT_TIME_', '').replace(/__$/, '');
       const [startTime, endTime] = raw.split('|');
-      const newFlow: RotationFlowState = { ...rotationFlow, step: 'confirm', startTime, endTime };
-      setRotationFlow(newFlow);
+      const newFlow: RotationFlowState = { ...(curFlow || {}), step: 'confirm', startTime, endTime };
+      setRotFlow(newFlow);
       setMessages(prev => [...prev, {
         id: makeId(), role: 'ai',
-        text: `⏰ **${startTime} – ${endTime}** ayarlandı. Her şey doğruysa görevi oluştur!`,
+        text: `⏰ **${startTime} – ${endTime}** ayarlandı. Aşağıda özeti kontrol et, onaylarsan görevi oluştur:`,
         ts: new Date(), card: { type: 'rotation_flow', data: newFlow },
       }]);
       setIsLoading(false);
       return true;
     }
 
-    // Kaydet (draft veya sent)
+    // ── Kaydet ───────────────────────────────────────────────────────────
     if (command === '__ROT_SAVE_draft__' || command === '__ROT_SAVE_sent__') {
-      if (!rotationFlow) {
-        console.error('[ROT_SAVE] rotationFlow state null — görev kaydedilemedi!');
-        setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: '⚠️ Rotasyon verisi kayboldu, lütfen yeniden başlat.', ts: new Date() }]);
+      // REF'ten al — en güncel veri garanti
+      const flowSnap = rotationFlowRef.current;
+      if (!flowSnap) {
+        console.error('[ROT_SAVE] rotationFlowRef.current NULL! State kaybı var.');
+        setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: '⚠️ Rotasyon verisi kayboldu. Lütfen yeniden başlat.', ts: new Date() }]);
         setIsLoading(false);
         return true;
       }
       const status = command === '__ROT_SAVE_sent__' ? 'sent' : 'draft';
-      const flowSnapshot = { ...rotationFlow }; // stale closure riskine karşı snapshot al
+      console.log('[ROT_SAVE] Kaydediliyor:', { status, date: flowSnap.date, location: flowSnap.locationName, personnel: flowSnap.selectedPersonnel?.map(p => p.name) });
       try {
-        const taskId = `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const taskId = `task-ai-${Date.now()}-${Math.random().toString(36).substr(2, 7)}`;
+        const nowISO = new Date().toISOString();
         const task: Task = {
           id: taskId,
-          personnel: (flowSnapshot.selectedPersonnel || []).map(p => ({
-            id: p.id, name: p.name, avatar: p.avatar,
-            role: p.role as any,
+          personnel: (flowSnap.selectedPersonnel || []).map(p => ({
+            id: p.id, name: p.name, avatar: p.avatar || '👤',
+            role: (p.role || 'personel') as any,
           })),
-          location: flowSnapshot.locationName || '',
-          locationIcon: flowSnapshot.locationIcon || '📍',
-          startTime: flowSnapshot.startTime || '10:00',
-          endTime: flowSnapshot.endTime || '18:00',
+          location: flowSnap.locationName || '',
+          locationIcon: flowSnap.locationIcon || '📍',
+          startTime: flowSnap.startTime || '10:00',
+          endTime: flowSnap.endTime || '18:00',
           type: 'regular',
           taskType: 'regular',
           status,
-          date: flowSnapshot.date || new Date().toISOString().split('T')[0],
-          sentAt: status === 'sent' ? new Date().toISOString() : undefined,
+          date: flowSnap.date || new Date().toISOString().split('T')[0],
+          sentAt: status === 'sent' ? nowISO : undefined,
         };
-        console.log('[ROT_SAVE] saveTask çağrılıyor:', JSON.stringify(task));
         await saveTask(task);
-        console.log('[ROT_SAVE] saveTask başarılı, taskId:', taskId);
-        const completedFlow: RotationFlowState = { ...flowSnapshot, completed: true, taskId, taskStatus: status };
-        setRotationFlow(null);
+        console.log('[ROT_SAVE] ✅ Başarılı. taskId:', taskId);
+        const completedFlow: RotationFlowState = { ...flowSnap, completed: true, taskId, taskStatus: status };
+        setRotFlow(null);
         setMessages(prev => [...prev, {
           id: makeId(), role: 'ai',
           text: status === 'sent'
-            ? `✅ Rotasyon görevi **gönderildi!** ${flowSnapshot.locationIcon} **${flowSnapshot.locationName}** → ${flowSnapshot.selectedPersonnel?.map(p => p.name).join(', ')} (${flowSnapshot.startTime}–${flowSnapshot.endTime})`
-            : `📝 Rotasyon görevi **taslak olarak kaydedildi.** Rotasyon sisteminden gönderebilirsin.`,
+            ? `✅ Rotasyon görevi **gönderildi!**\n${flowSnap.locationIcon} **${flowSnap.locationName}** → **${flowSnap.selectedPersonnel?.map(p => p.name).join(', ')}**\n⏰ ${flowSnap.startTime}–${flowSnap.endTime} · 📅 ${flowSnap.date}`
+            : `📝 Rotasyon görevi **taslak olarak kaydedildi.** Rotasyon ekranından onaylayıp gönderebilirsin.`,
           ts: new Date(), card: { type: 'rotation_flow', data: completedFlow },
         }]);
       } catch (e: any) {
-        console.error('[ROT_SAVE] saveTask HATA:', e?.message || e);
+        console.error('[ROT_SAVE] ❌ HATA:', e?.message || e);
         setMessages(prev => [...prev, {
           id: makeId(), role: 'ai',
-          text: `❌ Görev kaydedilirken hata oluştu: ${e?.message || 'Bilinmeyen hata'}. Lütfen tekrar dene.`,
+          text: `❌ Görev kaydedilemedi: **${e?.message || 'Sunucu hatası'}**\n\nOlası nedenler: Yetki sorunu, sunucu bağlantısı. Tekrar dene.`,
           ts: new Date(),
         }]);
       }
@@ -3514,13 +3572,15 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       return true;
     }
 
-    // ── İptal flow komutları ──────────────────────────────────────────────
-    // Görev seçildi → onay sor
+    // ── İptal flow: görev seç ─────────────────────────────────────────────
     if (command.startsWith('__ROT_CANCEL_SELECT_')) {
       const raw = command.replace('__ROT_CANCEL_SELECT_', '').replace(/__$/, '');
       const [taskId, taskLocation] = raw.split('|');
-      const newState: RotationCancelFlowState = { ...(rotationCancelFlow || {}), step: 'confirm', selectedTaskId: taskId, selectedTaskLocation: taskLocation };
-      setRotationCancelFlow(newState);
+      const newState: RotationCancelFlowState = {
+        ...(curCancelFlow || {}),
+        step: 'confirm', selectedTaskId: taskId, selectedTaskLocation: taskLocation,
+      };
+      setRotCancelFlow(newState);
       setMessages(prev => [...prev, {
         id: makeId(), role: 'ai',
         text: `**${taskLocation}** görevini iptal etmek istediğinden emin misin?`,
@@ -3530,28 +3590,29 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       return true;
     }
 
-    // İptal onaylandı → görevi güncelle
+    // ── İptal flow: onayla ────────────────────────────────────────────────
     if (command.startsWith('__ROT_CANCEL_CONFIRM_')) {
       const taskId = command.replace('__ROT_CANCEL_CONFIRM_', '').replace(/__$/, '');
+      const locName = rotationCancelFlowRef.current?.selectedTaskLocation || 'Görev';
       try {
         await updateTask(taskId, { status: 'cancelled', cancelledAt: new Date().toISOString(), cancelReason: 'Aspect AI tarafından iptal edildi' });
-        const completedState: RotationCancelFlowState = { ...(rotationCancelFlow || {}), completed: true };
-        setRotationCancelFlow(null);
+        const completedState: RotationCancelFlowState = { ...(rotationCancelFlowRef.current || {}), completed: true };
+        setRotCancelFlow(null);
         setMessages(prev => [...prev, {
           id: makeId(), role: 'ai',
-          text: `✅ **${rotationCancelFlow?.selectedTaskLocation}** görevi başarıyla iptal edildi.`,
+          text: `✅ **${locName}** görevi başarıyla iptal edildi.`,
           ts: new Date(), card: { type: 'rotation_cancel_flow', data: completedState },
         }]);
-      } catch (e) {
-        console.error('updateTask cancel error:', e);
-        setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: '❌ Görev iptal edilirken hata oluştu.', ts: new Date() }]);
+      } catch (e: any) {
+        console.error('[ROT_CANCEL_CONFIRM] Hata:', e?.message || e);
+        setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: `❌ Görev iptal edilemedi: ${e?.message || 'Hata'}`, ts: new Date() }]);
       }
       setIsLoading(false);
       return true;
     }
 
     return false;
-  }, [rotationFlow, rotationCancelFlow]);
+  }, []); // Bağımlılık YOK — ref üzerinden çalışır, stale closure riski sıfır
 
   // ── Kullanıcıya gösterilen display text map'i ────────────────────────────
   const getDisplayText = (text: string): string => {
@@ -3616,8 +3677,11 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     return text;
   };
 
-  const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || isLoading) return;
+  const sendMessage = useCallback(async (text: string, bypassLoadingCheck = false) => {
+    if (!text.trim()) return;
+    // __ROT_ komutları isLoading guard'ını atlar (flow butonları anında çalışmalı)
+    const isRotCmd = text.trim().startsWith('__ROT_') || text.trim().startsWith('__LEAVE_');
+    if (!bypassLoadingCheck && !isRotCmd && isLoading) return;
 
     const displayText = getDisplayText(text.trim());
     const userMsg: Message = { id: Date.now().toString(), role: 'user', text: displayText, ts: new Date() };
@@ -3816,7 +3880,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
 
     setMessages(prev => [...prev, aiMsg]);
     setIsLoading(false);
-  }, [isLoading, ozet, userRole, activeROLE_CONFIG, userName, userId, handleLeaveFlowCommand, handleRotationFlowCommand, messages]);
+  }, [isLoading, ozet, userRole, activeROLE_CONFIG, userName, userId, handleLeaveFlowCommand, handleRotationFlowCommand, messages]); // handleRotationFlowCommand stable (deps:[]) — ref tabanlı
 
   const initialMessage: Message = {
     id: '0',
@@ -4180,6 +4244,44 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
               onFlowAction={(cmd) => sendMessage(cmd)}
               isLastMsg={idx === messages.length - 1}
               onNavigate={onNavigate}
+              onDirectSave={async (flowData, status) => {
+                // Direkt kaydet — state/closure bağımlılığı yok, card'dan gelen data kullanılır
+                const makeId = () => Date.now().toString();
+                setIsLoading(true);
+                try {
+                  const taskId = `task-ai-${Date.now()}-${Math.random().toString(36).substr(2, 7)}`;
+                  const task: Task = {
+                    id: taskId,
+                    personnel: (flowData.selectedPersonnel || []).map(p => ({
+                      id: p.id, name: p.name, avatar: p.avatar || '👤', role: (p.role || 'personel') as any,
+                    })),
+                    location: flowData.locationName || '',
+                    locationIcon: flowData.locationIcon || '📍',
+                    startTime: flowData.startTime || '10:00',
+                    endTime: flowData.endTime || '18:00',
+                    type: 'regular', taskType: 'regular', status,
+                    date: flowData.date || new Date().toISOString().split('T')[0],
+                    sentAt: status === 'sent' ? new Date().toISOString() : undefined,
+                  };
+                  console.log('[DirectSave] task:', JSON.stringify(task));
+                  await saveTask(task);
+                  console.log('[DirectSave] ✅ Başarılı:', taskId);
+                  setRotFlow(null);
+                  const completedFlow: RotationFlowState = { ...flowData, completed: true, taskId, taskStatus: status };
+                  setMessages(prev => [...prev, {
+                    id: makeId(), role: 'ai',
+                    text: status === 'sent'
+                      ? `✅ Rotasyon görevi **gönderildi!**\n${flowData.locationIcon} **${flowData.locationName}** → **${flowData.selectedPersonnel?.map(p => p.name).join(', ')}**\n⏰ ${flowData.startTime}–${flowData.endTime} · 📅 ${flowData.date}`
+                      : `📝 Rotasyon görevi **taslak olarak kaydedildi.**`,
+                    ts: new Date(), card: { type: 'rotation_flow', data: completedFlow },
+                  }]);
+                } catch (e: any) {
+                  console.error('[DirectSave] ❌', e?.message || e);
+                  throw e; // RotationFlowCard'da hata gösterilir
+                } finally {
+                  setIsLoading(false);
+                }
+              }}
             />
           ))}
           {isLoading && <TypingIndicator />}
