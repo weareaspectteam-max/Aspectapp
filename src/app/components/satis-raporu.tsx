@@ -215,14 +215,14 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
       {/* Header */}
       <div className="px-4 pt-4 pb-2">
         <div className="flex items-center gap-3 mb-1">
-          <button onClick={() => onNavigate('resource-management')}
+          <button onClick={() => onNavigate('isletme-istatistikleri')}
             className="p-2 rounded-xl active:scale-95 transition-all"
             style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}>
             <ArrowLeft className="w-5 h-5 text-white" />
           </button>
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-white">Satış Raporu</h1>
+              <h1 className="text-xl font-black text-white">Satış İstatistikleri</h1>
               <span className="text-lg">📈</span>
             </div>
             <p className="text-[10px] font-medium" style={{ color: 'rgba(196,181,253,0.5)' }}>

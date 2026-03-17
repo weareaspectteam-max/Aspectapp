@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Edit2, Trash2, Save, ChevronRight, Plus, RefreshCw, Loader2, Users, ChevronDown, Check, ArrowRight } from 'lucide-react';
+import { Edit2, Trash2, Save, ChevronRight, Plus, RefreshCw, Loader2, Users, ChevronDown, Check, ArrowRight } from 'lucide-react';
 import { projectId } from '/utils/supabase/info';
 import { getToken, buildHeaders } from '../lib/api';
 
@@ -1704,18 +1704,6 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
       <div className="sticky top-0 z-[5]" style={{ backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', background: 'rgba(42,42,58,0.92)', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
         <div className="px-4 py-4">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                if (currentView === 'main') {
-                  onNavigate('resource-management');
-                } else {
-                  setCurrentView('main');
-                }
-              }}
-              style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-            >
-              <ArrowLeft className="w-4 h-4 text-white" />
-            </button>
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-black text-white">

@@ -125,7 +125,7 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
           <ShieldAlert className="w-12 h-12 text-red-400 mx-auto mb-4" />
           <p className="text-white font-bold text-lg mb-2">Erişim Reddedildi</p>
           <p className="text-gray-400 text-sm">Bu modülü yalnızca yöneticiler görebilir.</p>
-          <button onClick={() => onNavigate('resource-management')} className="mt-6 px-6 py-2 rounded-xl bg-white/10 text-white text-sm">Geri Dön</button>
+          <button onClick={() => onNavigate('isletme-istatistikleri')} className="mt-6 px-6 py-2 rounded-xl bg-white/10 text-white text-sm">Geri Dön</button>
         </div>
       </div>
     );
@@ -138,7 +138,7 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
       <div className="sticky top-0 z-20 px-4 pt-12 pb-3"
         style={{ background: 'rgba(10,5,30,0.92)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <div className="flex items-center gap-3">
-          <button onClick={() => onNavigate('resource-management')} className="p-2 rounded-xl bg-white/10 active:scale-95 transition-all">
+          <button onClick={() => onNavigate('isletme-istatistikleri')} className="p-2 rounded-xl bg-white/10 active:scale-95 transition-all">
             <ArrowLeft className="w-5 h-5 text-white" />
           </button>
           <div className="flex-1">

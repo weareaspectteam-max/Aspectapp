@@ -165,18 +165,6 @@ export function ManagerReports({
       {/* Başlık — business-panel ile birebir */}
       <div>
         <div className="flex items-center gap-3 mb-0.5">
-          <button
-            onClick={onBack}
-            style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: 'rgba(255,255,255,0.07)',
-              border: '1px solid rgba(255,255,255,0.12)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <ArrowLeft style={{ width: 16, height: 16, color: 'white' }} />
-          </button>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-black text-white">Müdür Raporları</h1>

@@ -33,6 +33,7 @@ import { IsletmeGenelDurum } from './components/isletme-genel-durum';
 import { EquipmentPage } from './components/equipment-page';
 import { StokDagilimi } from './components/stok-dagilimi';
 import { ResourceManagement } from './components/resource-management';
+import { IsletmeIstatistikleri } from './components/isletme-istatistikleri';
 import { CostManagement } from './components/cost-management';
 import { PersonelIzinCetveli } from './components/personel-izin-cetveli';
 import { KisiselIzinCetveli } from './components/kisisel-izin-cetveli';
@@ -680,6 +681,16 @@ export default function App() {
       case 'resource-management':
         return (
           <ResourceManagement 
+            userName={userName}
+            userRole={userRole}
+            onLogout={handleLogout}
+            onNavigate={handleNavigate}
+          />
+        );
+      
+      case 'isletme-istatistikleri':
+        return (
+          <IsletmeIstatistikleri 
             userName={userName}
             userRole={userRole}
             onLogout={handleLogout}

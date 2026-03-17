@@ -54,9 +54,9 @@ const glass: React.CSSProperties = {
 };
 
 const QUICK_ACTIONS = [
-  { label: 'Satış Raporu',       icon: BarChart2,   color: '#9dd9ea', tab: 'satis-raporu' },
-  { label: 'Vardiya Raporları',  icon: FileText,    color: '#ffd4a3', tab: 'vardiya-raporlari' },
-  { label: 'Anomali Panosu',     icon: AlertTriangle, color: '#f87171', tab: 'anomali-panosu' },
+  { label: 'Satış İstatistik',  icon: BarChart2,      color: '#9dd9ea', tab: 'satis-raporu' },
+  { label: 'Vardiya Raporları', icon: FileText,        color: '#ffd4a3', tab: 'vardiya-raporlari' },
+  { label: 'Anomali İstatistik',icon: AlertTriangle,   color: '#f87171', tab: 'anomali-panosu' },
   { label: 'Mekan Durumu',       icon: MapPin,      color: '#a8e6cf', tab: 'isletme-genel-durum' },
   { label: 'İndirim İstatistik', icon: Star,        color: '#c4b5fd', tab: 'indirim-istatistik' },
   { label: 'Yön. Raporları',     icon: TrendingUp,  color: '#fb923c', tab: 'manager-reports' },

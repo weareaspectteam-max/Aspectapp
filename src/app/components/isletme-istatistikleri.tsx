@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 
-interface ResourceManagementProps {
+interface IsletmeIstatistikleriProps {
   userName: string;
   userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   onLogout: () => void;
@@ -15,33 +15,33 @@ const glass: React.CSSProperties = {
   borderRadius:         20,
 };
 
-export function ResourceManagement({ userName, userRole, onLogout, onNavigate }: ResourceManagementProps) {
+export function IsletmeIstatistikleri({ userName, userRole, onNavigate }: IsletmeIstatistikleriProps) {
   const isYonetici = ['yonetici', 'ust-mudur', 'mudur'].includes(userRole);
 
   const cards = [
     {
-      emoji: '📈',
-      title: 'Satış İstatistikleri',
+      emoji:       '📈',
+      title:       'Satış İstatistikleri',
       description: 'Günlük ciro, satış adedi ve albüm kırılımı',
-      color: '#9dd9ea',
-      tab: 'satis-raporu',
-      show: true,
+      color:       '#9dd9ea',
+      tab:         'satis-raporu',
+      show:        true,
     },
     {
-      emoji: '🚨',
-      title: 'Anomali İstatistikleri',
+      emoji:       '🚨',
+      title:       'Anomali İstatistikleri',
       description: 'Stok fark kayıtlarında kimin kaç puan aldığı',
-      color: '#f87171',
-      tab: 'anomali-panosu',
-      show: isYonetici,
+      color:       '#f87171',
+      tab:         'anomali-panosu',
+      show:        isYonetici,
     },
     {
-      emoji: '🏷️',
-      title: 'İndirim İstatistikleri',
+      emoji:       '🏷️',
+      title:       'İndirim İstatistikleri',
       description: 'Kimin ne kadar indirim yaptığı, uzun ve kısa dönem',
-      color: '#ffd4a3',
-      tab: 'indirim-istatistik',
-      show: isYonetici,
+      color:       '#ffd4a3',
+      tab:         'indirim-istatistik',
+      show:        isYonetici,
     },
   ].filter(c => c.show);
 
@@ -51,25 +51,13 @@ export function ResourceManagement({ userName, userRole, onLogout, onNavigate }:
       {/* Başlık */}
       <div>
         <div className="flex items-center gap-3 mb-0.5">
-          <button
-            onClick={() => onNavigate('business-panel')}
-            style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: 'rgba(255,255,255,0.07)',
-              border: '1px solid rgba(255,255,255,0.12)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0, cursor: 'pointer',
-            }}
-          >
-            <ArrowLeft style={{ width: 16, height: 16, color: 'white' }} />
-          </button>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-black text-white">Raporlar & Analizler</h1>
-              <span className="text-xl">📊</span>
+              <h1 className="text-2xl font-black text-white">İşletme İstatistikleri</h1>
+              <span className="text-xl">🏢</span>
             </div>
             <p className="text-xs font-medium" style={{ color: 'rgba(196,181,253,0.5)' }}>
-              {userName} · Performans ve istatistik merkezi
+              {userName} · Satış, anomali ve indirim verileri
             </p>
           </div>
         </div>

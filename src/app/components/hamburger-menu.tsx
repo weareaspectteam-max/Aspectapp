@@ -12,6 +12,7 @@ import {
   Cake, User, Settings, LogOut, ChevronRight, Package,
   BarChart2, ClipboardList, CalendarDays, FileBarChart, Wallet, Gamepad2,
   ChevronDown, Crown, Sliders, Brain, Globe, Loader2, Users, DollarSign, TrendingUp,
+  AlertTriangle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
@@ -93,10 +94,10 @@ function getSections(
       title: 'GENEL',
       color: '#a78bfa',
       items: [
-        { icon: Home,          label: 'Dashboard',        roles: all,  action: () => go('dashboard')   },
-        { icon: MessageCircle, label: 'Mesajlar',          roles: all,  action: () => go('messaging')   },
+        { icon: Home,          label: 'Dashboard',        roles: ['operasyon','idari','personel','bekleyen'] as UserRole[],  action: () => go('dashboard')   },
+        { icon: MessageCircle, label: 'Mesajlar',          roles: ['operasyon','idari','personel','bekleyen'] as UserRole[],  action: () => go('messaging')   },
         { icon: Trophy,        label: 'Liderlik Tablosu',  roles: all,  action: () => go('leaderboard') },
-        { icon: Sparkles,      label: 'Aspect AI',         roles: all,  action: () => go('aspect-ai')   },
+        { icon: Sparkles,      label: 'Aspect AI',         roles: ['operasyon','idari','personel','bekleyen'] as UserRole[],  action: () => go('aspect-ai')   },
         { icon: FileBarChart,  label: 'Vardiya Raporları', roles: ['yonetici'] as UserRole[], action: () => go('vardiya-raporlari') },
       ],
     },
@@ -104,11 +105,13 @@ function getSections(
       title: 'OPERASYON',
       color: '#fb923c',
       items: [
-        { icon: Zap,          label: 'Hızlı Satış',       roles: all,  action: () => go('quick-sales')     },
-        { icon: Activity,     label: 'Canlı Feed',         roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[], action: () => go('live-feed')       },
+        { icon: Zap,          label: 'Operasyon Paneli',  roles: all,  action: () => go('quick-sales')     },
+        { icon: Activity,     label: 'Canlı Feed',         roles: ['yonetici','ust-mudur'] as UserRole[], action: () => go('live-feed')       },
         { icon: RotateCcw,    label: 'Rotasyon',           roles: all,  action: () => go('rotation')        },
         { icon: Package,      label: 'Malzeme Yönetimi',   roles: all,  action: () => go('equipment-page')  },
         { icon: BarChart2,    label: 'Stok Dağılımı',      roles: all,  action: () => go('stock-distribution')   },
+        { icon: Bell,         label: 'Duyurular',          roles: all,  action: () => go('announcements')   },
+        { icon: ClipboardList,label: 'İzin Çizelgesi',     roles: all,  action: () => go('personel-izin-cetveli') },
       ],
     },
     {
@@ -116,7 +119,6 @@ function getSections(
       color: '#fbbf24',
       items: [
         { icon: Wallet, label: 'Primlerim',  roles: all, action: () => go('personel-prim-takip') },
-        { icon: Trophy, label: 'Prim Takip', roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[], action: () => go('prim-takip') },
       ],
     },
     {
@@ -128,14 +130,13 @@ function getSections(
       ],
     },
     {
-      title: 'YÖNETİM',
+      title: 'YÖNETİCİ HIZLI ERİŞİM',
       color: '#34d399',
       items: [
-        { icon: MapPin,        label: 'İşletme Genel Yönetim Paneli', roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[], action: () => go('business-panel')     },
-        { icon: Bell,          label: 'Duyurular',       roles: all,  action: () => go('announcements')      },
-        { icon: GraduationCap, label: 'Akademi',         roles: all,  action: () => go('academy')            },
-        { icon: Cake,          label: 'Doğum Günleri',   roles: mgmt, action: () => go('birthday-calendar')  },
-        { icon: ClipboardList, label: 'İzin Çizelgesi',  roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[], action: () => go('personel-izin-cetveli') },
+        { icon: Bell,          label: 'Duyurular',          roles: all,  action: () => go('announcements')      },
+        { icon: GraduationCap, label: 'Akademi',            roles: all,  action: () => go('academy')            },
+        { icon: Cake,          label: 'Doğum Günleri',      roles: mgmt, action: () => go('birthday-calendar')  },
+        { icon: ClipboardList, label: 'İzin Çizelgesi',     roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[], action: () => go('personel-izin-cetveli') },
         { icon: CalendarDays,  label: 'Kişisel İzin Çizelgesi', roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('kisisel-izin-cetveli') },
       ],
     },
@@ -439,7 +440,7 @@ export function HamburgerMenu({
                           className="font-black tracking-widest flex-shrink-0"
                           style={{ fontSize: 9, color: '#a855f7', letterSpacing: '0.15em', opacity: 0.8 }}
                         >
-                          YÖNETİCİ AYARLARI
+                          YÖNETİCİ PANELİ
                         </span>
                         <div
                           className="h-px flex-1 rounded-full"
@@ -471,7 +472,7 @@ export function HamburgerMenu({
                             <Crown style={{ width: 14, height: 14, color: '#a855f7' }} strokeWidth={2} />
                           </div>
                           <span className="flex-1 text-left font-bold" style={{ fontSize: 13, color: '#c084fc' }}>
-                            Yönetici Ayarları
+                            Yönetici Paneli
                           </span>
                           <ChevronDown
                             style={{
@@ -516,6 +517,7 @@ export function HamburgerMenu({
                                   color="#34d399"
                                 >
                                   <NavItem icon={<FileBarChart style={{ width: 13, height: 13, color: '#34d399' }} />} label="Müdür Raporları" desc="Satış ve performans analizleri" color="#34d399" onClick={() => { onNavigate('manager-reports'); close(); }} />
+                                  <NavItem icon={<BarChart2 style={{ width: 13, height: 13, color: '#a7c7e7' }} />} label="İşletme İstatistikleri" desc="Satış, anomali ve indirim verileri" color="#a7c7e7" onClick={() => { onNavigate('isletme-istatistikleri'); close(); }} />
                                   <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#6ee7b7' }} />} label="İşletme Genel Durum" desc="Gelir, gider ve kar/zarar takibi" color="#6ee7b7" onClick={() => { onNavigate('isletme-genel-durum'); close(); }} />
                                 </SubAccordion>
 
@@ -524,11 +526,12 @@ export function HamburgerMenu({
                                   id="finans"
                                   open={openSubSection === 'finans'}
                                   onToggle={() => setOpenSubSection(p => p === 'finans' ? null : 'finans')}
-                                  icon="💰"
-                                  label="Finans & Maliyet"
+                                  icon="🧾"
+                                  label="Muhasebe"
                                   color="#60a5fa"
                                 >
                                   <NavItem icon={<DollarSign style={{ width: 13, height: 13, color: '#60a5fa' }} />} label="Maliyet Yönetimi" desc="Maliyetleri takip et ve yönet" color="#60a5fa" onClick={() => { onNavigate('cost-management'); close(); }} />
+                                  <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#34d399' }} />} label="Prim Takip" desc="Prim ve performans takibi" color="#34d399" onClick={() => { onNavigate('prim-takip'); close(); }} />
                                 </SubAccordion>
 
                                 {/* ── 4. Lokasyon & İşletme ── */}
