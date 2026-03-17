@@ -144,9 +144,9 @@ export function NewBottomNav({ activeTab, onTabChange, onNavigate, userRole, unr
                     /* Demo: top-0.5 right-0.5 w-1.5 h-1.5 bg-rose-500 border-[#0a051e] */
                     <span
                       className="absolute rounded-full bg-rose-500 border border-[#0a051e] flex items-center justify-center"
-                      style={{ top: 3, right: 3, minWidth: 8, height: 8, padding: unreadMessages > 9 ? '0 3px' : 0, fontSize: 7, color: 'white', fontWeight: 900 }}
+                      style={{ top: 2, right: 2, minWidth: 16, height: 16, padding: '0 4px', fontSize: 9, color: 'white', fontWeight: 900 }}
                     >
-                      {unreadMessages > 99 ? '99' : unreadMessages > 9 ? unreadMessages : ''}
+                      {unreadMessages > 99 ? '99+' : unreadMessages}
                     </span>
                   )}
                 </motion.div>
@@ -168,9 +168,9 @@ export function NewBottomNav({ activeTab, onTabChange, onNavigate, userRole, unr
                   {tab.badge && unreadMessages > 0 && (
                     <span
                       className="absolute rounded-full bg-rose-500 border border-[#0a051e] flex items-center justify-center"
-                      style={{ top: 3, right: 3, minWidth: 8, height: 8, padding: unreadMessages > 9 ? '0 3px' : 0, fontSize: 7, color: 'white', fontWeight: 900 }}
+                      style={{ top: 2, right: 2, minWidth: 16, height: 16, padding: '0 4px', fontSize: 9, color: 'white', fontWeight: 900 }}
                     >
-                      {unreadMessages > 99 ? '99' : unreadMessages > 9 ? unreadMessages : ''}
+                      {unreadMessages > 99 ? '99+' : unreadMessages}
                     </span>
                   )}
                 </div>

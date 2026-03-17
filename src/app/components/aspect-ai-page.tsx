@@ -4,7 +4,7 @@ import {
   Package,
   AlertTriangle, CheckCircle, Zap,
   RefreshCw, Clock,
-  Brain, MessageSquare, Loader2, Trash2, Settings,
+  Brain, MessageSquare, Loader2, Trash2, Settings, Mic,
 } from 'lucide-react';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
@@ -2523,6 +2523,8 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [mekanModal, setMekanModal] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [leaveFlow, setLeaveFlow] = useState<LeaveFlowState | null>(null);
 
@@ -2974,6 +2976,43 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
+  const handleMic = () => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      alert('Tarayıcınız ses tanımayı desteklemiyor. Chrome veya Safari kullanın.');
+      return;
+    }
+
+    // Dinleme aktifse durdur
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const rec = new SR();
+    rec.lang = 'tr-TR';
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    recognitionRef.current = rec;
+
+    rec.onstart = () => setIsListening(true);
+    rec.onend   = () => setIsListening(false);
+    rec.onerror = () => setIsListening(false);
+
+    rec.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript;
+      // Metni input'a yaz ve direkt gönder
+      sendMessage(transcript);
+    };
+
+    try {
+      rec.start();
+    } catch {
+      setIsListening(false);
+    }
+  };
+
   // Derived display name: "Özgür D." style
   const _nameParts = userName.trim().split(' ');
 
@@ -3294,10 +3333,37 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
             className="flex-1 bg-transparent text-sm text-white placeholder-white/30 outline-none"
             disabled={isLoading}
           />
+          {/* Mikrofon butonu */}
+          <button
+            onClick={handleMic}
+            disabled={isLoading}
+            title={isListening ? 'Dinlemeyi durdur' : 'Sesli sor'}
+            className="relative w-10 h-10 rounded-full flex items-center justify-center disabled:opacity-30 transition-all active:scale-90 shrink-0"
+            style={{
+              background: isListening
+                ? 'rgba(239,68,68,0.25)'
+                : 'rgba(255,255,255,0.08)',
+              border: isListening
+                ? '1px solid rgba(239,68,68,0.5)'
+                : '1px solid rgba(255,255,255,0.12)',
+              boxShadow: isListening ? '0 0 12px rgba(239,68,68,0.4)' : 'none',
+            }}
+          >
+            <Mic
+              className="w-4 h-4 transition-colors"
+              style={{ color: isListening ? '#f87171' : 'rgba(255,255,255,0.5)' }}
+            />
+            {isListening && (
+              <span
+                className="absolute w-10 h-10 rounded-full animate-ping"
+                style={{ background: 'rgba(239,68,68,0.2)', pointerEvents: 'none' }}
+              />
+            )}
+          </button>
           <button
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
-            className="w-10 h-10 rounded-full bg-[#8b5cf6] flex items-center justify-center disabled:opacity-30 transition-all active:scale-90 shadow-lg shadow-violet-500/40"
+            className="w-10 h-10 rounded-full bg-[#8b5cf6] flex items-center justify-center disabled:opacity-30 transition-all active:scale-90 shadow-lg shadow-violet-500/40 shrink-0"
           >
             {isLoading
               ? <Loader2 className="w-4 h-4 text-white animate-spin" />
