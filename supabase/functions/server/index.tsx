@@ -6695,9 +6695,9 @@ app.post("/make-server-4da0b637/ai/toggle-settings", async (c) => {
 });
 
 // ══════════════════════════════════════════
-// AI CHAT — Gemini entegrasyonu
+// AI CHAT — OpenAI entegrasyonu
 // POST /make-server-4da0b637/ai/chat
-// Toggle ON  → Google Gemini 1.5 Flash kullanır
+// Toggle ON  → OpenAI GPT-4o mini kullanır
 // Toggle OFF → { use_kv: true } döner, frontend KV motorunu kullanır
 // ══════════════════════════════════════════
 
@@ -6725,9 +6725,9 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       return c.json({ use_kv: true }, 200);
     }
 
-    const apiKey = Deno.env.get("GEMINI_API_KEY");
+    const apiKey = Deno.env.get("OPENAI_API_KEY");
     if (!apiKey) {
-      console.log("[AI Chat] GEMINI_API_KEY eksik, KV moduna düşülüyor.");
+      console.log("[AI Chat] OPENAI_API_KEY eksik, KV moduna düşülüyor.");
       return c.json({ use_kv: true }, 200);
     }
 
@@ -8074,41 +8074,55 @@ ROTASYON SORULARI: "ROTASYON PROGRAMI" bölümünde son 30 gün ve gelecek 7 gü
 ${ozetContext}
 ${systemContext || ""}`;
 
-    // Gemini API formatına çevir
-    const geminiContents = messages.map((m: any) => ({
-      role: m.role === "ai" ? "model" : "user",
-      parts: [{ text: m.content || m.text || "" }],
-    }));
+    // OpenAI API formatına çevir
+    const openaiMessages: { role: string; content: string }[] = [
+      { role: "system", content: systemPrompt },
+    ];
+
+    for (const m of messages) {
+      const role = m.role === "ai" ? "assistant" : "user";
+      const content = m.content || m.text || "";
+      if (!content.trim()) continue;
+      const last = openaiMessages[openaiMessages.length - 1];
+      if (last && last.role === role && role !== "system") {
+        // Art arda aynı role gelirse birleştir
+        last.content += "\n" + content;
+      } else {
+        openaiMessages.push({ role, content });
+      }
+    }
+
+    // Son mesaj user ile bitmiyorsa dummy ekle
+    if (openaiMessages[openaiMessages.length - 1]?.role !== "user") {
+      openaiMessages.push({ role: "user", content: "..." });
+    }
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      "https://api.openai.com/v1/chat/completions",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          system_instruction: {
-            parts: [{ text: systemPrompt }],
-          },
-          contents: geminiContents,
-          generationConfig: {
-            maxOutputTokens: 800,
-            temperature: 0.65,
-          },
+          model: "gpt-4o-mini",
+          messages: openaiMessages,
+          max_tokens: 800,
+          temperature: 0.65,
         }),
       }
     );
 
     if (!response.ok) {
       const errText = await response.text();
-      console.log("[AI Chat] Gemini hata:", response.status, errText);
-      return c.json({ use_kv: true, error: `Gemini hatası: ${response.status}` }, 200);
+      console.log("[AI Chat] OpenAI hata:", response.status, errText);
+      return c.json({ use_kv: true, error: `OpenAI hatası: ${response.status}` }, 200);
     }
 
     const data = await response.json();
-    const replyContent = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    console.log(`[AI Chat] Gemini yanıt: ${userName} → ${replyContent.slice(0, 80)}...`);
+    const replyContent = data.choices?.[0]?.message?.content || "";
+    console.log(`[AI Chat] OpenAI yanıt: ${userName} → ${replyContent.slice(0, 80)}...`);
 
     return c.json({ reply: replyContent });
   } catch (err) {
