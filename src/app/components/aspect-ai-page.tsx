@@ -1064,6 +1064,8 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
       lower.includes('rotasyon başlat') || lower.includes('rotasyon baslat') ||
       lower.includes('rotasyon ekle') || lower.includes('yeni rotasyon') ||
       lower.includes('rotasyon yaz') || lower.includes('rotasyon aç') ||
+      lower.includes('rotasyon ata') || lower.includes('rotasyon atama') ||
+      lower.includes('ata rotasyon') || lower.includes('atama rotasyon') ||
       lower.includes('bugün kim gitsin') || lower.includes('yarın kim gitsin') ||
       lower.includes('bugun kim gitsin') || lower.includes('yarin kim gitsin') ||
       lower.includes('mekana gönder') || lower.includes('mekana gonder') ||
@@ -1072,7 +1074,7 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
       lower.includes('göreve gönder') || lower.includes('goreve gonder') ||
       (lower.includes('gönder') && (lower.includes('personel') || lower.includes('mekan') || lower.includes('kim'))) ||
       (lower.includes('görev') && (lower.includes('oluştur') || lower.includes('ekle') || lower.includes('ver') || lower.includes('yeni'))) ||
-      (lower.includes('rotasyon') && (lower.includes('oluştur') || lower.includes('ekle') || lower.includes('yeni') || lower.includes('yap') || lower.includes('aç') || lower.includes('başlat')))
+      (lower.includes('rotasyon') && (lower.includes('oluştur') || lower.includes('ekle') || lower.includes('yeni') || lower.includes('yap') || lower.includes('aç') || lower.includes('başlat') || lower.includes('ata') || lower.includes('ver') || lower.includes('atama')))
     )
   ) {
     return 'ROTATION_CREATE';
