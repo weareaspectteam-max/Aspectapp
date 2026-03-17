@@ -1178,11 +1178,11 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
   ) {
     const mekanlar = d.mekanlar || [];
     if (mekanlar.length === 0) {
-      return { text: `Mekan verisi henüz yüklenemedi. OpenAI modunu açık tutarak daha detaylı bilgi alabilirsin.` };
+      return { text: `Mekan verisi henüz yüklenemedi. Gemini modunu açık tutarak daha detaylı bilgi alabilirsin.` };
     }
     // Mekanlar listesi — sadece bugünkü operasyonel veri var, detaylar için OpenAI gerekli
     return {
-      text: `📍 Bu soru için **mekan detay bilgileri** (kira, baskı tipi, fotoğraf fiyatı) OpenAI üzerinden yanıtlanabilir — şu an **${mekanlar.length} aktif mekanda** operasyon devam ediyor.\n\nOpenAI açıkken aynı soruyu sor; kira, baskı tipi ve tüm detayları verebilirim! 🔍`,
+      text: `📍 Bu soru için **mekan detay bilgileri** (kira, baskı tipi, fotoğraf fiyatı) Gemini üzerinden yanıtlanabilir — şu an **${mekanlar.length} aktif mekanda** operasyon devam ediyor.\n\nGemini açıkken aynı soruyu sor; kira, baskı tipi ve tüm detayları verebilirim! 🔍`,
       card: { type: 'briefing', data: d },
     };
   }
@@ -1197,7 +1197,7 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
     )
   ) {
     return {
-      text: `💲 Fiyat listeleri mekan bazlı (photoPrice × kare adedi) belirlenir. OpenAI modunu açık bırakarak "Fiyat listesi nedir?" diye sorduğunda her mekanın tam fiyat tablosunu görebilirsin. 📊`,
+      text: `💲 Fiyat listeleri mekan bazlı (photoPrice × kare adedi) belirlenir. Gemini modunu açık bırakarak "Fiyat listesi nedir?" diye sorduğunda her mekanın tam fiyat tablosunu görebilirsin. 📊`,
     };
   }
 
@@ -1212,7 +1212,7 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
     )
   ) {
     return {
-      text: `⚙️ Maliyet verileri (albüm üretim maliyetleri, kağıt, giderler, maaşlar) OpenAI üzerinden detaylı yanıtlanır. OpenAI modunu açık bırakarak "Aylık sabit giderlerimiz ne kadar?" veya "7 kare albümün maliyeti ne?" diye sorabilirsin. 📊`,
+      text: `⚙️ Maliyet verileri (albüm üretim maliyetleri, kağıt, giderler, maaşlar) Gemini üzerinden detaylı yanıtlanır. Gemini modunu açık bırakarak "Aylık sabit giderlerimiz ne kadar?" veya "7 kare albümün maliyeti ne?" diye sorabilirsin. 📊`,
     };
   }
 
@@ -2521,8 +2521,8 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const isAdmin = roleConfig.loadOzet;
   const chips = roleConfig.chips;
 
-  // ── AI mod göstergesi (OpenAI mi, KV mi?) ────────────────────────────────
-  // Toggle ON  → sunucu OpenAI'ya gider
+  // ── AI mod göstergesi (Gemini mi, KV mi?) ────────────────────────────────
+  // Toggle ON  → sunucu Gemini'ye gider
   // Toggle OFF → mevcut KV tabanlı motor çalışır (hiçbir şey kilitlenmez)
   const [useOpenAI, setUseOpenAI] = useState(false); // başlangıçta bilinmiyor, KV mod
 
@@ -2839,7 +2839,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       return;
     }
 
-    // ── OpenAI modu: sunucuya sor ──────────────────────────────────────────
+    // ── Gemini modu: sunucuya sor ──────────────────────────────────────────
     try {
       const headers = await authHeaders();
       const recentMsgs = messages.slice(-6).map(m => ({
@@ -2891,7 +2891,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       if (res.ok) {
         const data = await res.json();
         if (!data.use_kv && data.reply) {
-          // OpenAI yanıtı geldi
+          // Gemini yanıtı geldi
           setUseOpenAI(true);
           const aiMsg: Message = {
             id: (Date.now() + 1).toString(),
@@ -2907,11 +2907,11 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
         setUseOpenAI(false);
       }
     } catch (e) {
-      console.error('[AI Chat] OpenAI isteği başarısız, KV moduna düşülüyor:', e);
+      console.error('[AI Chat] Gemini isteği başarısız, KV moduna düşülüyor:', e);
       setUseOpenAI(false);
     }
 
-    // ── KV Motoru (Toggle OFF veya OpenAI hata) ────────────────────────────
+    // ── KV Motoru (Toggle OFF veya Gemini hata) ────────────────────────────
     await new Promise(r => setTimeout(r, 700 + Math.random() * 600));
 
     const result = generateAIResponse(text.trim(), userRole, ozet, activeROLE_CONFIG);
@@ -3206,7 +3206,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
             <span className="text-[15px] font-bold text-white leading-tight">Aspect AI</span>
             {useOpenAI && (
               <span style={{ fontSize: 9, color: '#a78bfa', fontWeight: 600, letterSpacing: '0.04em' }}>
-                ✦ GPT-4o mini
+                ✦ Gemini 1.5 Flash
               </span>
             )}
           </div>
