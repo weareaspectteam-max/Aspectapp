@@ -79,9 +79,10 @@ interface NewBottomNavProps {
   onTabChange?: (tab: string) => void;
   onNavigate?:  (tab: string) => void;
   userRole:     UserRole;
+  unreadMessages?: number;
 }
 
-export function NewBottomNav({ activeTab, onTabChange, onNavigate, userRole }: NewBottomNavProps) {
+export function NewBottomNav({ activeTab, onTabChange, onNavigate, userRole, unreadMessages = 0 }: NewBottomNavProps) {
   const handleNav = onNavigate || onTabChange || (() => {});
   const tabs      = ROLE_TABS[userRole] ?? ROLE_TABS['personel'];
 
@@ -139,12 +140,14 @@ export function NewBottomNav({ activeTab, onTabChange, onNavigate, userRole }: N
                     style={{ width: 18, height: 18, color: tab.color }}
                     strokeWidth={2.2}
                   />
-                  {tab.badge && (
+                  {tab.badge && unreadMessages > 0 && (
                     /* Demo: top-0.5 right-0.5 w-1.5 h-1.5 bg-rose-500 border-[#0a051e] */
                     <span
-                      className="absolute rounded-full bg-rose-500 border border-[#0a051e]"
-                      style={{ top: 3, right: 3, width: 8, height: 8 }}
-                    />
+                      className="absolute rounded-full bg-rose-500 border border-[#0a051e] flex items-center justify-center"
+                      style={{ top: 3, right: 3, minWidth: 8, height: 8, padding: unreadMessages > 9 ? '0 3px' : 0, fontSize: 7, color: 'white', fontWeight: 900 }}
+                    >
+                      {unreadMessages > 99 ? '99' : unreadMessages > 9 ? unreadMessages : ''}
+                    </span>
                   )}
                 </motion.div>
               ) : (
@@ -162,11 +165,13 @@ export function NewBottomNav({ activeTab, onTabChange, onNavigate, userRole }: N
                     style={{ width: 18, height: 18 }}
                     strokeWidth={1.8}
                   />
-                  {tab.badge && (
+                  {tab.badge && unreadMessages > 0 && (
                     <span
-                      className="absolute rounded-full bg-rose-500 border border-[#0a051e]"
-                      style={{ top: 3, right: 3, width: 8, height: 8 }}
-                    />
+                      className="absolute rounded-full bg-rose-500 border border-[#0a051e] flex items-center justify-center"
+                      style={{ top: 3, right: 3, minWidth: 8, height: 8, padding: unreadMessages > 9 ? '0 3px' : 0, fontSize: 7, color: 'white', fontWeight: 900 }}
+                    >
+                      {unreadMessages > 99 ? '99' : unreadMessages > 9 ? unreadMessages : ''}
+                    </span>
                   )}
                 </div>
               )}

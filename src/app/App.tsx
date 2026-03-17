@@ -85,6 +85,40 @@ export default function App() {
   // Bildirim sayacı hook
   const { unreadCount, setUnreadCount, refetch: refetchNotifications } = useNotificationCount(accessToken);
 
+  // ─── Okunmamış mesaj sayacı ───────────────────────
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  useEffect(() => {
+    if (!accessToken || !isLoggedIn) { setUnreadMessages(0); return; }
+    let cancelled = false;
+    const fetchUnread = async () => {
+      try {
+        const { authHeaders } = await import('./lib/api');
+        const headers = await authHeaders();
+        const { projectId } = await import('/utils/supabase/info');
+        const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
+        const [chRes, dmRes] = await Promise.allSettled([
+          fetch(`${SERVER}/mesajlar/kanallar`, { headers }),
+          fetch(`${SERVER}/mesajlar/dm-list`,  { headers }),
+        ]);
+        let total = 0;
+        if (chRes.status === 'fulfilled' && chRes.value.ok) {
+          const d = await chRes.value.json();
+          (d.channels || []).forEach((ch: any) => { total += ch.unread || 0; });
+        }
+        if (dmRes.status === 'fulfilled' && dmRes.value.ok) {
+          const d = await dmRes.value.json();
+          (d.conversations || []).forEach((c: any) => { total += c.unread || 0; });
+        }
+        if (!cancelled) setUnreadMessages(total);
+      } catch (e) {
+        console.warn('[App] unreadMessages fetch:', e);
+      }
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [accessToken, isLoggedIn, activeTab]); // activeTab değişince (mesajlaşma açılınca) yeniden çek
+
   // ─── Supabase session yönetimi ───────────────────
   useEffect(() => {
     // Mevcut session'ı kontrol et
@@ -896,7 +930,7 @@ export default function App() {
 
         {/* Bottom Navigation */}
         {(activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock || showEkstraIs || showOzelIs)) && (
-          <NewBottomNav activeTab={activeTab} onTabChange={handleNavigate} userRole={userRole} />
+          <NewBottomNav activeTab={activeTab} onTabChange={handleNavigate} userRole={userRole} unreadMessages={unreadMessages} />
         )}
 
       </div>
