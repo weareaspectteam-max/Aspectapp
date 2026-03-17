@@ -5,6 +5,28 @@ import { projectId } from '/utils/supabase/info';
 
 const SERVER_URL = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
+/** Retry yardımcısı — TypeError (network) hatalarında tekrar dener */
+async function fetchWithRetry(
+  input: string,
+  init: RequestInit,
+  retries = 3,
+  delayMs = 800,
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fetch(input, init);
+    } catch (err: any) {
+      lastErr = err;
+      if (err?.name === 'AbortError') throw err;
+      if (i < retries - 1) {
+        await new Promise(r => setTimeout(r, delayMs * (i + 1)));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 export function CurrencyWidget() {
   const [exchangeRates, setExchangeRates] = useState<{ USD: number; EUR: number; GBP: number } | null>(null);
   const [trend, setTrend] = useState<{ USD: number; EUR: number; GBP: number } | null>(null);
@@ -43,7 +65,7 @@ export function CurrencyWidget() {
 
       let res: Response;
       try {
-        res = await fetch(`${SERVER_URL}/doviz/canli`, { headers, signal });
+        res = await fetchWithRetry(`${SERVER_URL}/doviz/canli`, { headers, signal });
       } finally {
         clearTimeout(timer);
       }

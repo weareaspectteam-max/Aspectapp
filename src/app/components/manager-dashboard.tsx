@@ -11,6 +11,30 @@ import { projectId } from '/utils/supabase/info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
+/** Retry yardımcısı — TypeError (network) hatalarında tekrar dener */
+async function fetchWithRetry(
+  input: string,
+  init: RequestInit,
+  retries = 3,
+  delayMs = 800,
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(input, init);
+      return res;
+    } catch (err: any) {
+      lastErr = err;
+      // AbortError ise retry etme
+      if (err?.name === 'AbortError') throw err;
+      if (i < retries - 1) {
+        await new Promise(r => setTimeout(r, delayMs * (i + 1)));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 interface ManagerDashboardProps {
   userName: string;
   roleTitle: string;
@@ -74,7 +98,7 @@ export function ManagerDashboard({ userName, roleTitle, onNavigate }: ManagerDas
       setLoading(true);
       setError(null);
       const token = await getToken();
-      const res = await fetch(`${API_BASE}/manager/dashboard-summary`, {
+      const res = await fetchWithRetry(`${API_BASE}/manager/dashboard-summary`, {
         headers: buildHeaders(token),
       });
       const json = await res.json();

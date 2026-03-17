@@ -2771,10 +2771,25 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
     // Kademeleri hedef'e göre sırala (backend'de tutarlı sıralama)
     const kotaKademeleri = [...kotaKademeleriRaw].sort((a: any, b: any) => Number(a.hedef) - Number(b.hedef));
 
-    // Bugünkü stok kaydını al
+    const kotaKademeOzetErken = kotaKademeleri.map((k: any) => ({
+      hedef: Number(k.hedef),
+      primTek: Number(k.primTek) || 0,
+      primCoklu: Number(k.primCoklu) || 0,
+    }));
+
+    // Bugünkü stok kaydını al — yoksa ciro:0 ile kademeleri yine de döndür
     const stokKey = `stok_gunluk_${mekan.id}_${today}`;
     const kayit: any = await kv.get(stokKey);
-    if (!kayit) return c.json({ primBilgi: null, sebep: "Bugün için stok kaydı bulunamadı." });
+    if (!kayit) {
+      return c.json({
+        primBilgi: null,
+        ciro: 0,
+        ilkHedef: Number(kotaKademeleri[0].hedef),
+        fark: Number(kotaKademeleri[0].hedef),
+        sebep: "Vardiya henüz açılmadı.",
+        kotaKademeleri: kotaKademeOzetErken,
+      });
+    }
 
     const satislar: any[] = (kayit.satislar || []).filter((s: any) => !s.iptal);
     const ciro = Math.round(satislar.reduce((sum: number, s: any) => sum + (Number(s.finalPrice) || 0), 0));
