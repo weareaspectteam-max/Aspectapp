@@ -232,7 +232,7 @@ export function HamburgerMenu({
 
   /* ── Admin section state ── */
   const [adminOpen, setAdminOpen]             = useState(false);
-  const [genelAyarlarOpen, setGenelAyarlarOpen] = useState(true);
+  const [openSubSection, setOpenSubSection]   = useState<string | null>(null);
   const [aiPersonal, setAiPersonal]           = useState(true);
   const [aiGlobal, setAiGlobal]               = useState(true);
   const [toggleLoading, setToggleLoading]     = useState<'personal' | 'global' | null>(null);
@@ -495,99 +495,93 @@ export function HamburgerMenu({
                               transition={{ duration: 0.22, ease: 'easeInOut' }}
                               style={{ overflow: 'hidden' }}
                             >
-                              <div style={{ borderTop: '1px solid rgba(168,85,247,0.15)', padding: '8px 10px 10px' }}>
-                                {/* ── GENEL AYARLAR sub-accordion ── */}
+                              <div style={{ borderTop: '1px solid rgba(168,85,247,0.15)', padding: '8px 8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+
+                                {/* ── 1. Kullanıcı & Erişim ── */}
+                                <SubAccordion
+                                  id="kullanici"
+                                  open={openSubSection === 'kullanici'}
+                                  onToggle={() => setOpenSubSection(p => p === 'kullanici' ? null : 'kullanici')}
+                                  icon="👥"
+                                  label="Kullanıcı & Erişim"
+                                  color="#a855f7"
+                                >
+                                  <NavItem icon={<Users style={{ width: 13, height: 13, color: '#c084fc' }} />} label="Kullanıcı Yönetimi" desc="Personel ve yöneticileri yönet" color="#a855f7" onClick={() => { onNavigate('user-management'); close(); }} />
+                                </SubAccordion>
+
+                                {/* ── 2. Raporlar & Analizler ── */}
+                                <SubAccordion
+                                  id="raporlar"
+                                  open={openSubSection === 'raporlar'}
+                                  onToggle={() => setOpenSubSection(p => p === 'raporlar' ? null : 'raporlar')}
+                                  icon="📊"
+                                  label="Raporlar & Analizler"
+                                  color="#34d399"
+                                >
+                                  <NavItem icon={<FileBarChart style={{ width: 13, height: 13, color: '#34d399' }} />} label="Müdür Raporları" desc="Satış ve performans analizleri" color="#34d399" onClick={() => { onNavigate('manager-reports'); close(); }} />
+                                  <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#6ee7b7' }} />} label="İşletme Genel Durum" desc="Gelir, gider ve kar/zarar takibi" color="#6ee7b7" onClick={() => { onNavigate('isletme-genel-durum'); close(); }} />
+                                </SubAccordion>
+
+                                {/* ── 3. Finans & Maliyet ── */}
+                                <SubAccordion
+                                  id="finans"
+                                  open={openSubSection === 'finans'}
+                                  onToggle={() => setOpenSubSection(p => p === 'finans' ? null : 'finans')}
+                                  icon="💰"
+                                  label="Finans & Maliyet"
+                                  color="#60a5fa"
+                                >
+                                  <NavItem icon={<DollarSign style={{ width: 13, height: 13, color: '#60a5fa' }} />} label="Maliyet Yönetimi" desc="Maliyetleri takip et ve yönet" color="#60a5fa" onClick={() => { onNavigate('cost-management'); close(); }} />
+                                </SubAccordion>
+
+                                {/* ── 4. Lokasyon & İşletme ── */}
+                                <SubAccordion
+                                  id="lokasyon"
+                                  open={openSubSection === 'lokasyon'}
+                                  onToggle={() => setOpenSubSection(p => p === 'lokasyon' ? null : 'lokasyon')}
+                                  icon="📍"
+                                  label="Lokasyon & İşletme"
+                                  color="#a78bfa"
+                                >
+                                  <NavItem icon={<MapPin style={{ width: 13, height: 13, color: '#a78bfa' }} />} label="Mekan Yönetimi" desc="Proje mekanlarını yönet" color="#a78bfa" onClick={() => { onNavigate('mekan-management'); close(); }} />
+                                </SubAccordion>
+
+                                {/* ── 5. Sistem Ayarları (sadece yonetici) ── */}
                                 {isYonetici && (
-                                <div className="rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                                  <button onClick={() => setGenelAyarlarOpen(v => !v)} className="w-full flex items-center gap-2.5 transition-all" style={{ padding: '9px 11px' }}>
-                                    <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid rgba(99,102,241,0.3)' }}>
-                                      <Sliders style={{ width: 12, height: 12, color: '#818cf8' }} strokeWidth={2} />
+                                  <SubAccordion
+                                    id="sistem"
+                                    open={openSubSection === 'sistem'}
+                                    onToggle={() => setOpenSubSection(p => p === 'sistem' ? null : 'sistem')}
+                                    icon="⚙️"
+                                    label="Sistem Ayarları"
+                                    color="#818cf8"
+                                    badge="SADECE YÖNETİCİ"
+                                  >
+                                    {/* AI — Benim İçin */}
+                                    <div className="flex items-center gap-3 rounded-xl" style={{ padding: '9px 11px', background: aiPersonal ? 'rgba(168,85,247,0.10)' : 'rgba(255,255,255,0.03)', border: aiPersonal ? '1px solid rgba(168,85,247,0.25)' : '1px solid rgba(255,255,255,0.07)', transition: 'all 0.2s' }}>
+                                      <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: aiPersonal ? 'rgba(168,85,247,0.20)' : 'rgba(255,255,255,0.06)', border: aiPersonal ? '1px solid rgba(168,85,247,0.4)' : '1px solid rgba(255,255,255,0.1)' }}>
+                                        <Brain style={{ width: 12, height: 12, color: aiPersonal ? '#c084fc' : 'rgba(255,255,255,0.35)' }} strokeWidth={1.8} />
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <p style={{ fontSize: 11, fontWeight: 600, color: aiPersonal ? '#e2e8f0' : 'rgba(226,232,240,0.55)', margin: 0 }}>AI — Benim İçin</p>
+                                        <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>Kendi AI modun</p>
+                                      </div>
+                                      <ToggleSwitch enabled={aiPersonal} onToggle={handleTogglePersonal} loading={toggleLoading === 'personal'} color="#a855f7" />
                                     </div>
-                                    <span className="flex-1 text-left font-semibold" style={{ fontSize: 11, color: 'rgba(226,232,240,0.75)', letterSpacing: '0.04em' }}>Genel Ayarlar</span>
-                                    <ChevronDown style={{ width: 13, height: 13, color: 'rgba(255,255,255,0.25)', transform: genelAyarlarOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s', flexShrink: 0 }} />
-                                  </button>
-                                  <AnimatePresence initial={false}>
-                                    {genelAyarlarOpen && (
-                                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18, ease: 'easeInOut' }} style={{ overflow: 'hidden' }}>
-                                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', padding: '6px 8px 8px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                          <div className="flex items-center gap-3 rounded-xl" style={{ padding: '9px 11px', background: aiPersonal ? 'rgba(168,85,247,0.1)' : 'rgba(255,255,255,0.03)', border: aiPersonal ? '1px solid rgba(168,85,247,0.25)' : '1px solid rgba(255,255,255,0.07)', transition: 'all 0.2s' }}>
-                                            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: aiPersonal ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.06)', border: aiPersonal ? '1px solid rgba(168,85,247,0.4)' : '1px solid rgba(255,255,255,0.1)' }}>
-                                              <Brain style={{ width: 14, height: 14, color: aiPersonal ? '#c084fc' : 'rgba(255,255,255,0.35)' }} strokeWidth={1.8} />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                              <p style={{ fontSize: 12, fontWeight: 600, color: aiPersonal ? '#e2e8f0' : 'rgba(226,232,240,0.55)' }}>AI — Benim İçin</p>
-                                              <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>Kendi AI modun</p>
-                                            </div>
-                                            <ToggleSwitch enabled={aiPersonal} onToggle={handleTogglePersonal} loading={toggleLoading === 'personal'} color="#a855f7" />
-                                          </div>
-                                          <div className="flex items-center gap-3 rounded-xl" style={{ padding: '9px 11px', background: aiGlobal ? 'rgba(34,211,238,0.08)' : 'rgba(255,255,255,0.03)', border: aiGlobal ? '1px solid rgba(34,211,238,0.2)' : '1px solid rgba(255,255,255,0.07)', transition: 'all 0.2s' }}>
-                                            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: aiGlobal ? 'rgba(34,211,238,0.15)' : 'rgba(255,255,255,0.06)', border: aiGlobal ? '1px solid rgba(34,211,238,0.35)' : '1px solid rgba(255,255,255,0.1)' }}>
-                                              <Globe style={{ width: 14, height: 14, color: aiGlobal ? '#22d3ee' : 'rgba(255,255,255,0.35)' }} strokeWidth={1.8} />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                              <p style={{ fontSize: 12, fontWeight: 600, color: aiGlobal ? '#e2e8f0' : 'rgba(226,232,240,0.55)' }}>AI — Herkes İçin</p>
-                                              <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>Tüm roller için global AI</p>
-                                            </div>
-                                            <ToggleSwitch enabled={aiGlobal} onToggle={handleToggleGlobal} loading={toggleLoading === 'global'} color="#22d3ee" />
-                                          </div>
-                                        </div>
-                                      </motion.div>
-                                    )}
-                                  </AnimatePresence>
-                                </div>
+                                    {/* AI — Herkes İçin */}
+                                    <div className="flex items-center gap-3 rounded-xl" style={{ padding: '9px 11px', background: aiGlobal ? 'rgba(34,211,238,0.08)' : 'rgba(255,255,255,0.03)', border: aiGlobal ? '1px solid rgba(34,211,238,0.20)' : '1px solid rgba(255,255,255,0.07)', transition: 'all 0.2s' }}>
+                                      <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: aiGlobal ? 'rgba(34,211,238,0.15)' : 'rgba(255,255,255,0.06)', border: aiGlobal ? '1px solid rgba(34,211,238,0.35)' : '1px solid rgba(255,255,255,0.1)' }}>
+                                        <Globe style={{ width: 12, height: 12, color: aiGlobal ? '#22d3ee' : 'rgba(255,255,255,0.35)' }} strokeWidth={1.8} />
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <p style={{ fontSize: 11, fontWeight: 600, color: aiGlobal ? '#e2e8f0' : 'rgba(226,232,240,0.55)', margin: 0 }}>AI — Herkes İçin</p>
+                                        <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>Tüm roller için global AI</p>
+                                      </div>
+                                      <ToggleSwitch enabled={aiGlobal} onToggle={handleToggleGlobal} loading={toggleLoading === 'global'} color="#22d3ee" />
+                                    </div>
+                                  </SubAccordion>
                                 )}
-                                {/* ── Kullanıcı Yönetimi butonu ── */}
-                                <div style={{ marginTop: 8 }}>
-                                  <motion.button onClick={() => { onNavigate('user-management'); close(); }} whileTap={{ scale: 0.97 }} className="w-full flex items-center gap-3 rounded-xl transition-all" style={{ padding: '9px 11px', background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.22)' }}>
-                                    <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(168,85,247,0.18)', border: '1px solid rgba(168,85,247,0.35)' }}>
-                                      <Users style={{ width: 14, height: 14, color: '#c084fc' }} strokeWidth={1.8} />
-                                    </div>
-                                    <div className="flex-1 min-w-0 text-left">
-                                      <p style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>Kullanıcı Yönetimi</p>
-                                      <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>Personel ve yöneticileri yönet</p>
-                                    </div>
-                                    <ChevronRight style={{ width: 13, height: 13, color: 'rgba(168,85,247,0.5)', flexShrink: 0 }} />
-                                  </motion.button>
-                                </div>
-                                {/* ── Maliyet Yönetimi butonu ── */}
-                                <div style={{ marginTop: 8 }}>
-                                  <motion.button onClick={() => { onNavigate('cost-management'); close(); }} whileTap={{ scale: 0.97 }} className="w-full flex items-center gap-3 rounded-xl transition-all" style={{ padding: '9px 11px', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.22)' }}>
-                                    <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(59,130,246,0.18)', border: '1px solid rgba(59,130,246,0.35)' }}>
-                                      <DollarSign style={{ width: 14, height: 14, color: '#60a5fa' }} strokeWidth={1.8} />
-                                    </div>
-                                    <div className="flex-1 min-w-0 text-left">
-                                      <p style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>Maliyet Yönetimi</p>
-                                      <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>Maliyetleri takip et ve yönet</p>
-                                    </div>
-                                    <ChevronRight style={{ width: 13, height: 13, color: 'rgba(59,130,246,0.5)', flexShrink: 0 }} />
-                                  </motion.button>
-                                </div>
-                                {/* ── Mekan Yönetimi butonu ── */}
-                                <div style={{ marginTop: 8 }}>
-                                  <motion.button onClick={() => { onNavigate('mekan-management'); close(); }} whileTap={{ scale: 0.97 }} className="w-full flex items-center gap-3 rounded-xl transition-all" style={{ padding: '9px 11px', background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.22)' }}>
-                                    <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(139,92,246,0.18)', border: '1px solid rgba(139,92,246,0.35)' }}>
-                                      <MapPin style={{ width: 14, height: 14, color: '#a78bfa' }} strokeWidth={1.8} />
-                                    </div>
-                                    <div className="flex-1 min-w-0 text-left">
-                                      <p style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>Mekan Yönetimi</p>
-                                      <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>Proje mekanlarını yönet</p>
-                                    </div>
-                                    <ChevronRight style={{ width: 13, height: 13, color: 'rgba(139,92,246,0.5)', flexShrink: 0 }} />
-                                  </motion.button>
-                                </div>
-                                {/* ── İşletme Genel Durum butonu ── */}
-                                <div style={{ marginTop: 8 }}>
-                                  <motion.button onClick={() => { onNavigate('isletme-genel-durum'); close(); }} whileTap={{ scale: 0.97 }} className="w-full flex items-center gap-3 rounded-xl transition-all" style={{ padding: '9px 11px', background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.22)' }}>
-                                    <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(52,211,153,0.18)', border: '1px solid rgba(52,211,153,0.35)' }}>
-                                      <TrendingUp style={{ width: 14, height: 14, color: '#34d399' }} strokeWidth={1.8} />
-                                    </div>
-                                    <div className="flex-1 min-w-0 text-left">
-                                      <p style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>İşletme Genel Durum</p>
-                                      <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>Gelir, gider ve kar/zarar takibi</p>
-                                    </div>
-                                    <ChevronRight style={{ width: 13, height: 13, color: 'rgba(52,211,153,0.5)', flexShrink: 0 }} />
-                                  </motion.button>
-                                </div>
+
                               </div>
                             </motion.div>
                           )}
@@ -728,5 +722,152 @@ export function HamburgerMenu({
         document.body
       )}
     </>
+  );
+}
+
+/* ─────────────────────── SubAccordion ──────────────────── */
+function SubAccordion({
+  id,
+  open,
+  onToggle,
+  icon,
+  label,
+  color,
+  badge,
+  children,
+}: {
+  id: string;
+  open: boolean;
+  onToggle: () => void;
+  icon: string;
+  label: string;
+  color: string;
+  badge?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      {/* Başlık butonu */}
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 rounded-xl transition-all"
+        style={{
+          padding:    '9px 11px',
+          background: open ? `${color}15` : 'rgba(255,255,255,0.04)',
+          border: open ? `1px solid ${color}35` : '1px solid rgba(255,255,255,0.06)',
+        }}
+      >
+        {/* İkon kabı */}
+        <div
+          className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{
+            background: open ? `${color}25` : 'rgba(255,255,255,0.06)',
+            border: open ? `1px solid ${color}40` : '1px solid rgba(255,255,255,0.08)',
+          }}
+        >
+          <span className="text-xl" style={{ color: open ? color : 'rgba(255,255,255,0.45)' }}>{icon}</span>
+        </div>
+
+        {/* Label */}
+        <span
+          className="flex-1 text-left font-semibold"
+          style={{
+            fontSize: 13,
+            color: open ? '#fff' : 'rgba(226,232,240,0.85)',
+            fontWeight: open ? 700 : 500,
+          }}
+        >
+          {label}
+        </span>
+
+        {/* Sağ ok / aktif nokta */}
+        {open ? (
+          <div
+            className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+            style={{ background: color, boxShadow: `0 0 6px ${color}` }}
+          />
+        ) : (
+          <ChevronRight
+            style={{ width: 13, height: 13, flexShrink: 0 }}
+            className="text-white/20"
+          />
+        )}
+
+        {/* Badge */}
+        {badge && (
+          <span
+            className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+            style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}
+          >
+            {badge}
+          </span>
+        )}
+      </button>
+
+      {/* Alt içerik */}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: 'easeInOut' }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingTop: 4, paddingLeft: 4 }}>
+              {children}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ─────────────────────── NavItem ──────────────────── */
+function NavItem({
+  icon,
+  label,
+  desc,
+  color,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  desc: string;
+  color: string;
+  onClick: () => void;
+}) {
+  return (
+    <motion.button
+      onClick={onClick}
+      whileTap={{ scale: 0.97 }}
+      className="w-full flex items-center gap-3 rounded-xl transition-all"
+      style={{
+        padding:    '9px 11px',
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(255,255,255,0.06)',
+      }}
+    >
+      {/* İkon kabı */}
+      <div
+        className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+        style={{
+          background: 'rgba(255,255,255,0.06)',
+          border: '1px solid rgba(255,255,255,0.08)',
+        }}
+      >
+        {icon}
+      </div>
+
+      {/* Label */}
+      <div className="flex-1 min-w-0 text-left">
+        <p style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>{label}</p>
+        <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>{desc}</p>
+      </div>
+
+      {/* Sağ ok */}
+      <ChevronRight style={{ width: 13, height: 13, color: 'rgba(255,255,255,0.5)', flexShrink: 0 }} />
+    </motion.button>
   );
 }
