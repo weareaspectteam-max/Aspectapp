@@ -6680,12 +6680,20 @@ app.get("/make-server-4da0b637/ai/toggle-settings", async (c) => {
     if (callerRole !== "yonetici") {
       return c.json({ error: "Bu ayara yalnızca Yönetici erişebilir." }, 403);
     }
-    const globalEnabled   = await kv.get("ai_global_enabled");
-    const personalKey     = `ai_personal_yonetici_${user.id}`;
-    const personalEnabled = await kv.get(personalKey);
+    const personalKey = `ai_personal_yonetici_${user.id}`;
+    const [personalEnabled, yonetimEnabled, idariEnabled, personelEnabled, operasyonEnabled] = await Promise.all([
+      kv.get(personalKey),
+      kv.get("ai_yonetim_enabled"),
+      kv.get("ai_idari_enabled"),
+      kv.get("ai_personel_enabled"),
+      kv.get("ai_operasyon_enabled"),
+    ]);
     return c.json({
-      ai_global_enabled:    globalEnabled  !== null ? Boolean(globalEnabled)  : true,
-      ai_personal_yonetici: personalEnabled !== null ? Boolean(personalEnabled) : true,
+      ai_personal_yonetici: personalEnabled  !== null ? Boolean(personalEnabled)  : true,
+      ai_yonetim_enabled:   yonetimEnabled   !== null ? Boolean(yonetimEnabled)   : true,
+      ai_idari_enabled:     idariEnabled      !== null ? Boolean(idariEnabled)      : true,
+      ai_personel_enabled:  personelEnabled   !== null ? Boolean(personelEnabled)   : true,
+      ai_operasyon_enabled: operasyonEnabled  !== null ? Boolean(operasyonEnabled)  : true,
     });
   } catch (err) {
     console.log("AI toggle-settings GET error:", err);
@@ -6702,13 +6710,23 @@ app.post("/make-server-4da0b637/ai/toggle-settings", async (c) => {
       return c.json({ error: "Bu ayarı yalnızca Yönetici değiştirebilir." }, 403);
     }
     const body = await c.req.json();
-    if (typeof body.ai_global_enabled !== "undefined") {
-      await kv.set("ai_global_enabled", Boolean(body.ai_global_enabled));
-      console.log(`[AI Toggle] ai_global_enabled → ${body.ai_global_enabled} | ${user.user_metadata?.full_name}`);
-    }
-    if (typeof body.ai_personal_yonetici !== "undefined") {
-      await kv.set(`ai_personal_yonetici_${user.id}`, Boolean(body.ai_personal_yonetici));
-      console.log(`[AI Toggle] ai_personal_yonetici_${user.id} → ${body.ai_personal_yonetici} | ${user.user_metadata?.full_name}`);
+    const perRoleKeys = [
+      "ai_personal_yonetici",
+      "ai_yonetim_enabled",
+      "ai_idari_enabled",
+      "ai_personel_enabled",
+      "ai_operasyon_enabled",
+    ];
+    for (const key of perRoleKeys) {
+      if (typeof body[key] !== "undefined") {
+        if (key === "ai_personal_yonetici") {
+          await kv.set(`ai_personal_yonetici_${user.id}`, Boolean(body[key]));
+          console.log(`[AI Toggle] ai_personal_yonetici_${user.id} → ${body[key]} | ${user.user_metadata?.full_name}`);
+        } else {
+          await kv.set(key, Boolean(body[key]));
+          console.log(`[AI Toggle] ${key} → ${body[key]} | ${user.user_metadata?.full_name}`);
+        }
+      }
     }
     return c.json({ ok: true });
   } catch (err) {
@@ -6733,15 +6751,27 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
     const body = await c.req.json();
     const { messages, userRole, userName, systemContext, ozet } = body;
 
-    // Toggle durumunu belirle (userRole body'den, user.id KV key için güvenli)
+    // Toggle durumunu belirle — her rol için ayrı KV anahtarı
     let useOpenAI = false;
     if (userRole === "yonetici") {
       const personalKey = `ai_personal_yonetici_${user.id}`;
       const personalEnabled = await kv.get(personalKey);
       useOpenAI = personalEnabled !== null ? Boolean(personalEnabled) : true;
+    } else if (userRole === "ust-mudur" || userRole === "mudur") {
+      const val = await kv.get("ai_yonetim_enabled");
+      useOpenAI = val !== null ? Boolean(val) : true;
+    } else if (userRole === "idari") {
+      const val = await kv.get("ai_idari_enabled");
+      useOpenAI = val !== null ? Boolean(val) : true;
+    } else if (userRole === "personel") {
+      const val = await kv.get("ai_personel_enabled");
+      useOpenAI = val !== null ? Boolean(val) : true;
+    } else if (userRole === "operasyon") {
+      const val = await kv.get("ai_operasyon_enabled");
+      useOpenAI = val !== null ? Boolean(val) : true;
     } else {
-      const globalEnabled = await kv.get("ai_global_enabled");
-      useOpenAI = globalEnabled !== null ? Boolean(globalEnabled) : true;
+      // Bilinmeyen rol → varsayılan açık
+      useOpenAI = true;
     }
 
     if (!useOpenAI) {
