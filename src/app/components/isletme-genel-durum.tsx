@@ -640,10 +640,6 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
     <div className="pb-24 min-h-screen bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c]">
       {/* Header */}
       <div className="px-5 pt-6 pb-4">
-        <button onClick={() => onNavigate('business-panel')} className="flex items-center gap-2 text-gray-400 hover:text-white mb-4 transition-colors">
-          <ArrowLeft className="w-5 h-5" />
-          <span className="text-sm">Geri Dön</span>
-        </button>
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 mb-1">

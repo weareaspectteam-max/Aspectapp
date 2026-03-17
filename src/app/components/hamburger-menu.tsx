@@ -91,6 +91,17 @@ function getSections(
 
   const sections: Section[] = [
     {
+      title: 'YÖNETİCİ HIZLI ERİŞİM',
+      color: '#34d399',
+      items: [
+        { icon: Activity,      label: 'Canlı Feed',          roles: ['yonetici','ust-mudur'] as UserRole[],                      action: () => go('live-feed')              },
+        { icon: ClipboardList, label: 'İzin Çizelgesi',       roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],       action: () => go('personel-izin-cetveli')  },
+        { icon: TrendingUp,    label: 'Prim Takip',           roles: ['yonetici','ust-mudur','mudur'] as UserRole[],               action: () => go('prim-takip')             },
+        { icon: FileBarChart,  label: 'Vardiya Raporları',    roles: ['yonetici','ust-mudur','mudur'] as UserRole[],               action: () => go('vardiya-raporlari')      },
+        { icon: BarChart2,     label: 'İşletme Genel Durum',  roles: ['yonetici','ust-mudur','mudur'] as UserRole[],               action: () => go('isletme-genel-durum')    },
+      ],
+    },
+    {
       title: 'GENEL',
       color: '#a78bfa',
       items: [
@@ -100,7 +111,6 @@ function getSections(
         { icon: Sparkles,      label: 'Aspect AI',         roles: ['operasyon','idari','personel','bekleyen'] as UserRole[],  action: () => go('aspect-ai')   },
         { icon: FileBarChart,  label: 'Vardiya Raporları', roles: ['yonetici'] as UserRole[], action: () => go('vardiya-raporlari') },
         { icon: GraduationCap, label: 'Akademi',           roles: all,  action: () => go('academy')           },
-        { icon: Cake,          label: 'Doğum Günleri',     roles: mgmt, action: () => go('birthday-calendar') },
       ],
     },
     {
@@ -126,7 +136,6 @@ function getSections(
       items: [
         { icon: Wallet,       label: 'Primlerim',             roles: all, action: () => go('personel-prim-takip') },
         { icon: CalendarDays, label: 'Kişisel İzin Çizelgesi', roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('kisisel-izin-cetveli') },
-        { icon: User,         label: 'Profil',                roles: all, action: () => go('profile') },
       ],
     },
     {
@@ -138,19 +147,12 @@ function getSections(
       ],
     },
     {
-      title: 'YÖNETİCİ HIZLI ERİŞİM',
-      color: '#34d399',
-      items: [
-        { icon: Activity,      label: 'Canlı Feed',    roles: ['yonetici','ust-mudur'] as UserRole[], action: () => go('live-feed')            },
-        { icon: ClipboardList, label: 'İzin Çizelgesi', roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[], action: () => go('personel-izin-cetveli') },
-      ],
-    },
-    {
       title: 'HESAP',
       color: '#60a5fa',
       items: [
-        { icon: Settings,label: 'Ayarlar',   roles: all, action: () => go('settings') },
-        { icon: LogOut,  label: 'Çıkış Yap', roles: all, danger: true, action: () => { close(); onLogout(); } },
+        { icon: User,     label: 'Profil',     roles: all, action: () => go('profile') },
+        { icon: Settings, label: 'Ayarlar',   roles: all, action: () => go('settings') },
+        { icon: LogOut,   label: 'Çıkış Yap', roles: all, danger: true, action: () => { close(); onLogout(); } },
       ],
     },
   ];
@@ -431,193 +433,9 @@ export function HamburgerMenu({
                 <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
 
                   {/* ── YÖNETİCİ AYARLARI — sadece yonetici rolü ── */}
-                  {showAdminPanel && (
-                    <div style={{ marginTop: 0 }}>
+                  {/* moved to bottom — see below */}
 
-                      {/* Bölüm ayırıcı */}
-                      <div className="flex items-center gap-2 px-1 mb-2">
-                        <div
-                          className="h-px flex-1 rounded-full"
-                          style={{ background: 'linear-gradient(to right, #a855f740, transparent)' }}
-                        />
-                        <span
-                          className="font-black tracking-widest flex-shrink-0"
-                          style={{ fontSize: 9, color: '#a855f7', letterSpacing: '0.15em', opacity: 0.8 }}
-                        >
-                          YÖNETİCİ PANELİ
-                        </span>
-                        <div
-                          className="h-px flex-1 rounded-full"
-                          style={{ background: 'linear-gradient(to left, #a855f740, transparent)' }}
-                        />
-                      </div>
-
-                      {/* YÖNETİCİ AYARLARI ana accordion */}
-                      <div
-                        className="rounded-2xl overflow-hidden"
-                        style={{
-                          background: 'rgba(168,85,247,0.06)',
-                          border: '1px solid rgba(168,85,247,0.2)',
-                        }}
-                      >
-                        {/* Accordion başlık butonu */}
-                        <button
-                          onClick={() => setAdminOpen(v => !v)}
-                          className="w-full flex items-center gap-3 transition-all active:scale-[0.98]"
-                          style={{ padding: '11px 13px' }}
-                        >
-                          <div
-                            className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-                            style={{
-                              background: 'rgba(168,85,247,0.18)',
-                              border: '1px solid rgba(168,85,247,0.35)',
-                            }}
-                          >
-                            <Crown style={{ width: 14, height: 14, color: '#a855f7' }} strokeWidth={2} />
-                          </div>
-                          <span className="flex-1 text-left font-bold" style={{ fontSize: 13, color: '#c084fc' }}>
-                            Yönetici Paneli
-                          </span>
-                          <ChevronDown
-                            style={{
-                              width: 15, height: 15, color: '#a855f780',
-                              transform: adminOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                              transition: 'transform 0.2s', flexShrink: 0,
-                            }}
-                          />
-                        </button>
-
-                        {/* Accordion içeriği */}
-                        <AnimatePresence initial={false}>
-                          {adminOpen && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              transition={{ duration: 0.22, ease: 'easeInOut' }}
-                              style={{ overflow: 'hidden' }}
-                            >
-                              <div style={{ borderTop: '1px solid rgba(168,85,247,0.15)', padding: '8px 8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-
-                                {/* ── 1. Kullanıcı & Erişim ── */}
-                                <SubAccordion
-                                  id="kullanici"
-                                  open={openSubSection === 'kullanici'}
-                                  onToggle={() => setOpenSubSection(p => p === 'kullanici' ? null : 'kullanici')}
-                                  icon="👥"
-                                  label="Kullanıcı & Erişim"
-                                  color="#a855f7"
-                                >
-                                  <NavItem icon={<Users style={{ width: 13, height: 13, color: '#c084fc' }} />} label="Kullanıcı Yönetimi" desc="Personel ve yöneticileri yönet" color="#a855f7" onClick={() => { onNavigate('user-management'); close(); }} />
-                                </SubAccordion>
-
-                                {/* ── 2. Raporlar & Analizler ── */}
-                                <SubAccordion
-                                  id="raporlar"
-                                  open={openSubSection === 'raporlar'}
-                                  onToggle={() => setOpenSubSection(p => p === 'raporlar' ? null : 'raporlar')}
-                                  icon="📊"
-                                  label="Raporlar & Analizler"
-                                  color="#34d399"
-                                >
-                                  <NavItem icon={<FileBarChart style={{ width: 13, height: 13, color: '#34d399' }} />} label="Müdür Raporları" desc="Satış ve performans analizleri" color="#34d399" onClick={() => { onNavigate('manager-reports'); close(); }} />
-                                  <NavItem icon={<BarChart2 style={{ width: 13, height: 13, color: '#a7c7e7' }} />} label="İşletme İstatistikleri" desc="Satış, anomali ve indirim verileri" color="#a7c7e7" onClick={() => { onNavigate('isletme-istatistikleri'); close(); }} />
-                                  <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#6ee7b7' }} />} label="İşletme Genel Durum" desc="Gelir, gider ve kar/zarar takibi" color="#6ee7b7" onClick={() => { onNavigate('isletme-genel-durum'); close(); }} />
-                                </SubAccordion>
-
-                                {/* ── 3. Finans & Maliyet ── */}
-                                <SubAccordion
-                                  id="finans"
-                                  open={openSubSection === 'finans'}
-                                  onToggle={() => setOpenSubSection(p => p === 'finans' ? null : 'finans')}
-                                  icon="🧾"
-                                  label="Muhasebe"
-                                  color="#60a5fa"
-                                >
-                                  <NavItem icon={<DollarSign style={{ width: 13, height: 13, color: '#60a5fa' }} />} label="Maliyet Yönetimi" desc="Maliyetleri takip et ve yönet" color="#60a5fa" onClick={() => { onNavigate('cost-management'); close(); }} />
-                                  <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#34d399' }} />} label="Prim Takip" desc="Prim ve performans takibi" color="#34d399" onClick={() => { onNavigate('prim-takip'); close(); }} />
-                                </SubAccordion>
-
-                                {/* ── 4. Lokasyon & İşletme ── */}
-                                <SubAccordion
-                                  id="lokasyon"
-                                  open={openSubSection === 'lokasyon'}
-                                  onToggle={() => setOpenSubSection(p => p === 'lokasyon' ? null : 'lokasyon')}
-                                  icon="📍"
-                                  label="Lokasyon & İşletme"
-                                  color="#a78bfa"
-                                >
-                                  <NavItem icon={<MapPin style={{ width: 13, height: 13, color: '#a78bfa' }} />} label="Mekan Yönetimi" desc="Proje mekanlarını yönet" color="#a78bfa" onClick={() => { onNavigate('mekan-management'); close(); }} />
-                                </SubAccordion>
-
-                                {/* ── 5. Sistem Ayarları (sadece yonetici) ── */}
-                                {isYonetici && (
-                                  <SubAccordion
-                                    id="sistem"
-                                    open={openSubSection === 'sistem'}
-                                    onToggle={() => setOpenSubSection(p => p === 'sistem' ? null : 'sistem')}
-                                    icon="⚙️"
-                                    label="Sistem Ayarları"
-                                    color="#818cf8"
-                                    badge="SADECE YÖNETİCİ"
-                                  >
-                                    {/* AI — Benim İçin */}
-                                    <AiToggleRow
-                                      label="AI — Benim İçin"
-                                      desc="Sadece yönetici"
-                                      enabled={aiPersonal}
-                                      loading={toggleLoading === 'ai_personal_yonetici'}
-                                      color="#a855f7"
-                                      onToggle={handleTogglePersonal}
-                                    />
-                                    {/* AI — Yönetim İçin */}
-                                    <AiToggleRow
-                                      label="AI — Yönetim İçin"
-                                      desc="Üst müdür + müdür"
-                                      enabled={aiYonetim}
-                                      loading={toggleLoading === 'ai_yonetim_enabled'}
-                                      color="#6366f1"
-                                      onToggle={handleToggleYonetim}
-                                    />
-                                    {/* AI — İdari İçin */}
-                                    <AiToggleRow
-                                      label="AI — İdari İçin"
-                                      desc="İdari görevliler"
-                                      enabled={aiIdari}
-                                      loading={toggleLoading === 'ai_idari_enabled'}
-                                      color="#60a5fa"
-                                      onToggle={handleToggleIdari}
-                                    />
-                                    {/* AI — Personel İçin */}
-                                    <AiToggleRow
-                                      label="AI — Personel İçin"
-                                      desc="Personel rolü"
-                                      enabled={aiPersonel}
-                                      loading={toggleLoading === 'ai_personel_enabled'}
-                                      color="#34d399"
-                                      onToggle={handleTogglePersonel}
-                                    />
-                                    {/* AI — Operasyon İçin */}
-                                    <AiToggleRow
-                                      label="AI — Operasyon İçin"
-                                      desc="Operasyon rolü"
-                                      enabled={aiOperasyon}
-                                      loading={toggleLoading === 'ai_operasyon_enabled'}
-                                      color="#fb923c"
-                                      onToggle={handleToggleOperasyon}
-                                    />
-                                  </SubAccordion>
-                                )}
-
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </div>
-                  )}
-
-                  {sections.map((section) => (
+                  {sections.filter(s => s.title !== 'HESAP').map((section) => (
                     <div key={section.title}>
 
                       {/* Bölüm başlığı */}
@@ -727,6 +545,178 @@ export function HamburgerMenu({
                     </div>
                   ))}
 
+                  {/* ── YÖNETİCİ PANELİ — en alta, HESAP'ın üstü ── */}
+                  {showAdminPanel && (
+                    <div style={{ marginTop: 0 }}>
+
+                      {/* Bölüm ayırıcı */}
+                      <div className="flex items-center gap-2 px-1 mb-2">
+                        <div
+                          className="h-px flex-1 rounded-full"
+                          style={{ background: 'linear-gradient(to right, #a855f740, transparent)' }}
+                        />
+                        <span
+                          className="font-black tracking-widest flex-shrink-0"
+                          style={{ fontSize: 9, color: '#a855f7', letterSpacing: '0.15em', opacity: 0.8 }}
+                        >
+                          YÖNETİCİ PANELİ
+                        </span>
+                        <div
+                          className="h-px flex-1 rounded-full"
+                          style={{ background: 'linear-gradient(to left, #a855f740, transparent)' }}
+                        />
+                      </div>
+
+                      {/* YÖNETİCİ AYARLARI ana accordion */}
+                      <div
+                        className="rounded-2xl overflow-hidden"
+                        style={{
+                          background: 'rgba(168,85,247,0.06)',
+                          border: '1px solid rgba(168,85,247,0.2)',
+                        }}
+                      >
+                        {/* Accordion başlık butonu */}
+                        <button
+                          onClick={() => setAdminOpen(v => !v)}
+                          className="w-full flex items-center gap-3 transition-all active:scale-[0.98]"
+                          style={{ padding: '11px 13px' }}
+                        >
+                          <div
+                            className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                            style={{
+                              background: 'rgba(168,85,247,0.18)',
+                              border: '1px solid rgba(168,85,247,0.35)',
+                            }}
+                          >
+                            <Crown style={{ width: 14, height: 14, color: '#a855f7' }} strokeWidth={2} />
+                          </div>
+                          <span className="flex-1 text-left font-bold" style={{ fontSize: 13, color: '#c084fc' }}>
+                            Yönetici Paneli
+                          </span>
+                          <ChevronDown
+                            style={{
+                              width: 15, height: 15, color: '#a855f780',
+                              transform: adminOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                              transition: 'transform 0.2s', flexShrink: 0,
+                            }}
+                          />
+                        </button>
+
+                        {/* Accordion içeriği */}
+                        <AnimatePresence initial={false}>
+                          {adminOpen && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.22, ease: 'easeInOut' }}
+                              style={{ overflow: 'hidden' }}
+                            >
+                              <div style={{ borderTop: '1px solid rgba(168,85,247,0.15)', padding: '8px 8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+
+                                {/* ── 1. Kullanıcı & Erişim ── */}
+                                <SubAccordion
+                                  id="kullanici"
+                                  open={openSubSection === 'kullanici'}
+                                  onToggle={() => setOpenSubSection(p => p === 'kullanici' ? null : 'kullanici')}
+                                  icon="👥"
+                                  label="Kullanıcı & Erişim"
+                                  color="#a855f7"
+                                >
+                                  <NavItem icon={<Users style={{ width: 13, height: 13, color: '#c084fc' }} />} label="Kullanıcı Yönetimi" desc="Personel ve yöneticileri yönet" color="#a855f7" onClick={() => { onNavigate('user-management'); close(); }} />
+                                </SubAccordion>
+
+                                {/* ── 2. Raporlar & Analizler ── */}
+                                <SubAccordion
+                                  id="raporlar"
+                                  open={openSubSection === 'raporlar'}
+                                  onToggle={() => setOpenSubSection(p => p === 'raporlar' ? null : 'raporlar')}
+                                  icon="📊"
+                                  label="Raporlar & Analizler"
+                                  color="#34d399"
+                                >
+                                  <NavItem icon={<FileBarChart style={{ width: 13, height: 13, color: '#34d399' }} />} label="Müdür Raporları" desc="Satış ve performans analizleri" color="#34d399" onClick={() => { onNavigate('manager-reports'); close(); }} />
+                                  <NavItem icon={<BarChart2 style={{ width: 13, height: 13, color: '#a7c7e7' }} />} label="İşletme İstatistikleri" desc="Satış, anomali ve indirim verileri" color="#a7c7e7" onClick={() => { onNavigate('isletme-istatistikleri'); close(); }} />
+                                </SubAccordion>
+
+                                {/* ── 3. Muhasebe ── */}
+                                <SubAccordion
+                                  id="finans"
+                                  open={openSubSection === 'finans'}
+                                  onToggle={() => setOpenSubSection(p => p === 'finans' ? null : 'finans')}
+                                  icon="🧾"
+                                  label="Muhasebe"
+                                  color="#60a5fa"
+                                >
+                                  <NavItem icon={<DollarSign style={{ width: 13, height: 13, color: '#60a5fa' }} />} label="Maliyet Yönetimi" desc="Maliyetleri takip et ve yönet" color="#60a5fa" onClick={() => { onNavigate('cost-management'); close(); }} />
+                                  <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#34d399' }} />} label="Prim Takip" desc="Prim ve performans takibi" color="#34d399" onClick={() => { onNavigate('prim-takip'); close(); }} />
+                                  <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#6ee7b7' }} />} label="İşletme Genel Durum" desc="Gelir, gider ve kar/zarar takibi" color="#6ee7b7" onClick={() => { onNavigate('isletme-genel-durum'); close(); }} />
+                                  <NavItem icon={<FileBarChart style={{ width: 13, height: 13, color: '#93c5fd' }} />} label="Vardiya Raporları" desc="Günlük vardiya özet raporları" color="#93c5fd" onClick={() => { onNavigate('vardiya-raporlari'); close(); }} />
+                                </SubAccordion>
+
+                                {/* ── 4. Lokasyon & İşletme ── */}
+                                <SubAccordion
+                                  id="lokasyon"
+                                  open={openSubSection === 'lokasyon'}
+                                  onToggle={() => setOpenSubSection(p => p === 'lokasyon' ? null : 'lokasyon')}
+                                  icon="📍"
+                                  label="Lokasyon & İşletme"
+                                  color="#a78bfa"
+                                >
+                                  <NavItem icon={<MapPin style={{ width: 13, height: 13, color: '#a78bfa' }} />} label="Mekan Yönetimi" desc="Proje mekanlarını yönet" color="#a78bfa" onClick={() => { onNavigate('mekan-management'); close(); }} />
+                                </SubAccordion>
+
+                                {/* ── 5. Sistem Ayarları (sadece yonetici) ── */}
+                                {isYonetici && (
+                                  <SubAccordion
+                                    id="sistem"
+                                    open={openSubSection === 'sistem'}
+                                    onToggle={() => setOpenSubSection(p => p === 'sistem' ? null : 'sistem')}
+                                    icon="⚙️"
+                                    label="Sistem Ayarları"
+                                    color="#818cf8"
+                                    badge="SADECE YÖNETİCİ"
+                                  >
+                                    <AiToggleRow label="AI — Benim İçin" desc="Sadece yönetici" enabled={aiPersonal} loading={toggleLoading === 'ai_personal_yonetici'} color="#a855f7" onToggle={handleTogglePersonal} />
+                                    <AiToggleRow label="AI — Yönetim İçin" desc="Üst müdür + müdür" enabled={aiYonetim} loading={toggleLoading === 'ai_yonetim_enabled'} color="#6366f1" onToggle={handleToggleYonetim} />
+                                    <AiToggleRow label="AI — İdari İçin" desc="İdari görevliler" enabled={aiIdari} loading={toggleLoading === 'ai_idari_enabled'} color="#60a5fa" onToggle={handleToggleIdari} />
+                                    <AiToggleRow label="AI — Personel İçin" desc="Personel rolü" enabled={aiPersonel} loading={toggleLoading === 'ai_personel_enabled'} color="#34d399" onToggle={handleTogglePersonel} />
+                                    <AiToggleRow label="AI — Operasyon İçin" desc="Operasyon rolü" enabled={aiOperasyon} loading={toggleLoading === 'ai_operasyon_enabled'} color="#fb923c" onToggle={handleToggleOperasyon} />
+                                  </SubAccordion>
+                                )}
+
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── HESAP — en altta ── */}
+                  {sections.filter(s => s.title === 'HESAP').map((section) => (
+                    <div key={section.title}>
+                      <div className="flex items-center gap-2 px-1 mb-1.5">
+                        <div className="h-px flex-1 rounded-full" style={{ background: `linear-gradient(to right, ${section.color}40, transparent)` }} />
+                        <span className="font-black tracking-widest flex-shrink-0" style={{ fontSize: 9, color: section.color, letterSpacing: '0.15em', opacity: 0.8 }}>{section.title}</span>
+                        <div className="h-px flex-1 rounded-full" style={{ background: `linear-gradient(to left, ${section.color}40, transparent)` }} />
+                      </div>
+                      <div className="space-y-1">
+                        {section.items.map(item => {
+                          const Icon = item.icon;
+                          return (
+                            <motion.button key={item.label} onClick={item.action} whileTap={{ scale: 0.97 }} className="w-full flex items-center gap-3 rounded-xl transition-all" style={{ padding: '9px 11px', background: item.danger ? 'rgba(239,68,68,0.07)' : 'rgba(255,255,255,0.04)', border: item.danger ? '1px solid rgba(239,68,68,0.18)' : '1px solid rgba(255,255,255,0.06)' }}>
+                              <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: item.danger ? 'rgba(239,68,68,0.12)' : 'rgba(255,255,255,0.06)', border: item.danger ? '1px solid rgba(239,68,68,0.2)' : '1px solid rgba(255,255,255,0.08)' }}>
+                                <Icon style={{ width: 14, height: 14, color: item.danger ? '#f87171' : 'rgba(255,255,255,0.45)' }} strokeWidth={1.8} />
+                              </div>
+                              <span className="flex-1 text-left font-semibold" style={{ fontSize: 13, color: item.danger ? '#f87171' : 'rgba(226,232,240,0.85)', fontWeight: 500 }}>{item.label}</span>
+                              <ChevronRight style={{ width: 13, height: 13, flexShrink: 0 }} className={item.danger ? 'text-red-400/60' : 'text-white/20'} />
+                            </motion.button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
 
                 </div>
 
@@ -896,7 +886,7 @@ function NavItem({
   );
 }
 
-/* ─────────────────────── AiToggleRow ──────────────────── */
+/* ─────────────────────── AiToggleRow ─────────────────── */
 function AiToggleRow({
   label,
   desc,
