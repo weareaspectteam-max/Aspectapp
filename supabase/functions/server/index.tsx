@@ -6665,6 +6665,8 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       try {
         const mekanlarDetay: any[] = await kv.getByPrefix("mekan_") || [];
         if (mekanlarDetay.length > 0) {
+          // Döviz kurları (birim maliyet için)
+          const mekanExRates: any = await kv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
           // Kağıt adını ID üzerinden çözmek için tüm kağıtları çek
           const tumKagitlar: any[] = await kv.getByPrefix("cost_paper_").catch(() => []) || [];
           const kagitById: Record<string, string> = {};
@@ -6682,10 +6684,25 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
               const fotFiyat = Number(m.photoPrice) || 0;
               const calisma = m.workingHours ? `${m.workingHours.start || "?"} - ${m.workingHours.end || "?"}` : "Belirtilmemiş";
               // paperType: önce ID ile isim çöz, bulamazsan direkt değeri göster
-              const kagitTipi = m.paperType
-                ? (kagitById[m.paperType] || m.paperType)
-                : "Belirtilmemiş";
-              return `  • ${m.emoji || "📍"} ${m.name}:\n    - Fotoğraf fiyatı: ₺${fotFiyat} / kare\n    - Baskı tipi: ${sayfaTipi}\n    - Kağıt tipi: ${kagitTipi}\n    - Yıllık kira: ₺${yillikKira.toLocaleString("tr-TR")} (aylık ≈₺${aylikKira.toLocaleString("tr-TR")}, günlük ≈₺${gunlukKira.toLocaleString("tr-TR")})\n    - Çalışma saatleri: ${calisma}`;
+              let kagitTipi = "Belirtilmemiş";
+              let kagitMaliyetEk = "";
+              if (m.paperType) {
+                const kagitObj = tumKagitlar.find((k: any) => k.id === m.paperType || k.name === m.paperType);
+                if (kagitObj) {
+                  kagitTipi = kagitObj.name;
+                  const kKur = kagitObj.currency === "EUR" ? (Number(mekanExRates?.EUR) || 35.5) : kagitObj.currency === "USD" ? (Number(mekanExRates?.USD) || 32.8) : kagitObj.currency === "GBP" ? (Number(mekanExRates?.GBP) || 41.2) : 1;
+                  const kPcs = Number(kagitObj.pcsPerBox) || 1;
+                  const kBirim = (Number(kagitObj.boxPrice) || 0) / kPcs * kKur;
+                  const fotBasiMaliyet = m.printType === "yarim" ? kBirim / 2 : kBirim;
+                  const baskiTipiAciklama = m.printType === "yarim"
+                    ? `Yarım Sayfa: 1 baskıdan 2 fotoğraf çıkar, birim baskı ₺${kBirim.toFixed(4)} ÷ 2 = 1 fotoğraf ₺${fotBasiMaliyet.toFixed(4)}`
+                    : `Tam Sayfa: 1 baskıdan 1 fotoğraf çıkar, 1 fotoğraf ₺${fotBasiMaliyet.toFixed(4)}`;
+                  kagitMaliyetEk = ` | ⚠️ 1 FOTOĞRAF ÜRETİM MALİYETİ: ₺${fotBasiMaliyet.toFixed(4)} TRY (${baskiTipiAciklama})`;
+                } else {
+                  kagitTipi = kagitById[m.paperType] || m.paperType;
+                }
+              }
+              return `  • ${m.emoji || "📍"} ${m.name}:\n    - SATIŞ FİYATI (müşteri öder, maliyet DEĞİL): ₺${fotFiyat} / kare\n    - Baskı tipi: ${sayfaTipi}\n    - Kağıt tipi: ${kagitTipi}${kagitMaliyetEk}\n    - Yıllık kira: ₺${yillikKira.toLocaleString("tr-TR")} (aylık ≈₺${aylikKira.toLocaleString("tr-TR")}, günlük ≈₺${gunlukKira.toLocaleString("tr-TR")})\n    - Çalışma saatleri: ${calisma}`;
             }).join("\n");
         }
       } catch (e) {
@@ -6732,9 +6749,13 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
 
         const kagitStr = kagitlar.length > 0
           ? kagitlar.map((p: any) => {
-              const kur = p.currency === "EUR" ? (exRates.EUR || 35.5) : p.currency === "USD" ? (exRates.USD || 32.8) : 1;
-              const birimTRY = p.currency === "TRY" ? p.unitCost : Math.round(p.unitCost * kur);
-              return `${p.name || p.type || "Kağıt"} (${p.size || "?"} / ${p.capacity || "?"} yaprak): ₺${birimTRY}/paket`;
+              const kur = p.currency === "EUR" ? (exRates.EUR || 35.5) : p.currency === "USD" ? (exRates.USD || 32.8) : p.currency === "GBP" ? (exRates.GBP || 41.2) : 1;
+              const pcs = Number(p.pcsPerBox) || 1;
+              const sets = Number(p.setsPerBox) || 1;
+              const boxPrice = Number(p.boxPrice) || 0;
+              const birimBaskiOrijinal = boxPrice / pcs;
+              const birimBaskiTRY = birimBaskiOrijinal * kur;
+              return `${p.name || "Kağıt"}: Kutu=${boxPrice} ${p.currency || "TRY"} / ${pcs} baskı, 1 baskı ≈₺${birimBaskiTRY.toFixed(4)} TRY (kutu içi takım: ${sets})`;
             }).join(" | ")
           : "Girilmemiş";
 
@@ -6758,26 +6779,156 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
           ...maaslar.map((s: any) => Number(s.amount || s.salary || 0)),
         ].reduce((sum: number, v: number) => sum + v, 0);
 
-        maliyetStr = `Döviz Kurları: ${dovizStr}\n  Albüm Üretim Maliyetleri: ${albumMalStr}\n  Kağıt/Malzeme: ${kagitStr}\n  Düzenli Giderler: ${giderStr}\n  Maaşlar: ${maasStr}\n  Toplam Aylık Sabit Gider (tahmini): ₺${toplamGider.toLocaleString("tr-TR")}`;
+        // ── Bugünkü mekan bazlı baskı maliyet özeti (vardiyaToplam) ──
+        let bugunBaskiMaliyetStr = "  Henüz kapanış yapılmadı veya veri yok.";
+        try {
+          const bugunStr = new Date().toISOString().split("T")[0];
+          const tumBugunKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+          const bugunKayitlar = tumBugunKayitlar.filter((k: any) => k.tarih === bugunStr && k.vardiyaToplam);
+          if (bugunKayitlar.length > 0) {
+            const mekanlarBugun: any[] = await kv.getByPrefix("mekan_") || [];
+            const mekanMapBugun: Record<string, any> = {};
+            for (const m of mekanlarBugun) mekanMapBugun[m.id] = m;
+            const satirlar = bugunKayitlar.map((k: any) => {
+              const m = mekanMapBugun[k.mekanId] || { name: k.mekanId, emoji: "📍" };
+              const vt = k.vardiyaToplam;
+              return `  • ${m.emoji || "📍"} ${m.name}: kullanılan baskı=${vt.toplamKullanilanBaskı || 0}, kağıt=${vt.paperName || "?"}, birim maliyet=₺${Number(vt.birimMaliyet || 0).toFixed(4)}, toplam maliyet=₺${Number(vt.toplamMaliyet || 0).toFixed(2)}, baskı tipi=${vt.printType || "?"}, döviz kur=${vt.kurCarpani || 1}`;
+            });
+            bugunBaskiMaliyetStr = satirlar.join("\n");
+          }
+        } catch (e) { console.log("[AI] Bugün baskı maliyet hatası:", e); }
+
+        maliyetStr = `Döviz Kurları: ${dovizStr}\n  Albüm Üretim Maliyetleri: ${albumMalStr}\n  Kağıt/Malzeme Tanımları:\n  ${kagitStr}\n  Düzenli Giderler: ${giderStr}\n  Maaşlar: ${maasStr}\n  Toplam Aylık Sabit Gider (tahmini): ₺${toplamGider.toLocaleString("tr-TR")}\n\nBUGÜN MEKAN BAZLI BASKI MALİYETİ (kapanış verisinden):\n${bugunBaskiMaliyetStr}`;
       } catch (e) {
         console.log("[AI] Maliyet veri hatası:", e);
       }
 
+      // ── Mekan × Albüm Boyutu Üretim Maliyet Tablosu (PRE-COMPUTED) ──
+      let mekanAlbumMaliyetTabloStr = "  Veri yok.";
+      try {
+        const exRatesTablo: any = await kv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
+        const albumMaliyetlerTablo: any[] = await kv.get("cost_albums") || [];
+        const kagitlarTablo: any[] = await kv.getByPrefix("cost_paper_") || [];
+        const mekanlarTablo: any[] = await kv.getByPrefix("mekan_") || [];
+
+        const albumMalMapT: Record<string, { tam: number; yarim: number }> = {};
+        for (const a of albumMaliyetlerTablo) {
+          const kur = a.currency === "EUR" ? (Number(exRatesTablo.EUR) || 35.5)
+            : a.currency === "USD" ? (Number(exRatesTablo.USD) || 32.8)
+            : a.currency === "GBP" ? (Number(exRatesTablo.GBP) || 41.2) : 1;
+          albumMalMapT[String(a.size)] = {
+            tam: a.currency === "TRY" ? Number(a.tamBoy) : Math.round(Number(a.tamBoy) * kur * 100) / 100,
+            yarim: a.currency === "TRY" ? Number(a.yarimBoy) : Math.round(Number(a.yarimBoy) * kur * 100) / 100,
+          };
+        }
+
+        const albumBoyutlari = [3, 5, 7, 9, 11, 13, 15];
+        const tablosatirlar: string[] = [];
+
+        for (const mekan of mekanlarTablo) {
+          if (!mekan.id || !mekan.name) continue;
+          const printType: string = mekan.printType || "tam";
+
+          let fotBasiMaliyet = 0;
+          if (mekan.paperType) {
+            const kagitObj = kagitlarTablo.find((p: any) =>
+              p.id === mekan.paperType || p.name === mekan.paperType
+            );
+            if (kagitObj) {
+              const kKur = kagitObj.currency === "EUR" ? (Number(exRatesTablo.EUR) || 35.5)
+                : kagitObj.currency === "USD" ? (Number(exRatesTablo.USD) || 32.8)
+                : kagitObj.currency === "GBP" ? (Number(exRatesTablo.GBP) || 41.2) : 1;
+              const kPcs = Number(kagitObj.pcsPerBox) || 1;
+              const kBirim = (Number(kagitObj.boxPrice) || 0) / kPcs * kKur;
+              fotBasiMaliyet = printType === "yarim" ? kBirim / 2 : kBirim;
+            }
+          }
+
+          const mekanSatirlari: string[] = [
+            `  ${mekan.emoji || "📍"} ${mekan.name} (${printType === "yarim" ? "Yarım Sayfa" : "Tam Sayfa"}, fotoğraf başı baskı maliyeti: ₺${fotBasiMaliyet.toFixed(4)}):`
+          ];
+          for (const boyut of albumBoyutlari) {
+            const albumMal = albumMalMapT[String(boyut)];
+            const kapakMaliyet = albumMal ? (printType === "yarim" ? albumMal.yarim : albumMal.tam) : 0;
+            const baskiMaliyet = Math.round(boyut * fotBasiMaliyet * 100) / 100;
+            const birimToplam = Math.round((kapakMaliyet + baskiMaliyet) * 100) / 100;
+            mekanSatirlari.push(
+              `    • ${boyut} Kare Albüm → kapak ₺${kapakMaliyet.toFixed(2)} + ${boyut}×baskı ₺${baskiMaliyet.toFixed(4)} = BİRİM ÜRETİM MALİYETİ ₺${birimToplam.toFixed(4)}`
+            );
+          }
+          tablosatirlar.push(mekanSatirlari.join("\n"));
+        }
+
+        if (tablosatirlar.length > 0) mekanAlbumMaliyetTabloStr = tablosatirlar.join("\n");
+      } catch (e) { console.log("[AI] Mekan-albüm maliyet tablo hatası:", e); }
+
       // ── Merkez Depo Stok ──
       let depoStokStr = "  Veri yok.";
+      const albumEtikDepo: Record<string, string> = {
+        album3: "3 Kare", album5: "5 Kare", album7: "7 Kare", album9: "9 Kare",
+        album11: "11 Kare", album13: "13 Kare", album15: "15 Kare",
+        paspartu: "Paspartu", ribon: "Ribon (takım)"
+      };
+      let depoStokObj: Record<string, number> = {};
       try {
         const depoStok: any = await kv.get("depo_stok") || {};
-        const albumEtikDepo: Record<string, string> = {
-          album3: "3 Kare", album5: "5 Kare", album7: "7 Kare", album9: "9 Kare",
-          album11: "11 Kare", album13: "13 Kare", album15: "15 Kare",
-          paspartu: "Paspartu", ribon: "Ribon (takım)"
-        };
+        depoStokObj = depoStok;
         const depoLines = Object.entries(albumEtikDepo).map(([key, label]) => {
           const adet = Number(depoStok[key]) || 0;
           return `  • ${label}: ${adet} adet`;
         });
         if (depoLines.length > 0) depoStokStr = depoLines.join("\n");
       } catch (e) { console.log("[AI] Depo stok hatası:", e); }
+
+      // ── Mekan Anlık Stok (KV'den doğrudan çekilen en son kapanış/açılış stoğu) ──
+      // Frontend'den bağımsız — kapanış girilmese bile en son kayıtlı stoğu gösterir
+      let mekanAnlikStokStr = "  Veri yok.";
+      const tumStokByKey: Record<string, number> = {};
+      try {
+        const tumGunlukAI: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+        const mekanlarAI: any[] = await kv.getByPrefix("mekan_") || [];
+        // Her mekan için en son kapanış stoğunu (yoksa açılış stoğunu) bul
+        const mekanSonStok: Record<string, { tarih: string; stok: Record<string, number>; tip: string }> = {};
+        for (const kayit of tumGunlukAI) {
+          if (!kayit.mekanId || !kayit.tarih) continue;
+          // KV'de kapanış "kapanish", açılış "acilis" olarak kayıtlı (eski isimlere de fallback)
+          const stokAlacak = kayit.kapanish || kayit.kapanisStok || kayit.acilis || kayit.acilisStok;
+          if (!stokAlacak) continue;
+          const mevcut = mekanSonStok[kayit.mekanId];
+          if (!mevcut || kayit.tarih > mevcut.tarih) {
+            mekanSonStok[kayit.mekanId] = {
+              tarih: kayit.tarih,
+              stok: stokAlacak,
+              tip: (kayit.kapanish || kayit.kapanisStok) ? "kapanış" : "açılış",
+            };
+          }
+        }
+        const mekanAnlikLines: string[] = [];
+        for (const mekan of mekanlarAI) {
+          if (!mekan.id) continue;
+          const sonStokData = mekanSonStok[mekan.id];
+          if (!sonStokData) {
+            mekanAnlikLines.push(`  ${mekan.emoji || "📍"} ${mekan.name}: Stok kaydı henüz yok`);
+            continue;
+          }
+          const stokSatirlar = Object.entries(albumEtikDepo).map(([key, label]) => {
+            const adet = Number(sonStokData.stok[key]) || 0;
+            tumStokByKey[key] = (tumStokByKey[key] || 0) + adet;
+            return `${label}: ${adet}`;
+          }).join(", ");
+          mekanAnlikLines.push(`  ${mekan.emoji || "📍"} ${mekan.name} (son kayıt: ${sonStokData.tarih} ${sonStokData.tip}): ${stokSatirlar}`);
+        }
+        if (mekanAnlikLines.length > 0) mekanAnlikStokStr = mekanAnlikLines.join("\n");
+        // Depo stoğunu da genel toplama ekle
+        for (const [key] of Object.entries(albumEtikDepo)) {
+          tumStokByKey[key] = (tumStokByKey[key] || 0) + (Number(depoStokObj[key]) || 0);
+        }
+      } catch (e) { console.log("[AI] Mekan anlık stok hatası:", e); }
+
+      // Tüm lokasyonlar toplamı (merkez depo + tüm mekanlar)
+      const genelToplamStokStr = Object.entries(albumEtikDepo)
+        .map(([key, label]) => `  • ${label}: ${tumStokByKey[key] || 0} adet`)
+        .join("\n");
 
       // ── İşletme Gider Kayıtları (son 30 gün) ──
       let isletmeGiderStr = "  Veri yok.";
@@ -6893,6 +7044,173 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
         }
       } catch (e) { console.log("[AI] Duyuru hatası:", e); }
 
+      // ── Mekan Bazlı Günlük Operasyon Geçmişi (son 30 gün, bugün hariç) ──
+      let mekanGunlukGecmisStr = "";
+      try {
+        const tumGunlukKayitlarGecmis: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+        const mekanlarGecmis: any[] = await kv.getByPrefix("mekan_") || [];
+        const mekanMapGecmis: Record<string, any> = {};
+        for (const m of mekanlarGecmis) mekanMapGecmis[m.id] = m;
+
+        // ── Üretim maliyeti hesabı için maliyet verilerini çek ──
+        const exRatesGecmis: any = await kv.get("cost_exchange_rates").catch(() => ({})) || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
+        const albumMaliyetlerGecmis: any[] = await kv.get("cost_albums").catch(() => []) || [];
+        const kagitlarGecmis: any[] = await kv.getByPrefix("cost_paper_").catch(() => []) || [];
+
+        // Mekan başına 1 fotoğraf baskı maliyeti (kağıt/yazıcı, printType göz önüne alınarak)
+        const mekanFotMaliyetMap: Record<string, number> = {};
+        for (const m of mekanlarGecmis) {
+          if (!m.id || !m.paperType) continue;
+          const kagitObj = kagitlarGecmis.find((k: any) => k.id === m.paperType || k.name === m.paperType);
+          if (!kagitObj) continue;
+          const kKur2 = kagitObj.currency === "EUR" ? (Number(exRatesGecmis.EUR) || 35.5) : kagitObj.currency === "USD" ? (Number(exRatesGecmis.USD) || 32.8) : kagitObj.currency === "GBP" ? (Number(exRatesGecmis.GBP) || 41.2) : 1;
+          const kPcs2 = Number(kagitObj.pcsPerBox) || 1;
+          const kBirim2 = (Number(kagitObj.boxPrice) || 0) / kPcs2 * kKur2;
+          // Yarım sayfa: 1 baskıdan 2 fotoğraf çıkar, fotoğraf başı maliyet = birim/2
+          mekanFotMaliyetMap[m.id] = m.printType === "yarim" ? kBirim2 / 2 : kBirim2;
+        }
+
+        // Albüm kapak/cilt maliyeti (cost_albums): size → { tam: ₺X, yarim: ₺Y }
+        const albumMalMap: Record<string, { tam: number; yarim: number }> = {};
+        if (Array.isArray(albumMaliyetlerGecmis)) {
+          for (const a of albumMaliyetlerGecmis) {
+            const kur2 = a.currency === "EUR" ? (Number(exRatesGecmis.EUR) || 35.5) : a.currency === "USD" ? (Number(exRatesGecmis.USD) || 32.8) : a.currency === "GBP" ? (Number(exRatesGecmis.GBP) || 41.2) : 1;
+            albumMalMap[String(a.size)] = {
+              tam: a.currency === "TRY" ? Number(a.tamBoy) : Math.round(Number(a.tamBoy) * kur2),
+              yarim: a.currency === "TRY" ? Number(a.yarimBoy) : Math.round(Number(a.yarimBoy) * kur2),
+            };
+          }
+        }
+
+        // Geçerli albüm kare sayıları
+        const GECERLI_ALBUM_KARELER = [3, 5, 7, 9, 11, 13, 15];
+        // Ürün adından kare sayısını çıkar: "5 Kare", "5 Kare Albüm", "5'li Albüm", "5li Albüm", vb.
+        const extractKare = (product: string): number | null => {
+          const m = product.match(/^(\d+)\s*(?:Kare|'?li)/i);
+          if (!m) return null;
+          const n = Number(m[1]);
+          return GECERLI_ALBUM_KARELER.includes(n) ? n : null;
+        };
+
+        // Ürün başına üretim maliyeti: kapak + (kare × baskı) ayrıştırılmış
+        const hesaplaUretimMaliyeti = (product: string, qty: number, mekanId: string): string => {
+          const fotBasiMaliyet = mekanFotMaliyetMap[mekanId] || 0;
+          const mekan = mekanMapGecmis[mekanId];
+          const printType = mekan?.printType || "tam";
+          const kare = extractKare(product);
+          if (kare !== null) {
+            const albumMal = albumMalMap[String(kare)];
+            const kapakMaliyet = albumMal ? (printType === "yarim" ? albumMal.yarim : albumMal.tam) : 0;
+            const baskiMaliyet = Math.round(kare * fotBasiMaliyet * 100) / 100;
+            const birimToplam = Math.round((kapakMaliyet + baskiMaliyet) * 100) / 100;
+            const toplamToplam = Math.round(birimToplam * qty * 100) / 100;
+            if (kapakMaliyet === 0 && baskiMaliyet === 0) return "";
+            return ` [PRE-COMPUTED ÜRETİM: kapak ₺${kapakMaliyet} + ${kare}baskı ₺${baskiMaliyet.toFixed(2)} = birim ₺${birimToplam.toFixed(2)} × ${qty}adet = KESİN TOPLAM ₺${toplamToplam.toFixed(2)}]`;
+          }
+          if (product.match(/fotoğraf|foto/i) || product === "Ribon" || product === "Paspartu") {
+            if (fotBasiMaliyet === 0) return "";
+            const toplam = Math.round(fotBasiMaliyet * qty * 100) / 100;
+            return ` [PRE-COMPUTED ÜRETİM: ${qty}baskı × ₺${fotBasiMaliyet.toFixed(4)} = KESİN TOPLAM ₺${toplam.toFixed(4)}]`;
+          }
+          return "";
+        };
+
+        const todayGecmis = new Date().toISOString().split("T")[0];
+        const son30gGecmis = new Date(); son30gGecmis.setDate(son30gGecmis.getDate() - 30);
+        const son30gStrGecmis = son30gGecmis.toISOString().split("T")[0];
+
+        const filtreGunluk = tumGunlukKayitlarGecmis
+          .filter((k: any) => k.tarih && k.tarih >= son30gStrGecmis && k.tarih < todayGecmis)
+          .sort((a: any, b: any) => b.tarih.localeCompare(a.tarih));
+
+        if (filtreGunluk.length > 0) {
+          const tarihMekanMap: Record<string, Record<string, any>> = {};
+          for (const k of filtreGunluk) {
+            if (!tarihMekanMap[k.tarih]) tarihMekanMap[k.tarih] = {};
+            tarihMekanMap[k.tarih][k.mekanId] = k;
+          }
+
+          const gunlukLines: string[] = [];
+          const sortedTarihler = Object.keys(tarihMekanMap).sort().reverse().slice(0, 30);
+
+          for (const tarih of sortedTarihler) {
+            const mekanKayitlari = tarihMekanMap[tarih];
+            const gunLines: string[] = [`  📅 ${tarih}:`];
+            for (const [mekanId, k] of Object.entries(mekanKayitlari)) {
+              const m = mekanMapGecmis[mekanId] || { name: mekanId, emoji: "📍" };
+              const satislar = (k.satislar || []).filter((s: any) => !s.iptal);
+              const toplamSatis = satislar.length;
+              const toplamCiro = satislar.reduce((sum: number, s: any) => sum + (Number(s.finalPrice) || 0), 0);
+              const toplamKare = satislar.reduce((sum: number, s: any) =>
+                sum + (s.items || []).reduce((ss: number, it: any) => ss + (Number(it.quantity) || 1), 0), 0);
+              const toplamIskonto = satislar.reduce((sum: number, s: any) => {
+                const items = s.items || [];
+                const orig = items.reduce((ss: number, it: any) => ss + (Number(it.unitPrice) || 0) * (Number(it.quantity) || 1), 0);
+                return sum + Math.max(0, orig - (Number(s.finalPrice) || 0));
+              }, 0);
+              const personeller = [...new Set(satislar.map((s: any) => s.personnelName || s.createdBy || s.kaydeden || "").filter(Boolean))];
+              const personelStr2 = personeller.length > 0 ? personeller.join(", ") : "Bilinmiyor";
+              const acilisVar = (k.acilis || k.acilisStok || k.acilisYapildi) ? "✅" : "❌";
+              const kapanisVar = (k.kapanish || k.kapanisStok || k.kapanisYapildi) ? "✅" : "❌";
+              const urunMap: Record<string, { adet: number; ciro: number }> = {};
+              for (const s of satislar) {
+                const items = s.items || [];
+                const orig = items.reduce((ss: number, it: any) => ss + (Number(it.unitPrice) || 0) * (Number(it.quantity) || 1), 0);
+                const ratio = orig > 0 ? (Number(s.finalPrice) || 0) / orig : 1;
+                for (const it of items) {
+                  const prod = it.product || "Diğer";
+                  const qty = Number(it.quantity) || 1;
+                  const ciro = Math.round((Number(it.unitPrice) || 0) * qty * ratio);
+                  if (!urunMap[prod]) urunMap[prod] = { adet: 0, ciro: 0 };
+                  urunMap[prod].adet += qty;
+                  urunMap[prod].ciro += ciro;
+                }
+              }
+              // Ürün bazlı satış + üretim maliyeti (kapak + baskı ayrıştırılmış)
+              const urunStr = Object.entries(urunMap).length > 0
+                ? Object.entries(urunMap).sort((a, b) => b[1].adet - a[1].adet)
+                    .map(([p, v]) => {
+                      const maliyetBilgisi = hesaplaUretimMaliyeti(p, v.adet, mekanId);
+                      return `${p}: ${v.adet}adet satış=₺${v.ciro.toLocaleString("tr-TR")}${maliyetBilgisi}`;
+                    }).join(" | ")
+                : "Satış yok";
+
+              // Günün toplam üretim maliyetini de hesapla
+              let gunToplamUretimMaliyet = 0;
+              for (const [p, v] of Object.entries(urunMap)) {
+                const fotBasiM = mekanFotMaliyetMap[mekanId] || 0;
+                const mekanG = mekanMapGecmis[mekanId];
+                const pTypeG = mekanG?.printType || "tam";
+                const kareG = extractKare(p);
+                if (kareG !== null) {
+                  const albumMalG = albumMalMap[String(kareG)];
+                  const kapakM = albumMalG ? (pTypeG === "yarim" ? albumMalG.yarim : albumMalG.tam) : 0;
+                  const baskiM = kareG * fotBasiM;
+                  gunToplamUretimMaliyet += (kapakM + baskiM) * v.adet;
+                } else if (p.match(/fotoğraf|foto/i) || p === "Ribon" || p === "Paspartu") {
+                  gunToplamUretimMaliyet += fotBasiM * v.adet;
+                }
+              }
+              const toplamUretimStr = gunToplamUretimMaliyet > 0
+                ? ` | GÜN TOPLAM ÜRETİM MALİYETİ: ₺${gunToplamUretimMaliyet.toFixed(2)}`
+                : "";
+
+              gunLines.push(
+                `    ${m.emoji || "📍"} ${m.name}: Açılış=${acilisVar} Kapanış=${kapanisVar} | ` +
+                `${toplamSatis} satış, ${toplamKare} kare, ₺${toplamCiro.toLocaleString("tr-TR")} ciro` +
+                (toplamIskonto > 0 ? `, ₺${toplamIskonto.toLocaleString("tr-TR")} iskonto` : "") +
+                `${toplamUretimStr} | Personel: ${personelStr2} | Ürünler:\n      ${urunStr}`
+              );
+            }
+            gunlukLines.push(gunLines.join("\n"));
+          }
+
+          mekanGunlukGecmisStr = `\nMEKAN BAZLI GÜNLÜK OPERASYON GEÇMİŞİ (son 30 gün, bugün hariç):\n` +
+            `NOT: Her ürün satırındaki [PRE-COMPUTED ÜRETİM: ... KESİN TOPLAM ₺X] değerleri sunucuda hesaplanmış kesin maliyetlerdir. Bu değerleri aynen kullan, yeniden hesaplama.\n` +
+            gunlukLines.join("\n");
+        }
+      } catch (e) { console.log("[AI] Mekan günlük geçmiş hatası:", e); }
+
       // ── Stok Aktarım Geçmişi (son 30 gün) ──
       let stokAktarimStr = "";
       try {
@@ -6932,6 +7250,175 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
             }).join("\n");
         }
       } catch (e) { console.log("[AI] Stok ekleme hatası:", e); }
+
+      // ── Rotasyon Programı (bugün + gelecek 7 gün + geçmiş 30 gün) ──
+      let rotasyonStr = "";
+      try {
+        const tumRotasyonAI: any[] = await kv.getByPrefix("rotation_task_") || [];
+        const bugunTRAI = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().split("T")[0];
+        const son30rAI = new Date(Date.now() + 3 * 60 * 60 * 1000);
+        son30rAI.setDate(son30rAI.getDate() - 30);
+        const son30rStr = son30rAI.toISOString().split("T")[0];
+        const gelecek7rAI = new Date(Date.now() + 3 * 60 * 60 * 1000);
+        gelecek7rAI.setDate(gelecek7rAI.getDate() + 7);
+        const gelecek7rStr = gelecek7rAI.toISOString().split("T")[0];
+
+        const gecerliRotasyonlar = tumRotasyonAI
+          .filter((t: any) => t.date >= son30rStr && t.date <= gelecek7rStr && t.status !== "cancelled")
+          .sort((a: any, b: any) => (a.date || "").localeCompare(b.date || "") || (a.startTime || "").localeCompare(b.startTime || ""));
+
+        if (gecerliRotasyonlar.length > 0) {
+          const tarihGrupR: Record<string, any[]> = {};
+          for (const t of gecerliRotasyonlar) {
+            if (!tarihGrupR[t.date]) tarihGrupR[t.date] = [];
+            tarihGrupR[t.date].push(t);
+          }
+
+          const taskTypeLabels: Record<string, string> = { regular: "Normal", extra: "Ekstra", special: "Özel" };
+          const statusLabels: Record<string, string> = { draft: "Taslak", sent: "Gönderildi", revised: "Revize", cancelled: "İptal" };
+
+          const rotasyonLines: string[] = [];
+          for (const tarih of Object.keys(tarihGrupR).sort()) {
+            const label = tarih === bugunTRAI ? `📅 ${tarih} (BUGÜN)` : tarih > bugunTRAI ? `📅 ${tarih} (gelecek)` : `📅 ${tarih} (geçmiş)`;
+            rotasyonLines.push(label + ":");
+            for (const t of tarihGrupR[tarih]) {
+              const personelAdlari = (t.personnel || []).map((p: any) => p.name || p.ad || p.id).join(", ") || "Personel yok";
+              const tip = taskTypeLabels[t.taskType || t.type] || t.taskType || t.type || "Normal";
+              const durum = statusLabels[t.status] || t.status || "?";
+              const notStr = t.notes ? ` | Not: ${t.notes}` : "";
+              rotasyonLines.push(`  • ${t.locationIcon || "📍"} ${t.location} | ${t.startTime || "?"}-${t.endTime || "?"} | ${tip} | Durum: ${durum} | Personel: ${personelAdlari}${notStr}`);
+            }
+          }
+
+          rotasyonStr = `\nROTASYON PROGRAMI (son 30 gün + gelecek 7 gün — iptal hariç):\n` + rotasyonLines.join("\n");
+        } else {
+          rotasyonStr = "\nROTASYON PROGRAMI: Kayıt yok.";
+        }
+      } catch (e) { console.log("[AI] Rotasyon hatası:", e); }
+
+      // ── Hava Durumu (Open-Meteo — ücretsiz, key gerektirmez) ──
+      let havaDurumuStr = "";
+      try {
+        const lastMsg: string = (messages[messages.length - 1]?.content || messages[messages.length - 1]?.text || "").toLowerCase();
+        const havaKeywords = ["hava", "sıcaklık", "sicaklik", "yağmur", "yagmur", "kar", "rüzgar", "ruzgar", "fırtına", "firtina", "güneş", "bulut", "nem", "weather", "derece", "forecast", "tahmin"];
+        const isWeatherQuery = havaKeywords.some((k: string) => lastMsg.includes(k));
+
+        if (isWeatherQuery) {
+          const sehirListesi: Record<string, { lat: number; lon: number; ad: string }> = {
+            "istanbul": { lat: 41.0082, lon: 28.9784, ad: "İstanbul" },
+            "ankara": { lat: 39.9334, lon: 32.8597, ad: "Ankara" },
+            "izmir": { lat: 38.4192, lon: 27.1287, ad: "İzmir" },
+            "antalya": { lat: 36.8969, lon: 30.7133, ad: "Antalya" },
+            "fethiye": { lat: 36.6565, lon: 29.1234, ad: "Fethiye" },
+            "bodrum": { lat: 37.0344, lon: 27.4305, ad: "Bodrum" },
+            "marmaris": { lat: 36.8556, lon: 28.2700, ad: "Marmaris" },
+            "alanya": { lat: 36.5440, lon: 31.9993, ad: "Alanya" },
+            "kaş": { lat: 36.2015, lon: 29.6410, ad: "Kaş" },
+            "kas": { lat: 36.2015, lon: 29.6410, ad: "Kaş" },
+            "ölüdeniz": { lat: 36.5477, lon: 29.1155, ad: "Ölüdeniz" },
+            "oludeniz": { lat: 36.5477, lon: 29.1155, ad: "Ölüdeniz" },
+            "dalaman": { lat: 36.7673, lon: 28.7936, ad: "Dalaman" },
+            "muğla": { lat: 37.2153, lon: 28.3636, ad: "Muğla" },
+            "mugla": { lat: 37.2153, lon: 28.3636, ad: "Muğla" },
+            "bursa": { lat: 40.1885, lon: 29.0610, ad: "Bursa" },
+            "konya": { lat: 37.8746, lon: 32.4932, ad: "Konya" },
+            "adana": { lat: 37.0000, lon: 35.3213, ad: "Adana" },
+            "trabzon": { lat: 41.0015, lon: 39.7178, ad: "Trabzon" },
+            "samsun": { lat: 41.2867, lon: 36.3300, ad: "Samsun" },
+            "erzurum": { lat: 39.9055, lon: 41.2658, ad: "Erzurum" },
+            "gaziantep": { lat: 37.0662, lon: 37.3833, ad: "Gaziantep" },
+            "diyarbakır": { lat: 37.9144, lon: 40.2306, ad: "Diyarbakır" },
+            "diyarbakir": { lat: 37.9144, lon: 40.2306, ad: "Diyarbakır" },
+            "kapadokya": { lat: 38.6431, lon: 34.8307, ad: "Kapadokya" },
+            "cappadocia": { lat: 38.6431, lon: 34.8307, ad: "Kapadokya" },
+            "nevşehir": { lat: 38.6939, lon: 34.6857, ad: "Nevşehir" },
+            "nevsehir": { lat: 38.6939, lon: 34.6857, ad: "Nevşehir" },
+            "pamukkale": { lat: 37.9208, lon: 29.1204, ad: "Pamukkale" },
+            "denizli": { lat: 37.7765, lon: 29.0864, ad: "Denizli" },
+            "efes": { lat: 37.9394, lon: 27.3417, ad: "Efes/Selçuk" },
+            "selçuk": { lat: 37.9508, lon: 27.3697, ad: "Selçuk" },
+            "selcuk": { lat: 37.9508, lon: 27.3697, ad: "Selçuk" },
+            "çeşme": { lat: 38.3249, lon: 26.3053, ad: "Çeşme" },
+            "cesme": { lat: 38.3249, lon: 26.3053, ad: "Çeşme" },
+            "kuşadası": { lat: 37.8567, lon: 27.2597, ad: "Kuşadası" },
+            "kusadasi": { lat: 37.8567, lon: 27.2597, ad: "Kuşadası" },
+            "sarıgerme": { lat: 36.7053, lon: 28.8742, ad: "Sarıgerme" },
+            "sarigerme": { lat: 36.7053, lon: 28.8742, ad: "Sarıgerme" },
+            "göcek": { lat: 36.7479, lon: 28.9359, ad: "Göcek" },
+            "gocek": { lat: 36.7479, lon: 28.9359, ad: "Göcek" },
+            "side": { lat: 36.7688, lon: 31.3878, ad: "Side" },
+            "belek": { lat: 36.8640, lon: 31.0550, ad: "Belek" },
+            "kemer": { lat: 36.5987, lon: 30.5592, ad: "Kemer" },
+            "didim": { lat: 37.3747, lon: 27.2697, ad: "Didim" },
+            "ayvalık": { lat: 39.3194, lon: 26.6960, ad: "Ayvalık" },
+            "ayvalik": { lat: 39.3194, lon: 26.6960, ad: "Ayvalık" },
+          };
+
+          let hedefSehir: { lat: number; lon: number; ad: string } | null = null;
+          for (const [anahtar, konum] of Object.entries(sehirListesi)) {
+            if (lastMsg.includes(anahtar)) {
+              hedefSehir = konum;
+              break;
+            }
+          }
+
+          if (!hedefSehir) {
+            const stopWords = new Set(["hava", "durumu", "söyle", "soyle", "yarin", "yarın", "bugün", "bugun", "bu", "hafta", "ay", "için", "icin", "nasıl", "nasil", "ne", "kadar", "derece", "tahmin", "sıcaklık", "sicaklik", "yağmur", "kar", "bilgi", "ver", "bana", "lütfen", "lutfen", "merhaba", "tamam", "ve", "ile", "de", "da"]);
+            const kelimeler = lastMsg.split(/\s+/).filter((k: string) => k.length > 2 && !stopWords.has(k));
+            for (const kelime of kelimeler) {
+              try {
+                const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(kelime)}&count=1&language=tr&format=json`);
+                if (geoRes.ok) {
+                  const geoData = await geoRes.json();
+                  if (geoData.results && geoData.results.length > 0) {
+                    const r = geoData.results[0];
+                    if (r.country_code === "TR" || kelimeler.length === 1) {
+                      hedefSehir = { lat: r.latitude, lon: r.longitude, ad: r.name };
+                      break;
+                    }
+                  }
+                }
+              } catch (_) { /* geocoding opsiyonel */ }
+            }
+          }
+
+          if (hedefSehir) {
+            const wRes = await fetch(
+              `https://api.open-meteo.com/v1/forecast?latitude=${hedefSehir.lat}&longitude=${hedefSehir.lon}` +
+              `&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,uv_index_max` +
+              `&current_weather=true&timezone=Europe%2FIstanbul&forecast_days=7`
+            );
+            if (wRes.ok) {
+              const w = await wRes.json();
+              const wmoDesc = (code: number): string => {
+                if (code === 0) return "Açık ☀️";
+                if (code <= 2) return "Parçalı Bulutlu ⛅";
+                if (code === 3) return "Kapalı ☁️";
+                if (code <= 49) return "Sisli 🌫️";
+                if (code <= 59) return "Çisenti 🌦️";
+                if (code <= 69) return "Yağmurlu 🌧️";
+                if (code <= 79) return "Karlı ❄️";
+                if (code <= 82) return "Sağanak 🌧️";
+                if (code <= 84) return "Kar Yağışlı 🌨️";
+                if (code <= 94) return "Fırtınalı ⛈️";
+                return "Şiddetli Fırtına 🌪️";
+              };
+              const cur = w.current_weather;
+              const daily = w.daily;
+              const todayWStr = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().split("T")[0];
+              const days: string[] = (daily.time || []);
+              const gunlerStr = days.slice(0, 7).map((tarih: string, i: number) => {
+                const isToday = tarih === todayWStr;
+                const label = isToday ? "BUGÜN" : tarih;
+                return `  ${label}: ${wmoDesc(daily.weathercode[i])} | Min: ${daily.temperature_2m_min[i]}°C Max: ${daily.temperature_2m_max[i]}°C | Yağış: ${daily.precipitation_sum[i]}mm | Rüzgar: ${daily.windspeed_10m_max[i]}km/h | UV: ${daily.uv_index_max[i]}`;
+              }).join("\n");
+              havaDurumuStr = `\nHAVA DURUMU — ${hedefSehir.ad} (gerçek zamanlı Open-Meteo verisi):\nŞu an: ${wmoDesc(cur.weathercode)} | ${cur.temperature}°C | Rüzgar: ${cur.windspeed}km/h\n7 Günlük Tahmin:\n${gunlerStr}`;
+            }
+          } else {
+            havaDurumuStr = "\nHAVA DURUMU: Şehir tespit edilemedi. Kullanıcıya hangi şehir için hava durumu istediğini sor.";
+          }
+        }
+      } catch (e) { console.log("[AI] Hava durumu hatası:", e); }
 
       if (ozet) {
         const mekanlarStr = Array.isArray(ozet.mekanlar)
@@ -7084,14 +7571,20 @@ Aktif Mekan: ${ozet.aktifMekanSayisi}/${ozet.mekanSayisi}
 MEKANLAR:
 ${mekanlarStr}
 
-GENEL STOK (tüm mekanlar toplamı):
+GENEL STOK (bugünkü kapanış/açılış özeti — frontend verisi):
 ${stokStr}
 
-MEKAN BAZLI STOK DETAYI:
+MEKAN BAZLI STOK DETAYI (bugünkü frontend verisi):
 ${mekanStokStr}
 
 MERKEZ DEPO STOĞU:
 ${depoStokStr}
+
+MEKAN ANLIK STOKLARI (KV'den doğrudan — en son kapanış/açılış kaydı, frontend'den bağımsız):
+${mekanAnlikStokStr}
+
+TÜM LOKASYONLAR TOPLAM STOK (merkez depo + tüm mekanlar en son kayıt):
+${genelToplamStokStr}
 
 ANOMALİLER (bugün):
 ${anomaliStr}
@@ -7121,6 +7614,10 @@ ${albumFiyatStr}
 MALİYET / MALZEME YÖNETİMİ:
 ${maliyetStr}
 
+MEKAN BAZLI ALBÜM ÜRETİM MALİYETİ TABLOSU (sunucu tarafında önceden hesaplanmış — kesin doğru değerler):
+ÖNEMLİ: Herhangi bir mekan için albüm üretim maliyeti sorulduğunda YALNIZCA bu tablodaki değerleri kullan. Asla kendi başına hesap yapma.
+${mekanAlbumMaliyetTabloStr}
+
 İŞLETME GİDER KAYITLARI (son 30 gün):
 ${isletmeGiderStr}
 
@@ -7137,6 +7634,9 @@ AKTİF DUYURULAR:
 ${duyuruStr}
 ${stokAktarimStr}
 ${stokEklemeStr}
+${mekanGunlukGecmisStr}
+${rotasyonStr}
+${havaDurumuStr}
 --- VERİ SONU ---`;
       } else {
         // Ozet yoksa sadece izin + temel mekan/maliyet bilgisi ver
@@ -7147,6 +7647,12 @@ Bugün için satış/stok verisi henüz girilmemiş veya yüklenmemiş.
 MERKEZ DEPO STOĞU:
 ${depoStokStr}
 
+MEKAN ANLIK STOKLARI (KV'den doğrudan — en son kapanış/açılış kaydı):
+${mekanAnlikStokStr}
+
+TÜM LOKASYONLAR TOPLAM STOK (merkez depo + tüm mekanlar en son kayıt):
+${genelToplamStokStr}
+
 MEKAN DETAYLARI (kira, fiyat, baskı tipi):
 ${mekanDetayStr}
 
@@ -7155,6 +7661,10 @@ ${albumFiyatStr}
 
 MALİYET / MALZEME YÖNETİMİ:
 ${maliyetStr}
+
+MEKAN BAZLI ALBÜM ÜRETİM MALİYETİ TABLOSU (sunucu tarafında önceden hesaplanmış — kesin doğru değerler):
+ÖNEMLİ: Herhangi bir mekan için albüm üretim maliyeti sorulduğunda YALNIZCA bu tablodaki değerleri kullan. Asla kendi başına hesap yapma.
+${mekanAlbumMaliyetTabloStr}
 
 İŞLETME GİDER KAYITLARI (son 30 gün):
 ${isletmeGiderStr}
@@ -7172,6 +7682,9 @@ AKTİF DUYURULAR:
 ${duyuruStr}
 ${stokAktarimStr}
 ${stokEklemeStr}
+${mekanGunlukGecmisStr}
+${rotasyonStr}
+${havaDurumuStr}
 
 BUGÜN İZİNLİ PERSONEL:
 ${izinlerStr}
@@ -7275,18 +7788,32 @@ ${izinGecmisiStr}
         console.log("[AI] Prim çekme hatası:", e);
       }
 
-      // 4. Kişisel görevler (rotation_task'tan)
+      // 4. Kişisel görevler (rotation_task'tan) — son 30 gün + gelecek 7 gün
       let gorevStr = "  Veri yok.";
       try {
-        const allTasks: any[] = await kv.getByPrefix("rotation_task_") || [];
-        const myTasks = allTasks.filter((t: any) => {
+        const allTasksKisisel: any[] = await kv.getByPrefix("rotation_task_") || [];
+        const bugunTRKisisel = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().split("T")[0];
+        const son30kisisel = new Date(Date.now() + 3 * 60 * 60 * 1000);
+        son30kisisel.setDate(son30kisisel.getDate() - 30);
+        const son30kisiselStr = son30kisisel.toISOString().split("T")[0];
+        const gelecek7kisisel = new Date(Date.now() + 3 * 60 * 60 * 1000);
+        gelecek7kisisel.setDate(gelecek7kisisel.getDate() + 7);
+        const gelecek7kisiselStr = gelecek7kisisel.toISOString().split("T")[0];
+
+        const myTasks = allTasksKisisel.filter((t: any) => {
           const personList: any[] = Array.isArray(t.personnel) ? t.personnel : [];
-          return personList.some((p: any) => p.id === user.id || p.name === userName);
-        });
+          const isAssigned = personList.some((p: any) => p.id === user.id || p.name === userName);
+          const inRange = (t.date || "") >= son30kisiselStr && (t.date || "") <= gelecek7kisiselStr;
+          return isAssigned && inRange && t.status !== "cancelled";
+        }).sort((a: any, b: any) => (a.date || "").localeCompare(b.date || ""));
+
         if (myTasks.length > 0) {
-          gorevStr = myTasks.slice(-8).map((t: any) =>
-            `  • ${t.mekanName || t.mekanId || "Mekan"} — ${t.date || "?"} | ${t.completed ? "✅ Tamamlandı" : "⏳ Devam"}`
-          ).join("\n");
+          const statusKLabels: Record<string, string> = { draft: "Taslak", sent: "Gönderildi", revised: "Revize", cancelled: "İptal" };
+          gorevStr = myTasks.map((t: any) => {
+            const tarihLabel = t.date === bugunTRKisisel ? `${t.date} (BUGÜN)` : t.date > bugunTRKisisel ? `${t.date} (gelecek)` : `${t.date} (geçmiş)`;
+            const durum = statusKLabels[t.status] || t.status || "?";
+            return `  • ${t.locationIcon || "📍"} ${t.location || "Mekan"} — ${tarihLabel} | ${t.startTime || "?"}-${t.endTime || "?"} | Durum: ${durum}`;
+          }).join("\n");
         }
       } catch (e) {
         console.log("[AI] Görev çekme hatası:", e);
@@ -7296,11 +7823,17 @@ ${izinGecmisiStr}
 --- KİŞİSEL VERİLER: ${userName || "Kullanıcı"} ---
 ÖNEMLİ: Bu kullanıcının yalnızca kendi verileri aşağıdadır. Başka personelin finansal veya kişisel bilgilerini paylaşma.
 
-GENEL STOK (tüm mekanlar toplamı):
+GENEL STOK (bugünkü kapanış özeti — frontend verisi):
 ${stokStr}
 
-MEKAN BAZLI STOK DETAYI:
+MEKAN BAZLI STOK DETAYI (bugünkü frontend verisi):
 ${mekanStokStr}
+
+MEKAN ANLIK STOKLARI (KV'den doğrudan — en son kapanış/açılış kaydı):
+${mekanAnlikStokStr}
+
+TÜM LOKASYONLAR TOPLAM STOK (merkez depo + tüm mekanlar):
+${genelToplamStokStr}
 
 İZİN TALEPLERİM:
 ${izinStr}
@@ -7310,6 +7843,7 @@ ${primStr}
 
 ATANMIŞ GÖREVLERİM:
 ${gorevStr}
+${havaDurumuStr}
 --- VERİ SONU ---`;
     }
 
@@ -7320,20 +7854,23 @@ ${gorevStr}
     const systemPrompt = `Sen "Aspect AI" adlı bir turistik fotoğrafçılık işletmesi asistanısın. İşletme adı: Aspect Operations.
 Kullanıcı: ${userName || "Kullanıcı"} | Rol: ${userRole || "personel"}
 Türkçe yanıt ver. Kısa ve net ol. Sayısal verileri kullanarak somut cevaplar ver. Markdown bold (**) kullanabilirsin.
-STOK SORULARI: "Genel stok" veya "toplam stok" sorulunca GENEL STOK bölümünü kullan. "[Mekan adı] stok" veya "[Mekan adı] stoğu" gibi mekan adı geçen sorularda MEKAN BAZLI STOK DETAYI bölümünü kullan. "Depo stok", "depoda kaç" veya "merkez depo" gibi sorularda MERKEZ DEPO STOĞU bölümünü kullan. Her bölüm ayrıdır — karıştırma.
+STOK SORULARI: "Elimizde kaç var", "şu an stok", "mevcut stok", "toplam stok" gibi genel sorgularda KESİNLİKLE "TÜM LOKASYONLAR TOPLAM STOK" bölümünü kullan — bu veri KV'den doğrudan çekilmiş en güncel ve doğru rakamdır. "MEKAN ANLIK STOKLARI" bölümü mekan bazlı detayı gösterir. "Depo stok", "depoda kaç" veya "merkez depo" sorgularında "MERKEZ DEPO STOĞU" bölümünü kullan. "GENEL STOK" ve "MEKAN BAZLI STOK DETAYI" bölümleri yalnızca bugün frontend'den gönderilen kapanış verisini gösterir; sıfır görünüyorsa bugün kapanış girilmemiş demektir — "MEKAN ANLIK STOKLARI" bölümünü tercih et.
 SATIŞ VE ÜRÜN SORULARI: Albüm tiplerini (3 Kare, 5 Kare, 7 Kare, 9 Kare, 11 Kare, 13 Kare, 15 Kare, Ribon, Paspartu) tanıyorsun. "BUGÜN ÜRÜN/ALBÜM BAZLI SATIŞ DÖKÜMÜ" bölümünden bugünün verilerini, "SON 7 GÜN SATIŞ ÖZETİ" bölümünden geçmiş hafta verisini kullan.
 İNDİRİM SORULARI: "PERSONEL SIRALAMASI" bölümünde her personelin Net ciro, İskonto ₺ ve indirim yüzdesi (%oran) var. "Kimin indirim oranı en yüksek?", "Ahmet bugün ne kadar indirim yaptı?", "Toplam iskonto ne kadar?" gibi soruları bu veriden cevaplayabilirsin.
 MEKAN SORULARI: "MEKAN DETAYLARI" bölümünde her mekanın fotoğraf birim fiyatı, baskı tipi (tam/yarım sayfa), kağıt tipi, yıllık/aylık/günlük kira ve çalışma saatleri var. "Kaç mekanda tam sayfa kullanıyoruz?", "En pahalı mekan hangisi?", "Aylık toplam kira ne kadar?" sorularını bu veriden cevaplayabilirsin.
 FİYAT SORULARI: "ALBÜM/ÜRÜN SATIŞ FİYAT LİSTESİ" bölümünde mekan bazlı tüm albüm fiyatları var (1 Kare, 3 Kare, … 15 Kare). "3 kare ne kadar?", "Hangi mekanda fiyatlar farklı?" sorularını cevaplayabilirsin.
-MALİYET SORULARI: "MALİYET / MALZEME YÖNETİMİ" bölümünde albüm üretim maliyetleri (tam/yarım boy, döviz cinsinden), kağıt/malzeme maliyetleri, düzenli giderler ve maaş listesi var. "Bir 7 kare albümün maliyeti ne?", "Aylık sabit giderimiz ne kadar?", "Kur ne?", "En pahalı kağıt hangisi?" sorularını bu veriden cevaplayabilirsin. Satış fiyatı ile üretim maliyetini karşılaştırarak marj da hesaplayabilirsin.
+MALİYET SORULARI: KRİTİK AYRIMI UNUTMA — "SATIŞ FİYATI (müşteri öder, maliyet DEĞİL)" ile "ÜRETİM MALİYETİ" TAMAMEN FARKLIDIR. ALBÜM ÜRETİM MALİYETİ SORUSU: "X Kare albümün maliyeti nedir?", "3'lü albüm ne kadar tutar?", "üretim maliyeti?" gibi sorularda KESİNLİKLE "MEKAN BAZLI ALBÜM ÜRETİM MALİYETİ TABLOSU" bölümündeki ilgili satırı kullan — bu tablo sunucu tarafında önceden hesaplanmış kesin değerleri içerir, asla kendi başına hesap yapma. Mekan belirtilmişse o mekanın satırına bak, belirtilmemişse tüm mekanları listele. TEK FOTOĞRAF ÜRETİM MALİYETİ: "MEKAN DETAYLARI" bölümünde her mekan için "⚠️ 1 FOTOĞRAF ÜRETİM MALİYETİ: ₺X.XXXX TRY" hazır değeri var — onu kullan. "MALİYET / MALZEME YÖNETİMİ" bölümünde ham kağıt/malzeme birim fiyatları, düzenli giderler ve maaş listesi var. Satış fiyatı ile üretim maliyetini karşılaştırarak marj da hesaplayabilirsin.
 İŞLETME GİDER SORULARI: "İŞLETME GİDER KAYITLARI" bölümünde son 30 günün fiili harcama kayıtları var (kategori bazlı toplam + tek tek kayıtlar). "Bu ay toplam ne kadar harcadık?", "En büyük gider kalemi nedir?", "Prim ödemeleri ne kadar tuttu?", "Personel giderleri toplamı?" gibi soruları bu veriden cevaplayabilirsin.
 EKİPMAN SORULARI: "EKİPMAN / MALZEME LİSTESİ" bölümünde tüm ekipmanların kategori, marka/model, seri numarası, konum ve durumu (aktif/bakımda/arızalı/emekli) var. "Hangi mekanın yazıcısı arızalı?", "Kaç adet kamera var?", "Bakımdaki ekipmanlar neler?", "Toplam kaç ekipman var?" sorularını bu veriden cevaplayabilirsin.
 ZİYARET SORULARI: "MEKAN ZİYARET KAYITLARI" bölümünde son 90 günün mekan ziyaret notları ve tarihleri var. "Son mekan ziyareti ne zamandı?", "Hangi mekanlar ziyaret edildi?", "Ziyaret notları neler?" sorularını cevaplayabilirsin.
 MÜDÜR RAPORU SORULARI: "MÜDÜR RAPORLARI" bölümünde son 90 günün müdür raporları var. "Son raporda ne yazıyor?", "Hangi müdür kaç rapor yazdı?", "Bu ay rapor var mı?" sorularını cevaplayabilirsin.
 DUYURU SORULARI: "AKTİF DUYURULAR" bölümünde şu an yürürlükteki tüm duyurular var. "Aktif duyurular neler?", "Yeni bir duyuru var mı?", "Hangi role duyuru yapılmış?" sorularını cevaplayabilirsin.
 STOK HAREKETİ SORULARI: "STOK AKTARIM GEÇMİŞİ" bölümünde son 30 günün mekanlar arası stok transferleri var. "STOK EKLEME GEÇMİŞİ" bölümünde ise depoya veya mekanlara yapılan stok eklemeleri var. "Son 30 günde depoya ne eklendi?", "Mekanlar arası aktarımlar neler?", "Kim stok aktardı?" sorularını cevaplayabilirsin.
+GEÇMİŞ GÜN ÜRETİM MALİYETİ SORULARI — KRİTİK KURAL: "MEKAN BAZLI GÜNLÜK OPERASYON GEÇMİŞİ" bölümünde her ürün için sunucu tarafında önceden hesaplanmış ve doğrulanmış üretim maliyeti değerleri bulunur. Format: [PRE-COMPUTED ÜRETİM: kapak ₺X + Nbaskı ₺Y = birim ₺Z × Nadet = KESİN TOPLAM ₺T]. Bu etiketle işaretlenmiş değerler MUTLAKA OLDUĞU GİBİ kullanılmalıdır — hiçbir koşulda kendi başına yeniden hesaplama yapma. Özellikle albümler için: "5'li Albüm", "5 Kare Albüm", "5 Kare" gibi isimler hepsi 5-kare albüm demektir; üretim maliyeti = kapak maliyeti + (5 × baskı birim maliyeti) × adet şeklindedir — bunu formülü kullanarak hesaplama, [PRE-COMPUTED ÜRETİM: KESİN TOPLAM ₺T] değerini doğrudan kullan. "GÜN TOPLAM ÜRETİM MALİYETİ: ₺X" satırı o mekanda o günün tüm ürün maliyetlerinin hazır toplamıdır; bunu da doğrudan kullan. Kendi başına hesap yaparsan yanlış sonuç üretirsin — kesinlikle yapma.
 ANOMALİ SORULARI: "ANOMALİLER (bugün)" bölümünden bugünkü anomalileri — stok farkları ve yazıcı sayaç farklılıkları dahil — detaylıca cevaplayabilirsin. "SON 30 GÜN ANOMALİ GEÇMİŞİ" bölümünden tarihsel anomali sorgularını yanıtla. Anomali tipleri: Açılış Stok (sayım farkı), Kapanış Stok (beklenen ile gerçek fark), Yazıcı Açılış (sayaç tutarsızlığı), Yazıcı Kapanış (basılan kare ile satış farkı).
-İZİN SORULARI: "İZİN GEÇMİŞİ" bölümünden geçmiş tarihli izin sorgularını cevaplayabilirsin — tarih aralığı, kişi adı veya ay bazlı filtreleyerek yanıtla.${rolKisitlamasi}
+İZİN SORULARI: "İZİN GEÇMİŞİ" bölümünden geçmiş tarihli izin sorgularını cevaplayabilirsin — tarih aralığı, kişi adı veya ay bazlı filtreleyerek yanıtla.
+HAVA DURUMU SORULARI: Kullanıcı bir şehir için hava durumu sorarsa "HAVA DURUMU" bölümünde gerçek zamanlı Open-Meteo verisinden 7 günlük tahmin bulunur. Bugün, yarın veya belirli bir günü sorarsa o tarihi bul ve yanıtla. Şehir tespit edilemezse kullanıcıya tekrar sor. Hava durumunu kısa, net ve emoji ile sun.
+ROTASYON SORULARI: "ROTASYON PROGRAMI" bölümünde son 30 gün ve gelecek 7 günün tüm görev atamaları var (tarih, mekan, saat aralığı, görev tipi, durum, atanan personel). "Bugün kim hangi mekanda?", "Yarın rotasyon ne?", "Bu hafta Balık Hali'nde kimler çalışıyor?", "Geçen hafta Zoka'ya kim atandı?", "X kişi bu ay kaç gün görev aldı?" gibi soruları bu veriden cevaplayabilirsin. Durum: Taslak=henüz gönderilmemiş, Gönderildi=aktif görev, Revize=değiştirilmiş, İptal=geçersiz. Sadece "Gönderildi" veya "Revize" statüsündeki görevler fiilen aktif sayılır.${rolKisitlamasi}
 ${ozetContext}
 ${systemContext || ""}`;
 
