@@ -17,6 +17,7 @@ const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0
 interface AdminDashboardProps {
   userName: string;
   userRole: string;
+  accessToken?: string;
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -262,7 +263,7 @@ function SaatlikChart({ data }: { data: ChartPoint[] }) {
   );
 }
 
-export function AdminDashboard({ userName, userRole, onNavigate }: AdminDashboardProps) {
+export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: AdminDashboardProps) {
   const [data, setData]         = useState<DashboardData | null>(null);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
@@ -273,9 +274,17 @@ export function AdminDashboard({ userName, userRole, onNavigate }: AdminDashboar
     try {
       setLoading(true);
       setError(null);
-      const token = await getToken();
+      // accessToken prop öncelikli — session hazır olmasa bile çalışır
+      const token = accessToken || await getToken();
+      if (!token) {
+        console.warn('[AdminDashboard] token yok, 2sn bekleyip tekrar denenecek');
+        await new Promise(r => setTimeout(r, 2000));
+        const retryToken = await getToken();
+        if (!retryToken) throw new Error('Oturum bilgisi alınamadı. Lütfen tekrar giriş yapın.');
+      }
+      const finalToken = accessToken || await getToken();
       const res = await fetch(`${API_BASE}/manager/dashboard-summary`, {
-        headers: buildHeaders(token),
+        headers: buildHeaders(finalToken),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Sunucu hatası');
@@ -287,7 +296,7 @@ export function AdminDashboard({ userName, userRole, onNavigate }: AdminDashboar
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [accessToken]);
 
   useEffect(() => {
     fetchData();

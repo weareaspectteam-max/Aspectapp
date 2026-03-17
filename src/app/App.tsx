@@ -877,7 +877,7 @@ export default function App() {
       return <ManagerDashboard userName={userName} roleTitle="Müdür" onLogout={handleLogout} onNavigate={handleNavigate} />;
     } else {
       // Yönetici
-      return <AdminDashboard userName={userName} userRole={userRole} onLogout={handleLogout} onNavigate={handleNavigate} />;
+      return <AdminDashboard userName={userName} userRole={userRole} accessToken={accessToken} onLogout={handleLogout} onNavigate={handleNavigate} />;
     }
   };
 

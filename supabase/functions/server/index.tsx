@@ -5,6 +5,14 @@ import { createClient } from "npm:@supabase/supabase-js";
 import { jwtVerify } from "npm:jose@5";
 import * as kv from "./kv_store.tsx";
 
+// ── Sadece gerçek mekan objelerini döndüren helper ──────────────────────────
+// kv.getByPrefix("mekan_") çağrısı "mekan_ziyaret_*" kayıtlarını da eşleştirir.
+// Gerçek mekan objeleri her zaman `printType` ve `photoPrice` alanına sahiptir.
+const getMekanlar = async (): Promise<any[]> => {
+  const all: any[] = await kv.getByPrefix("mekan_") || [];
+  return all.filter((m: any) => m && m.name && typeof m.photoPrice !== "undefined" && typeof m.printType !== "undefined");
+};
+
 const app = new Hono();
 
 // Enable logger
@@ -446,7 +454,7 @@ app.get("/make-server-4da0b637/mekanlar", async (c) => {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
 
-    const mekanlar = await kv.getByPrefix("mekan_");
+    const mekanlar = await getMekanlar();
     const sorted = mekanlar.sort((a: any, b: any) =>
       new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     );
@@ -2276,7 +2284,7 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
     const today = new Date().toISOString().split("T")[0];
 
     // Tüm mekanları çek → id→mekan map
-    const mekanlarList = await kv.getByPrefix("mekan_");
+    const mekanlarList = await getMekanlar();
     const mekanMap: Record<string, any> = {};
     for (const m of (mekanlarList || [])) {
       mekanMap[m.id] = m;
@@ -2350,7 +2358,7 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
     const today = new Date().toISOString().split("T")[0];
 
     // Mekan haritası
-    const mekanlarList = await kv.getByPrefix("mekan_");
+    const mekanlarList = await getMekanlar();
     const mekanMap: Record<string, any> = {};
     for (const m of (mekanlarList || [])) {
       mekanMap[m.id] = m;
@@ -2521,7 +2529,7 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
     const [yil, ayNo] = ay.split("-").map(Number);
 
     // Tüm mekanları çek
-    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanlarList: any[] = await getMekanlar();
     const mekanMap: Record<string, any> = {};
     for (const m of mekanlarList) mekanMap[m.id] = m;
 
@@ -2642,7 +2650,7 @@ app.get("/make-server-4da0b637/primler/kendi-rapor", async (c) => {
 
     // Paralel veri çekimi
     const [mekanlarList, tumKayitlar, tumOdemeler, tumRotasyonlar] = await Promise.all([
-      kv.getByPrefix("mekan_").catch(() => []),
+      getMekanlar().catch(() => []),
       kv.getByPrefix("stok_gunluk_").catch(() => []),
       kv.getByPrefix("prim_odendi_").catch(() => []),
       kv.getByPrefix("rotation_task_").catch(() => []),
@@ -2759,7 +2767,7 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
     const today = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, "0")}-${String(localDate.getDate()).padStart(2, "0")}`;
 
     // Tüm mekanları al, ada göre bul
-    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanlarList: any[] = await getMekanlar();
     const mekan = mekanlarList.find((m: any) =>
       (m.name || "").toLowerCase().trim() === mekanAdi.toLowerCase().trim()
     );
@@ -3005,7 +3013,7 @@ app.get("/make-server-4da0b637/stok/anomali-raporu", async (c) => {
     const bitis = c.req.query("bitis") || "";
 
     const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
-    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanlarList: any[] = await getMekanlar();
     const mekanMap: Record<string, any> = {};
     for (const m of mekanlarList) mekanMap[m.id] = m;
 
@@ -3232,7 +3240,7 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
     const today = new Date().toISOString().split("T")[0];
     const RIBON_PER_TAKIM = 200; // 1 takım = 200 baskı
 
-    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanlarList: any[] = await getMekanlar();
     const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
     const bugunKayitlar = tumKayitlar.filter((k: any) => k.tarih === today);
 
@@ -3753,7 +3761,7 @@ app.get("/make-server-4da0b637/ekstra-is/kaynaklar", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
-    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanlarList: any[] = await getMekanlar();
 
     // Bugünün tarihini Türkiye saatiyle hesapla (UTC+3)
     const nowTR = new Date(Date.now() + 3 * 60 * 60 * 1000);
@@ -4296,7 +4304,7 @@ app.get("/make-server-4da0b637/ai/ozet", async (c) => {
     const isAdmin = ["yonetici", "ust-mudur", "mudur", "idari", "operasyon"].includes(callerRole);
 
     // Mekanlar
-    const mekanlarList = await kv.getByPrefix("mekan_") || [];
+    const mekanlarList = await getMekanlar();
     const mekanMap: Record<string, any> = {};
     for (const m of mekanlarList) mekanMap[m.id] = m;
 
@@ -4579,7 +4587,7 @@ app.get("/make-server-4da0b637/isletme/ciro", async (c) => {
       return true;
     });
 
-    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanlarList: any[] = await getMekanlar();
     const mekanMap: Record<string, any> = {};
     for (const m of mekanlarList) mekanMap[m.id] = m;
 
@@ -4651,7 +4659,7 @@ app.get("/make-server-4da0b637/isletme/satis-raporu", async (c) => {
     const mekanIdFilter = c.req.query("mekanId") || "";
 
     const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
-    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanlarList: any[] = await getMekanlar();
     const mekanMap: Record<string, any> = {};
     for (const m of mekanlarList) mekanMap[m.id] = m;
 
@@ -4770,7 +4778,7 @@ app.get("/make-server-4da0b637/personel/indirim-istatistik", async (c) => {
     const kisaEsik = kisaBaslangic.toISOString().split("T")[0];
 
     // Mekan haritası
-    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanlarList: any[] = await getMekanlar();
     const mekanById: Record<string, any> = {};
     for (const m of mekanlarList) mekanById[m.id] = m;
 
@@ -4907,7 +4915,7 @@ app.get("/make-server-4da0b637/personel/anomali-puanlar", async (c) => {
     const userIdQ   = c.req.query("userId")    || "";
 
     // ── 1. Mekan haritaları ──
-    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanlarList: any[] = await getMekanlar();
     const mekanById:   Record<string, any> = {};
     for (const m of mekanlarList) {
       mekanById[m.id] = m;
@@ -5838,7 +5846,7 @@ app.get("/make-server-4da0b637/mesajlar/kanallar", async (c) => {
     // Mekan kanalları — sadece yonetici + ust-mudur
     let mekanChannels: any[] = [];
     if (canSeeMekan) {
-      const mekanlar: any[] = await kv.getByPrefix("mekan_") || [];
+      const mekanlar: any[] = await getMekanlar();
       mekanChannels = mekanlar.map((m: any) => ({
         id: `mekan_${m.id}`, name: m.name, type: "project", emoji: m.emoji || "📍",
         isAdminOnly: true, deletable: false,
@@ -6112,7 +6120,7 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
     const periodKey = c.req.query("periodKey") || "";
 
     // ��─ 1. Mekanlar ──
-    const mekanlarList: any[] = await kv.getByPrefix("mekan_") || [];
+    const mekanlarList: any[] = await getMekanlar();
     const mekanById: Record<string, any> = {};
     for (const m of mekanlarList) mekanById[m.id] = m;
 
@@ -6407,7 +6415,7 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
 
     const [tumKayitlarRaw, mekanlarList, costAlbumsRaw, exRatesRaw] = await Promise.all([
       kv.getByPrefix("stok_gunluk_"),
-      kv.getByPrefix("mekan_"),
+      getMekanlar(),
       kv.get("cost_albums"),
       kv.get("cost_exchange_rates"),
     ]);
@@ -6915,7 +6923,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Mekan detayları (kira, sayfa tipi, fotoğraf fiyatı) ──
       let mekanDetayStr = "  Veri yok.";
       try {
-        const mekanlarDetay: any[] = await kv.getByPrefix("mekan_") || [];
+        const mekanlarDetay: any[] = await getMekanlar();
         if (mekanlarDetay.length > 0) {
           // Döviz kurları (birim maliyet için)
           const mekanExRates: any = await kv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
@@ -6964,7 +6972,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Albüm fiyat listesi (mekan bazlı photoPrice × kare) ──
       let albumFiyatStr = "  Veri yok.";
       try {
-        const mekanlarFiyat: any[] = await kv.getByPrefix("mekan_") || [];
+        const mekanlarFiyat: any[] = await getMekanlar();
         const fiyatliMekanlar = mekanlarFiyat.filter((m: any) => m.id && m.name && Number(m.photoPrice) > 0);
         if (fiyatliMekanlar.length > 0) {
           albumFiyatStr = fiyatliMekanlar
@@ -7038,7 +7046,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
           const tumBugunKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
           const bugunKayitlar = tumBugunKayitlar.filter((k: any) => k.tarih === bugunStr && k.vardiyaToplam);
           if (bugunKayitlar.length > 0) {
-            const mekanlarBugun: any[] = await kv.getByPrefix("mekan_") || [];
+            const mekanlarBugun: any[] = await getMekanlar();
             const mekanMapBugun: Record<string, any> = {};
             for (const m of mekanlarBugun) mekanMapBugun[m.id] = m;
             const satirlar = bugunKayitlar.map((k: any) => {
@@ -7061,7 +7069,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
         const exRatesTablo: any = await kv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
         const albumMaliyetlerTablo: any[] = await kv.get("cost_albums") || [];
         const kagitlarTablo: any[] = await kv.getByPrefix("cost_paper_") || [];
-        const mekanlarTablo: any[] = await kv.getByPrefix("mekan_") || [];
+        const mekanlarTablo: any[] = await getMekanlar();
 
         const albumMalMapT: Record<string, { tam: number; yarim: number }> = {};
         for (const a of albumMaliyetlerTablo) {
@@ -7138,7 +7146,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       const tumStokByKey: Record<string, number> = {};
       try {
         const tumGunlukAI: any[] = await kv.getByPrefix("stok_gunluk_") || [];
-        const mekanlarAI: any[] = await kv.getByPrefix("mekan_") || [];
+        const mekanlarAI: any[] = await getMekanlar();
         // Her mekan için en son kapanış stoğunu (yoksa açılış stoğunu) bul
         const mekanSonStok: Record<string, { tarih: string; stok: Record<string, number>; tip: string }> = {};
         for (const kayit of tumGunlukAI) {
@@ -7300,7 +7308,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       let mekanGunlukGecmisStr = "";
       try {
         const tumGunlukKayitlarGecmis: any[] = await kv.getByPrefix("stok_gunluk_") || [];
-        const mekanlarGecmis: any[] = await kv.getByPrefix("mekan_") || [];
+        const mekanlarGecmis: any[] = await getMekanlar();
         const mekanMapGecmis: Record<string, any> = {};
         for (const m of mekanlarGecmis) mekanMapGecmis[m.id] = m;
 
@@ -7703,7 +7711,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
         let gecmisAnomaliStr = "";
         try {
           const tumKayitlarAnomali: any[] = await kv.getByPrefix("stok_gunluk_") || [];
-          const mekanlarAnomali: any[] = await kv.getByPrefix("mekan_") || [];
+          const mekanlarAnomali: any[] = await getMekanlar();
           const mekanMapAnomali: Record<string, any> = {};
           for (const m of mekanlarAnomali) mekanMapAnomali[m.id] = m;
           const today_aichat = new Date().toISOString().split("T")[0];
@@ -7984,7 +7992,7 @@ ${izinGecmisiStr}
         // prim key formatı: prim_odendi_{mekanId}_{tarih}_{ki}_{safeAd}
         // stok_gunluk_ kayıtlarından bu kullanıcının prim verilerini bulmak için
         // personelPrimTakip endpoint'indeki mantığı kullanalım
-        const mekanlarList: any[] = await kv.getByPrefix("mekan_").catch(() => []);
+        const mekanlarList: any[] = await getMekanlar().catch(() => []);
         const stokKayitlar: any[] = await kv.getByPrefix("stok_gunluk_").catch(() => []);
         const odemeMap: Record<string, any> = {};
         for (const o of allPrimler) {
