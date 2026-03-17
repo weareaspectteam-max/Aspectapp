@@ -9,7 +9,7 @@ import {
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 import type { VardiyaSatis } from '../services/stock-service';
-import { getLeaveRequests, saveLeaveRequest, deleteLeaveRequest, getDailyOnLeave, getStaffMembers, type LeaveRequest } from '../services/rotation-service';
+import { getLeaveRequests, saveLeaveRequest, deleteLeaveRequest, getDailyOnLeave, getStaffMembers, getLocations, getTasks, saveTask, updateTask, type LeaveRequest, type Location, type StaffMember, type Task } from '../services/rotation-service';
 import { AspectAISettings } from './aspect-ai-settings';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -54,7 +54,7 @@ interface Message {
 }
 
 interface ResponseCard {
-  type: 'briefing' | 'profit' | 'stock' | 'personnel' | 'anomaly' | 'tip' | 'payment' | 'golden_hour' | 'mekan_detay' | 'izin' | 'leave_flow' | 'leave_confirm';
+  type: 'briefing' | 'profit' | 'stock' | 'personnel' | 'anomaly' | 'tip' | 'payment' | 'golden_hour' | 'mekan_detay' | 'izin' | 'leave_flow' | 'leave_confirm' | 'rotation_flow' | 'rotation_cancel_flow';
   data: any;
 }
 
@@ -65,6 +65,33 @@ interface LeaveFlowState {
   startDate?: string;
   endDate?: string;
   notes?: string;
+  completed?: boolean;
+}
+
+interface RotationFlowState {
+  step: 'loading' | 'date' | 'location' | 'personnel' | 'time' | 'confirm' | 'done';
+  date?: string;
+  locationId?: string;
+  locationName?: string;
+  locationIcon?: string;
+  selectedPersonnel?: Array<{ id: string; name: string; avatar: string; role: string }>;
+  startTime?: string;
+  endTime?: string;
+  notes?: string;
+  completed?: boolean;
+  taskId?: string;
+  taskStatus?: 'draft' | 'sent';
+  locations?: Location[];
+  staffMembers?: StaffMember[];
+  onLeaveIds?: string[];
+}
+
+interface RotationCancelFlowState {
+  step: 'select' | 'confirm' | 'done';
+  date?: string;
+  tasks?: Task[];
+  selectedTaskId?: string;
+  selectedTaskLocation?: string;
   completed?: boolean;
 }
 
@@ -117,6 +144,8 @@ interface RoleConfig {
 const ROLE_CONFIG: Record<string, RoleConfig> = {
   yonetici: {
     chips: [
+      { icon: '🗓️', label: 'Rotasyon Oluştur', q: '__ROT_CREATE__' },
+      { icon: '🤖', label: 'Rotasyon Öner', q: '__ROT_SUGGEST__' },
       { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
       { icon: '💰', label: 'Ciro & Kâr', q: 'Bugün toplam ciro ne kadar?' },
       { icon: '🛍️', label: 'Albüm Satışları', q: 'Bugün ürün bazlı satış dökümü nedir?' },
@@ -144,6 +173,8 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
   },
   'ust-mudur': {
     chips: [
+      { icon: '🗓️', label: 'Rotasyon Oluştur', q: '__ROT_CREATE__' },
+      { icon: '🤖', label: 'Rotasyon Öner', q: '__ROT_SUGGEST__' },
       { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
       { icon: '🛍️', label: 'Albüm Satışları', q: 'Bugün ürün bazlı satış dökümü nedir?' },
       { icon: '📈', label: 'Haftalık Satış', q: 'Bu hafta satış raporu nedir?' },
@@ -165,6 +196,8 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
   },
   mudur: {
     chips: [
+      { icon: '🗓️', label: 'Rotasyon Oluştur', q: '__ROT_CREATE__' },
+      { icon: '🤖', label: 'Rotasyon Öner', q: '__ROT_SUGGEST__' },
       { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
       { icon: '🛍️', label: 'Albüm Satışları', q: 'Bugün ürün bazlı satış dökümü nedir?' },
       { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
@@ -965,7 +998,7 @@ async function fetchIzinAnalizi(soru: string, staffMembers: any[]): Promise<{ te
   }
 }
 
-function generateAIResponse(q: string, role: string, ozet: AIOzet | null, configMap?: Record<string, RoleConfig>): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' | 'IZIN_GECMISI' | 'BUGUN_IZINLILER' | 'DUN_IZINLILER' | 'IZIN_ANALIZI' | 'SATIS_ANALIZI' | 'ANOMALI_ANALIZI' | 'INDIRIM_ANALIZI' | 'LEAVE_REQUEST' | 'LEAVE_CONFIRM' {
+function generateAIResponse(q: string, role: string, ozet: AIOzet | null, configMap?: Record<string, RoleConfig>): { text: string; card?: ResponseCard } | 'GOLDEN_HOUR' | 'IZIN_GECMISI' | 'BUGUN_IZINLILER' | 'DUN_IZINLILER' | 'IZIN_ANALIZI' | 'SATIS_ANALIZI' | 'ANOMALI_ANALIZI' | 'INDIRIM_ANALIZI' | 'LEAVE_REQUEST' | 'LEAVE_CONFIRM' | 'ROTATION_CREATE' | 'ROTATION_CANCEL' | 'ROTATION_SUGGEST' {
   const lower = q.toLowerCase();
   const map = configMap ?? ROLE_CONFIG;
   const config = map[role] ?? ROLE_CONFIG['personel'];
@@ -990,6 +1023,48 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
     lower.includes('izin oluştur') || lower.includes('izin açmak istiyorum')
   ) {
     return 'LEAVE_CONFIRM';
+  }
+
+  // Rotasyon iptal
+  if (
+    isAdmin && q !== '__ROT_CREATE__' && q !== '__ROT_SUGGEST__' && (
+      (lower.includes('iptal') && (lower.includes('rotasyon') || lower.includes('görev') || lower.includes('vardiya'))) ||
+      (lower.includes('sil') && (lower.includes('rotasyon') || lower.includes('görev'))) ||
+      lower.includes('görevi kaldır') || lower.includes('rotasyonu kaldır')
+    )
+  ) {
+    return 'ROTATION_CANCEL';
+  }
+
+  // Rotasyon önerisi / müsait personel
+  if (
+    isAdmin && (
+      q === '__ROT_SUGGEST__' ||
+      lower.includes('rotasyon öner') || lower.includes('otomatik rotasyon') ||
+      lower.includes('otomatik dağıt') || lower.includes('kim müsait') ||
+      lower.includes('müsait personel') || lower.includes('bugün müsait') ||
+      lower.includes('yarın müsait') || lower.includes('rotasyon planla') ||
+      (lower.includes('öner') && lower.includes('rotasyon')) ||
+      lower.includes('bugünlük plan öner') || lower.includes('yarınki plan öner')
+    )
+  ) {
+    return 'ROTATION_SUGGEST';
+  }
+
+  // Rotasyon oluşturma
+  if (
+    isAdmin && (
+      q === '__ROT_CREATE__' ||
+      lower.includes('rotasyon oluştur') || lower.includes('görev oluştur') ||
+      lower.includes('vardiya oluştur') || lower.includes('atama yap') ||
+      lower.includes('personel ata') || lower.includes('ai rotasyon') ||
+      (lower.includes('gönder') && (lower.includes('personel') || lower.includes('mekan') || lower.includes('kim'))) ||
+      lower.includes('bugün kim gitsin') || lower.includes('yarın kim gitsin') ||
+      (lower.includes('sokağa gönder') || lower.includes('mekana gönder')) ||
+      lower.includes('rotasyon yaz') || lower.includes('yeni rotasyon')
+    )
+  ) {
+    return 'ROTATION_CREATE';
   }
 
   // Bugün izinliler
@@ -1633,6 +1708,392 @@ function IzinGecmisiCard({ data, onNavigate }: {
   );
 }
 
+// ─── RotationFlowCard ────────────────────────────────────────────────────────
+
+function RotationFlowCard({ data, onAction, isActive, onNavigate }: {
+  data: RotationFlowState;
+  onAction: (command: string) => void;
+  isActive: boolean;
+  onNavigate?: (tab: string) => void;
+}) {
+  const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
+  const [customStart, setCustomStart] = useState('10:00');
+  const [customEnd, setCustomEnd] = useState('18:00');
+  const [showCustomTime, setShowCustomTime] = useState(false);
+
+  const disabled = !isActive;
+
+  // TR tarih yardımcısı
+  const trDays = (offset: number) => {
+    const now = new Date();
+    const tr = new Date(now.getTime() + (3 * 60 - now.getTimezoneOffset()) * 60000);
+    tr.setDate(tr.getDate() + offset);
+    return tr.toISOString().split('T')[0];
+  };
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  const btnBase = 'w-full py-2.5 px-3 rounded-xl border text-sm font-semibold transition-all active:scale-95 text-left flex items-center gap-2';
+  const btnPrimary = `${btnBase} bg-violet-500/20 border-violet-500/40 text-violet-200 hover:bg-violet-500/35`;
+  const btnSecondary = `${btnBase} bg-white/5 border-white/15 text-white/75 hover:bg-white/12`;
+
+  // ── Done ─────────────────────────────────────────────────────────────────
+  if (data.completed) {
+    return (
+      <div className="mt-3 rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/15 to-teal-500/5 p-4">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-8 h-8 rounded-xl bg-emerald-500/25 flex items-center justify-center">
+            <CheckCircle className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-emerald-300">Görev Oluşturuldu! ✅</p>
+            <p className="text-[10px] text-white/40">{data.taskStatus === 'sent' ? 'Gönderildi — personel bilgilendirildi' : 'Taslak olarak kaydedildi'}</p>
+          </div>
+        </div>
+        <div className="space-y-1.5 mb-3 bg-white/5 rounded-xl px-3 py-2.5">
+          <p className="text-xs text-white/60"><span className="text-white/30">📅</span> {fmtDate(data.date || '')}</p>
+          <p className="text-xs text-white/60"><span className="text-white/30">📍</span> {data.locationIcon} {data.locationName}</p>
+          <p className="text-xs text-white/60"><span className="text-white/30">👥</span> {data.selectedPersonnel?.map(p => p.name).join(', ')}</p>
+          <p className="text-xs text-white/60"><span className="text-white/30">⏰</span> {data.startTime} – {data.endTime}</p>
+        </div>
+        <button
+          onClick={() => onNavigate?.('rotation')}
+          className="w-full py-2.5 rounded-xl bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-semibold hover:bg-violet-500/35 transition-colors"
+        >
+          Rotasyon Sistemine Git →
+        </button>
+      </div>
+    );
+  }
+
+  // ── Loading ───────────────────────────────────────────────────────────────
+  if (data.step === 'loading') {
+    return (
+      <div className="mt-3 rounded-2xl border border-violet-500/20 bg-violet-500/8 px-4 py-5 flex items-center gap-3">
+        <Loader2 className="w-5 h-5 text-violet-400 animate-spin shrink-0" />
+        <div>
+          <p className="text-sm text-white/70 font-medium">Personel ve mekanlar yükleniyor...</p>
+          <p className="text-[10px] text-white/30">Rotasyon verilerine bağlanılıyor</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Date ─────────────────────────────────────────────────────────────────
+  if (data.step === 'date') {
+    const opts = [
+      { label: '📅 Bugün', sub: fmtDate(trDays(0)), date: trDays(0) },
+      { label: '📅 Yarın', sub: fmtDate(trDays(1)), date: trDays(1) },
+      { label: '📅 Öbür Gün', sub: fmtDate(trDays(2)), date: trDays(2) },
+    ];
+    return (
+      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        <div className="px-4 py-2.5 border-b border-white/8 flex items-center gap-2 bg-white/3">
+          <span className="text-base">🗓️</span>
+          <span className="text-xs font-black text-white uppercase tracking-wider">Rotasyon — Tarih Seç</span>
+        </div>
+        <div className="p-3 space-y-2">
+          {opts.map(opt => (
+            <button key={opt.date} onClick={() => onAction(`__ROT_DATE_${opt.date}__`)} className={btnPrimary}>
+              <span className="text-base shrink-0">{opt.label.split(' ')[0]}</span>
+              <div>
+                <div className="text-sm font-semibold">{opt.label.split(' ').slice(1).join(' ')}</div>
+                <div className="text-[10px] text-white/40 font-normal">{opt.sub}</div>
+              </div>
+            </button>
+          ))}
+          <button onClick={() => onAction('__ROT_CANCEL__')} className="w-full text-center text-[11px] text-white/30 hover:text-white/50 py-1 transition-colors">
+            İptal
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Location ──────────────────────────────────────────────────────────────
+  if (data.step === 'location') {
+    const locations = data.locations || [];
+    return (
+      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        <div className="px-4 py-2.5 border-b border-white/8 bg-white/3">
+          <div className="flex items-center gap-2">
+            <span className="text-base">📍</span>
+            <span className="text-xs font-black text-white uppercase tracking-wider">Mekan Seç</span>
+          </div>
+          <p className="text-[10px] text-white/35 mt-0.5">{fmtDate(data.date || '')}</p>
+        </div>
+        <div className="p-3 space-y-2 max-h-60 overflow-y-auto">
+          {locations.length === 0 ? (
+            <p className="text-xs text-white/40 text-center py-4">Mekan bulunamadı</p>
+          ) : (
+            locations.map(loc => (
+              <button
+                key={loc.id}
+                onClick={() => onAction(`__ROT_LOC_${loc.id}|${loc.name}|${loc.icon || '📍'}__`)}
+                className={btnSecondary}
+              >
+                <span className="text-lg shrink-0">{loc.icon || '📍'}</span>
+                <span className="font-semibold text-white/80">{loc.name}</span>
+                {loc.workingHours && (
+                  <span className="ml-auto text-[10px] text-white/25 shrink-0">{loc.workingHours.start}–{loc.workingHours.end}</span>
+                )}
+              </button>
+            ))
+          )}
+          <button onClick={() => onAction('__ROT_CANCEL__')} className="w-full text-center text-[11px] text-white/30 hover:text-white/50 py-1 transition-colors">
+            İptal
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Personnel ─────────────────────────────────────────────────────────────
+  if (data.step === 'personnel') {
+    const staff = (data.staffMembers || []).filter(s => s.status === 'active');
+    const onLeaveIds = data.onLeaveIds || [];
+    const toggle = (id: string) => setSelectedStaff(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+    return (
+      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        <div className="px-4 py-2.5 border-b border-white/8 bg-white/3">
+          <div className="flex items-center gap-2">
+            <span className="text-base">👥</span>
+            <span className="text-xs font-black text-white uppercase tracking-wider">Personel Seç</span>
+            {selectedStaff.length > 0 && (
+              <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/30 text-violet-300">{selectedStaff.length} seçili</span>
+            )}
+          </div>
+          <p className="text-[10px] text-white/35 mt-0.5">{data.locationIcon} {data.locationName} · {fmtDate(data.date || '')}</p>
+        </div>
+        <div className="p-3 space-y-1.5 max-h-64 overflow-y-auto">
+          {staff.map(s => {
+            const isOnLeave = onLeaveIds.includes(s.id);
+            const isSelected = selectedStaff.includes(s.id);
+            return (
+              <button
+                key={s.id}
+                onClick={() => !isOnLeave && toggle(s.id)}
+                disabled={isOnLeave}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all ${
+                  isOnLeave
+                    ? 'bg-red-500/5 border-red-500/15 opacity-50 cursor-not-allowed'
+                    : isSelected
+                    ? 'bg-violet-500/25 border-violet-500/50'
+                    : 'bg-white/5 border-white/12 hover:bg-white/10'
+                }`}
+              >
+                <div className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${
+                  isSelected ? 'bg-violet-500 border-violet-400' : 'border-white/20 bg-white/5'
+                }`}>
+                  {isSelected && <span className="text-[10px] text-white font-bold">✓</span>}
+                </div>
+                <div className="text-sm font-medium text-left flex-1">
+                  <span className={isOnLeave ? 'text-white/35' : isSelected ? 'text-violet-200' : 'text-white/75'}>{s.name}</span>
+                </div>
+                {isOnLeave && <span className="text-[10px] text-red-400 shrink-0">izinli 🏖️</span>}
+                <span className="text-[10px] text-white/20 shrink-0">{
+                  s.role === 'mudur' ? 'Müdür' : s.role === 'operasyon' ? 'Operasyon' : s.role === 'personel' ? 'Personel' : s.role
+                }</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="p-3 border-t border-white/8 space-y-2">
+          <button
+            onClick={() => {
+              if (selectedStaff.length === 0) return;
+              onAction(`__ROT_STAFF_DONE_${selectedStaff.join(',')}__`);
+            }}
+            disabled={selectedStaff.length === 0}
+            className="w-full py-2.5 rounded-xl bg-violet-500/25 border border-violet-500/40 text-violet-200 text-sm font-bold hover:bg-violet-500/40 transition-colors disabled:opacity-30"
+          >
+            {selectedStaff.length === 0 ? 'Personel seç...' : `Devam → (${selectedStaff.length} kişi)`}
+          </button>
+          <button onClick={() => onAction('__ROT_CANCEL__')} className="w-full text-center text-[11px] text-white/30 hover:text-white/50 py-1 transition-colors">İptal</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Time ──────────────────────────────────────────────────────────────────
+  if (data.step === 'time') {
+    const presets = [
+      { label: '09:00 – 18:00', start: '09:00', end: '18:00' },
+      { label: '10:00 – 18:00', start: '10:00', end: '18:00' },
+      { label: '10:00 – 19:00', start: '10:00', end: '19:00' },
+      { label: '11:00 – 19:00', start: '11:00', end: '19:00' },
+    ];
+    return (
+      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        <div className="px-4 py-2.5 border-b border-white/8 bg-white/3">
+          <div className="flex items-center gap-2">
+            <span className="text-base">⏰</span>
+            <span className="text-xs font-black text-white uppercase tracking-wider">Saat Aralığı</span>
+          </div>
+          <p className="text-[10px] text-white/35 mt-0.5">{data.locationIcon} {data.locationName} · {data.selectedPersonnel?.map(p => p.name.split(' ')[0]).join(', ')}</p>
+        </div>
+        <div className="p-3 space-y-2">
+          {presets.map(p => (
+            <button key={p.label} onClick={() => onAction(`__ROT_TIME_${p.start}|${p.end}__`)} className={btnSecondary}>
+              <Clock className="w-4 h-4 text-violet-400 shrink-0" />
+              <span className="font-semibold">{p.label}</span>
+            </button>
+          ))}
+          {!showCustomTime ? (
+            <button onClick={() => setShowCustomTime(true)} className="w-full text-[11px] text-violet-400/70 hover:text-violet-300 py-1 transition-colors">
+              ✏️ Özel saat gir
+            </button>
+          ) : (
+            <div className="bg-white/5 rounded-xl p-3 space-y-2">
+              <div className="flex gap-2 items-center">
+                <div className="flex-1">
+                  <p className="text-[10px] text-white/40 mb-1">Başlangıç</p>
+                  <input type="time" value={customStart} onChange={e => setCustomStart(e.target.value)}
+                    className="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-violet-500/50" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-[10px] text-white/40 mb-1">Bitiş</p>
+                  <input type="time" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
+                    className="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-violet-500/50" />
+                </div>
+              </div>
+              <button onClick={() => onAction(`__ROT_TIME_${customStart}|${customEnd}__`)}
+                className="w-full py-2 rounded-xl bg-violet-500/25 border border-violet-500/40 text-violet-200 text-sm font-bold hover:bg-violet-500/40 transition-colors">
+                Özel saati kullan
+              </button>
+            </div>
+          )}
+          <button onClick={() => onAction('__ROT_CANCEL__')} className="w-full text-center text-[11px] text-white/30 hover:text-white/50 py-1 transition-colors">İptal</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Confirm ───────────────────────────────────────────────────────────────
+  if (data.step === 'confirm') {
+    return (
+      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        <div className="px-4 py-2.5 border-b border-white/8 bg-white/3 flex items-center gap-2">
+          <span className="text-base">✅</span>
+          <span className="text-xs font-black text-white uppercase tracking-wider">Görevi Onayla</span>
+        </div>
+        <div className="p-3 space-y-1.5">
+          {[
+            { icon: '📅', label: 'Tarih', val: fmtDate(data.date || '') },
+            { icon: '📍', label: 'Mekan', val: `${data.locationIcon} ${data.locationName}` },
+            { icon: '👥', label: 'Personel', val: data.selectedPersonnel?.map(p => p.name).join(', ') || '-' },
+            { icon: '⏰', label: 'Saat', val: `${data.startTime} – ${data.endTime}` },
+          ].map(item => (
+            <div key={item.label} className="flex items-start gap-2.5 bg-white/5 rounded-xl px-3 py-2">
+              <span className="text-base shrink-0">{item.icon}</span>
+              <div>
+                <p className="text-[10px] text-white/35">{item.label}</p>
+                <p className="text-sm text-white/80 font-medium">{item.val}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="p-3 border-t border-white/8 space-y-2">
+          <button onClick={() => onAction('__ROT_SAVE_sent__')}
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-500/30 to-indigo-500/20 border border-violet-500/40 text-violet-200 text-sm font-bold hover:from-violet-500/45 hover:to-indigo-500/35 transition-all flex items-center justify-center gap-2">
+            <Send className="w-4 h-4" /> Gönder (Personel Bilgilendirilir)
+          </button>
+          <button onClick={() => onAction('__ROT_SAVE_draft__')}
+            className="w-full py-2.5 rounded-xl bg-white/8 border border-white/15 text-white/60 text-sm font-semibold hover:bg-white/14 transition-colors">
+            📝 Taslak Olarak Kaydet
+          </button>
+          <button onClick={() => onAction('__ROT_CANCEL__')} className="w-full text-center text-[11px] text-white/30 hover:text-white/50 py-1 transition-colors">İptal</button>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+// ─── RotationCancelFlowCard ───────────────────────────────────────────────────
+
+function RotationCancelFlowCard({ data, onAction, isActive }: {
+  data: RotationCancelFlowState;
+  onAction: (command: string) => void;
+  isActive: boolean;
+}) {
+  const disabled = !isActive;
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString('tr-TR', { weekday: 'short', day: 'numeric', month: 'short' });
+
+  if (data.completed) {
+    return (
+      <div className="mt-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 flex items-center gap-3">
+        <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+        <span className="text-sm text-emerald-300 font-medium">Görev iptal edildi ✅</span>
+      </div>
+    );
+  }
+
+  if (data.step === 'select') {
+    const tasks = (data.tasks || []).filter(t => t.status !== 'cancelled');
+    return (
+      <div className={`mt-3 rounded-2xl border border-red-500/25 bg-gradient-to-br from-red-500/8 to-orange-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        <div className="px-4 py-2.5 border-b border-white/8 bg-white/3 flex items-center gap-2">
+          <span className="text-base">🚫</span>
+          <span className="text-xs font-black text-white uppercase tracking-wider">İptal Edilecek Görevi Seç</span>
+        </div>
+        <div className="p-3 space-y-2 max-h-56 overflow-y-auto">
+          {tasks.length === 0 ? (
+            <p className="text-xs text-white/40 text-center py-4">İptal edilebilir görev bulunamadı</p>
+          ) : (
+            tasks.map(t => (
+              <button key={t.id} onClick={() => onAction(`__ROT_CANCEL_SELECT_${t.id}|${t.location}__`)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5 border border-white/12 hover:bg-red-500/10 hover:border-red-500/25 transition-all text-left">
+                <span className="text-base shrink-0">{t.locationIcon || '📍'}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white/80 truncate">{t.location}</p>
+                  <p className="text-[10px] text-white/35">
+                    {t.personnel?.map((p: any) => p.name).join(', ')} · {t.startTime}–{t.endTime}
+                  </p>
+                </div>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full shrink-0 ${
+                  t.status === 'sent' ? 'bg-emerald-500/20 text-emerald-300' :
+                  t.status === 'draft' ? 'bg-amber-500/20 text-amber-300' : 'bg-white/10 text-white/30'
+                }`}>{t.status === 'sent' ? 'Gönderildi' : t.status === 'draft' ? 'Taslak' : t.status}</span>
+              </button>
+            ))
+          )}
+          <button onClick={() => onAction('__ROT_CANCEL_ABORT__')} className="w-full text-center text-[11px] text-white/30 hover:text-white/50 py-1 transition-colors">Vazgeç</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (data.step === 'confirm') {
+    return (
+      <div className={`mt-3 rounded-2xl border border-red-500/25 bg-gradient-to-br from-red-500/8 to-orange-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+        <div className="px-4 py-2.5 border-b border-white/8 bg-white/3 flex items-center gap-2">
+          <span className="text-base">⚠️</span>
+          <span className="text-xs font-black text-white uppercase tracking-wider">İptal Onayı</span>
+        </div>
+        <div className="p-4 space-y-3">
+          <p className="text-sm text-white/70">
+            <strong className="text-white">{data.selectedTaskLocation}</strong> görevini iptal etmek istediğinden emin misin?
+          </p>
+          <div className="flex gap-2">
+            <button onClick={() => onAction(`__ROT_CANCEL_CONFIRM_${data.selectedTaskId}__`)}
+              className="flex-1 py-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-red-300 text-sm font-bold hover:bg-red-500/35 transition-colors">
+              ✅ Evet, iptal et
+            </button>
+            <button onClick={() => onAction('__ROT_CANCEL_ABORT__')}
+              className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white/50 text-sm font-medium hover:bg-white/10 transition-colors">
+              Hayır
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
 // ─── LeaveConfirmCard ─────────────────────────────────────────────────────────
 
 function LeaveConfirmCard({ onAction, isActive }: { onAction: (cmd: string) => void; isActive: boolean }) {
@@ -1965,6 +2426,21 @@ function MessageBubble({ msg, onFlowAction, isLastMsg, onNavigate }: {
             )}
             {msg.card.type === 'leave_flow' && (
               <LeaveFlowCard
+                data={msg.card.data}
+                onAction={onFlowAction ?? (() => {})}
+                isActive={!!isLastMsg && !msg.card.data.completed}
+              />
+            )}
+            {msg.card.type === 'rotation_flow' && (
+              <RotationFlowCard
+                data={msg.card.data}
+                onAction={onFlowAction ?? (() => {})}
+                isActive={!!isLastMsg && !msg.card.data.completed}
+                onNavigate={onNavigate}
+              />
+            )}
+            {msg.card.type === 'rotation_cancel_flow' && (
+              <RotationCancelFlowCard
                 data={msg.card.data}
                 onAction={onFlowAction ?? (() => {})}
                 isActive={!!isLastMsg && !msg.card.data.completed}
@@ -2549,6 +3025,8 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   const recognitionRef = useRef<any>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [leaveFlow, setLeaveFlow] = useState<LeaveFlowState | null>(null);
+  const [rotationFlow, setRotationFlow] = useState<RotationFlowState | null>(null);
+  const [rotationCancelFlow, setRotationCancelFlow] = useState<RotationCancelFlowState | null>(null);
 
   // KV'den config yükle ve ROLE_CONFIG'i override et
   useEffect(() => {
@@ -2761,6 +3239,184 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     return false;
   }, [leaveFlow, userId, userName, userAvatar, userRole]);
 
+  // ── Rotasyon flow komutlarını işle ────────────────────────────────────────
+  const handleRotationFlowCommand = useCallback(async (command: string): Promise<boolean> => {
+    if (!command.startsWith('__ROT_')) return false;
+    const makeId = () => Date.now().toString();
+
+    // İptal
+    if (command === '__ROT_CANCEL__') {
+      setRotationFlow(null);
+      setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: 'Rotasyon oluşturma iptal edildi. Başka bir konuda yardımcı olabilir miyim? 😊', ts: new Date() }]);
+      setIsLoading(false);
+      return true;
+    }
+
+    // İptal flow'u vazgeç
+    if (command === '__ROT_CANCEL_ABORT__') {
+      setRotationCancelFlow(null);
+      setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: 'İptal işleminden vazgeçildi. Görev aktif kalmaya devam ediyor.', ts: new Date() }]);
+      setIsLoading(false);
+      return true;
+    }
+
+    // Tarih seçimi
+    if (command.startsWith('__ROT_DATE_')) {
+      const date = command.replace('__ROT_DATE_', '').replace(/__$/, '');
+      // İzinli IDs'i seçilen tarihe göre güncelle
+      const allLeaves = await getLeaveRequests();
+      const daily = await getDailyOnLeave();
+      const staff = rotationFlow?.staffMembers || await getStaffMembers();
+      const onLeaveSet = new Set<string>();
+      for (const l of allLeaves) {
+        if (l.status !== 'rejected' && date >= l.startDate && date <= l.endDate) onLeaveSet.add(l.personnelId);
+      }
+      const dailyIds: string[] = Array.isArray(daily[date]) ? daily[date] : [];
+      dailyIds.forEach(id => onLeaveSet.add(id));
+      staff.filter(s => s.status === 'on_leave').forEach(s => onLeaveSet.add(s.id));
+
+      const newFlow: RotationFlowState = { ...rotationFlow, step: 'location', date, onLeaveIds: Array.from(onLeaveSet), staffMembers: staff };
+      setRotationFlow(newFlow);
+      const fmtDate = (d: string) => new Date(d).toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' });
+      setMessages(prev => [...prev, {
+        id: makeId(), role: 'ai',
+        text: `📅 **${fmtDate(date)}** seçildi. Hangi mekana görevlendirme yapılacak?`,
+        ts: new Date(), card: { type: 'rotation_flow', data: newFlow },
+      }]);
+      setIsLoading(false);
+      return true;
+    }
+
+    // Mekan seçimi
+    if (command.startsWith('__ROT_LOC_')) {
+      const raw = command.replace('__ROT_LOC_', '').replace(/__$/, '');
+      const [locationId, locationName, locationIcon] = raw.split('|');
+      const onLeaveCount = (rotationFlow?.onLeaveIds || []).length;
+      const newFlow: RotationFlowState = { ...rotationFlow, step: 'personnel', locationId, locationName, locationIcon };
+      setRotationFlow(newFlow);
+      setMessages(prev => [...prev, {
+        id: makeId(), role: 'ai',
+        text: `📍 **${locationIcon} ${locationName}** seçildi. Kimleri görevlendireceksin?${onLeaveCount > 0 ? ` *(${onLeaveCount} kişi bugün izinli — otomatik gri gösterilecek)*` : ''}`,
+        ts: new Date(), card: { type: 'rotation_flow', data: newFlow },
+      }]);
+      setIsLoading(false);
+      return true;
+    }
+
+    // Personel seçimi tamamlandı
+    if (command.startsWith('__ROT_STAFF_DONE_')) {
+      const raw = command.replace('__ROT_STAFF_DONE_', '').replace(/__$/, '');
+      const ids = raw.split(',').filter(Boolean);
+      const allStaff = rotationFlow?.staffMembers || [];
+      const selectedPersonnel = ids.map(id => {
+        const s = allStaff.find(x => x.id === id);
+        return s ? { id: s.id, name: s.name, avatar: s.avatar, role: s.role } : { id, name: id, avatar: '👤', role: 'personel' };
+      });
+      const newFlow: RotationFlowState = { ...rotationFlow, step: 'time', selectedPersonnel };
+      setRotationFlow(newFlow);
+      setMessages(prev => [...prev, {
+        id: makeId(), role: 'ai',
+        text: `👥 **${selectedPersonnel.map(p => p.name).join(', ')}** seçildi. Çalışma saatleri nedir?`,
+        ts: new Date(), card: { type: 'rotation_flow', data: newFlow },
+      }]);
+      setIsLoading(false);
+      return true;
+    }
+
+    // Saat seçimi
+    if (command.startsWith('__ROT_TIME_')) {
+      const raw = command.replace('__ROT_TIME_', '').replace(/__$/, '');
+      const [startTime, endTime] = raw.split('|');
+      const newFlow: RotationFlowState = { ...rotationFlow, step: 'confirm', startTime, endTime };
+      setRotationFlow(newFlow);
+      setMessages(prev => [...prev, {
+        id: makeId(), role: 'ai',
+        text: `⏰ **${startTime} – ${endTime}** ayarlandı. Her şey doğruysa görevi oluştur!`,
+        ts: new Date(), card: { type: 'rotation_flow', data: newFlow },
+      }]);
+      setIsLoading(false);
+      return true;
+    }
+
+    // Kaydet (draft veya sent)
+    if (command === '__ROT_SAVE_draft__' || command === '__ROT_SAVE_sent__') {
+      if (!rotationFlow) { setIsLoading(false); return true; }
+      const status = command === '__ROT_SAVE_sent__' ? 'sent' : 'draft';
+      try {
+        const taskId = `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const task: Task = {
+          id: taskId,
+          personnel: (rotationFlow.selectedPersonnel || []).map(p => ({
+            id: p.id, name: p.name, avatar: p.avatar,
+            role: p.role as any,
+          })),
+          location: rotationFlow.locationName || '',
+          locationIcon: rotationFlow.locationIcon || '📍',
+          startTime: rotationFlow.startTime || '10:00',
+          endTime: rotationFlow.endTime || '18:00',
+          type: 'regular',
+          taskType: 'regular',
+          status,
+          date: rotationFlow.date || new Date().toISOString().split('T')[0],
+          sentAt: status === 'sent' ? new Date().toISOString() : undefined,
+        };
+        await saveTask(task);
+        const completedFlow: RotationFlowState = { ...rotationFlow, completed: true, taskId, taskStatus: status };
+        setRotationFlow(null);
+        setMessages(prev => [...prev, {
+          id: makeId(), role: 'ai',
+          text: status === 'sent'
+            ? `✅ Rotasyon görevi **gönderildi!** ${rotationFlow.locationIcon} **${rotationFlow.locationName}** → ${rotationFlow.selectedPersonnel?.map(p => p.name).join(', ')} (${rotationFlow.startTime}–${rotationFlow.endTime})`
+            : `📝 Rotasyon görevi **taslak olarak kaydedildi.** Rotasyon sisteminden gönderebilirsin.`,
+          ts: new Date(), card: { type: 'rotation_flow', data: completedFlow },
+        }]);
+      } catch (e) {
+        console.error('saveTask error:', e);
+        setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: '❌ Görev kaydedilirken hata oluştu. Lütfen tekrar dene.', ts: new Date() }]);
+      }
+      setIsLoading(false);
+      return true;
+    }
+
+    // ── İptal flow komutları ──────────────────────────────────────────────
+    // Görev seçildi → onay sor
+    if (command.startsWith('__ROT_CANCEL_SELECT_')) {
+      const raw = command.replace('__ROT_CANCEL_SELECT_', '').replace(/__$/, '');
+      const [taskId, taskLocation] = raw.split('|');
+      const newState: RotationCancelFlowState = { ...(rotationCancelFlow || {}), step: 'confirm', selectedTaskId: taskId, selectedTaskLocation: taskLocation };
+      setRotationCancelFlow(newState);
+      setMessages(prev => [...prev, {
+        id: makeId(), role: 'ai',
+        text: `**${taskLocation}** görevini iptal etmek istediğinden emin misin?`,
+        ts: new Date(), card: { type: 'rotation_cancel_flow', data: newState },
+      }]);
+      setIsLoading(false);
+      return true;
+    }
+
+    // İptal onaylandı → görevi güncelle
+    if (command.startsWith('__ROT_CANCEL_CONFIRM_')) {
+      const taskId = command.replace('__ROT_CANCEL_CONFIRM_', '').replace(/__$/, '');
+      try {
+        await updateTask(taskId, { status: 'cancelled', cancelledAt: new Date().toISOString(), cancelReason: 'Aspect AI tarafından iptal edildi' });
+        const completedState: RotationCancelFlowState = { ...(rotationCancelFlow || {}), completed: true };
+        setRotationCancelFlow(null);
+        setMessages(prev => [...prev, {
+          id: makeId(), role: 'ai',
+          text: `✅ **${rotationCancelFlow?.selectedTaskLocation}** görevi başarıyla iptal edildi.`,
+          ts: new Date(), card: { type: 'rotation_cancel_flow', data: completedState },
+        }]);
+      } catch (e) {
+        console.error('updateTask cancel error:', e);
+        setMessages(prev => [...prev, { id: makeId(), role: 'ai', text: '❌ Görev iptal edilirken hata oluştu.', ts: new Date() }]);
+      }
+      setIsLoading(false);
+      return true;
+    }
+
+    return false;
+  }, [rotationFlow, rotationCancelFlow]);
+
   // ── Kullanıcıya gösterilen display text map'i ────────────────────────────
   const getDisplayText = (text: string): string => {
     const map: Record<string, string> = {
@@ -2776,7 +3432,38 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       '__LEAVE_NOTES_SKIP__':       'Geç →',
       '__LEAVE_CONFIRM_YES__':      '✅ Evet, izin talebi oluştur',
       '__LEAVE_CONFIRM_NO__':       '❌ Hayır, teşekkürler',
+      '__ROT_CREATE__':             '🗓️ AI ile rotasyon oluştur',
+      '__ROT_SUGGEST__':            '🤖 Rotasyon öner',
+      '__ROT_CANCEL__':             '❌ İptal',
+      '__ROT_SAVE_draft__':         '📝 Taslak olarak kaydet',
+      '__ROT_SAVE_sent__':          '✈️ Gönder',
+      '__ROT_CANCEL_ABORT__':       '← Vazgeç',
     };
+    if (text.startsWith('__ROT_DATE_')) {
+      const d = text.replace('__ROT_DATE_', '').replace(/__$/, '');
+      return `📅 ${new Date(d).toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })}`;
+    }
+    if (text.startsWith('__ROT_LOC_')) {
+      const raw = text.replace('__ROT_LOC_', '').replace(/__$/, '');
+      const [, name, icon] = raw.split('|');
+      return `${icon || '📍'} ${name}`;
+    }
+    if (text.startsWith('__ROT_STAFF_DONE_')) {
+      return '👥 Personel seçimi tamamlandı';
+    }
+    if (text.startsWith('__ROT_TIME_')) {
+      const raw = text.replace('__ROT_TIME_', '').replace(/__$/, '');
+      const [s, e] = raw.split('|');
+      return `⏰ ${s} – ${e}`;
+    }
+    if (text.startsWith('__ROT_CANCEL_SELECT_')) {
+      const raw = text.replace('__ROT_CANCEL_SELECT_', '').replace(/__$/, '');
+      const [, loc] = raw.split('|');
+      return `🚫 ${loc} görevini iptal et`;
+    }
+    if (text.startsWith('__ROT_CANCEL_CONFIRM_')) {
+      return '✅ Evet, iptal et';
+    }
     if (map[text]) return map[text];
     if (text.startsWith('__LEAVE_STARTDATE_')) {
       const d = text.replace('__LEAVE_STARTDATE_', '').replace(/__$/, '');
@@ -2836,6 +3523,13 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     // İzin flow komutlarını önce işle
     if (text.trim().startsWith('__LEAVE_')) {
       await handleLeaveFlowCommand(text.trim());
+      return;
+    }
+
+    // Rotasyon flow komutlarını işle (başlatma komutları hariç — onlar generateAIResponse'a gider)
+    const rotCmd = text.trim();
+    if (rotCmd.startsWith('__ROT_') && rotCmd !== '__ROT_CREATE__' && rotCmd !== '__ROT_SUGGEST__') {
+      await handleRotationFlowCommand(rotCmd);
       return;
     }
 
@@ -2960,6 +3654,84 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     } else if (result === 'LEAVE_CONFIRM') {
       aiText = 'İzin talebi oluşturmak mı istiyorsunuz? 🏖️';
       aiCard = { type: 'leave_confirm', data: { answered: false } };
+    } else if (result === 'ROTATION_CREATE') {
+      // Rotasyon verilerini yükle
+      try {
+        const loadingFlow: RotationFlowState = { step: 'loading' };
+        setRotationFlow(loadingFlow);
+        const [locs, staff] = await Promise.all([getLocations(), getStaffMembers()]);
+        const nowTR = new Date(Date.now() + (3 * 60 - new Date().getTimezoneOffset()) * 60000);
+        const todayStr = nowTR.toISOString().split('T')[0];
+        const todayLeaves = await getLeaveRequests();
+        const todayDaily = await getDailyOnLeave();
+        const onLeaveSet = new Set<string>();
+        for (const l of todayLeaves) {
+          if (l.status !== 'rejected' && todayStr >= l.startDate && todayStr <= l.endDate) onLeaveSet.add(l.personnelId);
+        }
+        (Array.isArray(todayDaily[todayStr]) ? todayDaily[todayStr] : []).forEach((id: string) => onLeaveSet.add(id));
+        staff.filter(s => s.status === 'on_leave').forEach(s => onLeaveSet.add(s.id));
+        const readyFlow: RotationFlowState = { step: 'date', locations: locs, staffMembers: staff, onLeaveIds: Array.from(onLeaveSet) };
+        setRotationFlow(readyFlow);
+        aiText = '🗓️ Rotasyon oluşturalım! Önce tarihi seç:';
+        aiCard = { type: 'rotation_flow', data: readyFlow };
+      } catch (e) {
+        console.error('ROTATION_CREATE veri yükleme hatası:', e);
+        setRotationFlow(null);
+        aiText = 'Rotasyon verilerine şu an ulaşılamadı. Lütfen tekrar dene.';
+      }
+    } else if (result === 'ROTATION_CANCEL') {
+      // İptal edilecek görevleri yükle
+      try {
+        const nowTR = new Date(Date.now() + (3 * 60 - new Date().getTimezoneOffset()) * 60000);
+        const todayStr = nowTR.toISOString().split('T')[0];
+        const tasks = await getTasks();
+        const todayTasks = tasks.filter(t => t.date === todayStr && t.status !== 'cancelled');
+        const cancelState: RotationCancelFlowState = { step: 'select', date: todayStr, tasks: todayTasks };
+        setRotationCancelFlow(cancelState);
+        if (todayTasks.length === 0) {
+          aiText = `📅 Bugün (${todayStr}) iptal edilebilecek aktif görev bulunamadı.`;
+        } else {
+          aiText = `🚫 Bugün **${todayTasks.length} aktif görev** var. Hangisini iptal etmek istiyorsun?`;
+          aiCard = { type: 'rotation_cancel_flow', data: cancelState };
+        }
+      } catch (e) {
+        console.error('ROTATION_CANCEL veri yükleme hatası:', e);
+        aiText = 'Görev verileri yüklenirken hata oluştu. Lütfen tekrar dene.';
+      }
+    } else if (result === 'ROTATION_SUGGEST') {
+      // Müsait personel önerisi
+      try {
+        const nowTR = new Date(Date.now() + (3 * 60 - new Date().getTimezoneOffset()) * 60000);
+        const todayStr = nowTR.toISOString().split('T')[0];
+        const tomorrowStr = new Date(nowTR.getTime() + 86400000).toISOString().split('T')[0];
+        const targetDate = text.toLowerCase().includes('yarın') ? tomorrowStr : todayStr;
+        const [locs, staff, leaves, daily] = await Promise.all([getLocations(), getStaffMembers(), getLeaveRequests(), getDailyOnLeave()]);
+        const onLeaveSet = new Set<string>();
+        for (const l of leaves) {
+          if (l.status !== 'rejected' && targetDate >= l.startDate && targetDate <= l.endDate) onLeaveSet.add(l.personnelId);
+        }
+        (Array.isArray(daily[targetDate]) ? daily[targetDate] : []).forEach((id: string) => onLeaveSet.add(id));
+        staff.filter(s => s.status === 'on_leave').forEach(s => onLeaveSet.add(s.id));
+        const available = staff.filter(s => !onLeaveSet.has(s.id));
+        const onLeave = staff.filter(s => onLeaveSet.has(s.id));
+        const fmtDate = (d: string) => new Date(d).toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' });
+        // Basit dağıtım önerisi: personeli mekan sayısına böl
+        const locCount = locs.length;
+        const avgPerLoc = locCount > 0 ? Math.ceil(available.length / locCount) : 0;
+        let suggestion = `📊 **${fmtDate(targetDate)}** için rotasyon analizi:\n\n`;
+        suggestion += `✅ **Müsait (${available.length} kişi):** ${available.map(s => s.name.split(' ')[0]).join(', ')}\n`;
+        if (onLeave.length > 0) suggestion += `🏖️ **İzinli (${onLeave.length} kişi):** ${onLeave.map(s => s.name.split(' ')[0]).join(', ')}\n`;
+        suggestion += `\n📍 **${locCount} mekan** için önerilen dağılım (mekan başı ~${avgPerLoc} kişi):\n`;
+        locs.forEach((loc, i) => {
+          const assigned = available.slice(i * avgPerLoc, (i + 1) * avgPerLoc);
+          suggestion += `• ${loc.icon || '📍'} **${loc.name}**: ${assigned.length > 0 ? assigned.map(s => s.name.split(' ')[0]).join(', ') : '— atanacak personel yok'}\n`;
+        });
+        suggestion += `\nRotasyon oluşturmak için **"Rotasyon Oluştur"** chip'ini kullan veya "rotasyon oluştur" yaz.`;
+        aiText = suggestion;
+      } catch (e) {
+        console.error('ROTATION_SUGGEST hatası:', e);
+        aiText = 'Rotasyon önerisi oluşturulurken hata oluştu.';
+      }
     } else {
       aiText = result.text;
       aiCard = result.card;
@@ -2975,7 +3747,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
 
     setMessages(prev => [...prev, aiMsg]);
     setIsLoading(false);
-  }, [isLoading, ozet, userRole, activeROLE_CONFIG, userName, userId, handleLeaveFlowCommand, messages]);
+  }, [isLoading, ozet, userRole, activeROLE_CONFIG, userName, userId, handleLeaveFlowCommand, handleRotationFlowCommand, messages]);
 
   const initialMessage: Message = {
     id: '0',

@@ -51,7 +51,7 @@ async function ensureEquipmentBucket() {
 
 // Helper: verify caller and return user
 // Önce JWT'yi SUPABASE_JWT_SECRET ile yerel doğrular (ağ çağrısı yok).
-// Yerel doğrulama başarısız olursa network fallback (3 deneme).
+// Yerel doğrulama başarısız olursa network fallback (tek deneme, 5 sn timeout).
 const verifyToken = async (c: any) => {
   const xToken = c.req.header("X-Access-Token");
 
@@ -67,35 +67,58 @@ const verifyToken = async (c: any) => {
       const secret = new TextEncoder().encode(jwtSecret);
       const { payload } = await jwtVerify(xToken, secret);
       if (payload?.sub) {
-        return { id: payload.sub, email: payload.email ?? "", role: payload.role ?? "" };
+        // JWT payload'dan user_metadata dahil tüm alanları çıkar
+        const p = payload as any;
+        return {
+          id: p.sub,
+          email: p.email ?? "",
+          role: p.role ?? "",
+          user_metadata: p.user_metadata ?? {},
+          app_metadata: p.app_metadata ?? {},
+          created_at: p.iat ? new Date(p.iat * 1000).toISOString() : "",
+          last_sign_in_at: "",
+        };
       }
     } catch (jwtErr) {
-      console.log("[verifyToken] yerel JWT başarısız, network fallback:", String(jwtErr).slice(0, 120));
+      console.log("[verifyToken] yerel JWT başarısız, network fallback:", String(jwtErr).slice(0, 80));
     }
   }
 
-  // ── 2. Network fallback (3 deneme, üstel geri çekilme) ──
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  // ── 2. Network fallback (tek deneme, 5 sn timeout) ──
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    let user: any = null;
+    let netErr: any = null;
     try {
       const supabase = getAdminClient();
-      const { data: { user }, error } = await supabase.auth.getUser(xToken);
-      if (error) {
-        console.log(`[verifyToken] getUser hatası (deneme ${attempt}):`, error.message);
-        if (attempt < 3) await new Promise(r => setTimeout(r, 300 * attempt));
-        continue;
+      const result = await supabase.auth.getUser(xToken);
+      if (result.error) {
+        netErr = result.error.message;
+      } else {
+        user = result.data?.user ?? null;
       }
-      if (!user) {
-        console.log("[verifyToken] getUser: kullanıcı bulunamadı");
-        return null;
-      }
-      return user;
-    } catch (err) {
-      console.log(`[verifyToken] network hatası (deneme ${attempt}):`, String(err).slice(0, 120));
-      if (attempt < 3) await new Promise(r => setTimeout(r, 300 * attempt));
+    } finally {
+      clearTimeout(timeoutId);
     }
+    if (netErr) {
+      console.log("[verifyToken] getUser hatası:", netErr);
+      return null;
+    }
+    if (!user) {
+      console.log("[verifyToken] getUser: kullanıcı bulunamadı");
+      return null;
+    }
+    return user;
+  } catch (err) {
+    const msg = String(err);
+    if (msg.includes("connection reset") || msg.includes("AbortError") || msg.includes("connection error")) {
+      console.log("[verifyToken] network bağlantı hatası (connection reset), 401 döndürülüyor");
+    } else {
+      console.log("[verifyToken] network hatası:", msg.slice(0, 120));
+    }
+    return null;
   }
-  console.log("[verifyToken] tüm denemeler başarısız — 401 döndürülüyor");
-  return null;
 };
 
 // ──────────────────────────────────────────
@@ -6879,9 +6902,9 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
                   const kBirim = (Number(kagitObj.boxPrice) || 0) / kPcs * kKur;
                   const fotBasiMaliyet = m.printType === "yarim" ? kBirim / 2 : kBirim;
                   const baskiTipiAciklama = m.printType === "yarim"
-                    ? `Yarım Sayfa: 1 baskıdan 2 fotoğraf çıkar, birim baskı ₺${kBirim.toFixed(4)} ÷ 2 = 1 fotoğraf ₺${fotBasiMaliyet.toFixed(4)}`
-                    : `Tam Sayfa: 1 baskıdan 1 fotoğraf çıkar, 1 fotoğraf ₺${fotBasiMaliyet.toFixed(4)}`;
-                  kagitMaliyetEk = ` | ⚠️ 1 FOTOĞRAF ÜRETİM MALİYETİ: ₺${fotBasiMaliyet.toFixed(4)} TRY (${baskiTipiAciklama})`;
+                    ? `Yarım Sayfa: 1 baskıdan 2 fotoğraf çıkar, birim baskı ₺${kBirim.toFixed(2)} ÷ 2 = 1 fotoğraf ≈₺${fotBasiMaliyet.toFixed(2)}`
+                    : `Tam Sayfa: 1 baskıdan 1 fotoğraf çıkar, 1 fotoğraf ≈₺${fotBasiMaliyet.toFixed(2)}`;
+                  kagitMaliyetEk = ` | ⚠️ 1 FOTOĞRAF ÜRETİM MALİYETİ: ≈₺${fotBasiMaliyet.toFixed(2)} TRY (${baskiTipiAciklama})`;
                 } else {
                   kagitTipi = kagitById[m.paperType] || m.paperType;
                 }
@@ -6939,7 +6962,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
               const boxPrice = Number(p.boxPrice) || 0;
               const birimBaskiOrijinal = boxPrice / pcs;
               const birimBaskiTRY = birimBaskiOrijinal * kur;
-              return `${p.name || "Kağıt"}: Kutu=${boxPrice} ${p.currency || "TRY"} / ${pcs} baskı, 1 baskı ≈₺${birimBaskiTRY.toFixed(4)} TRY (kutu içi takım: ${sets})`;
+              return `${p.name || "Kağıt"}: Kutu=${boxPrice} ${p.currency || "TRY"} / ${pcs} baskı, 1 baskı ≈₺${birimBaskiTRY.toFixed(2)} TRY (kutu içi takım: ${sets})`;
             }).join(" | ")
           : "Girilmemiş";
 
@@ -7029,7 +7052,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
           }
 
           const mekanSatirlari: string[] = [
-            `  ${mekan.emoji || "📍"} ${mekan.name} (${printType === "yarim" ? "Yarım Sayfa" : "Tam Sayfa"}, fotoğraf başı baskı maliyeti: ₺${fotBasiMaliyet.toFixed(4)}):`
+            `  ${mekan.emoji || "📍"} ${mekan.name} (${printType === "yarim" ? "Yarım Sayfa" : "Tam Sayfa"}, fotoğraf başı baskı maliyeti: ₺${fotBasiMaliyet.toFixed(2)}):`
           ];
           for (const boyut of albumBoyutlari) {
             const albumMal = albumMalMapT[String(boyut)];
@@ -7037,7 +7060,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
             const baskiMaliyet = Math.round(boyut * fotBasiMaliyet * 100) / 100;
             const birimToplam = Math.round((kapakMaliyet + baskiMaliyet) * 100) / 100;
             mekanSatirlari.push(
-              `    • ${boyut} Kare Albüm → kapak ₺${kapakMaliyet.toFixed(2)} + ${boyut}×baskı ₺${baskiMaliyet.toFixed(4)} = BİRİM ÜRETİM MALİYETİ ₺${birimToplam.toFixed(4)}`
+              `    • ${boyut} Kare Albüm → kapak ₺${Math.round(kapakMaliyet)} + ${boyut}×baskı ₺${Math.round(baskiMaliyet)} = BİRİM ÜRETİM MALİYETİ ₺${Math.round(birimToplam)}`
             );
           }
           tablosatirlar.push(mekanSatirlari.join("\n"));
@@ -7289,12 +7312,12 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
             const birimToplam = Math.round((kapakMaliyet + baskiMaliyet) * 100) / 100;
             const toplamToplam = Math.round(birimToplam * qty * 100) / 100;
             if (kapakMaliyet === 0 && baskiMaliyet === 0) return "";
-            return ` [PRE-COMPUTED ÜRETİM: kapak ₺${kapakMaliyet} + ${kare}baskı ₺${baskiMaliyet.toFixed(2)} = birim ₺${birimToplam.toFixed(2)} × ${qty}adet = KESİN TOPLAM ₺${toplamToplam.toFixed(2)}]`;
+            return ` (üretim maliyeti: kapak ₺${Math.round(kapakMaliyet)} + ${kare}×baskı ₺${Math.round(baskiMaliyet)} = ₺${Math.round(birimToplam)}/birim × ${qty}adet = TOPLAM ₺${Math.round(toplamToplam)})`;
           }
           if (product.match(/fotoğraf|foto/i) || product === "Ribon" || product === "Paspartu") {
             if (fotBasiMaliyet === 0) return "";
             const toplam = Math.round(fotBasiMaliyet * qty * 100) / 100;
-            return ` [PRE-COMPUTED ÜRETİM: ${qty}baskı × ₺${fotBasiMaliyet.toFixed(4)} = KESİN TOPLAM ₺${toplam.toFixed(4)}]`;
+            return ` (üretim maliyeti: ${qty}baskı × ₺${fotBasiMaliyet.toFixed(2)} = TOPLAM ₺${Math.round(toplam)})`;
           }
           return "";
         };
@@ -7390,7 +7413,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
           }
 
           mekanGunlukGecmisStr = `\nMEKAN BAZLI GÜNLÜK OPERASYON GEÇMİŞİ (son 30 gün, bugün hariç):\n` +
-            `NOT: Her ürün satırındaki [PRE-COMPUTED ÜRETİM: ... KESİN TOPLAM ₺X] değerleri sunucuda hesaplanmış kesin maliyetlerdir. Bu değerleri aynen kullan, yeniden hesaplama.\n` +
+            `NOT: Her ürün satırındaki (üretim maliyeti: ... TOPLAM ₺X) parantez içindeki TOPLAM değeri sunucuda hesaplanmış kesin maliyettir. Bu değerleri doğrudan kullan, yeniden hesaplama yapma.\n` +
             gunlukLines.join("\n");
         }
       } catch (e) { console.log("[AI] Mekan günlük geçmiş hatası:", e); }
@@ -8059,14 +8082,14 @@ SATIŞ VE ÜRÜN SORULARI: Albüm tiplerini (3 Kare, 5 Kare, 7 Kare, 9 Kare, 11 
 İNDİRİM SORULARI: "PERSONEL SIRALAMASI" bölümünde her personelin Net ciro, İskonto ₺ ve indirim yüzdesi (%oran) var. "Kimin indirim oranı en yüksek?", "Ahmet bugün ne kadar indirim yaptı?", "Toplam iskonto ne kadar?" gibi soruları bu veriden cevaplayabilirsin.
 MEKAN SORULARI: "MEKAN DETAYLARI" bölümünde her mekanın fotoğraf birim fiyatı, baskı tipi (tam/yarım sayfa), kağıt tipi, yıllık/aylık/günlük kira ve çalışma saatleri var. "Kaç mekanda tam sayfa kullanıyoruz?", "En pahalı mekan hangisi?", "Aylık toplam kira ne kadar?" sorularını bu veriden cevaplayabilirsin.
 FİYAT SORULARI: "ALBÜM/ÜRÜN SATIŞ FİYAT LİSTESİ" bölümünde mekan bazlı tüm albüm fiyatları var (1 Kare, 3 Kare, … 15 Kare). "3 kare ne kadar?", "Hangi mekanda fiyatlar farklı?" sorularını cevaplayabilirsin.
-MALİYET SORULARI: KRİTİK AYRIMI UNUTMA — "SATIŞ FİYATI (müşteri öder, maliyet DEĞİL)" ile "ÜRETİM MALİYETİ" TAMAMEN FARKLIDIR. ALBÜM ÜRETİM MALİYETİ SORUSU: "X Kare albümün maliyeti nedir?", "3'lü albüm ne kadar tutar?", "üretim maliyeti?" gibi sorularda KESİNLİKLE "MEKAN BAZLI ALBÜM ÜRETİM MALİYETİ TABLOSU" bölümündeki ilgili satırı kullan — bu tablo sunucu tarafında önceden hesaplanmış kesin değerleri içerir, asla kendi başına hesap yapma. Mekan belirtilmişse o mekanın satırına bak, belirtilmemişse tüm mekanları listele. TEK FOTOĞRAF ÜRETİM MALİYETİ: "MEKAN DETAYLARI" bölümünde her mekan için "⚠️ 1 FOTOĞRAF ÜRETİM MALİYETİ: ₺X.XXXX TRY" hazır değeri var — onu kullan. "MALİYET / MALZEME YÖNETİMİ" bölümünde ham kağıt/malzeme birim fiyatları, düzenli giderler ve maaş listesi var. Satış fiyatı ile üretim maliyetini karşılaştırarak marj da hesaplayabilirsin.
+MALİYET SORULARI: KRİTİK AYRIMI UNUTMA — "SATIŞ FİYATI (müşteri öder, maliyet DEĞİL)" ile "ÜRETİM MALİYETİ" TAMAMEN FARKLIDIR. ALBÜM ÜRETİM MALİYETİ SORUSU: "X Kare albümün maliyeti nedir?", "3'lü albüm ne kadar tutar?", "üretim maliyeti?" gibi sorularda KESİNLİKLE "MEKAN BAZLI ALBÜM ÜRETİM MALİYETİ TABLOSU" bölümündeki ilgili satırı kullan — bu tablo sunucu tarafında önceden hesaplanmış kesin değerleri içerir, asla kendi başına hesap yapma. Mekan belirtilmişse o mekanın satırına bak, belirtilmemişse tüm mekanları listele. TEK FOTOĞRAF ÜRETİM MALİYETİ: "MEKAN DETAYLARI" bölümünde her mekan için "⚠️ 1 FOTOĞRAF ÜRETİM MALİYETİ: ₺X.XX TRY" hazır değeri var — onu kullan. "MALİYET / MALZEME YÖNETİMİ" bölümünde ham kağıt/malzeme birim fiyatları, düzenli giderler ve maaş listesi var. Satış fiyatı ile üretim maliyetini karşılaştırarak marj da hesaplayabilirsin.
 İŞLETME GİDER SORULARI: "İŞLETME GİDER KAYITLARI" bölümünde son 30 günün fiili harcama kayıtları var (kategori bazlı toplam + tek tek kayıtlar). "Bu ay toplam ne kadar harcadık?", "En büyük gider kalemi nedir?", "Prim ödemeleri ne kadar tuttu?", "Personel giderleri toplamı?" gibi soruları bu veriden cevaplayabilirsin.
 EKİPMAN SORULARI: "EKİPMAN / MALZEME LİSTESİ" bölümünde tüm ekipmanların kategori, marka/model, seri numarası, konum ve durumu (aktif/bakımda/arızalı/emekli) var. "Hangi mekanın yazıcısı arızalı?", "Kaç adet kamera var?", "Bakımdaki ekipmanlar neler?", "Toplam kaç ekipman var?" sorularını bu veriden cevaplayabilirsin.
 ZİYARET SORULARI: "MEKAN ZİYARET KAYITLARI" bölümünde son 90 günün mekan ziyaret notları ve tarihleri var. "Son mekan ziyareti ne zamandı?", "Hangi mekanlar ziyaret edildi?", "Ziyaret notları neler?" sorularını cevaplayabilirsin.
 MÜDÜR RAPORU SORULARI: "MÜDÜR RAPORLARI" bölümünde son 90 günün müdür raporları var. "Son raporda ne yazıyor?", "Hangi müdür kaç rapor yazdı?", "Bu ay rapor var mı?" sorularını cevaplayabilirsin.
 DUYURU SORULARI: "AKTİF DUYURULAR" bölümünde şu an yürürlükteki tüm duyurular var. "Aktif duyurular neler?", "Yeni bir duyuru var mı?", "Hangi role duyuru yapılmış?" sorularını cevaplayabilirsin.
 STOK HAREKETİ SORULARI: "STOK AKTARIM GEÇMİŞİ" bölümünde son 30 günün mekanlar arası stok transferleri var. "STOK EKLEME GEÇMİŞİ" bölümünde ise depoya veya mekanlara yapılan stok eklemeleri var. "Son 30 günde depoya ne eklendi?", "Mekanlar arası aktarımlar neler?", "Kim stok aktardı?" sorularını cevaplayabilirsin.
-GEÇMİŞ GÜN ÜRETİM MALİYETİ SORULARI — KRİTİK KURAL: "MEKAN BAZLI GÜNLÜK OPERASYON GEÇMİŞİ" bölümünde her ürün için sunucu tarafında önceden hesaplanmış ve doğrulanmış üretim maliyeti değerleri bulunur. Format: [PRE-COMPUTED ÜRETİM: kapak ₺X + Nbaskı ₺Y = birim ₺Z × Nadet = KESİN TOPLAM ₺T]. Bu etiketle işaretlenmiş değerler MUTLAKA OLDUĞU GİBİ kullanılmalıdır — hiçbir koşulda kendi başına yeniden hesaplama yapma. Özellikle albümler için: "5'li Albüm", "5 Kare Albüm", "5 Kare" gibi isimler hepsi 5-kare albüm demektir; üretim maliyeti = kapak maliyeti + (5 × baskı birim maliyeti) × adet şeklindedir — bunu formülü kullanarak hesaplama, [PRE-COMPUTED ÜRETİM: KESİN TOPLAM ₺T] değerini doğrudan kullan. "GÜN TOPLAM ÜRETİM MALİYETİ: ₺X" satırı o mekanda o günün tüm ürün maliyetlerinin hazır toplamıdır; bunu da doğrudan kullan. Kendi başına hesap yaparsan yanlış sonuç üretirsin — kesinlikle yapma.
+GEÇMİŞ GÜN ÜRETİM MALİYETİ SORULARI — KRİTİK KURAL: "MEKAN BAZLI GÜNLÜK OPERASYON GEÇMİŞİ" bölümünde her ürün satırının sonunda (üretim maliyeti: ... TOPLAM ₺X.XX) şeklinde parantez içinde sunucu tarafında önceden hesaplanmış kesin maliyet değerleri bulunur. Bu parantez içindeki TOPLAM ₺ değerini doğrudan kullan — hiçbir koşulda kendi başına yeniden hesaplama yapma ve parantez içeriğini olduğu gibi cevabına kopyalama, yalnızca sayısal sonucu sade bir şekilde yaz. Özellikle albümler için: "5'li Albüm", "5 Kare Albüm", "5 Kare" gibi isimler hepsi 5-kare albüm demektir; üretim maliyeti parantez içindeki TOPLAM değerdir. "GÜN TOPLAM ÜRETİM MALİYETİ: ₺X" satırı o mekanda o günün tüm ürün maliyetlerinin hazır toplamıdır; bunu da doğrudan kullan. Kendi başına hesap yaparsan yanlış sonuç üretirsin — kesinlikle yapma.
 ANOMALİ SORULARI: "ANOMALİLER (bugün)" bölümünden bugünkü anomalileri — stok farkları ve yazıcı sayaç farklılıkları dahil — detaylıca cevaplayabilirsin. "SON 30 GÜN ANOMALİ GEÇMİŞİ" bölümünden tarihsel anomali sorgularını yanıtla. Anomali tipleri: Açılış Stok (sayım farkı), Kapanış Stok (beklenen ile gerçek fark), Yazıcı Açılış (sayaç tutarsızlığı), Yazıcı Kapanış (basılan kare ile satış farkı).
 İZİN SORULARI: "BUGÜN İZİNLİLER" bölümü bugün (${todayTR}) izinli personeli gösterir. "İZİN GEÇMİŞİ" bölümünde son 90 günün tüm izin kayıtları (startDate → endDate aralığıyla) bulunur. "Dün kim izindeydi?" sorusunda dün = ${dunTR} tarihini kullan ve izin geçmişinde startDate <= ${dunTR} <= endDate olan kayıtları bul. "Bu hafta izinliler?" sorusunda ${haftaBasiTR} → ${todayTR} aralığını kullan. Göreli tarih referansları için yukarıdaki TARİH BİLGİSİ bölümündeki kesin tarihleri kullan — hiçbir zaman tarih bilemiyorum deme.
 HAVA DURUMU SORULARI: Kullanıcı bir şehir için hava durumu sorarsa "HAVA DURUMU" bölümünde gerçek zamanlı Open-Meteo verisinden 7 günlük tahmin bulunur. Bugün, yarın veya belirli bir günü sorarsa o tarihi bul ve yanıtla. Şehir tespit edilemezse kullanıcıya tekrar sor. Hava durumunu kısa, net ve emoji ile sun.
