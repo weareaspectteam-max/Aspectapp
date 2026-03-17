@@ -2281,8 +2281,17 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
-    // Frontend bugunTarih() ile aynı format: UTC tabanlı YYYY-MM-DD
-    const today = new Date().toISOString().split("T")[0];
+    // ── Tarih hesabı: Türkiye saati (UTC+3) ──────────────────────────────────
+    // Frontend bugunTarih() yerel saat kullanır. Sunucu UTC'dir.
+    // UTC+3 offseti elle eklenerek frontend ile aynı tarihe hizalanır.
+    const nowUtc = new Date();
+    const turkeyOffset = 3 * 60 * 60 * 1000; // UTC+3
+    const nowTurkey = new Date(nowUtc.getTime() + turkeyOffset);
+    const today = nowTurkey.toISOString().split("T")[0];
+    // Dün tarihini de hesapla (gece yarısı geçişi güvenliği için)
+    const yesterdayTurkey = new Date(nowTurkey.getTime() - 24 * 60 * 60 * 1000);
+    const yesterday = yesterdayTurkey.toISOString().split("T")[0];
+    console.log(`[canli-satis] UTC=${nowUtc.toISOString()} | TR today=${today}`);
 
     // Tüm mekanları çek → id→mekan map
     const mekanlarList = await getMekanlar();
@@ -2290,15 +2299,29 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
     for (const m of (mekanlarList || [])) {
       mekanMap[m.id] = m;
     }
+    console.log(`[canli-satis] getMekanlar → ${mekanlarList.length} mekan: ${mekanlarList.map((m: any) => m.name).join(", ")}`);
 
-    // Bugünkü tüm stok kayıtlarını çek
+    // Bugünkü + dünkü stok kayıtlarını çek (tarih uyuşmazlığı güvenliği için dün de dahil)
     const tumKayitlar = await kv.getByPrefix("stok_gunluk_");
-    const bugunKayitlar = (tumKayitlar || []).filter((k: any) => k.tarih === today);
+    const bugunKayitlar = (tumKayitlar || []).filter(
+      (k: any) => k.tarih === today || k.tarih === yesterday
+    );
+    console.log(`[canli-satis] stok_gunluk_ toplam=${tumKayitlar?.length ?? 0}, bugün+dün=${bugunKayitlar.length}`);
+    if (bugunKayitlar.length > 0) {
+      console.log(`[canli-satis] kayıtlar: ${bugunKayitlar.map((k: any) => `${k.mekanId}→${k.tarih}(${(k.satislar||[]).length}satış)`).join(", ")}`);
+    }
 
     // Satış + Kare kayıtlarını unified feed'e topla
     const feed: any[] = [];
+    // Feed'de görünen mekanları da takip et (getMekanlar dışında kalanlar için güvenli net)
+    const feedMekanSet: Record<string, any> = {};
+
     for (const kayit of bugunKayitlar) {
       const mekan = mekanMap[kayit.mekanId] || { name: kayit.mekanId, emoji: "📍", color: "#9dd9ea" };
+
+      if (!feedMekanSet[kayit.mekanId]) {
+        feedMekanSet[kayit.mekanId] = { id: kayit.mekanId, name: mekan.name, emoji: mekan.emoji, color: mekan.color };
+      }
 
       // Satışlar
       const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
@@ -2335,8 +2358,19 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
     const tumSatislar = feed.filter((f) => f.type === "satis");
     const tumKareler = feed.filter((f) => f.type === "kare");
 
-    console.log(`Canlı feed: ${today} — ${tumSatislar.length} satış, ${tumKareler.length} kare, ${bugunKayitlar.length} mekan`);
-    return c.json({ feed, satislar: tumSatislar, kareler: tumKareler, mekanlar: mekanlarList || [] });
+    // Mekanlar listesi: getMekanlar() + feed'de görünen ama listede olmayan mekanlar
+    const mekanlarMapFinal: Record<string, any> = {};
+    for (const m of mekanlarList) mekanlarMapFinal[m.id] = m;
+    for (const [mid, mData] of Object.entries(feedMekanSet)) {
+      if (!mekanlarMapFinal[mid]) {
+        mekanlarMapFinal[mid] = mData;
+        console.log(`[canli-satis] ⚠️ Mekan getMekanlar'da yok ama feed'de satış var: id=${mid} name=${mData.name}`);
+      }
+    }
+    const mekanlarFinal = Object.values(mekanlarMapFinal);
+
+    console.log(`[canli-satis] → ${tumSatislar.length} satış, ${tumKareler.length} kare, ${mekanlarFinal.length} mekan döndürülüyor`);
+    return c.json({ feed, satislar: tumSatislar, kareler: tumKareler, mekanlar: mekanlarFinal });
   } catch (err) {
     console.log("Get canli satis error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -2356,7 +2390,10 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       return c.json({ error: "Yetki yok." }, 403);
     }
 
-    const today = new Date().toISOString().split("T")[0];
+    // Türkiye saati (UTC+3)
+    const _nowDash = new Date();
+    const _todayTR = new Date(_nowDash.getTime() + 3 * 60 * 60 * 1000);
+    const today = _todayTR.toISOString().split("T")[0];
 
     // Mekan haritası
     const mekanlarList = await getMekanlar();

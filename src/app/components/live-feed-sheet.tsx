@@ -84,7 +84,10 @@ export function LiveFeedSheet({ mekanId, mekanName, mekanIcon, mekanColor, onClo
       const data = await res.json();
       const allFeed: FeedItem[] = data.feed || [];
       // Sadece bu mekana ait + iptal olmayan kayıtları filtrele
-      const filtered = allFeed.filter(f => f.mekanId === mekanId && !f.iptal);
+      // mekanId ile eşleş; eşleşmezse mekanAdi ile de dene (yeni mekan geçiş güvenliği)
+      const filtered = allFeed.filter(f =>
+        (f.mekanId === mekanId || f.mekanAdi === mekanName) && !f.iptal
+      );
       setFeed(filtered);
       setLastUpdated(new Date());
     } catch (err: any) {
@@ -94,7 +97,7 @@ export function LiveFeedSheet({ mekanId, mekanName, mekanIcon, mekanColor, onClo
       setLoading(false);
       setRefreshing(false);
     }
-  }, [mekanId]);
+  }, [mekanId, mekanName]);
 
   useEffect(() => {
     fetchFeed(false);
