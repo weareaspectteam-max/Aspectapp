@@ -4,10 +4,7 @@ import {
   MapPin, ClipboardList, Zap, RotateCcw,
   BarChart3, AlertCircle, Activity,
 } from 'lucide-react';
-import {
-  LineChart, Line, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, CartesianGrid,
-} from 'recharts';
+
 import { CurrencyWidget } from './currency-widget';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
@@ -126,8 +123,6 @@ interface LeaveRequest { id: string; status: string; staffName?: string; type?: 
 
 interface Props { userName: string; onLogout: () => void; onNavigate: (tab: string) => void; }
 
-const SAAT_LABELS = ['09:00','10:00','11:00','12:00','13:00','14:00','15:00'];
-
 export function OperationsDashboard({ userName, onNavigate }: Props) {
   const [staffMembers,  setStaffMembers]  = useState<StaffMember[]>([]);
   const [todayTasks,    setTodayTasks]    = useState<Task[]>([]);
@@ -189,13 +184,6 @@ export function OperationsDashboard({ userName, onNavigate }: Props) {
   const activeMekan   = stokOzetler.filter(m => m.vardiyaDurumu === 'acik' || m.vardiyaDurumu === 'kapandi').length;
   const completedTask = todayTasks.filter(t => t.status === 'completed').length;
   const activeTask    = todayTasks.length;
-
-  /* ── Görev trendi (saatlik simüle — gerçek veri yoksa temsili) ── */
-  const trendData = SAAT_LABELS.map((saat, i) => ({
-    saat,
-    gorev:   Math.max(0, Math.round(activeTask * (0.1 + i * 0.13))),
-    personel: Math.max(0, Math.round(activeStaff * (0.5 + i * 0.07))),
-  }));
 
   /* ── Lokasyon dağılımı ── */
   const lokasyonDagilim = mekanlar.map(m => {
@@ -265,79 +253,6 @@ export function OperationsDashboard({ userName, onNavigate }: Props) {
 
       {/* ── Döviz Widget ── */}
       <CurrencyWidget />
-
-      {/* ── Personel & Görev Trendi ── */}
-      <div style={{ ...glass, padding: 16 }}>
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-sm font-bold text-white">Günlük Aktivite Trendi</p>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full" style={{ background: COLORS.orange }} />
-              <span className="text-[10px] font-semibold" style={{ color: 'rgba(255,255,255,0.45)' }}>Görev</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full" style={{ background: COLORS.teal }} />
-              <span className="text-[10px] font-semibold" style={{ color: 'rgba(255,255,255,0.45)' }}>Personel</span>
-            </div>
-          </div>
-        </div>
-        <div style={{ height: 180 }}>
-          <ResponsiveContainer width="100%" height={180} minWidth={0}>
-            <LineChart data={trendData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis
-                key="xaxis"
-                dataKey="saat"
-                stroke="rgba(255,255,255,0.2)"
-                tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 10 }}
-              />
-              <YAxis
-                key="yaxis-left"
-                yAxisId="left"
-                stroke="rgba(255,255,255,0.2)"
-                tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 10 }}
-              />
-              <YAxis
-                key="yaxis-right"
-                yAxisId="right"
-                orientation="right"
-                stroke="rgba(255,255,255,0.2)"
-                tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 10 }}
-              />
-              <Tooltip
-                key="tooltip"
-                contentStyle={{
-                  background:   'rgba(10,5,30,0.95)',
-                  border:       '1px solid rgba(255,255,255,0.15)',
-                  borderRadius: 12,
-                  color:        '#fff',
-                  fontSize:     12,
-                }}
-              />
-              <Line
-                key="line-gorev"
-                yAxisId="left"
-                type="monotone"
-                dataKey="gorev"
-                stroke={COLORS.orange}
-                strokeWidth={2.5}
-                dot={{ fill: COLORS.orange, r: 3 }}
-                activeDot={{ r: 5 }}
-              />
-              <Line
-                key="line-personel"
-                yAxisId="right"
-                type="monotone"
-                dataKey="personel"
-                stroke={COLORS.teal}
-                strokeWidth={2.5}
-                dot={{ fill: COLORS.teal, r: 3 }}
-                activeDot={{ r: 5 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
 
       {/* ── Lokasyon Dağılımı (albüm dağılımı gibi) ── */}
       {lokasyonDagilim.length > 0 && (

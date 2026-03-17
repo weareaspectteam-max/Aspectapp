@@ -530,7 +530,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
       <div className="bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-b border-white/10 px-4 pt-3 pb-3">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => onNavigate(userRole === 'personel' ? 'dashboard' : 'resource-management')}
+            onClick={() => onNavigate(userRole === 'personel' || userRole === 'operasyon' ? 'dashboard' : 'resource-management')}
             className="w-9 h-9 rounded-xl bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-transform"
           >
             <ArrowLeft className="w-4 h-4 text-white/70" />

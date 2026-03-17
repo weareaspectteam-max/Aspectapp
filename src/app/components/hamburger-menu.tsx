@@ -11,7 +11,7 @@ import {
   Trophy, Sparkles, MessageCircle, Bell, GraduationCap,
   Cake, User, Settings, LogOut, ChevronRight, Package,
   BarChart2, ClipboardList, CalendarDays, FileBarChart, Wallet, Gamepad2,
-  ChevronDown, Crown, Sliders, Brain, Globe, Loader2,
+  ChevronDown, Crown, Sliders, Brain, Globe, Loader2, Users, DollarSign,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
@@ -798,6 +798,104 @@ export function HamburgerMenu({
                                   </AnimatePresence>
                                 </div>
                                 {/* Buraya ileride yeni sub-section'lar eklenebilir */}
+                                {/* ── Kullanıcı Yönetimi butonu ── */}
+                                <div style={{ marginTop: 8 }}>
+                                  <motion.button
+                                    onClick={() => { onNavigate('user-management'); close(); }}
+                                    whileTap={{ scale: 0.97 }}
+                                    className="w-full flex items-center gap-3 rounded-xl transition-all"
+                                    style={{
+                                      padding: '9px 11px',
+                                      background: 'rgba(168,85,247,0.08)',
+                                      border: '1px solid rgba(168,85,247,0.22)',
+                                    }}
+                                  >
+                                    <div
+                                      className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                                      style={{
+                                        background: 'rgba(168,85,247,0.18)',
+                                        border: '1px solid rgba(168,85,247,0.35)',
+                                      }}
+                                    >
+                                      <Users style={{ width: 14, height: 14, color: '#c084fc' }} strokeWidth={1.8} />
+                                    </div>
+                                    <div className="flex-1 min-w-0 text-left">
+                                      <p style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>
+                                        Kullanıcı Yönetimi
+                                      </p>
+                                      <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
+                                        Personel ve yöneticileri yönet
+                                      </p>
+                                    </div>
+                                    <ChevronRight style={{ width: 13, height: 13, color: 'rgba(168,85,247,0.5)', flexShrink: 0 }} />
+                                  </motion.button>
+                                </div>
+
+                                {/* ── Maliyet Yönetimi butonu ── */}
+                                <div style={{ marginTop: 8 }}>
+                                  <motion.button
+                                    onClick={() => { onNavigate('cost-management'); close(); }}
+                                    whileTap={{ scale: 0.97 }}
+                                    className="w-full flex items-center gap-3 rounded-xl transition-all"
+                                    style={{
+                                      padding: '9px 11px',
+                                      background: 'rgba(59,130,246,0.08)',
+                                      border: '1px solid rgba(59,130,246,0.22)',
+                                    }}
+                                  >
+                                    <div
+                                      className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                                      style={{
+                                        background: 'rgba(59,130,246,0.18)',
+                                        border: '1px solid rgba(59,130,246,0.35)',
+                                      }}
+                                    >
+                                      <DollarSign style={{ width: 14, height: 14, color: '#60a5fa' }} strokeWidth={1.8} />
+                                    </div>
+                                    <div className="flex-1 min-w-0 text-left">
+                                      <p style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>
+                                        Maliyet Yönetimi
+                                      </p>
+                                      <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
+                                        Maliyetleri takip et ve yönet
+                                      </p>
+                                    </div>
+                                    <ChevronRight style={{ width: 13, height: 13, color: 'rgba(59,130,246,0.5)', flexShrink: 0 }} />
+                                  </motion.button>
+                                </div>
+
+                                {/* ── Mekan Yönetimi butonu ── */}
+                                <div style={{ marginTop: 8 }}>
+                                  <motion.button
+                                    onClick={() => { onNavigate('mekan-management'); close(); }}
+                                    whileTap={{ scale: 0.97 }}
+                                    className="w-full flex items-center gap-3 rounded-xl transition-all"
+                                    style={{
+                                      padding: '9px 11px',
+                                      background: 'rgba(139,92,246,0.08)',
+                                      border: '1px solid rgba(139,92,246,0.22)',
+                                    }}
+                                  >
+                                    <div
+                                      className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                                      style={{
+                                        background: 'rgba(139,92,246,0.18)',
+                                        border: '1px solid rgba(139,92,246,0.35)',
+                                      }}
+                                    >
+                                      <MapPin style={{ width: 14, height: 14, color: '#a78bfa' }} strokeWidth={1.8} />
+                                    </div>
+                                    <div className="flex-1 min-w-0 text-left">
+                                      <p style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>
+                                        Mekan Yönetimi
+                                      </p>
+                                      <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
+                                        Proje mekanlarını yönet
+                                      </p>
+                                    </div>
+                                    <ChevronRight style={{ width: 13, height: 13, color: 'rgba(139,92,246,0.5)', flexShrink: 0 }} />
+                                  </motion.button>
+                                </div>
                               </div>
                             </motion.div>
                           )}
