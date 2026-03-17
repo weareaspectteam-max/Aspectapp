@@ -106,6 +106,8 @@ interface AppHeaderProps {
   onNavigate:       (tab: string) => void;
   onLogout:         () => void;
   hasNotification?: boolean;
+  onBellClick?:     () => void;
+  notificationCount?: number;
 }
 
 export function AppHeader({
@@ -116,6 +118,8 @@ export function AppHeader({
   onNavigate,
   onLogout,
   hasNotification = true,
+  onBellClick,
+  notificationCount = 0,
 }: AppHeaderProps) {
   const isDash    = !activeTab || activeTab === 'dashboard' || activeTab === 'home';
   const pageLabel = PAGE_LABELS[activeTab] ?? 'Dashboard';
@@ -245,23 +249,40 @@ export function AppHeader({
            */}
           <button
             className="relative flex items-center justify-center transition-all active:scale-90 flex-shrink-0"
+            onClick={onBellClick}
             style={{
               width:          40,
               height:         40,
               borderRadius:   9999,
               background:     'rgba(10,5,30,0.9)',
-              border:         hasNotification
+              border:         (hasNotification || notificationCount > 0)
                                 ? '1px solid rgba(251,146,60,0.5)'
                                 : '1px solid rgba(255,255,255,0.15)',
               backdropFilter: 'blur(32px)',
             }}
           >
-            {hasNotification
+            {(hasNotification || notificationCount > 0)
               ? <BellRing size={16} style={{ color: '#fb923c' }} />
               : <Bell     size={16} className="text-gray-600" />
             }
-            {hasNotification && (
-              /* Demo: absolute top-1 right-1 w-1.5 h-1.5 bg-orange-400 border-[#0a051e] */
+            {notificationCount > 0 && (
+              <span
+                className="absolute rounded-full bg-orange-400 border border-[#0a051e] flex items-center justify-center"
+                style={{
+                  top: notificationCount > 9 ? 2 : 4,
+                  right: notificationCount > 9 ? 2 : 4,
+                  minWidth: notificationCount > 9 ? 16 : 12,
+                  height: notificationCount > 9 ? 16 : 12,
+                  fontSize: 8,
+                  fontWeight: 700,
+                  color: '#0a051e',
+                  paddingInline: notificationCount > 9 ? 2 : 0,
+                }}
+              >
+                {notificationCount > 99 ? '99+' : notificationCount}
+              </span>
+            )}
+            {notificationCount === 0 && (hasNotification) && (
               <span
                 className="absolute rounded-full bg-orange-400 border border-[#0a051e]"
                 style={{ top: 5, right: 5, width: 7, height: 7 }}

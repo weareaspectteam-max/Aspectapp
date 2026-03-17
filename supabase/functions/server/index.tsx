@@ -99,6 +99,36 @@ const verifyToken = async (c: any) => {
 };
 
 // ──────────────────────────────────────────
+// BİLDİRİM HELPER: Kullanıcıya bildirim oluştur (non-blocking)
+// ──────────────────────────────────────────
+const createNotification = async (
+  userId: string,
+  type: string,
+  title: string,
+  body: string,
+  meta?: any
+): Promise<void> => {
+  try {
+    if (!userId) return;
+    const ts = Date.now();
+    const rand = Math.random().toString(36).slice(2, 7);
+    const key = `notif_${userId}_${ts}_${rand}`;
+    await kv.set(key, {
+      id: key,
+      userId,
+      type,
+      title,
+      body,
+      read: false,
+      created_at: new Date().toISOString(),
+      meta: meta || {},
+    });
+  } catch (e) {
+    console.log("createNotification error:", e);
+  }
+};
+
+// ──────────────────────────────────────────
 // Health check
 // ──────────────────────────────────────────
 app.get("/make-server-4da0b637/health", (c) => {
@@ -1184,6 +1214,21 @@ app.post("/make-server-4da0b637/rotasyon/gorevler", async (c) => {
     const task = { ...body, created_by: user.id };
     await kv.set(`rotation_task_${body.id}`, task);
     console.log(`Görev oluşturuldu: ${body.id} by ${user.id}`);
+
+    // Personellere bildirim gönder (sadece sent/revised durumundaki görevler)
+    if (['sent', 'revised'].includes(task.status || '') && Array.isArray(task.personnel) && task.personnel.length > 0) {
+      const dateStr = task.date || 'Bilinmeyen Tarih';
+      const location = task.location || 'Bilinmeyen Mekan';
+      await Promise.all(task.personnel.map((p: any) => {
+        if (!p.id) return Promise.resolve();
+        return createNotification(
+          p.id, 'rotation_assigned', 'Yeni Görev Atandı',
+          `${dateStr} — ${location} görevine atandınız.`,
+          { taskId: task.id, date: task.date, location: task.location, taskType: task.taskType }
+        );
+      }));
+    }
+
     return c.json({ task }, 201);
   } catch (err) {
     console.log("Create gorev error:", err);
@@ -1206,6 +1251,41 @@ app.put("/make-server-4da0b637/rotasyon/gorevler/:id", async (c) => {
     const task = { ...existing, ...body };
     await kv.set(`rotation_task_${id}`, task);
     console.log(`Görev güncellendi: ${id} by ${user.id}`);
+
+    // Personel değişiklik bildirimleri
+    if (['sent', 'revised'].includes(task.status || '')) {
+      const oldPersonnelIds = new Set((existing.personnel || []).map((p: any) => p.id));
+      const newPersonnelIds = new Set((task.personnel || []).map((p: any) => p.id));
+      const dateStr = task.date || 'Bilinmeyen Tarih';
+      const location = task.location || 'Bilinmeyen Mekan';
+      const oldLocation = existing.location || location;
+      const oldDate = existing.date || dateStr;
+
+      for (const p of (task.personnel || [])) {
+        if (!p.id) continue;
+        if (!oldPersonnelIds.has(p.id)) {
+          await createNotification(p.id, 'rotation_assigned', 'Yeni Görev Atandı',
+            `${dateStr} — ${location} görevine atandınız.`,
+            { taskId: id, date: task.date, location: task.location }
+          );
+        } else if (oldLocation !== location || oldDate !== dateStr) {
+          await createNotification(p.id, 'rotation_changed', 'Göreviniz Güncellendi',
+            `${oldLocation !== location ? `${oldLocation} → ${location}` : location}, ${dateStr}.`,
+            { taskId: id, oldLocation, newLocation: location, date: dateStr }
+          );
+        }
+      }
+      for (const p of (existing.personnel || [])) {
+        if (!p.id) continue;
+        if (!newPersonnelIds.has(p.id)) {
+          await createNotification(p.id, 'rotation_removed', 'Görevden Alındınız',
+            `${oldDate} — ${oldLocation} görevi güncellendi, bu görevde yer almıyorsunuz.`,
+            { taskId: id, date: oldDate, location: oldLocation }
+          );
+        }
+      }
+    }
+
     return c.json({ task });
   } catch (err) {
     console.log("Update gorev error:", err);
@@ -1222,8 +1302,23 @@ app.delete("/make-server-4da0b637/rotasyon/gorevler/:id", async (c) => {
       return c.json({ error: "Görev silme yetkisi yok." }, 403);
     }
     const { id } = c.req.param();
+    const existingTask = await kv.get(`rotation_task_${id}`);
     await kv.del(`rotation_task_${id}`);
     console.log(`Görev silindi: ${id} by ${user.id}`);
+
+    // Eski personellere bildirim gönder
+    if (existingTask && Array.isArray(existingTask.personnel) && existingTask.personnel.length > 0) {
+      const dateStr = existingTask.date || 'Bilinmeyen Tarih';
+      const location = existingTask.location || 'Bilinmeyen Mekan';
+      await Promise.all(existingTask.personnel.map((p: any) => {
+        if (!p.id) return Promise.resolve();
+        return createNotification(p.id, 'rotation_removed', 'Görev İptal Edildi',
+          `${dateStr} — ${location} görevi silindi.`,
+          { taskId: id, date: existingTask.date, location: existingTask.location }
+        );
+      }));
+    }
+
     return c.json({ message: "Görev silindi." });
   } catch (err) {
     console.log("Delete gorev error:", err);
@@ -1259,6 +1354,26 @@ app.post("/make-server-4da0b637/rotasyon/izinler", async (c) => {
     const leave = { ...body, created_by: user.id };
     await kv.set(`rotation_leave_${body.id}`, leave);
     console.log(`İzin talebi oluşturuldu: ${body.id} by ${user.id}`);
+
+    // Yöneticilere bildirim gönder
+    try {
+      const sbAdmin = getAdminClient();
+      const { data: { users: allUsers } } = await sbAdmin.auth.admin.listUsers({ perPage: 1000 });
+      const managers = (allUsers || []).filter((u: any) => u.user_metadata?.role === 'yonetici');
+      const personnelName = body.personnelName || 'Bir personel';
+      const startDate = body.startDate || '';
+      const endDate = body.endDate || body.startDate || '';
+      const dateRange = startDate === endDate ? startDate : `${startDate} – ${endDate}`;
+      await Promise.all(managers.map((m: any) =>
+        createNotification(m.id, 'izin_talebi', 'Yeni İzin Talebi',
+          `${personnelName} izin talep etti — ${dateRange}`,
+          { leaveId: body.id, personnelId: body.personnelId, personnelName, startDate, endDate }
+        )
+      ));
+    } catch (ne) {
+      console.log("İzin bildirimi hatası:", ne);
+    }
+
     return c.json({ leave }, 201);
   } catch (err) {
     console.log("Create izin error:", err);
@@ -1279,6 +1394,28 @@ app.put("/make-server-4da0b637/rotasyon/izinler/:id", async (c) => {
     const leave = { ...existing, ...body };
     await kv.set(`rotation_leave_${id}`, leave);
     console.log(`İzin güncellendi: ${id} by ${user.id}`);
+
+    // Durum değişikliği bildirimi → personele
+    if (body.status && body.status !== existing.status && ['approved', 'rejected'].includes(body.status)) {
+      const recipientId = existing.personnelId || existing.created_by;
+      if (recipientId) {
+        const startDate = existing.startDate || '';
+        const endDate = existing.endDate || startDate;
+        const dateRange = startDate === endDate ? startDate : `${startDate} – ${endDate}`;
+        if (body.status === 'approved') {
+          await createNotification(recipientId, 'izin_onaylandi', 'İzin Talebiniz Onaylandı',
+            `${dateRange} tarihli izin talebiniz onaylandı.`,
+            { leaveId: id, startDate, endDate }
+          );
+        } else {
+          await createNotification(recipientId, 'izin_reddedildi', 'İzin Talebiniz Reddedildi',
+            `${dateRange} tarihli izin talebiniz reddedildi.`,
+            { leaveId: id, startDate, endDate }
+          );
+        }
+      }
+    }
+
     return c.json({ leave });
   } catch (err) {
     console.log("Update izin error:", err);
@@ -1332,7 +1469,23 @@ app.put("/make-server-4da0b637/rotasyon/gunluk-izin", async (c) => {
       return c.json({ error: "Yetki yok." }, 403);
     }
     const body = await c.req.json();
+    const oldDailyOnLeave: Record<string, string[]> = await kv.get("rotation_daily_onleave") || {};
     await kv.set("rotation_daily_onleave", body.dailyOnLeave);
+
+    // Yeni izinli eklenen kişilere bildirim gönder
+    const newDailyOnLeave: Record<string, string[]> = body.dailyOnLeave || {};
+    for (const [date, userIds] of Object.entries(newDailyOnLeave)) {
+      const oldIds = new Set<string>(oldDailyOnLeave[date] || []);
+      for (const uid of (userIds as string[])) {
+        if (!oldIds.has(uid)) {
+          await createNotification(uid, 'izinli_atandi', 'İzinli Olarak İşaretlendiniz',
+            `${date} tarihiniz izinli olarak işaretlendi.`,
+            { date }
+          );
+        }
+      }
+    }
+
     return c.json({ dailyOnLeave: body.dailyOnLeave });
   } catch (err) {
     console.log("Put gunluk-izin error:", err);
@@ -2729,6 +2882,30 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
     }
 
     console.log(`Prim ödeme: ${results.length} kayıt ${odendiMi ? "ödendi" : "geri alındı"}, ${giderSayisi} gider oluşturuldu, ${giderSilinen} gider silindi — by ${user.email}`);
+
+    // Ödeme yapılıyorsa personele bildirim gönder
+    if (odendiMi && odemeDetaylari.length > 0) {
+      try {
+        const sbAdminPrim = getAdminClient();
+        const { data: { users: allPrimUsers } } = await sbAdminPrim.auth.admin.listUsers({ perPage: 1000 });
+        for (const detay of (odemeDetaylari as any[])) {
+          if (!detay?.personelAdi) continue;
+          const staffUser = (allPrimUsers || []).find((u: any) =>
+            (u.user_metadata?.full_name || '').toLowerCase().trim() === detay.personelAdi.toLowerCase().trim()
+          );
+          if (staffUser) {
+            const primTL = `₺${Number(detay.primMiktar || 0).toLocaleString('tr-TR')}`;
+            await createNotification(staffUser.id, 'prim_guncellendi', 'Prim Ödemeniz Yapıldı',
+              `${detay.mekanAdi || ''} — ${detay.tarih || ''}: ${primTL} prim ödemeniz gerçekleşti.`,
+              { primMiktar: detay.primMiktar, mekanAdi: detay.mekanAdi, tarih: detay.tarih }
+            );
+          }
+        }
+      } catch (pe) {
+        console.log("Prim bildirim hatası:", pe);
+      }
+    }
+
     return c.json({ success: true, guncellenen: results.length, giderOlusturulan: giderSayisi, giderSilinen });
   } catch (err) {
     console.log("Prim ode error:", err);
@@ -8062,6 +8239,74 @@ app.post("/make-server-4da0b637/game/quest/skor", async (c) => {
     return c.json({ kayit });
   } catch (err) {
     console.log("Quest skor error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// BİLDİRİMLER
+// ══════════════════════════════════════════
+
+// GET /bildirimler — oturum açan kullanıcının bildirimleri
+app.get("/make-server-4da0b637/bildirimler", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const all = await kv.getByPrefix(`notif_${user.id}_`);
+    const sorted = (all || []).sort((a: any, b: any) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    const unreadCount = sorted.filter((n: any) => !n.read).length;
+    return c.json({ notifications: sorted, unreadCount });
+  } catch (err) {
+    console.log("Get bildirimler error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// PUT /bildirimler/hepsini-oku — tüm bildirimleri okundu işaretle
+app.put("/make-server-4da0b637/bildirimler/hepsini-oku", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const all = await kv.getByPrefix(`notif_${user.id}_`);
+    const unread = (all || []).filter((n: any) => !n.read);
+    await Promise.all(unread.map((n: any) => kv.set(n.id, { ...n, read: true })));
+    return c.json({ success: true, markedCount: unread.length });
+  } catch (err) {
+    console.log("Hepsini oku error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// PUT /bildirimler/:id/oku — tek bildirimi okundu işaretle
+app.put("/make-server-4da0b637/bildirimler/:notifId/oku", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const { notifId } = c.req.param();
+    const existing = await kv.get(notifId);
+    if (!existing || existing.userId !== user.id) return c.json({ error: "Bildirim bulunamadı." }, 404);
+    await kv.set(notifId, { ...existing, read: true });
+    return c.json({ success: true });
+  } catch (err) {
+    console.log("Bildirim oku error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// DELETE /bildirimler/:id — bildirimi sil
+app.delete("/make-server-4da0b637/bildirimler/:notifId", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const { notifId } = c.req.param();
+    const existing = await kv.get(notifId);
+    if (!existing || existing.userId !== user.id) return c.json({ error: "Bildirim bulunamadı." }, 404);
+    await kv.del(notifId);
+    return c.json({ success: true });
+  } catch (err) {
+    console.log("Bildirim sil error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });

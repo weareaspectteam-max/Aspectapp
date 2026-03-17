@@ -52,6 +52,7 @@ import { ShiftEnd } from './components/shift-end';
 import { CurrentStock } from './components/current-stock';
 import { EkstraIsEkrani } from './components/ekstra-is-ekrani';
 import { OzelIsEkrani } from './components/ozel-is-ekrani';
+import { NotificationsPanel, useNotificationCount } from './components/notifications-panel';
 import type { UserRole } from './components/login';
 import type { ShiftSetupData } from './components/shift-setup';
 import type { Task } from './services/rotation-service';
@@ -78,7 +79,11 @@ export default function App() {
   const [selectedOzelTask, setSelectedOzelTask] = useState<Task | null>(null);
   const [showEkstraIs, setShowEkstraIs] = useState(false);
   const [showOzelIs, setShowOzelIs] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const sessionApplied = useRef(false); // ← İlk giriş işareti
+
+  // Bildirim sayacı hook
+  const { unreadCount, setUnreadCount, refetch: refetchNotifications } = useNotificationCount(accessToken);
 
   // ─── Supabase session yönetimi ───────────────────
   useEffect(() => {
@@ -156,6 +161,7 @@ export default function App() {
     setSelectedOzelTask(null);
     setShowEkstraIs(false);
     setShowOzelIs(false);
+    setShowNotifications(false);
   };
 
   const handleLogin = (role: UserRole, name: string, uid: string, token: string, avatar: string = '👨‍💼', email: string = '') => {
@@ -864,8 +870,20 @@ export default function App() {
             activeTab={activeTab}
             onNavigate={handleNavigate}
             onLogout={handleLogout}
+            onBellClick={() => setShowNotifications(prev => !prev)}
+            notificationCount={unreadCount}
+            hasNotification={unreadCount > 0}
           />
         )}
+
+        {/* Bildirim Paneli */}
+        <NotificationsPanel
+          isOpen={showNotifications}
+          onClose={() => setShowNotifications(false)}
+          accessToken={accessToken}
+          userRole={userRole}
+          onUnreadCountChange={setUnreadCount}
+        />
 
         {/* Main Content */}
         <main className={
