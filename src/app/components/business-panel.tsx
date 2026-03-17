@@ -1,4 +1,4 @@
-import { ArrowRight, TrendingUp, BarChart3, Settings, FileText } from 'lucide-react';
+import { ArrowRight, FileText, BarChart3 } from 'lucide-react';
 
 interface BusinessPanelProps {
   userName: string;
@@ -16,42 +16,21 @@ const glass: React.CSSProperties = {
 };
 
 export function BusinessPanel({ userName, onNavigate }: BusinessPanelProps) {
-  const managementCards = [
+  const actions = [
     {
-      title: 'İşletme Genel Durum',
-      description: 'Gelir, gider ve kar/zarar takibi',
-      Icon: TrendingUp,
-      emoji: '💼',
-      color: '#34d399',
-    },
-    {
-      title: 'Stok Dağılımı',
-      description: 'Albüm ve baskı kağıdı stok analizi',
-      Icon: BarChart3,
+      title: 'Raporlar & Analizler',
+      description: 'Satış, anomali ve indirim istatistikleri',
       emoji: '📊',
-      color: '#ffd4a3',
-    },
-    {
-      title: 'Mekan - Malzeme - Kullanıcı - Maliyet Yönetimi',
-      description: 'Tüm kaynakları tek yerden yönetin',
-      Icon: Settings,
-      emoji: '⚙️',
-      color: '#c4b5fd',
+      color: '#9dd9ea',
+      action: () => onNavigate('resource-management'),
     },
     {
       title: 'Müdür Raporları',
-      description: 'Müdür ziyaretleri ve faaliyetleri',
-      Icon: FileText,
+      description: 'Ziyaret, haftalık/aylık ve personel görüşmeleri',
       emoji: '📋',
-      color: '#9dd9ea',
+      color: '#c4b5fd',
+      action: () => onNavigate('manager-reports'),
     },
-  ];
-
-  const actions = [
-    { ...managementCards[0], action: () => onNavigate('isletme-genel-durum') },
-    { ...managementCards[1], action: () => onNavigate('stock-distribution') },
-    { ...managementCards[2], action: () => onNavigate('resource-management') },
-    { ...managementCards[3], action: () => onNavigate('manager-reports') },
   ];
 
   return (
@@ -100,8 +79,7 @@ export function BusinessPanel({ userName, onNavigate }: BusinessPanelProps) {
 
               {/* Metin */}
               <div className="flex-1 min-w-0">
-                <p className="font-bold text-white leading-snug"
-                  style={{ fontSize: item.title.length > 30 ? '0.88rem' : '1rem' }}>
+                <p className="font-bold text-white leading-snug" style={{ fontSize: '1rem' }}>
                   {item.title}
                 </p>
                 <p className="text-xs mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>
