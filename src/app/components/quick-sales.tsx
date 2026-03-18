@@ -12,9 +12,16 @@ import {
   stokAlanAdi, stokAlanEmoji,
   type StokSayim, type StokGunluk, type StokEkleme, type PrinterKapanis, type VardiyaSatis, type KareKayit,
 } from '../services/stock-service';
-import { buildHeaders, authHeaders } from '../lib/api';
+import { buildHeaders, authHeaders, getToken } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 import { localDateStr } from '../lib/date';
+import {
+  enqueue as offlineEnqueue,
+  dequeue as offlineDequeue,
+  getUserQueue,
+  generateQueueId,
+  type QueuedSale,
+} from '../lib/offline-queue';
 
 const API_BASE_QS = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -28,7 +35,8 @@ interface Project {
 }
 
 // Sale artık VardiyaSatis — display helper olarak kullanılır
-type Sale = VardiyaSatis & { project?: string };
+// _pending: true ise localStorage'da bekliyor, henüz sunucuya gönderilmedi
+type Sale = VardiyaSatis & { project?: string; _pending?: boolean; _queueId?: string };
 
 interface CartItem {
   product: string;
@@ -80,6 +88,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'iban' | 'card' | null>(null);
   const [recentSales, setRecentSales] = useState<Sale[]>([]);
   const [satisSaving, setSatisSaving] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [pendingQueueCount, setPendingQueueCount] = useState(0);
+  const [queueFlushing, setQueueFlushing] = useState(false);
   // Gerçek mekan ID'si — preSelectedProject için '1' placeholder'ı replace edilir
   const [resolvedMekanId, setResolvedMekanId] = useState<string>('');
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -193,6 +204,103 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const isYonetici = ['yonetici', 'ust-mudur', 'mudur'].includes(userRole);
   // ── Yönetici: modal içinde uygulama içi karar verme ──
   const [kararVeriliyor, setKararVeriliyor] = useState<string | null>(null);
+
+  // ── Offline Kuyruk: bekleyen satış sayısını senkronize tut ──
+  const syncPendingCount = () => {
+    if (!userId) return;
+    setPendingQueueCount(getUserQueue(userId).length);
+  };
+
+  // ── Offline Kuyruk: bekleyen satışları sunucuya gönder ──
+  const flushOfflineQueue = async () => {
+    if (!userId) return;
+    const queue = getUserQueue(userId);
+    if (queue.length === 0) return;
+
+    setQueueFlushing(true);
+    let flushedAny = false;
+
+    for (const qSale of queue) {
+      try {
+        // Gönderim anında taze token al — süresi dolmuş olsa bile Supabase refresh eder
+        const freshToken = await getToken();
+        const hdr = buildHeaders(freshToken);
+
+        const res = await fetch(`${API_BASE_QS}/stok/satis`, {
+          method: 'POST',
+          headers: hdr,
+          body: JSON.stringify({
+            mekanId: qSale.mekanId,
+            tarih: qSale.tarih,
+            items: qSale.items,
+            totalPrice: qSale.totalPrice,
+            discount: qSale.discount,
+            paymentMethod: qSale.paymentMethod,
+            currency: qSale.currency,
+            currencyPrice: qSale.currencyPrice,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          // localStorage'dan sil
+          offlineDequeue(qSale.id);
+          // Pending kartı gerçek satışla değiştir
+          setRecentSales(prev =>
+            prev.map(s =>
+              s._queueId === qSale.id
+                ? { ...data.satis, project: qSale.projectName }
+                : s
+            )
+          );
+          setSaleRefreshTrigger(prev => prev + 1);
+          flushedAny = true;
+        } else {
+          // Sunucu reddi (401 vb.) — bu satışı kuyrukta bırak
+          const errData = await res.json().catch(() => ({}));
+          console.warn('[offline-queue] flush sunucu reddi:', errData.error);
+        }
+      } catch (netErr) {
+        // Hâlâ çevrimdışı — bu satışı kuyrukta bırak, sonrakini dene
+        console.warn('[offline-queue] flush ağ hatası, kuyrukta kalıyor:', netErr);
+      }
+    }
+
+    syncPendingCount();
+    setQueueFlushing(false);
+    if (flushedAny) {
+      setSaleRefreshTrigger(prev => prev + 1);
+    }
+  };
+
+  // ── Online/Offline event listener ──
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      flushOfflineQueue();
+    };
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Sayfa açılışında kuyruk varsa hemen gönder
+    if (navigator.onLine && userId) {
+      const q = getUserQueue(userId);
+      if (q.length > 0) {
+        setPendingQueueCount(q.length);
+        flushOfflineQueue();
+      }
+    } else {
+      syncPendingCount();
+    }
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   useEffect(() => {
     const load = async () => {
@@ -461,8 +569,58 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     const discount = Number(discountAmount) || 0;
     const mekanId = resolvedMekanId || selectedProject.id;
     const tarih = bugunTarih();
+    const saleItems = cart.map(i => ({ product: i.product, quantity: i.quantity, unitPrice: i.unitPrice, color: i.color }));
+    const currency = selectedCurrency || 'TRY';
+    const currencyPrice = selectedCurrency ? Number(calculateForeignCurrency()) : null;
+
+    // ── Çevrimdışı kontrolü: navigator.onLine hızlı ön kontrol ──
+    const currentlyOnline = navigator.onLine;
 
     setSatisSaving(true);
+
+    // Çevrimdışıysa direkt kuyruğa al, fetch deneme
+    if (!currentlyOnline) {
+      const queueId = generateQueueId();
+      const qSale: QueuedSale = {
+        id: queueId,
+        userId: userId || 'unknown',
+        projectName: selectedProject.name,
+        mekanId,
+        tarih,
+        items: saleItems,
+        totalPrice,
+        discount,
+        paymentMethod,
+        currency,
+        currencyPrice,
+        queuedAt: Date.now(),
+      };
+      offlineEnqueue(qSale);
+      syncPendingCount();
+
+      // Listede "bekliyor" olarak göster
+      const pendingSale: Sale = {
+        id: queueId,
+        items: saleItems,
+        totalPrice,
+        discount,
+        finalPrice: totalPrice - discount,
+        paymentMethod,
+        currency,
+        currencyPrice,
+        timestamp: new Date().toISOString(),
+        iptal: false,
+        project: selectedProject.name,
+        _pending: true,
+        _queueId: queueId,
+      };
+      setRecentSales(prev => [pendingSale, ...prev]);
+      setSatisSaving(false);
+      setCart([]); setDiscountAmount(''); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null);
+      return;
+    }
+
+    // ── Çevrimiçi: normal akış, ağ hatası olursa kuyruğa al ──
     try {
       const hdr = buildHeaders(accessToken);
       const res = await fetch(`${API_BASE_QS}/stok/satis`, {
@@ -471,12 +629,12 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         body: JSON.stringify({
           mekanId,
           tarih,
-          items: cart.map(i => ({ product: i.product, quantity: i.quantity, unitPrice: i.unitPrice, color: i.color })),
+          items: saleItems,
           totalPrice,
           discount,
           paymentMethod,
-          currency: selectedCurrency || 'TRY',
-          currencyPrice: selectedCurrency ? Number(calculateForeignCurrency()) : null,
+          currency,
+          currencyPrice,
         }),
       });
       const data = await res.json();
@@ -485,14 +643,48 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         alert(data.error || 'Satış kaydedilemedi.');
         return;
       }
-      // Listeye ekle (aktif satışlar, iptal edilmemiş)
+      // Listeye ekle
       setRecentSales(prev => [{ ...data.satis, project: selectedProject.name }, ...prev]);
-      // Kota bar'ını anlık güncelle
       setSaleRefreshTrigger(prev => prev + 1);
     } catch (err) {
-      console.error('handleCompleteSale error:', err);
-      alert('Bağlantı hatası. Satış kaydedilemedi.');
-      return;
+      // Ağ hatası — navigator.onLine yalan söyledi (zayıf sinyal vb.)
+      console.warn('handleCompleteSale ağ hatası, kuyruğa alınıyor:', err);
+
+      const queueId = generateQueueId();
+      const qSale: QueuedSale = {
+        id: queueId,
+        userId: userId || 'unknown',
+        projectName: selectedProject.name,
+        mekanId,
+        tarih,
+        items: saleItems,
+        totalPrice,
+        discount,
+        paymentMethod,
+        currency,
+        currencyPrice,
+        queuedAt: Date.now(),
+      };
+      offlineEnqueue(qSale);
+      syncPendingCount();
+
+      // Listede "bekliyor" olarak göster
+      const pendingSale: Sale = {
+        id: queueId,
+        items: saleItems,
+        totalPrice,
+        discount,
+        finalPrice: totalPrice - discount,
+        paymentMethod,
+        currency,
+        currencyPrice,
+        timestamp: new Date().toISOString(),
+        iptal: false,
+        project: selectedProject.name,
+        _pending: true,
+        _queueId: queueId,
+      };
+      setRecentSales(prev => [pendingSale, ...prev]);
     } finally {
       setSatisSaving(false);
     }
@@ -1561,12 +1753,43 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
               <div>
                 <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
                   Bugünkü Satışlar <span className="text-lg">📊</span>
-                  {recentSales.length > 0 && (
+                  {recentSales.filter(s => !s._pending).length > 0 && (
                     <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full bg-[#a8e6cf]/20 text-[#a8e6cf]">
-                      ₺{recentSales.reduce((s, sale) => s + (sale.finalPrice || sale.totalPrice - sale.discount), 0).toLocaleString('tr-TR')}
+                      ₺{recentSales.filter(s => !s._pending).reduce((s, sale) => s + (sale.finalPrice || sale.totalPrice - sale.discount), 0).toLocaleString('tr-TR')}
                     </span>
                   )}
                 </h3>
+
+                {/* Çevrimdışı durum bandı */}
+                {!isOnline && (
+                  <div style={{ background: 'rgba(255,180,50,0.12)', border: '1px solid rgba(255,180,50,0.35)', borderRadius: 12, padding: '10px 14px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>📡</span>
+                    <span style={{ color: '#ffd4a3', fontSize: 12, fontWeight: 600 }}>Çevrimdışısınız — satışlar kuyruğa alınıyor</span>
+                  </div>
+                )}
+
+                {/* Kuyrukta bekleyen + gönderiliyor bildirimi */}
+                {pendingQueueCount > 0 && isOnline && (
+                  <div style={{ background: 'rgba(157,217,234,0.12)', border: '1px solid rgba(157,217,234,0.35)', borderRadius: 12, padding: '10px 14px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {queueFlushing ? (
+                      <span className="w-3 h-3 border-2 border-[#9dd9ea]/40 border-t-[#9dd9ea] rounded-full animate-spin flex-shrink-0" />
+                    ) : (
+                      <span style={{ fontSize: 16 }}>🔄</span>
+                    )}
+                    <span style={{ color: '#9dd9ea', fontSize: 12, fontWeight: 600 }}>
+                      {queueFlushing ? `${pendingQueueCount} satış sunucuya gönderiliyor...` : `${pendingQueueCount} satış senkronize bekliyor`}
+                    </span>
+                    {!queueFlushing && (
+                      <button
+                        onClick={flushOfflineQueue}
+                        style={{ marginLeft: 'auto', fontSize: 11, color: '#9dd9ea', background: 'rgba(157,217,234,0.15)', border: '1px solid rgba(157,217,234,0.3)', borderRadius: 8, padding: '3px 10px', cursor: 'pointer', fontWeight: 700 }}
+                      >
+                        Şimdi Gönder
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {satisSaving && (
                   <div className="flex items-center gap-2 text-xs text-[#a8e6cf] mb-2">
                     <span className="w-3 h-3 border-2 border-[#a8e6cf]/40 border-t-[#a8e6cf] rounded-full animate-spin" />
@@ -1585,15 +1808,38 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                       ? new Date(sale.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                       : '—';
                     const pmIcon = sale.paymentMethod === 'cash' ? '💵' : sale.paymentMethod === 'iban' ? '🏦' : '💳';
+                    const isPending = sale._pending === true;
                     return (
-                      <div key={sale.id} className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-xl p-4">
+                      <div
+                        key={sale.id}
+                        style={isPending ? {
+                          background: 'linear-gradient(135deg, rgba(255,180,50,0.10), rgba(255,180,50,0.05))',
+                          border: '1px dashed rgba(255,180,50,0.45)',
+                          borderRadius: 12,
+                          padding: 16,
+                        } : undefined}
+                        className={isPending ? '' : 'backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-xl p-4'}
+                      >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] flex items-center justify-center text-[#2d3748] text-lg shadow-md flex-shrink-0">✓</div>
+                            {isPending ? (
+                              <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg, rgba(255,180,50,0.3), rgba(255,140,0,0.2))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
+                                ⏳
+                              </div>
+                            ) : (
+                              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] flex items-center justify-center text-[#2d3748] text-lg shadow-md flex-shrink-0">✓</div>
+                            )}
                             <div className="min-w-0">
                               <div className="font-semibold text-white text-sm truncate max-w-[160px]">{itemSummary}</div>
                               <div className="text-xs text-gray-400 flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{saleTime}</span>
+                                {isPending ? (
+                                  <span style={{ color: '#ffd4a3', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <span className="w-2.5 h-2.5 border-2 border-[#ffd4a3]/40 border-t-[#ffd4a3] rounded-full animate-spin inline-block" />
+                                    İnternet bekleniyor...
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{saleTime}</span>
+                                )}
                                 <span>{pmIcon} {sale.paymentMethod === 'cash' ? 'Nakit' : sale.paymentMethod === 'iban' ? 'IBAN' : 'Kart'}</span>
                                 {sale.currency !== 'TRY' && sale.currencyPrice && (
                                   <span className="text-[#ffd4a3]">{sale.currency} {sale.currencyPrice}</span>
@@ -1603,14 +1849,17 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <div className="text-right">
-                              <div className="font-bold text-white text-sm">₺{(sale.finalPrice ?? sale.totalPrice - sale.discount).toLocaleString('tr-TR')}</div>
+                              <div style={{ fontWeight: 700, fontSize: 14, color: isPending ? '#ffd4a3' : 'white' }}>
+                                ₺{(sale.finalPrice ?? sale.totalPrice - sale.discount).toLocaleString('tr-TR')}
+                              </div>
                               {sale.discount > 0 && (
                                 <div className="text-xs text-[#ffd4a3] flex items-center gap-1 justify-end">
                                   <Tag className="w-3 h-3" />₺{sale.discount} indirim
                                 </div>
                               )}
                             </div>
-                            {cart.length === 0 && (
+                            {/* Pending satışlar iptal edilemez, gerçek satışlar edilebilir */}
+                            {!isPending && cart.length === 0 && (
                               <button onClick={() => openCancelModal(sale.id)} className="w-8 h-8 rounded-lg bg-destructive/10 hover:bg-destructive/20 flex items-center justify-center transition-all active:scale-95">
                                 <XCircle className="w-4 h-4 text-destructive" />
                               </button>
@@ -2752,7 +3001,16 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
             <div className="relative backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border-b border-white/10 p-6">
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center text-2xl shadow-lg">💳</div>
-                <div><h3 className="text-2xl font-black text-white">Ödeme Yöntemi</h3><p className="text-gray-400 text-sm">Nasıl ödeme alacaksınız?</p></div>
+                <div>
+                  <h3 className="text-2xl font-black text-white">Ödeme Yöntemi</h3>
+                  {!isOnline ? (
+                    <p className="text-xs font-semibold mt-0.5" style={{ color: '#ffd4a3' }}>
+                      📡 Çevrimdışı — satış kuyruğa alınacak
+                    </p>
+                  ) : (
+                    <p className="text-gray-400 text-sm">Nasıl ödeme alacaksınız?</p>
+                  )}
+                </div>
               </div>
             </div>
             <div className="p-6 space-y-6">
@@ -2819,6 +3077,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                 >
                   {satisSaving ? (
                     <><span className="w-4 h-4 border-2 border-[#2d3748]/40 border-t-[#2d3748] rounded-full animate-spin" /> Kaydediliyor...</>
+                  ) : !isOnline ? (
+                    <><span style={{ fontSize: 16 }}>📡</span> Kuyruğa Al</>
                   ) : (
                     <><CheckCircle className="w-5 h-5" /> Satışı Yap</>
                   )}

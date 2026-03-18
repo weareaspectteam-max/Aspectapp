@@ -391,7 +391,7 @@ export function NotificationsPanel({
                 justifyContent: 'center',
               }}>
                 <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>
-                  {notifications.length} bildirim • Son 30 gün
+                  {notifications.length} bildirim • Son 24 saat
                 </span>
               </div>
             )}

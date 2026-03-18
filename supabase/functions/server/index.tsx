@@ -61,9 +61,9 @@ async function ensureEquipmentBucket() {
 // Helper: verify caller and return user
 // Doğrulama sırası:
 // 1. Yerel JWT — SUPABASE_JWT_SECRET varsa imzalı doğrulama (ağ yok, hızlı)
-// 2. Network — Promise.race ile 6 sn timeout, getUser()
-// 3. decodeJwt fallback — network throw VEYA error objesi döndürdüyse (her iki durum),
-//    imzasız payload çözümle + exp grace 10 dk (connection reset koruması)
+// 2. decodeJwt fallback — JWT secret yoksa veya imzalama başarısızsa imzasız payload + exp grace 10 dk
+// NOT: supabase.auth.getUser() network çağrısı Deno edge runtime'da
+// "Connection reset by peer" hatasını try/catch'i delerek fırlattığı için kaldırıldı.
 const verifyToken = async (c: any) => {
   const xToken = c.req.header("X-Access-Token");
 
@@ -95,7 +95,7 @@ const verifyToken = async (c: any) => {
         console.log(`[verifyToken] decodeJwt: token ${now - exp}s önce sona erdi (grace=${graceSec}s) → 401`);
         return null;
       }
-      console.log("[verifyToken] ⚠️ decodeJwt fallback — network sorunu, imzasız kabul edildi");
+      console.log("[verifyToken] ⚠️ decodeJwt fallback — JWT secret yok/başarısız, imzasız kabul edildi");
       return buildUser(payload);
     } catch (e) {
       console.log("[verifyToken] decodeJwt başarısız:", String(e).slice(0, 80));
@@ -114,62 +114,11 @@ const verifyToken = async (c: any) => {
       console.log("[verifyToken] yerel JWT başarısız:", String(jwtErr).slice(0, 100));
     }
   } else {
-    console.log("[verifyToken] SUPABASE_JWT_SECRET yok → network fallback");
+    console.log("[verifyToken] SUPABASE_JWT_SECRET yok → decodeJwt fallback");
   }
 
-  // ── 2. Network fallback — iç try/catch ile connection reset korumalı ──
-  // Promise.race + .catch() zinciri connection reset'i bazen bypass edebiliyordu.
-  // Çözüm: getUser'ı doğrudan await ile kendi try/catch bloğumuzda çalıştırıyoruz.
-  let networkUser: any = null;
-  let networkAttempted = false;
-  try {
-    networkAttempted = true;
-    const supabase = getAdminClient();
-
-    // 4 sn sonra yarışa girsin — getUser zaten timeout yaşarsa catch'e düşer
-    const timeoutPromise = new Promise<{ data: { user: null }; error: Error }>(resolve =>
-      setTimeout(() => resolve({ data: { user: null }, error: new Error("getUser timeout 4s") }), 4000)
-    );
-
-    // async IIFE + try/catch: Deno'da .then(onRejected) bazen
-    // fetch katmanındaki connection reset'i yakalayamıyor;
-    // await + kendi try bloğu daha güvenli (ikinci katman: Promise.race try/catch).
-    const getUserPromise = (async () => {
-      try {
-        return await supabase.auth.getUser(xToken);
-      } catch (e: any) {
-        return { data: { user: null }, error: e };
-      }
-    })();
-
-    // Promise.race'i de try/catch ile sarıyoruz — ikinci güvenlik katmanı
-    let result: any;
-    try {
-      result = await Promise.race([getUserPromise, timeoutPromise]);
-    } catch (raceErr: any) {
-      console.log("[verifyToken] Promise.race exception → decodeJwt fallback:", String(raceErr).slice(0, 120));
-      result = { data: { user: null }, error: raceErr };
-    }
-
-    if (!result.error && result.data?.user) {
-      networkUser = result.data.user;
-    } else {
-      const msg = String(result.error?.message ?? result.error ?? "bilinmeyen hata").slice(0, 120);
-      console.log("[verifyToken] getUser hata → decodeJwt fallback:", msg);
-    }
-  } catch (err) {
-    // Bu noktaya artık sadece beklenmedik (non-Promise) hatalar düşebilir
-    console.log("[verifyToken] network fallback genel exception:", String(err).slice(0, 100));
-  }
-
-  if (networkUser) return networkUser;
-
-  // ── 3. decodeJwt fallback — network başarısız veya hata objesi döndürdü ──
-  if (networkAttempted) {
-    return tryDecodeJwtFallback();
-  }
-
-  return null;
+  // ── 2. decodeJwt fallback — network çağrısı yok, connection reset riski sıfır ──
+  return tryDecodeJwtFallback();
 };
 
 // ──────────────────────────────────────────
@@ -1716,7 +1665,7 @@ app.put("/make-server-4da0b637/rotasyon/gorevler/:id", async (c) => {
         if (!p.id) continue;
         if (statusBecameSent || !oldPersonnelIds.has(p.id)) {
           await createNotification(p.id, 'rotation_assigned', 'Yeni Görev Atandı',
-            `${dateStr} — ${location} görevine atandınız.`,
+            `${dateStr} — ${location} g��revine atandınız.`,
             { taskId: id, date: task.date, location: task.location }
           );
         } else if (oldLocation !== location || oldDate !== dateStr) {
@@ -2184,6 +2133,20 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
 
     await kv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
     console.log(`Stok açılışı: ${mekanId} / ${tarih} by ${user.id} | ${printerData?.length || 0} yazıcı | ${printerAnomali.length} yazıcı anomali`);
+
+    // ── Telegram: Açılış bildirimi ──────────────────────────────────────────
+    try {
+      const mekanObj: any = await kv.get(`mekan_${mekanId}`) || await kv.get(mekanId);
+      const mekanAdi = mekanObj?.name || mekanId;
+      const mekanEmoji = mekanObj?.emoji || "🏪";
+      const kullanici = user.user_metadata?.full_name || user.email || "Bilinmiyor";
+      const saatTR = new Date().toLocaleTimeString("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" });
+      const msg = `${mekanEmoji} AÇILIŞ 🟢 ${mekanAdi} ⏰ ${saatTR} 👤 ${kullanici}`;
+      sendTelegramMessage(msg);
+    } catch (tgErr) {
+      console.log("[Telegram] Açılış bildirimi gönderilemedi:", tgErr);
+    }
+
     return c.json({ kayit, anomali, printerAnomali });
   } catch (err) {
     console.log("Post stok acilis error:", err);
@@ -2415,6 +2378,19 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     };
 
     await kv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
+
+    // ── Telegram: Kapanış bildirimi ─────────────────────────────────────────
+    try {
+      const mekanObjKap: any = await kv.get(`mekan_${mekanId}`) || await kv.get(mekanId);
+      const mekanAdiKap = mekanObjKap?.name || mekanId;
+      const mekanEmojiKap = mekanObjKap?.emoji || "🏪";
+      const kullaniciKap = user.user_metadata?.full_name || user.email || "Bilinmiyor";
+      const saatTRKap = new Date().toLocaleTimeString("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" });
+      const msgKap = `${mekanEmojiKap} KAPANIŞ 🔴 ${mekanAdiKap} ⏰ ${saatTRKap} 👤 ${kullaniciKap}`;
+      sendTelegramMessage(msgKap);
+    } catch (tgErr) {
+      console.log("[Telegram] Kapanış bildirimi gönderilemedi:", tgErr);
+    }
 
     // ── Her yazıcının endCounter'ını ekipman ribonMevcut olarak kaydet ──────
     for (const pr of enrichedPrinterData) {
@@ -9178,7 +9154,23 @@ app.get("/make-server-4da0b637/bildirimler", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const all = await kv.getByPrefix(`notif_${user.id}_`);
-    const sorted = (all || []).sort((a: any, b: any) =>
+    const now = Date.now();
+    const TTL_MS = 24 * 60 * 60 * 1000; // 24 saat
+
+    // 24 saati geçenleri KV'den sil (arka planda, beklemeden)
+    const expired = (all || []).filter(
+      (n: any) => n?.created_at && now - new Date(n.created_at).getTime() > TTL_MS
+    );
+    if (expired.length > 0) {
+      Promise.all(expired.map((n: any) => kv.del(n.id))).catch(() => {});
+      console.log(`[Bildirim TTL] ${expired.length} bildirim 24 saat doldu, silindi.`);
+    }
+
+    // Sadece 24 saat içindekileri döndür
+    const fresh = (all || []).filter(
+      (n: any) => n?.created_at && now - new Date(n.created_at).getTime() <= TTL_MS
+    );
+    const sorted = fresh.sort((a: any, b: any) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
     const unreadCount = sorted.filter((n: any) => !n.read).length;
@@ -9262,6 +9254,9 @@ app.delete("/make-server-4da0b637/bildirimler/:notifId", async (c) => {
     console.log("[TG Webhook Auto-setup] Hata:", e);
   }
 })();
+
+// ──────────────────────────────────────────
+
 
 Deno.serve(async (req) => {
   // Supabase Edge Functions'da OPTIONS preflight istekleri gateway tarafından kesilebilir.
