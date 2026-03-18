@@ -21,7 +21,7 @@ interface Props {
 }
 
 export function IptalTalepPanel({ accessToken, userRole }: Props) {
-  const isYonetici = ['yonetici', 'ust-mudur', 'mudur'].includes(userRole);
+  const isYonetici = ['yonetici', 'ust-mudur', 'mudur', 'operasyon'].includes(userRole);
 
   const [talepleri, setTalepleri] = useState<any[]>([]);
   const [showPanel, setShowPanel] = useState(false);

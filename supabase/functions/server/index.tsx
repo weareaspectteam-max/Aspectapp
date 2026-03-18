@@ -5902,7 +5902,7 @@ app.post("/make-server-4da0b637/stok/satis-iptal-karar/:approvalId", async (c) =
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
 
     const callerRole = user.user_metadata?.role;
-    const yetkiliRoller = ["yonetici", "ust-mudur", "mudur"];
+    const yetkiliRoller = ["yonetici", "ust-mudur", "mudur", "operasyon"];
     if (!yetkiliRoller.includes(callerRole)) {
       return c.json({ error: "Bu işlem için yönetici yetkisi gereklidir." }, 403);
     }
@@ -5954,7 +5954,7 @@ app.get("/make-server-4da0b637/stok/iptal-bekleyen", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
 
     const callerRole = user.user_metadata?.role;
-    const yetkiliRoller = ["yonetici", "ust-mudur", "mudur"];
+    const yetkiliRoller = ["yonetici", "ust-mudur", "mudur", "operasyon"];
     if (!yetkiliRoller.includes(callerRole)) {
       return c.json({ talepleri: [] });
     }
