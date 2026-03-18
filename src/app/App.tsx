@@ -9,7 +9,7 @@ import { AppHeader } from './components/app-header';
 import { AspectLogo } from './components/aspect-logo';
 import { supabase } from './lib/supabase';
 import { setAuthToken } from './lib/api';
-import { clearUserQueue } from './lib/offline-queue';
+import { clearUserQueue, clearUserFrameQueue } from './lib/offline-queue';
 import { projectId } from '/utils/supabase/info';
 import { Login } from './components/login';
 import { NewBottomNav } from './components/new-bottom-nav';
@@ -184,7 +184,10 @@ export default function App() {
     setUserName('');
     // Offline kuyruk: çıkış yapan kullanıcının bekleyen satışlarını temizle
     // (başka bir kullanıcı aynı cihazdan giriş yaparsa eski satışlar görünmesin)
-    if (userId) clearUserQueue(userId);
+    if (userId) {
+      clearUserQueue(userId);
+      clearUserFrameQueue(userId);
+    }
     setUserId('');
     setAccessToken('');
     setUserAvatar('👨‍💼');

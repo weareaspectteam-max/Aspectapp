@@ -77,3 +77,66 @@ export function clearUserQueue(userId: string): void {
 export function generateQueueId(): string {
   return `q_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
+
+// ── KARE KUYRUĞU ──────────────────────────────────────────────────────────────
+
+export interface QueuedFrame {
+  id: string;         // lokal uuid (qf_timestamp_random)
+  userId: string;     // sahiplik kontrolü için
+  projectName: string;
+  mekanId: string;
+  tarih: string;      // YYYY-MM-DD
+  photographerName: string;
+  photographerId: string;
+  frameCount: number;
+  queuedAt: number;   // Date.now()
+}
+
+const FRAME_QUEUE_KEY = 'aspect_offline_frames_queue';
+
+export function getFrameQueue(): QueuedFrame[] {
+  try {
+    const raw = localStorage.getItem(FRAME_QUEUE_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as QueuedFrame[];
+  } catch {
+    return [];
+  }
+}
+
+export function getUserFrameQueue(userId: string): QueuedFrame[] {
+  return getFrameQueue().filter(f => f.userId === userId);
+}
+
+export function enqueueFrame(frame: QueuedFrame): void {
+  try {
+    const queue = getFrameQueue();
+    queue.push(frame);
+    localStorage.setItem(FRAME_QUEUE_KEY, JSON.stringify(queue));
+  } catch (err) {
+    console.error('[offline-queue] enqueueFrame hatası:', err);
+  }
+}
+
+export function dequeueFrame(id: string): void {
+  try {
+    const queue = getFrameQueue().filter(f => f.id !== id);
+    localStorage.setItem(FRAME_QUEUE_KEY, JSON.stringify(queue));
+  } catch (err) {
+    console.error('[offline-queue] dequeueFrame hatası:', err);
+  }
+}
+
+/** Kullanıcı logout yaparken çağrılır — kare kuyruğunu temizler */
+export function clearUserFrameQueue(userId: string): void {
+  try {
+    const queue = getFrameQueue().filter(f => f.userId !== userId);
+    localStorage.setItem(FRAME_QUEUE_KEY, JSON.stringify(queue));
+  } catch (err) {
+    console.error('[offline-queue] clearUserFrameQueue hatası:', err);
+  }
+}
+
+export function generateFrameQueueId(): string {
+  return `qf_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}

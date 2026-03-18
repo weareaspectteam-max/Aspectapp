@@ -21,6 +21,11 @@ import {
   getUserQueue,
   generateQueueId,
   type QueuedSale,
+  enqueueFrame as offlineEnqueueFrame,
+  dequeueFrame as offlineDequeueFrame,
+  getUserFrameQueue,
+  generateFrameQueueId,
+  type QueuedFrame,
 } from '../lib/offline-queue';
 
 const API_BASE_QS = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -127,6 +132,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [frameShowSuccess, setFrameShowSuccess] = useState(false);
   const [frameSaving, setFrameSaving] = useState(false);
   const [frameEntries, setFrameEntries] = useState<any[]>([]);
+  const [pendingFrameCount, setPendingFrameCount] = useState(0);
+  const [frameFlushing, setFrameFlushing] = useState(false);
 
   // ── SHIFT START state ──
   const [stokGunluk, setStokGunluk] = useState<StokGunluk | null>(null);
@@ -211,6 +218,61 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     setPendingQueueCount(getUserQueue(userId).length);
   };
 
+  // ── Offline Kare Kuyruğu: bekleyen kare sayısını senkronize tut ──
+  const syncPendingFrameCount = () => {
+    if (!userId) return;
+    setPendingFrameCount(getUserFrameQueue(userId).length);
+  };
+
+  // ── Offline Kare Kuyruğu: bekleyen kareleri sunucuya gönder ──
+  const flushFrameQueue = async () => {
+    if (!userId) return;
+    const queue = getUserFrameQueue(userId);
+    if (queue.length === 0) return;
+
+    setFrameFlushing(true);
+
+    for (const qFrame of queue) {
+      try {
+        const freshToken = await getToken();
+        const hdr = buildHeaders(freshToken);
+
+        const res = await fetch(`${API_BASE_QS}/stok/kare`, {
+          method: 'POST',
+          headers: hdr,
+          body: JSON.stringify({
+            mekanId: qFrame.mekanId,
+            tarih: qFrame.tarih,
+            photographerName: qFrame.photographerName,
+            photographerId: qFrame.photographerId,
+            frameCount: qFrame.frameCount,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          offlineDequeueFrame(qFrame.id);
+          // Pending kaydı gerçek kayıtla değiştir
+          setFrameEntries(prev =>
+            prev.map(e =>
+              e._queueId === qFrame.id
+                ? { ...data.entry, _pending: false, _queueId: undefined }
+                : e
+            )
+          );
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          console.warn('[offline-frame-queue] flush sunucu reddi:', errData.error);
+        }
+      } catch (netErr) {
+        console.warn('[offline-frame-queue] flush ağ hatası, kuyrukta kalıyor:', netErr);
+      }
+    }
+
+    syncPendingFrameCount();
+    setFrameFlushing(false);
+  };
+
   // ── Offline Kuyruk: bekleyen satışları sunucuya gönder ──
   const flushOfflineQueue = async () => {
     if (!userId) return;
@@ -278,6 +340,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     const handleOnline = () => {
       setIsOnline(true);
       flushOfflineQueue();
+      flushFrameQueue();
     };
     const handleOffline = () => setIsOnline(false);
 
@@ -291,8 +354,14 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         setPendingQueueCount(q.length);
         flushOfflineQueue();
       }
+      const fq = getUserFrameQueue(userId);
+      if (fq.length > 0) {
+        setPendingFrameCount(fq.length);
+        flushFrameQueue();
+      }
     } else {
       syncPendingCount();
+      syncPendingFrameCount();
     }
 
     return () => {
@@ -836,6 +905,46 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     const tarih = bugunTarih();
 
     setFrameSaving(true);
+
+    // ── Çevrimdışı kontrolü ──
+    const currentlyOnline = navigator.onLine;
+
+    if (!currentlyOnline) {
+      const queueId = generateFrameQueueId();
+      const qFrame: QueuedFrame = {
+        id: queueId,
+        userId: userId || 'unknown',
+        projectName: selectedProject.name,
+        mekanId,
+        tarih,
+        photographerName: framePhotographer.name,
+        photographerId: framePhotographer.id,
+        frameCount: count,
+        queuedAt: Date.now(),
+      };
+      offlineEnqueueFrame(qFrame);
+      syncPendingFrameCount();
+
+      // UI'da "bekliyor" olarak göster
+      const pendingEntry = {
+        id: queueId,
+        photographerName: framePhotographer.name,
+        photographerId: framePhotographer.id,
+        frameCount: count,
+        timestamp: new Date().toISOString(),
+        _pending: true,
+        _queueId: queueId,
+      };
+      setFrameEntries(prev => [...prev, pendingEntry]);
+      setFramePhotographer(null);
+      setFrameCount('');
+      setFrameSaving(false);
+      setFrameShowSuccess(true);
+      setTimeout(() => setFrameShowSuccess(false), 2500);
+      return;
+    }
+
+    // ── Çevrimiçi: normal akış, ağ hatası olursa kuyruğa al ──
     try {
       const headers = buildHeaders(accessToken);
       const res = await fetch(`${API_BASE_QS}/stok/kare`, {
@@ -860,8 +969,37 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       setFrameShowSuccess(true);
       setTimeout(() => setFrameShowSuccess(false), 2500);
     } catch (err) {
-      console.error('handleFrameSave error:', err);
-      alert('Bağlantı hatası. Tekrar deneyin.');
+      console.error('handleFrameSave network hatası — kuyruğa alınıyor:', err);
+      // Ağ hatası → kuyruğa al
+      const queueId = generateFrameQueueId();
+      const qFrame: QueuedFrame = {
+        id: queueId,
+        userId: userId || 'unknown',
+        projectName: selectedProject.name,
+        mekanId,
+        tarih,
+        photographerName: framePhotographer.name,
+        photographerId: framePhotographer.id,
+        frameCount: count,
+        queuedAt: Date.now(),
+      };
+      offlineEnqueueFrame(qFrame);
+      syncPendingFrameCount();
+
+      const pendingEntry = {
+        id: queueId,
+        photographerName: framePhotographer.name,
+        photographerId: framePhotographer.id,
+        frameCount: count,
+        timestamp: new Date().toISOString(),
+        _pending: true,
+        _queueId: queueId,
+      };
+      setFrameEntries(prev => [...prev, pendingEntry]);
+      setFramePhotographer(null);
+      setFrameCount('');
+      setFrameShowSuccess(true);
+      setTimeout(() => setFrameShowSuccess(false), 2500);
     } finally {
       setFrameSaving(false);
     }
@@ -1200,7 +1338,14 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     : 'text-gray-400 hover:text-white'
                 }`}
               >
-                <span className="text-base">📷</span>
+                <div className="relative">
+                  <span className="text-base">📷</span>
+                  {pendingFrameCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#d4b5f7] rounded-full flex items-center justify-center text-[8px] font-black text-[#2d3748] leading-none">
+                      {pendingFrameCount}
+                    </span>
+                  )}
+                </div>
                 <span>Kare</span>
               </button>
               <button
@@ -1879,6 +2024,37 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
           {/* ══════════════════════════════════ */}
           {activeMode === 'frames' && (
             <div className="px-4 space-y-3 pb-8">
+
+              {/* Çevrimdışı durum bandı */}
+              {!isOnline && (
+                <div style={{ background: 'rgba(255,180,50,0.12)', border: '1px solid rgba(255,180,50,0.35)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>📡</span>
+                  <span style={{ color: '#ffd4a3', fontSize: 12, fontWeight: 600 }}>Çevrimdışısınız — kareler kuyruğa alınıyor</span>
+                </div>
+              )}
+
+              {/* Bekleyen kare kuyruğu bildirimi */}
+              {pendingFrameCount > 0 && isOnline && (
+                <div style={{ background: 'rgba(212,181,247,0.12)', border: '1px solid rgba(212,181,247,0.35)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {frameFlushing ? (
+                    <span className="w-3 h-3 border-2 border-[#d4b5f7]/40 border-t-[#d4b5f7] rounded-full animate-spin flex-shrink-0" />
+                  ) : (
+                    <span style={{ fontSize: 16 }}>🔄</span>
+                  )}
+                  <span style={{ color: '#d4b5f7', fontSize: 12, fontWeight: 600 }}>
+                    {frameFlushing ? `${pendingFrameCount} kare sunucuya gönderiliyor...` : `${pendingFrameCount} kare senkronize bekliyor`}
+                  </span>
+                  {!frameFlushing && (
+                    <button
+                      onClick={flushFrameQueue}
+                      style={{ marginLeft: 'auto', fontSize: 11, color: '#d4b5f7', background: 'rgba(212,181,247,0.15)', border: '1px solid rgba(212,181,247,0.3)', borderRadius: 8, padding: '3px 10px', cursor: 'pointer', fontWeight: 700 }}
+                    >
+                      Şimdi Gönder
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Seçili Mekan */}
               <div className="flex items-center gap-3 bg-gradient-to-br from-[#d4b5f7]/15 to-[#c79ff0]/10 border border-[#d4b5f7]/30 rounded-2xl p-3">
                 <span className="text-xl">{selectedProject.icon}</span>
@@ -1988,20 +2164,33 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     </span>
                   </div>
                   <div className="space-y-2">
-                    {frameEntries.map((entry: any) => (
-                      <div key={entry.id} className="flex items-center gap-3 bg-white/5 rounded-xl px-3 py-2.5 border border-white/10">
-                        <div className="w-8 h-8 rounded-lg bg-[#d4b5f7]/20 flex items-center justify-center text-sm flex-shrink-0">📸</div>
+                    {frameEntries.map((entry: any) => {
+                      const isPendingFrame = entry._pending === true;
+                      return (
+                      <div key={entry.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5 border"
+                        style={{
+                          background: isPendingFrame ? 'rgba(212,181,247,0.07)' : 'rgba(255,255,255,0.05)',
+                          borderColor: isPendingFrame ? 'rgba(212,181,247,0.3)' : 'rgba(255,255,255,0.10)',
+                        }}
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-[#d4b5f7]/20 flex items-center justify-center text-sm flex-shrink-0">
+                          {isPendingFrame ? '⏳' : '📸'}
+                        </div>
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-white text-xs truncate">{entry.photographerName}</div>
-                          <div className="text-xs text-gray-400">
-                            {new Date(entry.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                          <div className="text-xs text-gray-400 flex items-center gap-1">
+                            {isPendingFrame ? (
+                              <span style={{ color: '#d4b5f7', fontWeight: 600 }}>● Senkronize bekliyor</span>
+                            ) : (
+                              new Date(entry.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                            )}
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0">
                           <div className="font-black text-[#9dd9ea] text-sm">{entry.frameCount}</div>
                           <div className="text-xs text-gray-500">kare</div>
                         </div>
-                        {['yonetici', 'ust-mudur', 'mudur', 'operasyon'].includes(userRole) && (
+                        {!isPendingFrame && ['yonetici', 'ust-mudur', 'mudur', 'operasyon'].includes(userRole) && (
                           <button
                             onClick={() => openDeleteKareModal(entry)}
                             style={{
@@ -2016,7 +2205,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                           </button>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

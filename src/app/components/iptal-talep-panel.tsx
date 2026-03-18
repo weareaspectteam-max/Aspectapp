@@ -36,29 +36,50 @@ export function IptalTalepPanel({ accessToken, userRole }: Props) {
   useEffect(() => {
     if (!isYonetici || !accessToken) return;
 
+    let abortController: AbortController | null = null;
+    let destroyed = false;
+
     const fetchBekleyen = async () => {
+      // Çevrimdışıysa deneme yapma
+      if (!navigator.onLine) return;
+
       try {
-        // Taze token: prop stale/boşsa getToken() ile yenile
         const token = accessToken || await getToken();
-        if (!token) return;
+        if (!token || destroyed) return;
+
+        abortController = new AbortController();
         const hdr = buildHeaders(token);
-        const res = await fetch(`${API_BASE}/stok/iptal-bekleyen`, { headers: hdr });
+        const res = await fetch(`${API_BASE}/stok/iptal-bekleyen`, {
+          headers: hdr,
+          signal: abortController.signal,
+        });
+
+        if (destroyed) return;
+
         if (res.ok) {
           const data = await res.json();
           setTalepleri(data.talepleri || []);
         } else {
-          // Sessiz başarısızlık yerine loglayalım — 401/500 sorunlarını görmek için
           const body = await res.json().catch(() => ({}));
           console.warn('[IptalTalepPanel] fetchBekleyen non-ok:', res.status, body?.error ?? body);
         }
-      } catch (err) {
+      } catch (err: any) {
+        // AbortError: component unmount veya effect temizleme — normal, loglama
+        if (err?.name === 'AbortError') return;
+        // Çevrimdışı veya geçici ağ hatası — sessiz geç
+        if (!navigator.onLine) return;
         console.warn('[IptalTalepPanel] fetchBekleyen hata:', err);
       }
     };
 
     fetchBekleyen();
     pollRef.current = setInterval(fetchBekleyen, POLL_INTERVAL);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+
+    return () => {
+      destroyed = true;
+      if (pollRef.current) clearInterval(pollRef.current);
+      if (abortController) abortController.abort();
+    };
   }, [isYonetici, accessToken]);
 
   // Panel kapansın talep bitince
