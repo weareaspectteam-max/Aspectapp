@@ -9228,6 +9228,99 @@ app.delete("/make-server-4da0b637/bildirimler/:notifId", async (c) => {
   }
 });
 
+// ── Gecikmiş Kayıt Telegram Bildirimi ──────────────────────────────────────────
+// POST /make-server-4da0b637/stok/gecikme-bildir
+app.post("/make-server-4da0b637/stok/gecikme-bildir", async (c) => {
+  try {
+    const body = await c.req.json();
+    const {
+      type,           // 'satis' | 'kare'
+      personnelName,
+      projectName,
+      tarih,
+      queuedAt,      // timestamp (ms)
+      gecikmeMs,     // ms cinsinden gecikme
+      // Satış alanları
+      items,
+      totalPrice,
+      discount,
+      paymentMethod,
+      currency,
+      currencyPrice,
+      // Kare alanları
+      photographerName,
+      frameCount,
+    } = body;
+
+    const formatTs = (ms: number) => {
+      const d = new Date(ms);
+      return d.toLocaleString("tr-TR", {
+        timeZone: "Europe/Istanbul",
+        day: "2-digit", month: "2-digit", year: "numeric",
+        hour: "2-digit", minute: "2-digit",
+      });
+    };
+
+    const formatDelay = (ms: number) => {
+      const hours = Math.floor(ms / 3600000);
+      if (hours < 24) return `${hours} saat`;
+      const days = Math.floor(hours / 24);
+      const rem = hours % 24;
+      return rem > 0 ? `${days} gün ${rem} saat` : `${days} gün`;
+    };
+
+    const payLabel = (pm: string) =>
+      pm === "cash" ? "Nakit" : pm === "iban" ? "IBAN" : pm === "card" ? "Kart" : pm;
+
+    let msg = "";
+
+    if (type === "satis") {
+      const itemLines = (items || [])
+        .map((it: any) => `  • ${it.product} x${it.quantity} — ${(it.unitPrice * it.quantity).toLocaleString("tr-TR")} TL`)
+        .join("\n");
+
+      const discountLine = discount && discount > 0
+        ? `\n  • İskonto: -${Number(discount).toLocaleString("tr-TR")} TL` : "";
+
+      const dovizLine = currencyPrice && currency && currency !== "TRY"
+        ? `\n  • Döviz: ${currencyPrice} ${currency}` : "";
+
+      msg =
+        `⚠️ <b>GECİKMİŞ SATIŞ GÖNDERİLDİ</b>\n\n` +
+        `👤 <b>Personel:</b> ${personnelName}\n` +
+        `📍 <b>Mekan:</b> ${projectName}\n` +
+        `🗓 <b>Tarih:</b> ${tarih}\n` +
+        `🕐 <b>Kuyruğa alındı:</b> ${formatTs(queuedAt)}\n` +
+        `📤 <b>Gönderilme:</b> ${formatTs(Date.now())}\n` +
+        `⏱ <b>Gecikme:</b> ${formatDelay(gecikmeMs)}\n\n` +
+        `🛒 <b>Satış Detayı:</b>\n` +
+        `${itemLines}` +
+        `${discountLine}\n` +
+        `  • <b>Toplam: ${Number(totalPrice).toLocaleString("tr-TR")} TL</b>\n` +
+        `  • Ödeme: ${payLabel(paymentMethod)}` +
+        `${dovizLine}`;
+    } else {
+      msg =
+        `⚠️ <b>GECİKMİŞ KARE GÖNDERİLDİ</b>\n\n` +
+        `👤 <b>Personel:</b> ${personnelName}\n` +
+        `📍 <b>Mekan:</b> ${projectName}\n` +
+        `🗓 <b>Tarih:</b> ${tarih}\n` +
+        `🕐 <b>Kuyruğa alındı:</b> ${formatTs(queuedAt)}\n` +
+        `📤 <b>Gönderilme:</b> ${formatTs(Date.now())}\n` +
+        `⏱ <b>Gecikme:</b> ${formatDelay(gecikmeMs)}\n\n` +
+        `🎞️ <b>Kare Detayı:</b>\n` +
+        `  • <b>Fotoğrafçı:</b> ${photographerName}\n` +
+        `  • <b>Kare sayısı:</b> ${frameCount}`;
+    }
+
+    await sendTelegramMessage(msg);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("gecikme-bildir error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 // ── Telegram Webhook Otomatik Kurulumu (sunucu başlangıcında, non-blocking) ──
 (async () => {
   try {

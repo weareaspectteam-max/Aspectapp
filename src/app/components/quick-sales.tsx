@@ -30,6 +30,24 @@ import {
 
 const API_BASE_QS = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
+const STALE_MS = 24 * 60 * 60 * 1000; // 24 saat (ms)
+
+const formatDelay = (ms: number): string => {
+  const hours = Math.floor(ms / 3600000);
+  if (hours < 24) return `${hours} saat`;
+  const days = Math.floor(hours / 24);
+  const rem = hours % 24;
+  return rem > 0 ? `${days} gün ${rem} saat` : `${days} gün`;
+};
+
+const formatTs = (ms: number): string => {
+  const d = new Date(ms);
+  return d.toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
+const payLabel = (pm: string) =>
+  pm === 'cash' ? 'Nakit' : pm === 'iban' ? 'IBAN' : pm === 'card' ? 'Kart' : pm;
+
 interface Project {
   id: string;
   name: string;
@@ -212,6 +230,14 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   // ── Yönetici: modal içinde uygulama içi karar verme ──
   const [kararVeriliyor, setKararVeriliyor] = useState<string | null>(null);
 
+  // ── Stale kuyruk uyarı modal state ──
+  const [staleModalItems, setStaleModalItems] = useState<Array<{ type: 'satis' | 'kare'; data: QueuedSale | QueuedFrame }>>([]);
+  const [showStaleModal, setShowStaleModal] = useState(false);
+  const [staleSending, setStaleSending] = useState(false);
+
+  // ── Stale yardımcı ──
+  const isStale = (queuedAt: number) => Date.now() - queuedAt >= STALE_MS;
+
   // ── Offline Kuyruk: bekleyen satış sayısını senkronize tut ──
   const syncPendingCount = () => {
     if (!userId) return;
@@ -225,14 +251,22 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   };
 
   // ── Offline Kare Kuyruğu: bekleyen kareleri sunucuya gönder ──
-  const flushFrameQueue = async () => {
+  // staleAccumulator: dışarıdan geçirilirse stale itemler oraya eklenir (flushAllQueues'dan çağrılır)
+  const flushFrameQueue = async (staleAccumulator?: Array<{ type: 'satis' | 'kare'; data: QueuedSale | QueuedFrame }>) => {
     if (!userId) return;
     const queue = getUserFrameQueue(userId);
     if (queue.length === 0) return;
 
+    // Taze / eski ayır
+    const freshFrames = staleAccumulator ? queue.filter(f => !isStale(f.queuedAt)) : queue;
+    const staleFrames = staleAccumulator ? queue.filter(f => isStale(f.queuedAt)) : [];
+    if (staleFrames.length > 0 && staleAccumulator) {
+      staleAccumulator.push(...staleFrames.map(f => ({ type: 'kare' as const, data: f })));
+    }
+
     setFrameFlushing(true);
 
-    for (const qFrame of queue) {
+    for (const qFrame of freshFrames) {
       try {
         const freshToken = await getToken();
         const hdr = buildHeaders(freshToken);
@@ -274,15 +308,23 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   };
 
   // ── Offline Kuyruk: bekleyen satışları sunucuya gönder ──
-  const flushOfflineQueue = async () => {
+  // staleAccumulator: dışarıdan geçirilirse stale itemler oraya eklenir (flushAllQueues'dan çağrılır)
+  const flushOfflineQueue = async (staleAccumulator?: Array<{ type: 'satis' | 'kare'; data: QueuedSale | QueuedFrame }>) => {
     if (!userId) return;
     const queue = getUserQueue(userId);
     if (queue.length === 0) return;
 
+    // Taze / eski ayır
+    const freshSales = staleAccumulator ? queue.filter(s => !isStale(s.queuedAt)) : queue;
+    const staleSales = staleAccumulator ? queue.filter(s => isStale(s.queuedAt)) : [];
+    if (staleSales.length > 0 && staleAccumulator) {
+      staleAccumulator.push(...staleSales.map(s => ({ type: 'satis' as const, data: s })));
+    }
+
     setQueueFlushing(true);
     let flushedAny = false;
 
-    for (const qSale of queue) {
+    for (const qSale of freshSales) {
       try {
         // Gönderim anında taze token al — süresi dolmuş olsa bile Supabase refresh eder
         const freshToken = await getToken();
@@ -335,30 +377,165 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     }
   };
 
+  // ── Tüm kuyrukları flush et: taze hemen, eskiler modal'a gönder ──
+  const flushAllQueues = async () => {
+    if (!userId) return;
+    const staleAcc: Array<{ type: 'satis' | 'kare'; data: QueuedSale | QueuedFrame }> = [];
+    await flushOfflineQueue(staleAcc);
+    await flushFrameQueue(staleAcc);
+    if (staleAcc.length > 0) {
+      setStaleModalItems(staleAcc);
+      setShowStaleModal(true);
+    }
+  };
+
+  // ── Eski kayıtları "Yine de Gönder" ile flush et + Telegram bildir ──
+  const handleStaleSend = async () => {
+    if (!userId) return;
+    setStaleSending(true);
+    const now = Date.now();
+
+    for (const item of staleModalItems) {
+      if (item.type === 'satis') {
+        const qSale = item.data as QueuedSale;
+        try {
+          const freshToken = await getToken();
+          const hdr = buildHeaders(freshToken);
+          const res = await fetch(`${API_BASE_QS}/stok/satis`, {
+            method: 'POST',
+            headers: hdr,
+            body: JSON.stringify({
+              mekanId: qSale.mekanId,
+              tarih: qSale.tarih,
+              items: qSale.items,
+              totalPrice: qSale.totalPrice,
+              discount: qSale.discount,
+              paymentMethod: qSale.paymentMethod,
+              currency: qSale.currency,
+              currencyPrice: qSale.currencyPrice,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            offlineDequeue(qSale.id);
+            setRecentSales(prev =>
+              prev.map(s =>
+                s._queueId === qSale.id
+                  ? { ...data.satis, project: qSale.projectName }
+                  : s
+              )
+            );
+            setSaleRefreshTrigger(prev => prev + 1);
+            // Telegram gecikme bildirimi
+            fetch(`${API_BASE_QS}/stok/gecikme-bildir`, {
+              method: 'POST',
+              headers: hdr,
+              body: JSON.stringify({
+                type: 'satis',
+                personnelName: userName,
+                projectName: qSale.projectName,
+                tarih: qSale.tarih,
+                queuedAt: qSale.queuedAt,
+                gecikmeMs: now - qSale.queuedAt,
+                items: qSale.items,
+                totalPrice: qSale.totalPrice,
+                discount: qSale.discount,
+                paymentMethod: qSale.paymentMethod,
+                currency: qSale.currency,
+                currencyPrice: qSale.currencyPrice,
+              }),
+            }).catch(e => console.warn('[gecikme-bildir] satis:', e));
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            console.warn('[stale-flush] satis sunucu reddi:', errData.error);
+          }
+        } catch (netErr) {
+          console.warn('[stale-flush] satis ağ hatası:', netErr);
+        }
+      } else {
+        const qFrame = item.data as QueuedFrame;
+        try {
+          const freshToken = await getToken();
+          const hdr = buildHeaders(freshToken);
+          const res = await fetch(`${API_BASE_QS}/stok/kare`, {
+            method: 'POST',
+            headers: hdr,
+            body: JSON.stringify({
+              mekanId: qFrame.mekanId,
+              tarih: qFrame.tarih,
+              photographerName: qFrame.photographerName,
+              photographerId: qFrame.photographerId,
+              frameCount: qFrame.frameCount,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            offlineDequeueFrame(qFrame.id);
+            setFrameEntries(prev =>
+              prev.map(e =>
+                e._queueId === qFrame.id
+                  ? { ...data.entry, _pending: false, _queueId: undefined }
+                  : e
+              )
+            );
+            // Telegram gecikme bildirimi
+            fetch(`${API_BASE_QS}/stok/gecikme-bildir`, {
+              method: 'POST',
+              headers: hdr,
+              body: JSON.stringify({
+                type: 'kare',
+                personnelName: userName,
+                projectName: qFrame.projectName,
+                tarih: qFrame.tarih,
+                queuedAt: qFrame.queuedAt,
+                gecikmeMs: now - qFrame.queuedAt,
+                photographerName: qFrame.photographerName,
+                frameCount: qFrame.frameCount,
+              }),
+            }).catch(e => console.warn('[gecikme-bildir] kare:', e));
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            console.warn('[stale-flush] kare sunucu reddi:', errData.error);
+          }
+        } catch (netErr) {
+          console.warn('[stale-flush] kare ağ hatası:', netErr);
+        }
+      }
+    }
+
+    setStaleSending(false);
+    setShowStaleModal(false);
+    setStaleModalItems([]);
+    syncPendingCount();
+    syncPendingFrameCount();
+  };
+
   // ── Online/Offline event listener ──
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      flushOfflineQueue();
-      flushFrameQueue();
+      flushAllQueues();
     };
     const handleOffline = () => setIsOnline(false);
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
+    // Sayfa görünür hale geldiğinde (arka plandan dönüş, ekran açılışı) kuyruk flush
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine && userId) {
+        flushAllQueues();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     // Sayfa açılışında kuyruk varsa hemen gönder
     if (navigator.onLine && userId) {
       const q = getUserQueue(userId);
-      if (q.length > 0) {
-        setPendingQueueCount(q.length);
-        flushOfflineQueue();
-      }
       const fq = getUserFrameQueue(userId);
-      if (fq.length > 0) {
-        setPendingFrameCount(fq.length);
-        flushFrameQueue();
-      }
+      if (q.length > 0) setPendingQueueCount(q.length);
+      if (fq.length > 0) setPendingFrameCount(fq.length);
+      if (q.length > 0 || fq.length > 0) flushAllQueues();
     } else {
       syncPendingCount();
       syncPendingFrameCount();
@@ -367,6 +544,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
@@ -1304,6 +1482,194 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         </div>
       ) : (
         <>
+
+          {/* ── GECİKMİŞ KAYIT UYARI MODAL ── */}
+          {showStaleModal && (
+            <div
+              style={{
+                position: 'fixed', inset: 0, zIndex: 9999,
+                background: 'rgba(10,5,30,0.85)',
+                backdropFilter: 'blur(12px)',
+                display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+              }}
+            >
+              <div
+                style={{
+                  width: '100%', maxWidth: 480,
+                  background: 'linear-gradient(135deg, rgba(30,10,60,0.98) 0%, rgba(20,8,45,0.98) 100%)',
+                  border: '1px solid rgba(255,180,50,0.3)',
+                  borderRadius: '24px 24px 0 0',
+                  padding: '24px 20px 36px',
+                  maxHeight: '85vh',
+                  overflowY: 'auto',
+                }}
+              >
+                {/* Başlık */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: 14,
+                    background: 'linear-gradient(135deg, rgba(255,180,50,0.25) 0%, rgba(255,140,0,0.15) 100%)',
+                    border: '1px solid rgba(255,180,50,0.4)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22,
+                  }}>⚠️</div>
+                  <div>
+                    <div style={{ color: '#ffd47a', fontWeight: 800, fontSize: 15 }}>Eski Offline Kayıt Bulundu</div>
+                    <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 }}>
+                      {staleModalItems.length} kayıt 24 saatten daha eski
+                    </div>
+                  </div>
+                </div>
+
+                {/* Kayıt listesi */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+                  {staleModalItems.map((item, idx) => {
+                    const isSatis = item.type === 'satis';
+                    const d = item.data;
+                    const gecikmeMs = Date.now() - d.queuedAt;
+
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          background: 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${isSatis ? 'rgba(157,217,234,0.2)' : 'rgba(212,181,247,0.2)'}`,
+                          borderRadius: 16,
+                          padding: '14px 16px',
+                        }}
+                      >
+                        {/* Tip + mekan + gecikme */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 18 }}>{isSatis ? '🛒' : '🎞️'}</span>
+                            <div>
+                              <div style={{ color: 'white', fontWeight: 700, fontSize: 13 }}>
+                                {isSatis ? 'Satış' : 'Kare Kaydı'}
+                              </div>
+                              <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>
+                                📍 {(d as QueuedSale).projectName || (d as QueuedFrame).projectName}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{
+                            background: 'rgba(255,140,0,0.15)',
+                            border: '1px solid rgba(255,140,0,0.3)',
+                            borderRadius: 8, padding: '3px 8px',
+                            color: '#ffd47a', fontSize: 11, fontWeight: 700,
+                          }}>
+                            ⏱ {formatDelay(gecikmeMs)}
+                          </div>
+                        </div>
+
+                        {/* Kuyruğa alınma */}
+                        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginBottom: 8 }}>
+                          🕐 {formatTs(d.queuedAt)}
+                        </div>
+
+                        {/* Detaylar */}
+                        {isSatis ? (() => {
+                          const s = d as QueuedSale;
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                              {(s.items || []).map((it, i) => (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                                  <span style={{ color: 'rgba(255,255,255,0.7)' }}>{it.product} x{it.quantity}</span>
+                                  <span style={{ color: '#9dd9ea', fontWeight: 600 }}>
+                                    {(it.unitPrice * it.quantity).toLocaleString('tr-TR')} TL
+                                  </span>
+                                </div>
+                              ))}
+                              {s.discount > 0 && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                                  <span style={{ color: 'rgba(255,255,255,0.5)' }}>İskonto</span>
+                                  <span style={{ color: '#ff8a80' }}>-{s.discount.toLocaleString('tr-TR')} TL</span>
+                                </div>
+                              )}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 4, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                                <span style={{ color: 'white', fontWeight: 700 }}>Toplam</span>
+                                <span style={{ color: '#a8e6cf', fontWeight: 800 }}>{s.totalPrice.toLocaleString('tr-TR')} TL</span>
+                              </div>
+                              <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, marginTop: 2 }}>
+                                💳 {payLabel(s.paymentMethod)}
+                                {s.currencyPrice && s.currency !== 'TRY' ? ` · ${s.currencyPrice} ${s.currency}` : ''}
+                              </div>
+                            </div>
+                          );
+                        })() : (() => {
+                          const f = d as QueuedFrame;
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                                <span style={{ color: 'rgba(255,255,255,0.6)' }}>Fotoğrafçı</span>
+                                <span style={{ color: '#d4b5f7', fontWeight: 600 }}>{f.photographerName}</span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                                <span style={{ color: 'rgba(255,255,255,0.6)' }}>Kare sayısı</span>
+                                <span style={{ color: '#d4b5f7', fontWeight: 700 }}>{f.frameCount}</span>
+                              </div>
+                              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>🗓 {f.tarih}</div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Bilgi notu */}
+                <div style={{
+                  background: 'rgba(255,180,50,0.08)',
+                  border: '1px solid rgba(255,180,50,0.2)',
+                  borderRadius: 12, padding: '10px 14px',
+                  color: 'rgba(255,212,122,0.8)', fontSize: 12,
+                  marginBottom: 16, lineHeight: 1.5,
+                }}>
+                  "Yine de Gönder" seçildiğinde bu kayıtlar sunucuya iletilir ve yöneticilere gecikme bildirimi gönderilir.
+                </div>
+
+                {/* Butonlar */}
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    onClick={() => { setShowStaleModal(false); setStaleModalItems([]); }}
+                    disabled={staleSending}
+                    style={{
+                      flex: 1, padding: '13px 0', borderRadius: 14,
+                      background: 'rgba(255,255,255,0.07)',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 14,
+                      cursor: staleSending ? 'not-allowed' : 'pointer',
+                      opacity: staleSending ? 0.5 : 1,
+                    }}
+                  >
+                    Kapat
+                  </button>
+                  <button
+                    onClick={handleStaleSend}
+                    disabled={staleSending}
+                    style={{
+                      flex: 2, padding: '13px 0', borderRadius: 14,
+                      background: staleSending
+                        ? 'rgba(255,180,50,0.3)'
+                        : 'linear-gradient(135deg, #ffd47a 0%, #ffaa00 100%)',
+                      border: 'none',
+                      color: staleSending ? 'rgba(255,255,255,0.6)' : '#1a0a00',
+                      fontWeight: 800, fontSize: 14,
+                      cursor: staleSending ? 'not-allowed' : 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    }}
+                  >
+                    {staleSending ? (
+                      <>
+                        <div style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.4)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                        Gönderiliyor...
+                      </>
+                    ) : (
+                      <>📤 Yine de Gönder</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── 4 MODE TABS ── */}
           <div className="px-4 pb-3">
