@@ -76,7 +76,12 @@ export function LiveFeedSheet({ mekanId, mekanName, mekanIcon, mekanColor, onClo
     setError(null);
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${BASE}/stok/canli-satis`, { headers });
+      let res = await fetch(`${BASE}/stok/canli-satis`, { headers });
+      if (res.status === 401) {
+        await new Promise(r => setTimeout(r, 800));
+        const freshHeaders = await authHeaders();
+        res = await fetch(`${BASE}/stok/canli-satis`, { headers: freshHeaders });
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `HTTP ${res.status}`);

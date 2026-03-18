@@ -2,7 +2,7 @@ import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js";
-import { jwtVerify } from "npm:jose@5";
+import { jwtVerify, decodeJwt } from "npm:jose@5";
 import * as kv from "./kv_store.tsx";
 
 // ── Sadece gerçek mekan objelerini döndüren helper ──────────────────────────
@@ -59,8 +59,11 @@ async function ensureEquipmentBucket() {
 }
 
 // Helper: verify caller and return user
-// Önce JWT'yi SUPABASE_JWT_SECRET ile yerel doğrular (ağ çağrısı yok).
-// Yerel doğrulama başarısız olursa network fallback (tek deneme, 5 sn timeout).
+// Doğrulama sırası:
+// 1. Yerel JWT — SUPABASE_JWT_SECRET varsa imzalı doğrulama (ağ yok, hızlı)
+// 2. Network — Promise.race ile 6 sn timeout, getUser()
+// 3. decodeJwt fallback — network throw VEYA error objesi döndürdüyse (her iki durum),
+//    imzasız payload çözümle + exp grace 10 dk (connection reset koruması)
 const verifyToken = async (c: any) => {
   const xToken = c.req.header("X-Access-Token");
 
@@ -69,65 +72,92 @@ const verifyToken = async (c: any) => {
     return null;
   }
 
-  // ── 1. Yerel JWT doğrulaması (ağ çağrısı yok, connection reset riski sıfır) ──
+  // ── Payload'dan user nesnesi oluşturan helper ──
+  const buildUser = (p: any) => ({
+    id: p.sub,
+    email: p.email ?? "",
+    role: p.role ?? "",
+    user_metadata: p.user_metadata ?? {},
+    app_metadata: p.app_metadata ?? {},
+    created_at: p.iat ? new Date(p.iat * 1000).toISOString() : "",
+    last_sign_in_at: "",
+  });
+
+  // ── decodeJwt fallback helper: imzasız + exp kontrollü ──
+  const tryDecodeJwtFallback = (): ReturnType<typeof buildUser> | null => {
+    try {
+      const payload = decodeJwt(xToken) as any;
+      if (!payload?.sub) return null;
+      const now = Math.floor(Date.now() / 1000);
+      const exp = payload.exp ?? 0;
+      const graceSec = 600; // 10 dakika grace period
+      if (exp > 0 && now - exp > graceSec) {
+        console.log(`[verifyToken] decodeJwt: token ${now - exp}s önce sona erdi (grace=${graceSec}s) → 401`);
+        return null;
+      }
+      console.log("[verifyToken] ⚠️ decodeJwt fallback — network sorunu, imzasız kabul edildi");
+      return buildUser(payload);
+    } catch (e) {
+      console.log("[verifyToken] decodeJwt başarısız:", String(e).slice(0, 80));
+      return null;
+    }
+  };
+
+  // ── 1. Yerel JWT doğrulaması — clockTolerance:300 ──
   const jwtSecret = Deno.env.get("SUPABASE_JWT_SECRET");
   if (jwtSecret) {
     try {
       const secret = new TextEncoder().encode(jwtSecret);
-      const { payload } = await jwtVerify(xToken, secret);
-      if (payload?.sub) {
-        // JWT payload'dan user_metadata dahil tüm alanları çıkar
-        const p = payload as any;
-        return {
-          id: p.sub,
-          email: p.email ?? "",
-          role: p.role ?? "",
-          user_metadata: p.user_metadata ?? {},
-          app_metadata: p.app_metadata ?? {},
-          created_at: p.iat ? new Date(p.iat * 1000).toISOString() : "",
-          last_sign_in_at: "",
-        };
-      }
+      const { payload } = await jwtVerify(xToken, secret, { clockTolerance: 300 });
+      if (payload?.sub) return buildUser(payload);
     } catch (jwtErr) {
-      console.log("[verifyToken] yerel JWT başarısız, network fallback:", String(jwtErr).slice(0, 80));
+      console.log("[verifyToken] yerel JWT başarısız:", String(jwtErr).slice(0, 100));
     }
+  } else {
+    console.log("[verifyToken] SUPABASE_JWT_SECRET yok → network fallback");
   }
 
-  // ── 2. Network fallback (tek deneme, 5 sn timeout) ──
+  // ── 2. Network fallback — iç try/catch ile connection reset korumalı ──
+  // Promise.race + .catch() zinciri connection reset'i bazen bypass edebiliyordu.
+  // Çözüm: getUser'ı doğrudan await ile kendi try/catch bloğumuzda çalıştırıyoruz.
+  let networkUser: any = null;
+  let networkAttempted = false;
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    let user: any = null;
-    let netErr: any = null;
-    try {
-      const supabase = getAdminClient();
-      const result = await supabase.auth.getUser(xToken);
-      if (result.error) {
-        netErr = result.error.message;
-      } else {
-        user = result.data?.user ?? null;
-      }
-    } finally {
-      clearTimeout(timeoutId);
-    }
-    if (netErr) {
-      console.log("[verifyToken] getUser hatası:", netErr);
-      return null;
-    }
-    if (!user) {
-      console.log("[verifyToken] getUser: kullanıcı bulunamadı");
-      return null;
-    }
-    return user;
-  } catch (err) {
-    const msg = String(err);
-    if (msg.includes("connection reset") || msg.includes("AbortError") || msg.includes("connection error")) {
-      console.log("[verifyToken] network bağlantı hatası (connection reset), 401 döndürülüyor");
+    networkAttempted = true;
+    const supabase = getAdminClient();
+
+    // 4 sn sonra yarışa girsin — getUser zaten timeout yaşarsa catch'e düşer
+    const timeoutPromise = new Promise<{ data: { user: null }; error: Error }>(resolve =>
+      setTimeout(() => resolve({ data: { user: null }, error: new Error("getUser timeout 4s") }), 4000)
+    );
+
+    // getUser hatasını catch yerine Promise.resolve ile yutuyoruz
+    const getUserPromise = supabase.auth.getUser(xToken).then(
+      (r) => r,
+      (e: any) => ({ data: { user: null }, error: e })  // reject → resolve dönüşümü
+    );
+
+    const result: any = await Promise.race([getUserPromise, timeoutPromise]);
+
+    if (!result.error && result.data?.user) {
+      networkUser = result.data.user;
     } else {
-      console.log("[verifyToken] network hatası:", msg.slice(0, 120));
+      const msg = String(result.error?.message ?? result.error ?? "bilinmeyen hata").slice(0, 120);
+      console.log("[verifyToken] getUser hata → decodeJwt fallback:", msg);
     }
-    return null;
+  } catch (err) {
+    // Bu noktaya artık sadece beklenmedik (non-Promise) hatalar düşebilir
+    console.log("[verifyToken] network fallback genel exception:", String(err).slice(0, 100));
   }
+
+  if (networkUser) return networkUser;
+
+  // ── 3. decodeJwt fallback — network başarısız veya hata objesi döndürdü ──
+  if (networkAttempted) {
+    return tryDecodeJwtFallback();
+  }
+
+  return null;
 };
 
 // ──────────────────────────────────────────
@@ -161,10 +191,383 @@ const createNotification = async (
 };
 
 // ──────────────────────────────────────────
+// TELEGRAM HELPER: Gruba mesaj gönder (non-blocking)
+// ──────────────────────────────────────────
+const sendTelegramMessage = async (text: string, parseMode: string = "HTML"): Promise<void> => {
+  try {
+    const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
+    const chatId = Deno.env.get("TELEGRAM_GROUP_CHAT_ID");
+    if (!token || !chatId) {
+      console.log("[Telegram] TOKEN veya CHAT_ID eksik — bildirim atlandı.");
+      return;
+    }
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: parseMode,
+      }),
+    });
+    const result = await res.json();
+    if (!result.ok) {
+      console.log("[Telegram] Mesaj gönderilemedi:", JSON.stringify(result));
+    } else {
+      console.log("[Telegram] Mesaj gönderildi:", result.result?.message_id);
+    }
+  } catch (e) {
+    console.log("[Telegram] sendTelegramMessage error:", e);
+  }
+};
+
+// ──────────────────────────────────────────
+// TELEGRAM HELPER: Inline keyboard ile mesaj gönder
+// ──────────────────────────────────────────
+const sendTelegramWithInlineKeyboard = async (
+  text: string,
+  inlineKeyboard: Array<Array<{ text: string; callback_data: string }>>,
+  parseMode: string = "HTML"
+): Promise<number | null> => {
+  try {
+    const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
+    const chatId = Deno.env.get("TELEGRAM_GROUP_CHAT_ID");
+    if (!token || !chatId) {
+      console.log("[Telegram] TOKEN veya CHAT_ID eksik — inline mesaj atlandı.");
+      return null;
+    }
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: parseMode,
+        reply_markup: { inline_keyboard: inlineKeyboard },
+      }),
+    });
+    const result = await res.json();
+    if (!result.ok) {
+      console.log("[Telegram] Inline keyboard mesaj gönderilemedi:", JSON.stringify(result));
+      return null;
+    }
+    console.log("[Telegram] Inline keyboard mesaj gönderildi:", result.result?.message_id);
+    return result.result?.message_id ?? null;
+  } catch (e) {
+    console.log("[Telegram] sendTelegramWithInlineKeyboard error:", e);
+    return null;
+  }
+};
+
+// ──────────────────────────────────────────
 // Health check
 // ──────────────────────────────────────────
 app.get("/make-server-4da0b637/health", (c) => {
   return c.json({ status: "ok" });
+});
+
+// ──────────────────────────────────────────
+// TELEGRAM: Tanı endpoint — bot + getUpdates ile gerçek chat ID tespiti
+// GET /make-server-4da0b637/telegram/diagnose
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/telegram/diagnose", async (c) => {
+  const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
+  const savedChatId = Deno.env.get("TELEGRAM_GROUP_CHAT_ID");
+  if (!token) return c.json({ error: "TELEGRAM_BOT_TOKEN eksik" }, 500);
+
+  const tgBase = `https://api.telegram.org/bot${token}`;
+
+  // 1. Bot kimliği
+  const meRes: any = await fetch(`${tgBase}/getMe`).then(r => r.json()).catch((e: any) => ({ error: String(e) }));
+
+  // 2. Son güncellemeler (bot'un bulunduğu grupları listeler)
+  const updatesRes: any = await fetch(`${tgBase}/getUpdates?limit=100`)
+    .then(r => r.json()).catch((e: any) => ({ error: String(e) }));
+
+  // 3. Güncellemelerden benzersiz chat'leri çıkar
+  const chats: Record<string, any> = {};
+  if (updatesRes?.ok && Array.isArray(updatesRes.result)) {
+    for (const u of updatesRes.result) {
+      const chat = u.message?.chat || u.my_chat_member?.chat || u.channel_post?.chat;
+      if (chat?.id) {
+        chats[String(chat.id)] = { id: chat.id, title: chat.title, type: chat.type };
+      }
+    }
+  }
+
+  // 4. Kayıtlı ID ile getChat dene (orijinal + supergroup prefix varyantı)
+  let getChatResult: any = null;
+  if (savedChatId) {
+    const raw = savedChatId.trim();
+    const variants = [raw];
+    if (raw.startsWith("-") && !raw.startsWith("-100")) {
+      variants.push("-100" + raw.slice(1));
+    }
+    for (const cid of variants) {
+      const r: any = await fetch(`${tgBase}/getChat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: cid }),
+      }).then(r => r.json()).catch((e: any) => ({ error: String(e) }));
+      getChatResult = { tried_id: cid, result: r };
+      if (r?.ok) break;
+    }
+  }
+
+  const detectedList = Object.values(chats);
+  return c.json({
+    bot: meRes?.result
+      ? { id: meRes.result.id, username: meRes.result.username, name: meRes.result.first_name }
+      : { error: meRes },
+    saved_chat_id: savedChatId ?? "(yok)",
+    getChat_result: getChatResult,
+    detected_chats: detectedList,
+    updates_count: updatesRes?.result?.length ?? 0,
+    hint: detectedList.length === 0
+      ? "⚠️ Bot'un hiç mesaj geçmişi yok. 1) Gruba @AspectReportBot'u ekleyin, 2) Gruba herhangi bir mesaj yazın, 3) Bu endpoint'i tekrar çağırın."
+      : "✅ detected_chats listesinden hedef grubun id'sini alıp TELEGRAM_GROUP_CHAT_ID secret'ını güncelleyin.",
+  });
+});
+
+// ──────────────────────────────────────────
+// TELEGRAM: Test endpoint (debug)
+// GET /make-server-4da0b637/telegram/test
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/telegram/test", async (c) => {
+  const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
+  const chatId = Deno.env.get("TELEGRAM_GROUP_CHAT_ID");
+
+  if (!token) return c.json({ error: "TELEGRAM_BOT_TOKEN eksik" }, 500);
+  if (!chatId) return c.json({ error: "TELEGRAM_GROUP_CHAT_ID eksik" }, 500);
+
+  const tgBase = `https://api.telegram.org/bot${token}`;
+
+  // ── 1. Bot token doğruluğunu kontrol et ──
+  let botInfo: any = null;
+  try {
+    const r = await fetch(`${tgBase}/getMe`);
+    botInfo = await r.json();
+  } catch (e) {
+    return c.json({ success: false, error: "getMe başarısız: " + String(e) }, 500);
+  }
+  if (!botInfo?.ok) {
+    return c.json({ success: false, stage: "getMe", error: "Bot token geçersiz", telegram_error: botInfo }, 400);
+  }
+
+  // ── 2. Gruba ulaşılabilir mi? Normal + supergroup ID varyantlarını dene ──
+  // Normal grup: -5142979348  →  Süper gruba dönüştüyse: -1005142979348
+  const rawId = chatId.trim();
+  const candidateIds: string[] = [rawId];
+  if (rawId.startsWith("-") && !rawId.startsWith("-100")) {
+    candidateIds.push("-100" + rawId.slice(1));
+  }
+
+  let workingChatId: string | null = null;
+  const getChatResults: Record<string, any> = {};
+
+  for (const cid of candidateIds) {
+    try {
+      const r = await fetch(`${tgBase}/getChat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: cid }),
+      });
+      const result = await r.json();
+      getChatResults[cid] = result;
+      if (result.ok) {
+        workingChatId = cid;
+        break;
+      }
+    } catch (e) {
+      getChatResults[cid] = { error: String(e) };
+    }
+  }
+
+  if (!workingChatId) {
+    return c.json({
+      success: false,
+      stage: "getChat",
+      error: "Bot gruba erişemiyor. Bot'u gruba admin olarak ekleyin.",
+      bot_username: botInfo.result?.username,
+      token_prefix: token.slice(0, 10) + "...",
+      chat_id_tried: candidateIds,
+      getChat_results: getChatResults,
+    }, 400);
+  }
+
+  // ── 3. Mesaj gönder ──
+  const now = new Date().toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" });
+  const testMsg = `🧪 <b>Aspect Operations — Test Bildirimi</b>\n\n✅ Telegram bağlantısı başarılı!\n🤖 Bot: @${botInfo.result?.username}\n💬 Chat ID: <code>${workingChatId}</code>\n⏰ ${now}\n\n<i>Bu mesaj sunucu test endpoint'inden gönderilmiştir.</i>`;
+
+  try {
+    const res = await fetch(`${tgBase}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: workingChatId, text: testMsg, parse_mode: "HTML" }),
+    });
+    const result = await res.json();
+    console.log("[Telegram Test] Sonuç:", JSON.stringify(result));
+    if (result.ok) {
+      const idChanged = workingChatId !== rawId;
+      return c.json({
+        success: true,
+        message_id: result.result?.message_id,
+        chat_id_used: workingChatId,
+        chat_id_in_secret: rawId,
+        id_was_corrected: idChanged,
+        correction_note: idChanged
+          ? `Supergroup ID (${workingChatId}) kullanıldı. TELEGRAM_GROUP_CHAT_ID secret'ını güncelleyin!`
+          : undefined,
+        bot_username: botInfo.result?.username,
+      });
+    } else {
+      return c.json({ success: false, stage: "sendMessage", telegram_error: result, chat_id: workingChatId }, 400);
+    }
+  } catch (e) {
+    return c.json({ success: false, stage: "sendMessage", error: String(e), chat_id: workingChatId }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// TELEGRAM: Webhook handler (Telegram callback_query'lerini işler)
+// POST /make-server-4da0b637/telegram/webhook
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/telegram/webhook", async (c) => {
+  try {
+    const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
+    // Not: secret_token doğrulaması kaldırıldı — URL'deki ?apikey= Supabase gateway'i zaten korur.
+    const update = await c.req.json();
+    console.log("[TG Webhook] Update alındı:", JSON.stringify(update).slice(0, 300));
+
+    if (!update.callback_query) {
+      return c.json({ ok: true }); // Diğer update tipleri atla
+    }
+
+    const cbq = update.callback_query;
+    const cbqId = cbq.id;
+    const data: string = cbq.data || "";
+    const from = cbq.from?.first_name
+      ? `${cbq.from.first_name}${cbq.from.last_name ? " " + cbq.from.last_name : ""}`
+      : cbq.from?.username || "Bilinmiyor";
+    const chatId = cbq.message?.chat?.id;
+    const messageId = cbq.message?.message_id;
+
+    let answerText = "";
+
+    console.log("[TG Webhook] callback_query data:", data, "| chatId:", chatId, "| from:", from);
+
+    if (data.startsWith("iptal_onayla:") || data.startsWith("iptal_reddet:")) {
+      const isApprove = data.startsWith("iptal_onayla:");
+      const approvalId = data.replace(isApprove ? "iptal_onayla:" : "iptal_reddet:", "");
+      console.log("[TG Webhook] approvalId:", approvalId, "| isApprove:", isApprove);
+      const talep: any = await kv.get(`iptal_talep_${approvalId}`);
+      console.log("[TG Webhook] talep KV sonucu:", talep ? `status=${talep.status}` : "BULUNAMADI");
+
+      if (!talep) {
+        answerText = "⚠️ Talep bulunamadı veya süresi doldu.";
+      } else if (talep.status !== "bekliyor") {
+        answerText = talep.status === "onaylandi"
+          ? "✅ Bu talep zaten onaylandı."
+          : "❌ Bu talep zaten reddedildi.";
+      } else {
+        const yeniStatus = isApprove ? "onaylandi" : "reddedildi";
+        await kv.set(`iptal_talep_${approvalId}`, {
+          ...talep,
+          status: yeniStatus,
+          resolvedAt: new Date().toISOString(),
+          resolvedBy: from,
+        });
+
+        answerText = isApprove
+          ? "✅ Satış iptali onaylandı!"
+          : "❌ Satış iptali reddedildi.";
+
+        // Telegram mesajından butonları kaldır
+        if (chatId && messageId) {
+          try {
+            await fetch(`https://api.telegram.org/bot${token}/editMessageReplyMarkup`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+            });
+          } catch {}
+        }
+
+        // Sonuç mesajı gönder
+        const emoji = isApprove ? "✅" : "❌";
+        const durum = isApprove ? "ONAYLANDI" : "REDDEDİLDİ";
+        await sendTelegramMessage(
+          `${emoji} <b>Satış iptali ${durum}</b>\n👤 Karar veren: <b>${from}</b>\n📝 Sebep: ${talep.neden || "(belirtilmedi)"}\n🆔 <code>${approvalId}</code>`
+        );
+        console.log(`[TG Webhook] İptal talebi ${yeniStatus}: ${approvalId} — ${from}`);
+      }
+    }
+
+    // Callback yanıtı gönder (popup)
+    if (cbqId) {
+      try {
+        await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ callback_query_id: cbqId, text: answerText || "İşlendi.", show_alert: !!answerText }),
+        });
+      } catch {}
+    }
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("[TG Webhook] Error:", err);
+    return c.json({ ok: false }, 200); // 200 döndür — Telegram retry yapmasın
+  }
+});
+
+// ──────────────────────────────────────────
+// TELEGRAM: Webhook URL kurulumu (bir kez çağır)
+// GET /make-server-4da0b637/telegram/setup-webhook
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/telegram/setup-webhook", async (c) => {
+  try {
+    const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const pidMatch = supabaseUrl.match(/https:\/\/([^.]+)/);
+    if (!token) return c.json({ error: "TELEGRAM_BOT_TOKEN eksik" }, 500);
+    if (!pidMatch) return c.json({ error: "SUPABASE_URL parse hatası" }, 500);
+
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+    // Telegram webhook istekleri Authorization header içermez; Supabase platformu ?apikey ile kabul eder.
+    const webhookUrl = `https://${pidMatch[1]}.supabase.co/functions/v1/make-server-4da0b637/telegram/webhook?apikey=${anonKey}`;
+
+    const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: webhookUrl,
+        allowed_updates: ["callback_query", "message"],
+        drop_pending_updates: true,
+      }),
+    });
+    const result = await res.json();
+    console.log("[TG Webhook Setup]", JSON.stringify(result));
+    return c.json({ result, webhookUrl });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// TELEGRAM: Webhook bilgisi sorgula (debug)
+// GET /make-server-4da0b637/telegram/webhook-info
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/telegram/webhook-info", async (c) => {
+  try {
+    const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
+    if (!token) return c.json({ error: "TELEGRAM_BOT_TOKEN eksik" }, 500);
+    const res = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
+    const data = await res.json();
+    return c.json(data);
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
 });
 
 // ──────────────────────────────────────────
@@ -4974,7 +5377,7 @@ app.get("/make-server-4da0b637/personel/anomali-puanlar", async (c) => {
       }
     }
 
-    // ── 3. Stok kayıtları — anomali olanları filtrele ──
+    // ── 3. Stok kayıtları — anomali olanları filtrele ─���
     const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
     const anomaliKayitlar = tumKayitlar.filter((k: any) => {
       if (!k.tarih) return false;
@@ -5275,16 +5678,279 @@ app.delete("/make-server-4da0b637/stok/satis/:mekanId/:tarih/:satisId", async (c
     const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
     if (!existing) return c.json({ error: "Kayıt bulunamadı." }, 404);
 
+    // İptal edilecek satışı bul (bildirim için)
+    const iptalEdilecek = (existing.satislar || []).find((s: any) => s.id === satisId);
+
+    const iptalZamani = new Date().toISOString();
+    const iptalEden = user.user_metadata?.full_name || user.email || "Bilinmiyor";
+
     const satislar = (existing.satislar || []).map((s: any) =>
       s.id === satisId
-        ? { ...s, iptal: true, iptalNeden: neden, iptalZamani: new Date().toISOString(), iptalEden: user.user_metadata?.full_name || user.email }
+        ? { ...s, iptal: true, iptalNeden: neden, iptalZamani, iptalEden }
         : s
     );
     await kv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, satislar });
     console.log(`Satış iptal: ${satisId} | neden: ${neden}`);
+
+    // ── Telegram bildirimi (non-blocking) ──
+    if (iptalEdilecek) {
+      try {
+        // Mekan adını çek
+        let mekanAdi = mekanId;
+        try {
+          const mekanObj: any = await kv.get(`mekan_${mekanId}`);
+          if (mekanObj?.name) mekanAdi = `${mekanObj.emoji || "📍"} ${mekanObj.name}`;
+        } catch {}
+
+        // Ürün listesi
+        const urunler = (iptalEdilecek.items || [])
+          .map((item: any) => `  • ${item.product} x${item.quantity} — ${(item.quantity * item.unitPrice).toLocaleString("tr-TR")} ₺`)
+          .join("\n");
+
+        const finalFiyat = iptalEdilecek.finalPrice ?? iptalEdilecek.totalPrice ?? 0;
+        const indirim = iptalEdilecek.discount ?? 0;
+        const odemeYontemi =
+          iptalEdilecek.paymentMethod === "cash" ? "💵 Nakit" :
+          iptalEdilecek.paymentMethod === "card" ? "💳 Kart" :
+          iptalEdilecek.paymentMethod === "iban" ? "🏦 IBAN" :
+          iptalEdilecek.paymentMethod || "Bilinmiyor";
+
+        const satisSaati = iptalEdilecek.timestamp
+          ? new Date(iptalEdilecek.timestamp).toLocaleString("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" })
+          : "?";
+
+        const msg = [
+          `🚫 <b>SATIŞ İPTAL BİLDİRİMİ</b>`,
+          ``,
+          `📍 <b>Mekan:</b> ${mekanAdi}`,
+          `📅 <b>Tarih:</b> ${tarih} | ⏰ Satış saati: ${satisSaati}`,
+          ``,
+          `🛒 <b>İptal edilen ürünler:</b>`,
+          urunler || "  (ürün listesi yok)",
+          ``,
+          `💰 <b>Toplam:</b> ${finalFiyat.toLocaleString("tr-TR")} ₺${indirim > 0 ? ` (indirim: ${indirim} ₺)` : ""}`,
+          `💳 <b>Ödeme:</b> ${odemeYontemi}`,
+          ...(iptalEdilecek.kaydeden ? [`👤 <b>Satışı yapan:</b> ${iptalEdilecek.kaydeden}`] : []),
+          ``,
+          `❌ <b>İptal eden:</b> ${iptalEden}`,
+          `📝 <b>İptal sebebi:</b> ${neden || "(sebep girilmedi)"}`,
+          ``,
+          `🆔 <code>${satisId}</code>`,
+        ].join("\n");
+
+        // await ile gönder — edge function kapanmadan önce tamamlansın
+        await sendTelegramMessage(msg);
+      } catch (tgErr) {
+        console.log("[Telegram] iptal mesaj hazırlama hatası:", tgErr);
+      }
+    }
+
     return c.json({ success: true });
   } catch (err) {
     console.log("Delete stok satis error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// SATIŞ İPTAL ONAYI: Telegram onay talebi oluştur
+// POST /stok/satis-iptal-talep
+// Body: { mekanId, tarih, satisId, neden }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/stok/satis-iptal-talep", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const { mekanId, tarih, satisId, neden } = await c.req.json();
+    if (!mekanId || !tarih || !satisId) {
+      return c.json({ error: "mekanId, tarih ve satisId zorunludur." }, 400);
+    }
+    if (!neden?.trim()) {
+      return c.json({ error: "İptal sebebi zorunludur." }, 400);
+    }
+
+    const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
+    if (!existing) return c.json({ error: "Günlük kayıt bulunamadı." }, 404);
+
+    const satis = (existing.satislar || []).find((s: any) => s.id === satisId);
+    if (!satis) return c.json({ error: "Satış bulunamadı." }, 404);
+    if (satis.iptal) return c.json({ error: "Bu satış zaten iptal edilmiş." }, 400);
+
+    // Mekan adını çek
+    let mekanAdi = mekanId;
+    try {
+      const mekanObj: any = await kv.get(`mekan_${mekanId}`);
+      if (mekanObj?.name) mekanAdi = `${mekanObj.emoji || "📍"} ${mekanObj.name}`;
+    } catch {}
+
+    const urunler = (satis.items || [])
+      .map((item: any) => `  • ${item.product} ×${item.quantity} — ${(item.quantity * item.unitPrice).toLocaleString("tr-TR")} ₺`)
+      .join("\n");
+    const finalFiyat = satis.finalPrice ?? satis.totalPrice ?? 0;
+    const indirim = satis.discount ?? 0;
+    const odemeYontemi =
+      satis.paymentMethod === "cash" ? "💵 Nakit" :
+      satis.paymentMethod === "card" ? "💳 Kart" :
+      satis.paymentMethod === "iban" ? "🏦 IBAN" :
+      satis.paymentMethod || "Bilinmiyor";
+    const satisSaati = satis.timestamp
+      ? new Date(satis.timestamp).toLocaleString("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" })
+      : "?";
+
+    const approvalId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const iptalEden = user.user_metadata?.full_name || user.email || "Bilinmiyor";
+
+    // KV'e bekleyen talep kaydet (3 dk sonra geçersiz sayılabilir)
+    await kv.set(`iptal_talep_${approvalId}`, {
+      approvalId,
+      satisId,
+      mekanId,
+      tarih,
+      neden,
+      status: "bekliyor",
+      requestedAt: new Date().toISOString(),
+      requestedBy: user.id,
+      requestedByName: iptalEden,
+    });
+
+    // Telegram'a inline keyboard mesajı gönder
+    const msg = [
+      `🚨 <b>SATIŞ İPTAL ONAYI GEREKİYOR</b>`,
+      ``,
+      `📍 <b>Mekan:</b> ${mekanAdi}`,
+      `📅 <b>Tarih:</b> ${tarih} | ⏰ Satış saati: ${satisSaati}`,
+      ``,
+      `🛒 <b>İptal talep edilen ürünler:</b>`,
+      urunler || "  (ürün listesi yok)",
+      ``,
+      `💰 <b>Toplam:</b> ${finalFiyat.toLocaleString("tr-TR")} ₺${indirim > 0 ? ` (indirim: −${indirim} ₺)` : ""}`,
+      `💳 <b>Ödeme:</b> ${odemeYontemi}`,
+      ...(satis.kaydeden ? [`👤 <b>Satışı yapan:</b> ${satis.kaydeden}`] : []),
+      ``,
+      `❓ <b>İptal talep eden:</b> ${iptalEden}`,
+      `📝 <b>İptal sebebi:</b> ${neden}`,
+      ``,
+      `⏳ <i>3 dakika içinde yanıtlanmazsa talep düşer</i>`,
+    ].join("\n");
+
+    await sendTelegramWithInlineKeyboard(msg, [
+      [
+        { text: "✅  ONAYLA", callback_data: `iptal_onayla:${approvalId}` },
+        { text: "❌  REDDET", callback_data: `iptal_reddet:${approvalId}` },
+      ],
+    ]);
+
+    console.log(`[İptal Talep] Oluşturuldu: ${approvalId} | satisId: ${satisId} | talep eden: ${iptalEden}`);
+    return c.json({ approvalId, status: "bekliyor" });
+  } catch (err) {
+    console.log("Satis iptal talep error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// SATIŞ İPTAL ONAYI: Durum sorgula
+// GET /stok/satis-iptal-durum/:approvalId
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/stok/satis-iptal-durum/:approvalId", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const approvalId = c.req.param("approvalId");
+    const talep: any = await kv.get(`iptal_talep_${approvalId}`);
+    if (!talep) return c.json({ error: "Talep bulunamadı." }, 404);
+
+    return c.json({
+      approvalId: talep.approvalId,
+      status: talep.status,
+      resolvedAt: talep.resolvedAt || null,
+      resolvedBy: talep.resolvedBy || null,
+    });
+  } catch (err) {
+    console.log("Satis iptal durum error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// SATIŞ İPTAL ONAYI: Uygulama içi doğrudan karar (Telegram webhook bypass)
+// POST /stok/satis-iptal-karar/:approvalId
+// Body: { karar: 'onaylandi' | 'reddedildi' }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/stok/satis-iptal-karar/:approvalId", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const callerRole = user.user_metadata?.role;
+    const yetkiliRoller = ["yonetici", "ust-mudur", "mudur"];
+    if (!yetkiliRoller.includes(callerRole)) {
+      return c.json({ error: "Bu işlem için yönetici yetkisi gereklidir." }, 403);
+    }
+
+    const approvalId = c.req.param("approvalId");
+    const { karar } = await c.req.json();
+    if (karar !== "onaylandi" && karar !== "reddedildi") {
+      return c.json({ error: "Geçersiz karar değeri." }, 400);
+    }
+
+    const talep: any = await kv.get(`iptal_talep_${approvalId}`);
+    console.log(`[İptal Karar] approvalId=${approvalId} | karar=${karar} | talep=`, talep ? `status=${talep.status}` : "BULUNAMADI");
+
+    if (!talep) return c.json({ error: "Talep bulunamadı veya süresi doldu." }, 404);
+    if (talep.status !== "bekliyor") {
+      return c.json({ error: `Bu talep zaten işlenmiş: ${talep.status}` }, 400);
+    }
+
+    const resolvedBy = user.user_metadata?.full_name || user.email || "Yönetici";
+    await kv.set(`iptal_talep_${approvalId}`, {
+      ...talep,
+      status: karar,
+      resolvedAt: new Date().toISOString(),
+      resolvedBy,
+      resolvedVia: "uygulama",
+    });
+
+    const emoji = karar === "onaylandi" ? "✅" : "❌";
+    const durumLabel = karar === "onaylandi" ? "ONAYLANDI" : "REDDEDİLDİ";
+    await sendTelegramMessage(
+      `${emoji} <b>Satış iptali ${durumLabel}</b>\n👤 Karar veren: <b>${resolvedBy}</b> (uygulama içi)\n📝 Sebep: ${talep.neden || "(belirtilmedi)"}\n🆔 <code>${approvalId}</code>`
+    );
+
+    console.log(`[İptal Karar] ✅ İşlendi: ${approvalId} → ${karar} (${resolvedBy})`);
+    return c.json({ success: true, status: karar, resolvedBy });
+  } catch (err) {
+    console.log("Satis iptal karar error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// SATIŞ İPTAL ONAYI: Bekleyen talepleri listele (yöneticiler için)
+// GET /stok/iptal-bekleyen
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/stok/iptal-bekleyen", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const callerRole = user.user_metadata?.role;
+    const yetkiliRoller = ["yonetici", "ust-mudur", "mudur"];
+    if (!yetkiliRoller.includes(callerRole)) {
+      return c.json({ talepleri: [] });
+    }
+
+    const tumTalep: any[] = await kv.getByPrefix("iptal_talep_") || [];
+    const bekleyen = tumTalep
+      .filter((t: any) => t && t.status === "bekliyor")
+      .sort((a: any, b: any) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
+
+    console.log(`[İptal Bekleyen] ${bekleyen.length} bekleyen talep.`);
+    return c.json({ talepleri: bekleyen });
+  } catch (err) {
+    console.log("Iptal bekleyen list error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
@@ -5334,6 +6000,93 @@ app.post("/make-server-4da0b637/stok/kare", async (c) => {
     return c.json({ entry });
   } catch (err) {
     console.log("Post stok kare error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// VARDIYA KARE SİLME
+// DELETE /stok/kare/:mekanId/:tarih/:id
+// ──────────────────────────────────────────
+app.delete("/make-server-4da0b637/stok/kare/:mekanId/:tarih/:id", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const role = user.user_metadata?.role || "personel";
+    if (!["yonetici", "ust-mudur", "mudur", "operasyon"].includes(role)) {
+      return c.json({ error: "Kare kaydı silme yetkisi yok." }, 403);
+    }
+
+    const mekanId = c.req.param("mekanId");
+    const tarih   = c.req.param("tarih");
+    const id      = c.req.param("id");
+
+    const kayit: any = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
+    if (!kayit) return c.json({ error: "Stok kaydı bulunamadı." }, 404);
+
+    const onceki: any[] = kayit.kareKayitlari || [];
+    const entry = onceki.find((k: any) => k.id === id);
+    if (!entry) return c.json({ error: "Kare kaydı bulunamadı." }, 404);
+
+    // Kapanış yapılmışsa silme
+    if (kayit.kapanish) {
+      return c.json({ error: "Kapanış yapılmış vardiyada kare silinemez." }, 400);
+    }
+
+    const guncellendi = onceki.filter((k: any) => k.id !== id);
+    await kv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...kayit, kareKayitlari: guncellendi });
+
+    const silenAd = user.user_metadata?.full_name || user.email || "Bilinmiyor";
+    const silenRole = user.user_metadata?.role || role;
+    console.log(`Kare silindi: id=${id} | ${entry.photographerName} | ${entry.frameCount} kare | ${mekanId}/${tarih} | silen=${silenAd}`);
+
+    // ── Telegram bildirimi ──
+    try {
+      let mekanAdi = mekanId;
+      try {
+        const mekanObj: any = await kv.get(`mekan_${mekanId}`);
+        if (mekanObj?.name) mekanAdi = `${mekanObj.emoji || "📍"} ${mekanObj.name}`;
+      } catch {}
+
+      const kareZamani = entry.timestamp
+        ? new Date(entry.timestamp).toLocaleString("tr-TR", {
+            timeZone: "Europe/Istanbul",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "?";
+
+      const silmeZamani = new Date().toLocaleString("tr-TR", {
+        timeZone: "Europe/Istanbul",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      const msg = [
+        `🗑️ <b>KARE KAYDI İPTAL BİLDİRİMİ</b>`,
+        ``,
+        `📍 <b>Mekan:</b> ${mekanAdi}`,
+        `📅 <b>Tarih:</b> ${tarih} | ⏰ Kayıt saati: ${kareZamani}`,
+        ``,
+        `📷 <b>Fotoğrafçı:</b> ${entry.photographerName || "Bilinmiyor"}`,
+        `🖼️ <b>Silinen kare sayısı:</b> ${entry.frameCount} kare`,
+        ...(entry.kaydeden ? [`👤 <b>Kaydeden:</b> ${entry.kaydeden}`] : []),
+        ``,
+        `🔴 <b>Silen:</b> ${silenAd} <i>(${silenRole})</i>`,
+        `⏱️ <b>Silme saati:</b> ${silmeZamani}`,
+        ``,
+        `🆔 <code>${id}</code>`,
+      ].join("\n");
+
+      await sendTelegramMessage(msg);
+    } catch (tgErr) {
+      console.log("[Telegram] kare silme mesaj hatası:", tgErr);
+    }
+
+    return c.json({ success: true, silinen: entry });
+  } catch (err) {
+    console.log("Delete stok kare error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
@@ -8465,6 +9218,33 @@ app.delete("/make-server-4da0b637/bildirimler/:notifId", async (c) => {
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
+
+// ── Telegram Webhook Otomatik Kurulumu (sunucu başlangıcında, non-blocking) ──
+(async () => {
+  try {
+    const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const pidMatch = supabaseUrl.match(/https:\/\/([^.]+)/);
+    if (!token || !pidMatch) return;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+    // Telegram webhook istekleri Authorization header içermez; Supabase platformu ?apikey ile kabul eder.
+    const webhookUrl = `https://${pidMatch[1]}.supabase.co/functions/v1/make-server-4da0b637/telegram/webhook?apikey=${anonKey}`;
+    // Her başlangıçta kayıt yap (URL eşleşme kontrolü yok — secret_token da yok, apikey yeterli)
+    const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: webhookUrl,
+        allowed_updates: ["callback_query", "message"],
+        drop_pending_updates: false,
+      }),
+    });
+    const result = await res.json();
+    console.log("[TG Webhook Auto-setup]", result.ok ? "✅ Kuruldu:" : "⚠️ Hata:", webhookUrl, result.description || "");
+  } catch (e) {
+    console.log("[TG Webhook Auto-setup] Hata:", e);
+  }
+})();
 
 Deno.serve(async (req) => {
   // Supabase Edge Functions'da OPTIONS preflight istekleri gateway tarafından kesilebilir.

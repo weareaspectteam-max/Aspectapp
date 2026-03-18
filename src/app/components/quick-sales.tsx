@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Send, Clock, ShoppingCart, X, Plus, Trash2, Tag, XCircle, CheckCircle, ArrowLeft, AlertCircle, Camera, ChevronRight, UserPlus, Package, Printer, Grid3x3, Film, AlertTriangle, TrendingDown, TrendingUp, Maximize2, Minimize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ProjectSelector } from './project-selector';
@@ -85,6 +85,10 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelSaleId, setCancelSaleId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
+  // Kare silme state
+  const [showDeleteKareModal, setShowDeleteKareModal] = useState(false);
+  const [deleteKareEntry, setDeleteKareEntry] = useState<any | null>(null);
+  const [deleteKareSaving, setDeleteKareSaving] = useState(false);
   const [showShiftEndSuccess, setShowShiftEndSuccess] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'EUR' | 'GBP' | null>(null);
   const [exchangeRates, setExchangeRates] = useState({ USD: 34.52, EUR: 37.89, GBP: 43.26 });
@@ -185,6 +189,11 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     album3: 0, album5: 0, album7: 0, album9: 0, album11: 0, album13: 0, album15: 0,
   });
 
+  // ── Yönetici rolü (modal içi butonlar için) ──
+  const isYonetici = ['yonetici', 'ust-mudur', 'mudur'].includes(userRole);
+  // ── Yönetici: modal içinde uygulama içi karar verme ──
+  const [kararVeriliyor, setKararVeriliyor] = useState<string | null>(null);
+
   useEffect(() => {
     const load = async () => {
       // Canlı kur çek
@@ -221,6 +230,28 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     };
     load();
   }, []);
+
+  // ── Yönetici: modal içi karar gönder (kendi açtığı iptal talebi için) ──
+  const handleIptalKarar = async (approvalId: string, karar: 'onaylandi' | 'reddedildi') => {
+    setKararVeriliyor(approvalId);
+    try {
+      const hdr = buildHeaders(accessToken);
+      const res = await fetch(`${API_BASE_QS}/stok/satis-iptal-karar/${approvalId}`, {
+        method: 'POST',
+        headers: hdr,
+        body: JSON.stringify({ karar }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Karar gönderilemedi.');
+      }
+    } catch (err) {
+      console.error('handleIptalKarar error:', err);
+      alert('Bağlantı hatası.');
+    } finally {
+      setKararVeriliyor(null);
+    }
+  };
 
   // Proje değişince: mekan ID resolve et → stok + rotasyon yükle
   useEffect(() => {
@@ -468,30 +499,140 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     setCart([]); setDiscountAmount(''); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null);
   };
 
-  const openCancelModal = (id: string) => { setCancelSaleId(id); setShowCancelModal(true); };
-  const closeCancelModal = () => { setShowCancelModal(false); setCancelSaleId(null); setCancelReason(''); };
-  const confirmCancelSale = async () => {
+  // ── Satış İptal: onay akışı state ──
+  type CancelStep = 'form' | 'bekliyor' | 'onaylandi' | 'reddedildi' | 'timeout';
+  const [cancelStep, setCancelStep] = useState<CancelStep>('form');
+  const [cancelApprovalId, setCancelApprovalId] = useState<string | null>(null);
+  const [cancelCountdown, setCancelCountdown] = useState(180);
+  const cancelPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const openCancelModal = (id: string) => {
+    setCancelSaleId(id);
+    setShowCancelModal(true);
+    setCancelStep('form');
+    setCancelApprovalId(null);
+    setCancelCountdown(180);
+  };
+
+  const closeCancelModal = () => {
+    if (cancelPollingRef.current) {
+      clearInterval(cancelPollingRef.current);
+      cancelPollingRef.current = null;
+    }
+    setShowCancelModal(false);
+    setCancelSaleId(null);
+    setCancelReason('');
+    setCancelStep('form');
+    setCancelApprovalId(null);
+    setCancelCountdown(180);
+  };
+
+  // Onay geldikten sonra gerçek DELETE çağrısını yap
+  const executeCancelSale = async (mekanId: string, tarih: string, satisId: string, neden: string) => {
+    try {
+      const hdr = buildHeaders(accessToken);
+      const res = await fetch(`${API_BASE_QS}/stok/satis/${mekanId}/${tarih}/${satisId}`, {
+        method: 'DELETE',
+        headers: hdr,
+        body: JSON.stringify({ neden }),
+      });
+      if (res.ok) {
+        setRecentSales(prev => prev.filter(s => s.id !== satisId));
+      } else {
+        const data = await res.json();
+        console.error('executeCancelSale sunucu hatası:', data.error);
+      }
+    } catch (err) {
+      console.error('executeCancelSale error:', err);
+    }
+  };
+
+  // Adım 1: Telegram onay talebi gönder → polling başlat
+  const sendCancelRequest = async () => {
     if (!cancelReason.trim()) { alert('Lütfen iptal sebebini yazın'); return; }
     if (!cancelSaleId || !selectedProject) return;
     const mekanId = resolvedMekanId || selectedProject.id;
     const tarih = bugunTarih();
+    const satisId = cancelSaleId;
+    const neden = cancelReason;
+
     try {
       const hdr = buildHeaders(accessToken);
-      const res = await fetch(`${API_BASE_QS}/stok/satis/${mekanId}/${tarih}/${cancelSaleId}`, {
+      const res = await fetch(`${API_BASE_QS}/stok/satis-iptal-talep`, {
+        method: 'POST',
+        headers: hdr,
+        body: JSON.stringify({ mekanId, tarih, satisId, neden }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Talep gönderilemedi.'); return; }
+
+      const approvalId = data.approvalId;
+      setCancelApprovalId(approvalId);
+      setCancelStep('bekliyor');
+      setCancelCountdown(180);
+
+      // Polling: her 3 saniyede durum kontrol et
+      let timeLeft = 180;
+      cancelPollingRef.current = setInterval(async () => {
+        timeLeft -= 3;
+        setCancelCountdown(timeLeft);
+
+        if (timeLeft <= 0) {
+          if (cancelPollingRef.current) { clearInterval(cancelPollingRef.current); cancelPollingRef.current = null; }
+          setCancelStep('timeout');
+          return;
+        }
+
+        try {
+          const pollRes = await fetch(`${API_BASE_QS}/stok/satis-iptal-durum/${approvalId}`, { headers: hdr });
+          const pollData = await pollRes.json();
+
+          if (pollData.status === 'onaylandi') {
+            if (cancelPollingRef.current) { clearInterval(cancelPollingRef.current); cancelPollingRef.current = null; }
+            setCancelStep('onaylandi');
+            await executeCancelSale(mekanId, tarih, satisId, neden);
+            setTimeout(() => closeCancelModal(), 2500);
+          } else if (pollData.status === 'reddedildi') {
+            if (cancelPollingRef.current) { clearInterval(cancelPollingRef.current); cancelPollingRef.current = null; }
+            setCancelStep('reddedildi');
+          }
+        } catch (e) {
+          console.error('İptal durum polling hatası:', e);
+        }
+      }, 3000);
+
+    } catch (err) {
+      console.error('sendCancelRequest error:', err);
+      alert('Bağlantı hatası. Lütfen tekrar deneyin.');
+    }
+  };
+
+  // ── Kare silme ──
+  const openDeleteKareModal = (entry: any) => { setDeleteKareEntry(entry); setShowDeleteKareModal(true); };
+  const closeDeleteKareModal = () => { setShowDeleteKareModal(false); setDeleteKareEntry(null); };
+  const confirmDeleteKare = async () => {
+    if (!deleteKareEntry || !selectedProject) return;
+    const mekanId = resolvedMekanId || selectedProject.id;
+    const tarih = bugunTarih();
+    setDeleteKareSaving(true);
+    try {
+      const hdr = buildHeaders(accessToken);
+      const res = await fetch(`${API_BASE_QS}/stok/kare/${mekanId}/${tarih}/${deleteKareEntry.id}`, {
         method: 'DELETE',
         headers: hdr,
-        body: JSON.stringify({ neden: cancelReason }),
       });
       if (res.ok) {
-        setRecentSales(prev => prev.filter(s => s.id !== cancelSaleId));
-        closeCancelModal();
+        setFrameEntries(prev => prev.filter((e: any) => e.id !== deleteKareEntry.id));
+        closeDeleteKareModal();
       } else {
         const data = await res.json();
-        alert(data.error || 'Satış iptal edilemedi.');
+        alert(data.error || 'Kare kaydı silinemedi.');
       }
     } catch (err) {
-      console.error('confirmCancelSale error:', err);
+      console.error('confirmDeleteKare error:', err);
       alert('Bağlantı hatası.');
+    } finally {
+      setDeleteKareSaving(false);
     }
   };
 
@@ -775,16 +916,21 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     const mekanId = resolvedMekanId || selectedProject.id;
     const result = await postKapanis(mekanId, tarih, finalKapanisSayim, kapanisNot, printerData);
     setStokKaydediliyor(false);
-    if (result) {
-      setKapanisAnomali(result.anomali || {});
-      setKapanisBeklenen(result.beklenen || null);
+    if (result && !('__hata' in result)) {
+      setKapanisAnomali((result as any).anomali || {});
+      setKapanisBeklenen((result as any).beklenen || null);
       setKapanisYaziciAnomali((result as any).kapanisYaziciAnomali || null);
-      setStokGunluk(result.kayit);
+      setStokGunluk((result as any).kayit);
       setShiftEndDone(true);
       setShowShiftEndSuccess(true);
       setTimeout(() => { setShowShiftEndSuccess(false); onNavigate('profile'); }, 3000);
     } else {
-      alert('Kapanış kaydedilirken hata oluştu. Lütfen tekrar deneyin.');
+      // Hata nedenini backend'den gelen mesajla göster
+      const hataMsg = (result && '__hata' in result)
+        ? result.__hata
+        : 'Sunucuya bağlanılamadı.';
+      console.error('[Kapanış Hatası]', hataMsg);
+      alert(`❌ Kapanış başarısız:\n\n${hataMsg}`);
     }
   };
 
@@ -1606,6 +1752,20 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                           <div className="font-black text-[#9dd9ea] text-sm">{entry.frameCount}</div>
                           <div className="text-xs text-gray-500">kare</div>
                         </div>
+                        {['yonetici', 'ust-mudur', 'mudur', 'operasyon'].includes(userRole) && (
+                          <button
+                            onClick={() => openDeleteKareModal(entry)}
+                            style={{
+                              width: 30, height: 30, borderRadius: 10, flexShrink: 0,
+                              background: 'rgba(248,113,113,0.10)',
+                              border: '1px solid rgba(248,113,113,0.25)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <XCircle style={{ width: 14, height: 14, color: '#f87171' }} />
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -2764,26 +2924,277 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         )}
       </AnimatePresence>
 
-      {/* Cancel Modal */}
+      {/* Cancel Modal — Telegram onay akışı */}
       {showCancelModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
-          <div className="w-full max-w-md bg-gradient-to-b from-white to-[#ffe5e5] rounded-3xl shadow-2xl overflow-hidden">
-            <div className="bg-gradient-to-r from-destructive to-[#ff6b6b] p-6 text-white">
-              <div className="flex items-center gap-3 mb-2"><AlertCircle className="w-8 h-8" /><h3 className="text-2xl font-bold">Satış İptali</h3></div>
-              <p className="text-white/90 text-sm">Bu satış neden iptal ediliyor?</p>
-            </div>
-            <div className="p-6 space-y-4">
-              <textarea
-                value={cancelReason}
-                onChange={e => setCancelReason(e.target.value)}
-                placeholder="İptal sebebini yazın..."
-                className="w-full bg-white border-2 border-gray-200 focus:border-destructive rounded-xl px-4 py-3 text-gray-800 text-sm resize-none outline-none transition-all"
-                rows={3}
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <button onClick={closeCancelModal} className="py-3 rounded-xl border-2 border-gray-300 text-gray-600 font-bold transition-all hover:bg-gray-50">Vazgeç</button>
-                <button onClick={confirmCancelSale} className="py-3 rounded-xl bg-gradient-to-r from-destructive to-[#ff6b6b] text-white font-bold shadow-lg transition-all hover:shadow-xl active:scale-95">İptal Et</button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(10px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{
+            width: '100%', maxWidth: 420,
+            background: 'rgba(15,8,32,0.97)',
+            border: cancelStep === 'onaylandi' ? '1px solid rgba(34,197,94,0.4)'
+              : cancelStep === 'reddedildi' ? '1px solid rgba(220,38,38,0.45)'
+              : cancelStep === 'bekliyor' ? '1px solid rgba(157,217,234,0.3)'
+              : '1px solid rgba(255,100,100,0.25)',
+            borderRadius: 28, overflow: 'hidden', boxShadow: '0 24px 80px rgba(0,0,0,0.75)',
+            transition: 'border-color 0.4s',
+          }}>
+
+            {/* ── FORM ── */}
+            {cancelStep === 'form' && (
+              <>
+                <div style={{ background: 'linear-gradient(135deg, #dc2626, #ff4d4d)', padding: '22px 24px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
+                    <AlertCircle style={{ width: 26, height: 26, color: 'white' }} />
+                    <span style={{ color: 'white', fontWeight: 900, fontSize: 18 }}>Satış İptali</span>
+                  </div>
+                  <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>Talep yönetici onayına gönderilecek</p>
+                </div>
+                <div style={{ padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <textarea
+                    value={cancelReason}
+                    onChange={e => setCancelReason(e.target.value)}
+                    placeholder="İptal sebebini yazın... (zorunlu)"
+                    style={{ width: '100%', background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.12)', borderRadius: 14, padding: '12px 14px', color: 'white', fontSize: 14, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                    rows={3}
+                  />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <button onClick={closeCancelModal} style={{ padding: '13px 0', borderRadius: 14, border: '1.5px solid rgba(255,255,255,0.15)', background: 'transparent', color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>Vazgeç</button>
+                    <button onClick={sendCancelRequest} style={{ padding: '13px 0', borderRadius: 14, border: 'none', background: 'linear-gradient(135deg, #dc2626, #ff4d4d)', color: 'white', fontWeight: 800, fontSize: 15, cursor: 'pointer', boxShadow: '0 4px 20px rgba(220,38,38,0.4)' }}>
+                      📤 Onaya Gönder
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ── BEKLİYOR ── */}
+            {cancelStep === 'bekliyor' && (
+              <div style={{ padding: '40px 28px', textAlign: 'center' }}>
+                {/* Dönen halka animasyonu — motion ile */}
+                <div style={{ width: 76, height: 76, margin: '0 auto 22px', position: 'relative' }}>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                    style={{
+                      position: 'absolute', inset: 0, borderRadius: '50%',
+                      border: '3px solid rgba(157,217,234,0.15)',
+                      borderTop: '3px solid #9dd9ea',
+                    }}
+                  />
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>✈️</div>
+                </div>
+                <p style={{ color: 'white', fontWeight: 900, fontSize: 17, marginBottom: 8 }}>Onay Bekleniyor</p>
+                <p style={{ color: 'rgba(157,217,234,0.85)', fontSize: 13, marginBottom: 22 }}>
+                  Telegram grubundan onaylanması gerekiyor
+                </p>
+                {/* Geri sayım */}
+                <div style={{ background: 'rgba(157,217,234,0.07)', border: '1px solid rgba(157,217,234,0.2)', borderRadius: 16, padding: '14px 20px', marginBottom: 22 }}>
+                  <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>Kalan süre</p>
+                  <p style={{ color: '#9dd9ea', fontWeight: 900, fontSize: 32, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                    {Math.floor(cancelCountdown / 60)}:{String(cancelCountdown % 60).padStart(2, '0')}
+                  </p>
+                </div>
+                <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, marginBottom: 16 }}>
+                  Telegram grubundaki ✅ / ❌ butonlarına tıklanması bekleniyor
+                </p>
+
+                {/* Yöneticiler için uygulama içi onay butonları */}
+                {isYonetici && cancelApprovalId && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ background: 'rgba(157,217,234,0.06)', border: '1px solid rgba(157,217,234,0.2)', borderRadius: 16, padding: '14px 16px', marginBottom: 12 }}>
+                      <p style={{ color: 'rgba(157,217,234,0.9)', fontSize: 12, fontWeight: 700, marginBottom: 10, textAlign: 'left' }}>
+                        🔑 Yönetici — Doğrudan Karar Ver
+                      </p>
+                      <div style={{ display: 'flex', gap: 10 }}>
+                        <button
+                          disabled={kararVeriliyor === cancelApprovalId}
+                          onClick={async () => {
+                            await handleIptalKarar(cancelApprovalId, 'onaylandi');
+                            setCancelStep('onaylandi');
+                            const mekanId2 = resolvedMekanId || selectedProject?.id || '';
+                            const tarih2 = bugunTarih();
+                            if (cancelSaleId) await executeCancelSale(mekanId2, tarih2, cancelSaleId, cancelReason);
+                            setTimeout(() => closeCancelModal(), 2500);
+                          }}
+                          style={{ flex: 1, padding: '11px 0', borderRadius: 12, border: 'none', background: kararVeriliyor === cancelApprovalId ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.25)', color: '#4ade80', fontWeight: 800, fontSize: 14, cursor: kararVeriliyor === cancelApprovalId ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}
+                        >
+                          {kararVeriliyor === cancelApprovalId ? '⏳' : '✅'} Onayla
+                        </button>
+                        <button
+                          disabled={kararVeriliyor === cancelApprovalId}
+                          onClick={async () => {
+                            await handleIptalKarar(cancelApprovalId, 'reddedildi');
+                            setCancelStep('reddedildi');
+                          }}
+                          style={{ flex: 1, padding: '11px 0', borderRadius: 12, border: 'none', background: kararVeriliyor === cancelApprovalId ? 'rgba(220,38,38,0.1)' : 'rgba(220,38,38,0.2)', color: '#f87171', fontWeight: 800, fontSize: 14, cursor: kararVeriliyor === cancelApprovalId ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}
+                        >
+                          {kararVeriliyor === cancelApprovalId ? '⏳' : '❌'} Reddet
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <button onClick={closeCancelModal} style={{ width: '100%', padding: '12px 0', borderRadius: 14, border: '1.5px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(255,255,255,0.45)', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                  Vazgeç
+                </button>
               </div>
+            )}
+
+            {/* ── ONAYLANDI ── */}
+            {cancelStep === 'onaylandi' && (
+              <div style={{ padding: '40px 28px', textAlign: 'center' }}>
+                <motion.div
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: 'spring', damping: 12 }}
+                  style={{ width: 76, height: 76, borderRadius: '50%', background: 'rgba(34,197,94,0.15)', border: '2px solid rgba(34,197,94,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 34 }}
+                >
+                  ✅
+                </motion.div>
+                <p style={{ color: 'white', fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Satış İptal Edildi</p>
+                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginBottom: 20 }}>Yönetici onayladı, kayıt sisteme işlendi</p>
+                <div style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 14, padding: '11px 18px' }}>
+                  <span style={{ color: 'rgba(34,197,94,0.9)', fontSize: 13, fontWeight: 700 }}>✅ İşlem başarıyla tamamlandı</span>
+                </div>
+              </div>
+            )}
+
+            {/* ── REDDEDİLDİ ── */}
+            {cancelStep === 'reddedildi' && (
+              <div style={{ padding: '40px 28px', textAlign: 'center' }}>
+                <motion.div
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: 'spring', damping: 12 }}
+                  style={{ width: 76, height: 76, borderRadius: '50%', background: 'rgba(220,38,38,0.15)', border: '2px solid rgba(220,38,38,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 34 }}
+                >
+                  🚫
+                </motion.div>
+                <p style={{ color: 'white', fontWeight: 900, fontSize: 18, marginBottom: 8 }}>İptal Reddedildi</p>
+                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginBottom: 22 }}>Yönetici bu iptal talebini onaylamadı</p>
+                <button onClick={closeCancelModal} style={{ width: '100%', padding: '13px 0', borderRadius: 14, border: '1.5px solid rgba(255,255,255,0.15)', background: 'transparent', color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+                  Kapat
+                </button>
+              </div>
+            )}
+
+            {/* ── TIMEOUT ── */}
+            {cancelStep === 'timeout' && (
+              <div style={{ padding: '40px 28px', textAlign: 'center' }}>
+                <motion.div
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: 'spring', damping: 12 }}
+                  style={{ width: 76, height: 76, borderRadius: '50%', background: 'rgba(255,212,163,0.1)', border: '2px solid rgba(255,212,163,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 34 }}
+                >
+                  ⏳
+                </motion.div>
+                <p style={{ color: 'white', fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Süre Doldu</p>
+                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginBottom: 22 }}>3 dakika içinde yanıt gelmedi</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <button onClick={closeCancelModal} style={{ padding: '13px 0', borderRadius: 14, border: '1.5px solid rgba(255,255,255,0.15)', background: 'transparent', color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+                    Kapat
+                  </button>
+                  <button onClick={() => { setCancelStep('form'); setCancelCountdown(180); }} style={{ padding: '13px 0', borderRadius: 14, background: 'rgba(255,212,163,0.12)', color: '#ffd4a3', fontWeight: 700, fontSize: 14, cursor: 'pointer', border: '1px solid rgba(255,212,163,0.25)' }}>
+                    🔄 Tekrar Gönder
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* Kare Silme Modal */}
+      {showDeleteKareModal && deleteKareEntry && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center pb-8 px-4"
+          style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}
+          onClick={e => { if (e.target === e.currentTarget && !deleteKareSaving) closeDeleteKareModal(); }}
+        >
+          <div style={{
+            width: '100%', maxWidth: 420,
+            background: 'rgba(20,10,40,0.97)',
+            border: '1px solid rgba(248,113,113,0.3)',
+            borderRadius: 24, padding: '22px 20px 28px',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+          }}>
+            {/* Başlık */}
+            <div className="flex items-center gap-3 mb-4">
+              <div style={{
+                width: 42, height: 42, borderRadius: 14, flexShrink: 0,
+                background: 'rgba(248,113,113,0.15)',
+                border: '1px solid rgba(248,113,113,0.35)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <XCircle style={{ width: 20, height: 20, color: '#f87171' }} />
+              </div>
+              <div>
+                <p style={{ color: 'white', fontWeight: 900, fontSize: 15 }}>Kare Kaydını Sil</p>
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>Bu işlem geri alınamaz</p>
+              </div>
+            </div>
+
+            {/* Kayıt önizleme */}
+            <div style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.10)',
+              borderRadius: 14, padding: '12px 14px', marginBottom: 18,
+              display: 'flex', alignItems: 'center', gap: 12,
+            }}>
+              <div style={{
+                width: 38, height: 38, borderRadius: 12,
+                background: 'rgba(213,181,247,0.15)',
+                border: '1px solid rgba(213,181,247,0.2)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 18, flexShrink: 0,
+              }}>📸</div>
+              <div className="flex-1 min-w-0">
+                <p style={{ color: 'white', fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>
+                  {deleteKareEntry.photographerName}
+                </p>
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 2 }}>
+                  {new Date(deleteKareEntry.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })} kaydedildi
+                </p>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <p style={{ color: '#9dd9ea', fontWeight: 900, fontSize: 18, lineHeight: 1 }}>{deleteKareEntry.frameCount}</p>
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>kare</p>
+              </div>
+            </div>
+
+            {/* Butonlar */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <button
+                onClick={closeDeleteKareModal}
+                disabled={deleteKareSaving}
+                style={{
+                  padding: '13px 0', borderRadius: 16, fontWeight: 700, fontSize: 13,
+                  background: 'rgba(255,255,255,0.07)',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  color: 'rgba(255,255,255,0.6)', cursor: 'pointer',
+                  opacity: deleteKareSaving ? 0.5 : 1,
+                }}
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={confirmDeleteKare}
+                disabled={deleteKareSaving}
+                style={{
+                  padding: '13px 0', borderRadius: 16, fontWeight: 800, fontSize: 13,
+                  background: 'rgba(248,113,113,0.18)',
+                  border: '1px solid rgba(248,113,113,0.45)',
+                  color: '#f87171', cursor: deleteKareSaving ? 'wait' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                }}
+              >
+                {deleteKareSaving
+                  ? <><span style={{ width: 14, height: 14, border: '2px solid rgba(248,113,113,0.3)', borderTopColor: '#f87171', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />Siliniyor…</>
+                  : <><XCircle style={{ width: 14, height: 14 }} />Evet, Sil</>
+                }
+              </button>
             </div>
           </div>
         </div>

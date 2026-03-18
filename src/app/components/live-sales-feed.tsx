@@ -297,7 +297,14 @@ export function LiveSalesFeed({
     setError(null);
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${BASE}/stok/canli-satis`, { headers });
+      let res = await fetch(`${BASE}/stok/canli-satis`, { headers });
+      // 401 → token yenile ve bir kez daha dene
+      if (res.status === 401) {
+        console.warn('[LiveSalesFeed] 401 alındı, token yenileniyor...');
+        await new Promise(r => setTimeout(r, 800));
+        const freshHeaders = await authHeaders();
+        res = await fetch(`${BASE}/stok/canli-satis`, { headers: freshHeaders });
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `HTTP ${res.status}`);

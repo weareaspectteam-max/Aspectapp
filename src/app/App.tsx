@@ -55,6 +55,7 @@ import { CurrentStock } from './components/current-stock';
 import { EkstraIsEkrani } from './components/ekstra-is-ekrani';
 import { OzelIsEkrani } from './components/ozel-is-ekrani';
 import { NotificationsPanel, useNotificationCount } from './components/notifications-panel';
+import { IptalTalepPanel } from './components/iptal-talep-panel';
 import type { UserRole } from './components/login';
 import type { ShiftSetupData } from './components/shift-setup';
 import type { Task } from './services/rotation-service';
@@ -917,6 +918,11 @@ export default function App() {
       <div className="max-w-[480px] mx-auto min-h-screen relative">
         {/* Birthday Notifications */}
         {isLoggedIn && <BirthdayNotifications />}
+
+        {/* Global Satış İptal Onay Paneli — yöneticiler için, tüm ekranlarda */}
+        {isLoggedIn && (
+          <IptalTalepPanel accessToken={accessToken} userRole={userRole} />
+        )}
 
         {/* App Header — tüm roller için, vardiya akışı dışında */}
         {(activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock || showEkstraIs || showOzelIs)) && (

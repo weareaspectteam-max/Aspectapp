@@ -195,7 +195,7 @@ export const postKapanis = async (
   sayim: StokSayim,
   not?: string,
   printerData?: PrinterKapanis[]
-): Promise<{ kayit: StokGunluk; anomali: Partial<StokSayim>; beklenen: StokSayim } | null> => {
+): Promise<{ kayit: StokGunluk; anomali: Partial<StokSayim>; beklenen: StokSayim } | { __hata: string } | null> => {
   try {
     const res = await fetch(`${API_BASE}/stok/kapanis`, {
       method: 'POST',
@@ -203,8 +203,10 @@ export const postKapanis = async (
       body: JSON.stringify({ mekanId, tarih, sayim, not, printerData: printerData || [] }),
     });
     if (!res.ok) {
-      console.error('postKapanis error:', res.status, await res.text());
-      return null;
+      let errMsg = `HTTP ${res.status}`;
+      try { const d = await res.json(); errMsg = d.error || errMsg; } catch { /* ignore */ }
+      console.error('postKapanis error:', res.status, errMsg);
+      return { __hata: errMsg };
     }
     return await res.json();
   } catch (err) {

@@ -233,7 +233,8 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
     for (let i = -3; i <= 3; i++) {
       const date = new Date(today);
       date.setDate(date.getDate() + i);
-      dates.push(date.toISOString().split('T')[0]);
+      // Türkiye lokal tarihi (UTC değil) — gece yarısı 00:00–02:59 UTC arası kayma önlendi
+      dates.push(toLocalDateStr(date));
     }
     
     return dates;

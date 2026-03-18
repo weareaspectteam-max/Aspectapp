@@ -40,6 +40,52 @@ export function Settings({ userName, userRole, userAvatar, userEmail, userBirthD
   const [birthdaySaving, setBirthdaySaving] = useState(false);
   const [birthdayError, setBirthdayError] = useState('');
   const [birthdayLoading, setBirthdayLoading] = useState(true);
+  const [telegramTestLoading, setTelegramTestLoading] = useState(false);
+  const [telegramTestResult, setTelegramTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [telegramDiagLoading, setTelegramDiagLoading] = useState(false);
+  const [telegramDiagResult, setTelegramDiagResult] = useState<any | null>(null);
+
+  const handleTelegramDiagnose = async () => {
+    setTelegramDiagLoading(true);
+    setTelegramDiagResult(null);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${SERVER_URL}/telegram/diagnose`, { headers });
+      const data = await res.json();
+      setTelegramDiagResult(data);
+    } catch (e) {
+      setTelegramDiagResult({ error: String(e) });
+    } finally {
+      setTelegramDiagLoading(false);
+    }
+  };
+
+  const handleTelegramTest = async () => {
+    setTelegramTestLoading(true);
+    setTelegramTestResult(null);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${SERVER_URL}/telegram/test`, { headers });
+      const data = await res.json();
+      if (data.success) {
+        let msg = `✅ Mesaj gönderildi! (ID: ${data.message_id}) | Bot: @${data.bot_username}`;
+        if (data.id_was_corrected) {
+          msg += `\n⚠️ ${data.correction_note}`;
+        }
+        setTelegramTestResult({ success: true, message: msg });
+      } else {
+        // Aşamalı hata mesajı
+        const stage = data.stage ? `[${data.stage}] ` : '';
+        const detail = data.error || JSON.stringify(data.telegram_error || data.getChat_results || 'Bilinmeyen hata');
+        const tried = data.chat_id_tried ? `\nDenenen ID'ler: ${data.chat_id_tried.join(', ')}` : '';
+        setTelegramTestResult({ success: false, message: `❌ ${stage}${detail}${tried}` });
+      }
+    } catch (e) {
+      setTelegramTestResult({ success: false, message: `❌ Bağlantı hatası: ${e}` });
+    } finally {
+      setTelegramTestLoading(false);
+    }
+  };
 
   const avatarOptions = [
     '👨‍💼', '👩‍💼', '😊', '🤓', '😎', '👨‍🎨', '👩‍🎨', '🧑‍💻', '👨‍🔧', '👩‍🔧',
@@ -533,6 +579,140 @@ export function Settings({ userName, userRole, userAvatar, userEmail, userBirthD
             </div>
           </div>
         </div>
+
+        {/* Telegram Test — sadece yonetici / ust-mudur görür */}
+        {(userRole === 'yonetici' || userRole === 'ust-mudur') && (
+          <div className="backdrop-blur-xl bg-gradient-to-br from-white/5 to-white/0 border border-white/10 rounded-2xl p-5">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-xl">📨</span>
+              <div>
+                <h3 className="font-bold text-white">Telegram Entegrasyonu</h3>
+                <p className="text-xs text-gray-400">Aspect OP SCM grubu — bildirim testi</p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/10 text-sm">
+                <span>🤖</span>
+                <span className="text-gray-300">Bot: <span className="text-[#9dd9ea] font-semibold">@AspectReportBot</span></span>
+              </div>
+              <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/10 text-sm">
+                <span>💬</span>
+                <span className="text-gray-300">Grup: <span className="text-[#d4b5f7] font-semibold">Aspect OP SCM</span></span>
+              </div>
+              <button
+                onClick={handleTelegramTest}
+                disabled={telegramTestLoading}
+                style={{
+                  width: '100%',
+                  padding: '13px',
+                  borderRadius: 14,
+                  border: '1px solid rgba(37,211,102,0.25)',
+                  background: telegramTestLoading
+                    ? 'rgba(255,255,255,0.08)'
+                    : 'linear-gradient(135deg, rgba(37,211,102,0.25), rgba(37,211,102,0.15))',
+                  color: telegramTestLoading ? 'rgba(255,255,255,0.3)' : 'rgba(37,211,102,0.95)',
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: telegramTestLoading ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s',
+                } as React.CSSProperties}
+              >
+                {telegramTestLoading ? (
+                  <><span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⏳</span> Test gönderiliyor...</>
+                ) : (
+                  <><span>📤</span> Test Mesajı Gönder</>
+                )}
+              </button>
+              {telegramTestResult && (
+                <div style={{
+                  padding: '12px 14px',
+                  borderRadius: 12,
+                  background: telegramTestResult.success ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+                  border: `1px solid ${telegramTestResult.success ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                  color: telegramTestResult.success ? 'rgba(134,239,172,0.9)' : 'rgba(252,165,165,0.9)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  whiteSpace: 'pre-line',
+                  wordBreak: 'break-all',
+                }}>
+                  {telegramTestResult.message}
+                </div>
+              )}
+
+              {/* ── Tanı Butonu ── */}
+              <button
+                onClick={handleTelegramDiagnose}
+                disabled={telegramDiagLoading}
+                style={{
+                  width: '100%',
+                  padding: '11px',
+                  borderRadius: 14,
+                  border: '1px solid rgba(157,217,234,0.25)',
+                  background: telegramDiagLoading
+                    ? 'rgba(255,255,255,0.05)'
+                    : 'rgba(157,217,234,0.08)',
+                  color: telegramDiagLoading ? 'rgba(255,255,255,0.3)' : 'rgba(157,217,234,0.9)',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: telegramDiagLoading ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s',
+                } as React.CSSProperties}
+              >
+                {telegramDiagLoading ? '⏳ Tanı çalışıyor...' : '🔍 Bağlantı Tanısı Çalıştır'}
+              </button>
+
+              {telegramDiagResult && (
+                <div style={{
+                  padding: '14px',
+                  borderRadius: 12,
+                  background: 'rgba(0,0,0,0.25)',
+                  border: '1px solid rgba(157,217,234,0.15)',
+                  fontSize: 11,
+                  lineHeight: 1.6,
+                }}>
+                  {/* Bot bilgisi */}
+                  <div style={{ color: 'rgba(157,217,234,0.9)', fontWeight: 700, marginBottom: 6 }}>
+                    🤖 Bot: {telegramDiagResult.bot?.username
+                      ? `@${telegramDiagResult.bot.username} (ID: ${telegramDiagResult.bot.id})`
+                      : JSON.stringify(telegramDiagResult.bot?.error ?? '?')}
+                  </div>
+                  {/* Kayıtlı chat ID */}
+                  <div style={{ color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>
+                    💾 Secret'taki ID: <span style={{ color: 'rgba(255,212,163,0.9)', fontWeight: 700 }}>{telegramDiagResult.saved_chat_id}</span>
+                  </div>
+                  {/* getChat sonucu */}
+                  {telegramDiagResult.getChat_result && (
+                    <div style={{ color: telegramDiagResult.getChat_result?.result?.ok ? 'rgba(134,239,172,0.9)' : 'rgba(252,165,165,0.9)', marginBottom: 6 }}>
+                      {telegramDiagResult.getChat_result?.result?.ok
+                        ? `✅ getChat OK — Grup: "${telegramDiagResult.getChat_result.result.result?.title}" (${telegramDiagResult.getChat_result.tried_id})`
+                        : `❌ getChat HATA (${telegramDiagResult.getChat_result.tried_id}): ${telegramDiagResult.getChat_result.result?.description ?? JSON.stringify(telegramDiagResult.getChat_result.result)}`}
+                    </div>
+                  )}
+                  {/* Tespit edilen chat'ler */}
+                  {telegramDiagResult.detected_chats?.length > 0 ? (
+                    <div style={{ marginBottom: 6 }}>
+                      <div style={{ color: 'rgba(212,181,247,0.9)', fontWeight: 700, marginBottom: 4 }}>📡 Tespit edilen gruplar ({telegramDiagResult.updates_count} güncelleme):</div>
+                      {telegramDiagResult.detected_chats.map((ch: any) => (
+                        <div key={ch.id} style={{ color: 'rgba(255,255,255,0.8)', paddingLeft: 8, marginBottom: 2 }}>
+                          • <span style={{ color: 'rgba(167,199,231,0.95)', fontWeight: 700 }}>{String(ch.id)}</span>
+                          {' — '}{ch.title ?? '(isimsiz)'} [{ch.type}]
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ color: 'rgba(255,212,163,0.8)', marginBottom: 6 }}>
+                      📭 Güncelleme yok ({telegramDiagResult.updates_count})
+                    </div>
+                  )}
+                  {/* Yönlendirme ipucu */}
+                  <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 6, marginTop: 4 }}>
+                    💡 {telegramDiagResult.hint}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Account Info */}
         <div className="backdrop-blur-xl bg-gradient-to-br from-white/5 to-white/0 border border-white/10 rounded-2xl p-5">

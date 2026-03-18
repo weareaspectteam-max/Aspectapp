@@ -14,6 +14,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { getToken } from '../lib/api';
+import { localDateStr } from '../lib/date';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 const SAYFA_BOYUTU = 10;
@@ -828,9 +829,10 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
   const [filtreTarihBas, setFiltreTarihBas] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
-    return d.toISOString().split('T')[0];
+    // Türkiye lokal tarihi (UTC değil) — gece yarısı 00:00–02:59 arası kayma önlendi
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   });
-  const [filtreTarihBit, setFiltreTarihBit] = useState(() => new Date().toISOString().split('T')[0]);
+  const [filtreTarihBit, setFiltreTarihBit] = useState(() => localDateStr());
 
   const mekanlar = useMemo(() => {
     const map: Record<string, string> = {};
@@ -881,8 +883,10 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
   };
 
   const handleReset = () => {
-    const bas = (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split('T')[0]; })();
-    const bit = new Date().toISOString().split('T')[0];
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    const bas = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const bit = localDateStr();
     setFiltreMekan('');
     setFiltreTarihBas(bas);
     setFiltreTarihBit(bit);
