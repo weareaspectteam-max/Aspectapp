@@ -249,6 +249,16 @@ export function IptalTalepPanel({ accessToken, userRole }: Props) {
                 const isLoading = kararVeriliyor === talep.approvalId;
                 const expired   = kalan === 0;
 
+                // Satış detayları
+                const items: any[] = talep.items || [];
+                const finalPrice: number = talep.finalPrice ?? 0;
+                const discount: number = talep.discount ?? 0;
+                const odemeYontemi =
+                  talep.paymentMethod === 'cash' ? '💵 Nakit' :
+                  talep.paymentMethod === 'card' ? '💳 Kart' :
+                  talep.paymentMethod === 'iban' ? '🏦 IBAN' :
+                  talep.paymentMethod || '';
+
                 return (
                   <div
                     key={talep.approvalId}
@@ -262,44 +272,110 @@ export function IptalTalepPanel({ accessToken, userRole }: Props) {
                       marginBottom: 10,
                     }}
                   >
-                    {/* Üst satır */}
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom: 10 }}>
+                    {/* Üst satır: kişi + süre */}
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom: 8 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ color:'white', fontWeight: 800, fontSize: 13, marginBottom: 4,
+                        <p style={{ color:'white', fontWeight: 800, fontSize: 13, marginBottom: 2,
                           whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                           👤 {talep.requestedByName || 'Bilinmiyor'}
                         </p>
-                        <p style={{ color:'rgba(255,255,255,0.5)', fontSize: 12, marginBottom: 3, wordBreak:'break-word' }}>
-                          📝 {talep.neden || '(sebep belirtilmedi)'}
-                        </p>
-                        <p style={{ color:'rgba(255,255,255,0.28)', fontSize: 10 }}>
-                          🆔 <code style={{ fontFamily:'monospace', letterSpacing:'0.03em' }}>
-                            {talep.approvalId?.slice(-10)}
-                          </code>
-                        </p>
+                        {talep.kaydeden && talep.kaydeden !== talep.requestedByName && (
+                          <p style={{ color:'rgba(255,255,255,0.4)', fontSize: 11, marginBottom: 2 }}>
+                            🛒 Satışı yapan: {talep.kaydeden}
+                          </p>
+                        )}
+                        {talep.mekanAdi && (
+                          <p style={{ color:'rgba(157,217,234,0.7)', fontSize: 11, marginBottom: 2 }}>
+                            📍 {talep.mekanAdi}
+                          </p>
+                        )}
+                        {talep.satisSaati && (
+                          <p style={{ color:'rgba(255,255,255,0.35)', fontSize: 11, marginBottom: 2 }}>
+                            ⏰ {talep.tarih} — {talep.satisSaati}
+                          </p>
+                        )}
                       </div>
                       <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap: 4, flexShrink: 0, marginLeft: 10 }}>
                         <span style={{
                           color: kalan > 60 ? '#9dd9ea' : kalan > 0 ? '#ffd4a3' : '#f87171',
-                          fontWeight: 700, fontSize: 13, fontVariantNumeric:'tabular-nums',
+                          fontWeight: 700, fontSize: 12, fontVariantNumeric:'tabular-nums',
                         }}>
                           ⏱ {kalanStr}
                         </span>
                         {expired && (
                           <span style={{
-                            background: 'rgba(220,38,38,0.18)',
-                            color: '#fca5a5',
-                            fontSize: 10,
-                            fontWeight: 700,
-                            borderRadius: 6,
-                            padding: '2px 7px',
-                            border: '1px solid rgba(220,38,38,0.3)',
+                            background: 'rgba(220,38,38,0.18)', color: '#fca5a5',
+                            fontSize: 9, fontWeight: 700, borderRadius: 6,
+                            padding: '2px 6px', border: '1px solid rgba(220,38,38,0.3)',
                           }}>
-                            Karar verebilirsiniz
+                            Karar ver
                           </span>
                         )}
                       </div>
                     </div>
+
+                    {/* Ürün listesi */}
+                    {items.length > 0 && (
+                      <div style={{
+                        background: 'rgba(255,255,255,0.04)',
+                        borderRadius: 10,
+                        padding: '8px 10px',
+                        marginBottom: 8,
+                        border: '1px solid rgba(255,255,255,0.06)',
+                      }}>
+                        {items.map((item: any, i: number) => (
+                          <div key={i} style={{
+                            display: 'flex', justifyContent: 'space-between',
+                            alignItems: 'center', marginBottom: i < items.length - 1 ? 4 : 0,
+                          }}>
+                            <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12 }}>
+                              {item.product} <span style={{ color:'rgba(255,255,255,0.4)' }}>×{item.quantity}</span>
+                            </span>
+                            <span style={{ color: '#ffd4a3', fontSize: 12, fontWeight: 700 }}>
+                              {(item.quantity * item.unitPrice).toLocaleString('tr-TR')} ₺
+                            </span>
+                          </div>
+                        ))}
+                        {/* Toplam + indirim + ödeme */}
+                        <div style={{
+                          marginTop: 6, paddingTop: 6,
+                          borderTop: '1px solid rgba(255,255,255,0.07)',
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4,
+                        }}>
+                          <div style={{ display:'flex', alignItems:'center', gap: 6 }}>
+                            {odemeYontemi && (
+                              <span style={{
+                                background: 'rgba(157,217,234,0.12)', color: '#9dd9ea',
+                                fontSize: 11, fontWeight: 700, borderRadius: 7, padding: '2px 7px',
+                              }}>
+                                {odemeYontemi}
+                              </span>
+                            )}
+                            {discount > 0 && (
+                              <span style={{
+                                background: 'rgba(212,181,247,0.12)', color: '#d4b5f7',
+                                fontSize: 11, fontWeight: 700, borderRadius: 7, padding: '2px 7px',
+                              }}>
+                                −{discount.toLocaleString('tr-TR')} ₺ indirim
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ color: '#4ade80', fontWeight: 900, fontSize: 14 }}>
+                            {finalPrice.toLocaleString('tr-TR')} ₺
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* İptal sebebi */}
+                    <p style={{
+                      color:'rgba(255,212,163,0.8)', fontSize: 12,
+                      marginBottom: 10, wordBreak:'break-word',
+                      background: 'rgba(255,212,163,0.06)', borderRadius: 8,
+                      padding: '5px 9px',
+                    }}>
+                      📝 {talep.neden || '(sebep belirtilmedi)'}
+                    </p>
 
                     {/* Butonlar */}
                     <div style={{ display:'flex', gap: 8 }}>

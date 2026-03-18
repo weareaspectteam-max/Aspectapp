@@ -5685,7 +5685,8 @@ app.delete("/make-server-4da0b637/stok/satis/:mekanId/:tarih/:satisId", async (c
     const tarih = c.req.param("tarih");
     const satisId = c.req.param("satisId");
     let neden = "";
-    try { const body = await c.req.json(); neden = body.neden || ""; } catch {}
+    let skipTelegram = false;
+    try { const body = await c.req.json(); neden = body.neden || ""; skipTelegram = !!body.skipTelegram; } catch {}
 
     const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
     if (!existing) return c.json({ error: "Kayıt bulunamadı." }, 404);
@@ -5702,10 +5703,10 @@ app.delete("/make-server-4da0b637/stok/satis/:mekanId/:tarih/:satisId", async (c
         : s
     );
     await kv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, satislar });
-    console.log(`Satış iptal: ${satisId} | neden: ${neden}`);
+    console.log(`Satış iptal: ${satisId} | neden: ${neden} | skipTelegram: ${skipTelegram}`);
 
-    // ── Telegram bildirimi (non-blocking) ──
-    if (iptalEdilecek) {
+    // ── Telegram bildirimi — onay akışından geliyorsa atla (karar endpoint zaten gönderdi) ──
+    if (iptalEdilecek && !skipTelegram) {
       try {
         // Mekan adını çek
         let mekanAdi = mekanId;
@@ -5813,17 +5814,25 @@ app.post("/make-server-4da0b637/stok/satis-iptal-talep", async (c) => {
     const approvalId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const iptalEden = user.user_metadata?.full_name || user.email || "Bilinmiyor";
 
-    // KV'e bekleyen talep kaydet (3 dk sonra geçersiz sayılabilir)
+    // KV'e bekleyen talep kaydet (satış detayları da dahil — panel kartında gösterilecek)
     await kv.set(`iptal_talep_${approvalId}`, {
       approvalId,
       satisId,
       mekanId,
+      mekanAdi,
       tarih,
       neden,
       status: "bekliyor",
       requestedAt: new Date().toISOString(),
       requestedBy: user.id,
       requestedByName: iptalEden,
+      // Satış detayları
+      items: satis.items || [],
+      finalPrice: satis.finalPrice ?? satis.totalPrice ?? 0,
+      discount: satis.discount ?? 0,
+      paymentMethod: satis.paymentMethod || "",
+      kaydeden: satis.kaydeden || "",
+      satisSaati,
     });
 
     // Telegram'a inline keyboard mesajı gönder

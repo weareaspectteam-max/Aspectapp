@@ -534,7 +534,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       const res = await fetch(`${API_BASE_QS}/stok/satis/${mekanId}/${tarih}/${satisId}`, {
         method: 'DELETE',
         headers: hdr,
-        body: JSON.stringify({ neden }),
+        body: JSON.stringify({ neden, skipTelegram: true }),
       });
       if (res.ok) {
         setRecentSales(prev => prev.filter(s => s.id !== satisId));
