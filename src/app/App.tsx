@@ -875,7 +875,7 @@ export default function App() {
 
   const renderDashboard = () => {
     if (isStaffRole) {
-      return <StaffPersonalDashboard userName={userName} onLogout={handleLogout} onNavigate={handleNavigate} />;
+      return <StaffPersonalDashboard userName={userName} userId={userId} accessToken={accessToken} onLogout={handleLogout} onNavigate={handleNavigate} />;
     } else if (isOperationsRole) {
       return <OperationsDashboard userName={userName} onLogout={handleLogout} onNavigate={handleNavigate} />;
     } else if (isAdministrativeRole) {

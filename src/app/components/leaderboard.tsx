@@ -534,7 +534,9 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
                             background: isFirst
                               ? `linear-gradient(to bottom, ${C.gold}22, ${C.gold}08)`
                               : 'rgba(255,255,255,0.05)',
-                            border: `1px solid ${glowColor}25`,
+                            borderTop: `1px solid ${glowColor}25`,
+                            borderLeft: `1px solid ${glowColor}25`,
+                            borderRight: `1px solid ${glowColor}25`,
                             borderBottom: 'none',
                           }}
                         >

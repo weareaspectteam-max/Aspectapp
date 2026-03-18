@@ -9349,6 +9349,168 @@ app.post("/make-server-4da0b637/stok/gecikme-bildir", async (c) => {
 })();
 
 // ──────────────────────────────────────────
+// VARDİYA CHECK-IN / CHECK-OUT SİSTEMİ
+// ──────────────────────────────────────────
+
+// GET /vardiya/bugun — Bugünkü check-in/out + geç bildirim durumu
+app.get("/make-server-4da0b637/vardiya/bugun", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const userId = user.id;
+    const now = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    const tarih = now.toISOString().split("T")[0];
+    const [checkin, checkout, lateNotice] = await Promise.all([
+      kv.get(`checkin_${userId}_${tarih}`),
+      kv.get(`checkout_${userId}_${tarih}`),
+      kv.get(`lateNotice_${userId}_${tarih}`),
+    ]);
+    return c.json({ tarih, checkin: checkin || null, checkout: checkout || null, lateNotice: lateNotice || null });
+  } catch (err) {
+    console.log("vardiya/bugun error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /vardiya/checkin — Vardiyayı başlat
+app.post("/make-server-4da0b637/vardiya/checkin", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const userId = user.id;
+    const userName = user.user_metadata?.name || user.email || userId;
+    const body = await c.req.json();
+    const { plannedStart, plannedEnd, location, locationIcon, taskId } = body;
+    if (!plannedStart) return c.json({ error: "plannedStart gerekli." }, 400);
+    const now = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    const tarih = now.toISOString().split("T")[0];
+    const checkInTime = now.toISOString();
+    const [ph, pm] = plannedStart.split(":").map(Number);
+    const plannedMs = ph * 3600000 + pm * 60000;
+    const nowMs = now.getUTCHours() * 3600000 + now.getUTCMinutes() * 60000 + now.getUTCSeconds() * 1000;
+    const lateMin = Math.round((nowMs - plannedMs) / 60000);
+    const isLate = lateMin > 5;
+    const data = { checkInTime, plannedStart, plannedEnd, location, locationIcon, taskId, lateMin: isLate ? lateMin : 0, userId, tarih };
+    await kv.set(`checkin_${userId}_${tarih}`, data);
+    console.log(`[Vardiya] Check-in: ${userName} — ${tarih} ${plannedStart} → ${isLate ? `${lateMin}dk geç` : "zamanında"}`);
+    if (isLate) {
+      const telegramText = `⚠️ <b>Geç Giriş Bildirimi</b>\n\n👤 <b>${userName}</b> vardiyasına geç başladı.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n⏰ Planlanan: <b>${plannedStart}</b>\n⏱️ Gecikme: <b>${lateMin} dk</b>\n📅 Tarih: ${tarih}`;
+      sendTelegramMessage(telegramText, "HTML").catch(() => {});
+    }
+    return c.json({ success: true, data, isLate, lateMin: isLate ? lateMin : 0 });
+  } catch (err) {
+    console.log("vardiya/checkin error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /vardiya/checkout — Vardiyayı bitir
+app.post("/make-server-4da0b637/vardiya/checkout", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const userId = user.id;
+    const userName = user.user_metadata?.name || user.email || userId;
+    const body = await c.req.json();
+    const { plannedEnd } = body;
+    const now = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    const tarih = now.toISOString().split("T")[0];
+    const checkOutTime = now.toISOString();
+    const checkin = await kv.get(`checkin_${userId}_${tarih}`);
+    const data = { checkOutTime, plannedEnd: plannedEnd || checkin?.plannedEnd, userId, tarih };
+    await kv.set(`checkout_${userId}_${tarih}`, data);
+    console.log(`[Vardiya] Check-out: ${userName} — ${tarih}`);
+    return c.json({ success: true, data });
+  } catch (err) {
+    console.log("vardiya/checkout error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /vardiya/gec-bildir — Geç kalma bildirimi gönder
+app.post("/make-server-4da0b637/vardiya/gec-bildir", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const userId = user.id;
+    const userName = user.user_metadata?.name || user.email || userId;
+    const body = await c.req.json();
+    const { delayMin, reason, plannedStart, location, locationIcon } = body;
+    const now = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    const tarih = now.toISOString().split("T")[0];
+    const existing = await kv.get(`lateNotice_${userId}_${tarih}`);
+    if (existing) {
+      return c.json({ success: true, alreadySent: true, data: existing });
+    }
+    const data = { sentAt: now.toISOString(), delayMin: delayMin || 0, reason: reason || "", plannedStart, location, userId, tarih };
+    await kv.set(`lateNotice_${userId}_${tarih}`, data);
+    const reasonEmoji = reason === "Trafik" ? "🚗" : reason === "Ulaşım" ? "🚌" : "💬";
+    const telegramText = `⚠️ <b>Geç Kalma Bildirimi</b>\n\n👤 <b>${userName}</b> geç kalacağını bildirdi.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n⏰ Planlanan giriş: <b>${plannedStart || "?"}</b>\n⏱️ Tahmini gecikme: <b>${delayMin || "?"} dk</b>\n${reasonEmoji} Sebep: <b>${reason || "Belirtilmedi"}</b>\n📅 Tarih: ${tarih}`;
+    await sendTelegramMessage(telegramText, "HTML");
+    console.log(`[Vardiya] Geç bildirim: ${userName} — ${delayMin}dk, sebep: ${reason}`);
+    return c.json({ success: true, alreadySent: false, data });
+  } catch (err) {
+    console.log("vardiya/gec-bildir error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// GET /vardiya/istatistikler — Yönetici için personel vardiya istatistikleri
+app.get("/make-server-4da0b637/vardiya/istatistikler", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur", "mudur", "operasyon", "idari"].includes(callerRole)) {
+      return c.json({ error: "Yetki yok." }, 403);
+    }
+    const { searchParams } = new URL(c.req.url);
+    const ay = searchParams.get("ay") || new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 7);
+    const [checkins, checkouts, lateNotices] = await Promise.all([
+      kv.getByPrefix("checkin_"),
+      kv.getByPrefix("checkout_"),
+      kv.getByPrefix("lateNotice_"),
+    ]);
+    const sbAdmin = getAdminClient();
+    const { data: { users: allUsers } } = await sbAdmin.auth.admin.listUsers({ perPage: 1000 });
+    const personeller = (allUsers || []).filter((u: any) =>
+      ["personel", "operasyon", "idari"].includes(u.user_metadata?.role)
+    );
+    const stats = personeller.map((u: any) => {
+      const uid = u.id;
+      const name = u.user_metadata?.name || u.email;
+      const userCheckins = (checkins || []).filter((item: any) =>
+        item?.userId === uid && (item?.tarih || "").startsWith(ay)
+      );
+      const userCheckouts = (checkouts || []).filter((item: any) =>
+        item?.userId === uid && (item?.tarih || "").startsWith(ay)
+      );
+      const userLates = (lateNotices || []).filter((item: any) =>
+        item?.userId === uid && (item?.tarih || "").startsWith(ay)
+      );
+      const gecGiris = userCheckins.filter((item: any) => (item.lateMin || 0) > 0).length;
+      const gecBildirim = userLates.length;
+      const toplamGecDk = userCheckins.reduce((sum: number, item: any) => sum + (item.lateMin || 0), 0);
+      return {
+        userId: uid,
+        name,
+        role: u.user_metadata?.role,
+        toplamVardiya: userCheckins.length,
+        toplamCheckout: userCheckouts.length,
+        gecGiris,
+        gecBildirim,
+        toplamGecDk,
+        ortGecDk: userCheckins.length > 0 ? Math.round(toplamGecDk / userCheckins.length) : 0,
+      };
+    });
+    return c.json({ ay, stats });
+  } catch (err) {
+    console.log("vardiya/istatistikler error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
 
 
 Deno.serve(async (req) => {
