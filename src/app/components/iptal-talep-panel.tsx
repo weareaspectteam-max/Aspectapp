@@ -66,7 +66,7 @@ export function IptalTalepPanel({ accessToken, userRole }: Props) {
     if (talepleri.length === 0) setShowPanel(false);
   }, [talepleri.length]);
 
-  // ── Karar ver ─────────��───────────────────────────────────────────────
+  // ── Karar ver ────────────────────────────────────────────────────────
   const handleKarar = async (approvalId: string, karar: 'onaylandi' | 'reddedildi') => {
     setKararVeriliyor(approvalId);
     try {
@@ -196,9 +196,11 @@ export function IptalTalepPanel({ accessToken, userRole }: Props) {
               style={{
                 position: 'fixed',
                 bottom: 88,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: 'min(456px, calc(100vw - 24px))',
+                left: 12,
+                right: 12,
+                width: 'auto',
+                maxWidth: 456,
+                margin: '0 auto',
                 zIndex: 9999,
                 background: 'rgba(8,4,20,0.98)',
                 border: '1px solid rgba(220,38,38,0.4)',

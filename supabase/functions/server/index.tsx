@@ -131,13 +131,25 @@ const verifyToken = async (c: any) => {
       setTimeout(() => resolve({ data: { user: null }, error: new Error("getUser timeout 4s") }), 4000)
     );
 
-    // getUser hatasını catch yerine Promise.resolve ile yutuyoruz
-    const getUserPromise = supabase.auth.getUser(xToken).then(
-      (r) => r,
-      (e: any) => ({ data: { user: null }, error: e })  // reject → resolve dönüşümü
-    );
+    // async IIFE + try/catch: Deno'da .then(onRejected) bazen
+    // fetch katmanındaki connection reset'i yakalayamıyor;
+    // await + kendi try bloğu daha güvenli (ikinci katman: Promise.race try/catch).
+    const getUserPromise = (async () => {
+      try {
+        return await supabase.auth.getUser(xToken);
+      } catch (e: any) {
+        return { data: { user: null }, error: e };
+      }
+    })();
 
-    const result: any = await Promise.race([getUserPromise, timeoutPromise]);
+    // Promise.race'i de try/catch ile sarıyoruz — ikinci güvenlik katmanı
+    let result: any;
+    try {
+      result = await Promise.race([getUserPromise, timeoutPromise]);
+    } catch (raceErr: any) {
+      console.log("[verifyToken] Promise.race exception → decodeJwt fallback:", String(raceErr).slice(0, 120));
+      result = { data: { user: null }, error: raceErr };
+    }
 
     if (!result.error && result.data?.user) {
       networkUser = result.data.user;
@@ -428,7 +440,7 @@ app.get("/make-server-4da0b637/telegram/test", async (c) => {
   }
 });
 
-// ──────────────────────────────────────────
+// ────────────────────────────────────────���─
 // TELEGRAM: Webhook handler (Telegram callback_query'lerini işler)
 // POST /make-server-4da0b637/telegram/webhook
 // ──────────────────────────────────────────
@@ -5831,15 +5843,11 @@ app.post("/make-server-4da0b637/stok/satis-iptal-talep", async (c) => {
       `❓ <b>İptal talep eden:</b> ${iptalEden}`,
       `📝 <b>İptal sebebi:</b> ${neden}`,
       ``,
-      `⏳ <i>3 dakika içinde yanıtlanmazsa talep düşer</i>`,
+      ``,
+      `📱 <i>Onay veya red için Aspect Operations uygulamasını açın.</i>`,
     ].join("\n");
 
-    await sendTelegramWithInlineKeyboard(msg, [
-      [
-        { text: "✅  ONAYLA", callback_data: `iptal_onayla:${approvalId}` },
-        { text: "❌  REDDET", callback_data: `iptal_reddet:${approvalId}` },
-      ],
-    ]);
+    await sendTelegramMessage(msg);
 
     console.log(`[İptal Talep] Oluşturuldu: ${approvalId} | satisId: ${satisId} | talep eden: ${iptalEden}`);
     return c.json({ approvalId, status: "bekliyor" });
