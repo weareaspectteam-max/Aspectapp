@@ -49,6 +49,7 @@ import { BirthdayCalendar } from './components/birthday-calendar';
 import { BirthdayNotifications } from './components/birthday-notifications';
 import { Announcements } from './components/announcements';
 import { VardiyaRaporlari } from './components/vardiya-raporlari';
+import { VardiyaIstatistikleri } from './components/vardiya-istatistikleri';
 import { OperationsDemo } from './components/operations-demo';
 import { ShiftSetup } from './components/shift-setup';
 import { ShiftChoice } from './components/shift-choice';
@@ -833,6 +834,16 @@ export default function App() {
       case 'vardiya-raporlari':
         return (
           <VardiyaRaporlari
+            userName={userName}
+            userRole={userRole}
+            onLogout={handleLogout}
+            onNavigate={handleNavigate}
+          />
+        );
+      
+      case 'vardiya-istatistikleri':
+        return (
+          <VardiyaIstatistikleri
             userName={userName}
             userRole={userRole}
             onLogout={handleLogout}

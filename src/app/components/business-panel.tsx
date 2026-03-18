@@ -19,10 +19,10 @@ export function BusinessPanel({ userName, onNavigate }: BusinessPanelProps) {
   const actions = [
     {
       title: 'Raporlar & Analizler',
-      description: 'Satış, anomali ve indirim istatistikleri',
+      description: 'Satış, anomali, indirim ve vardiya istatistikleri',
       emoji: '📊',
       color: '#9dd9ea',
-      action: () => onNavigate('resource-management'),
+      action: () => onNavigate('isletme-istatistikleri'),
     },
     {
       title: 'Müdür Raporları',

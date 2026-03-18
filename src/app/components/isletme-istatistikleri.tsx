@@ -43,6 +43,14 @@ export function IsletmeIstatistikleri({ userName, userRole, onNavigate }: Isletm
       tab:         'indirim-istatistik',
       show:        isYonetici,
     },
+    {
+      emoji:       '⏱️',
+      title:       'Vardiya İstatistikleri',
+      description: 'Aylık check-in, geç giriş ve bildirim takibi',
+      color:       '#d4b5f7',
+      tab:         'vardiya-istatistikleri',
+      show:        isYonetici,
+    },
   ].filter(c => c.show);
 
   return (
