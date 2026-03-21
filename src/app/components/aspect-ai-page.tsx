@@ -6,7 +6,7 @@ import {
   RefreshCw, Clock,
   Brain, MessageSquare, Loader2, Trash2, Settings, Mic,
 } from 'lucide-react';
-import { authHeaders } from '../lib/api';
+import { authHeaders, getToken } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 import type { VardiyaSatis } from '../services/stock-service';
 import { getLeaveRequests, saveLeaveRequest, deleteLeaveRequest, getDailyOnLeave, getStaffMembers, getLocations, getTasks, saveTask, updateTask, type LeaveRequest, type Location, type StaffMember, type Task } from '../services/rotation-service';
@@ -100,6 +100,7 @@ interface AspectAIProps {
   userName?: string;
   userId?: string;
   userAvatar?: string;
+  accessToken?: string;
   onLogout?: () => void;
   onNavigate?: (tab: string) => void;
 }
@@ -366,10 +367,11 @@ async function fetchAltiSaat(): Promise<{ text: string; card: ResponseCard }> {
 
 async function fetchBugunIzinliler(targetDate?: string): Promise<{ text: string; card?: ResponseCard }> {
   try {
+    const tok = await getToken();
     const [leaves, dailyOnLeave, staffMembers] = await Promise.all([
-      getLeaveRequests(),
-      getDailyOnLeave(),
-      getStaffMembers(),
+      getLeaveRequests(tok),
+      getDailyOnLeave(tok),
+      getStaffMembers(tok),
     ]);
 
     // Türkiye saati (UTC+3)
@@ -448,10 +450,11 @@ async function fetchBugunIzinliler(targetDate?: string): Promise<{ text: string;
 
 async function fetchIzinGecmisi(userId: string, userName: string): Promise<{ text: string; card: ResponseCard }> {
   try {
+    const tok = await getToken();
     const [leaves, dailyOnLeave, staffMembers] = await Promise.all([
-      getLeaveRequests(),
-      getDailyOnLeave(),
-      getStaffMembers(),
+      getLeaveRequests(tok),
+      getDailyOnLeave(tok),
+      getStaffMembers(tok),
     ]);
 
     // Türkiye saatini (UTC+3) baz alarak bugünü hesapla
@@ -847,7 +850,8 @@ async function fetchSatisAnalizi(soru: string): Promise<{ text: string }> {
 // ─── İzin Analizi — tarihsel/kişi/aylık/sıralama sorgular (yönetici) ─────────
 async function fetchIzinAnalizi(soru: string, staffMembers: any[]): Promise<{ text: string }> {
   try {
-    const [leaves, dailyOnLeave] = await Promise.all([getLeaveRequests(), getDailyOnLeave()]);
+    const tok = await getToken();
+    const [leaves, dailyOnLeave] = await Promise.all([getLeaveRequests(tok), getDailyOnLeave(tok)]);
     const now = new Date();
     const trOffset = 3 * 60;
     const nowTR = new Date(now.getTime() + (trOffset - now.getTimezoneOffset()) * 60000);
@@ -3030,7 +3034,7 @@ function MekanDetayCard({ data }: { data: MekanDetayData }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', userId = '', userAvatar = '👤', onLogout, onNavigate }: AspectAIProps) {
+export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', userId = '', userAvatar = '👤', accessToken = '', onLogout, onNavigate }: AspectAIProps) {
   // KV'den yüklenmiş config override — başlangıçta kod sabit config'i kullanır,
   // sunucudan gelince otomatik override edilir
   const [serverConfig, setServerConfig] = useState<Record<string, RoleConfig> | null>(null);
@@ -3307,7 +3311,8 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
           ts: new Date(), card: { type: 'rotation_flow', data: loadingFlow },
         }]);
 
-        const [locs, staff] = await Promise.all([getLocations(), getStaffMembers()]);
+        const tok0 = await getToken();
+        const [locs, staff] = await Promise.all([getLocations(tok0), getStaffMembers(tok0)]);
         console.log('[ROT_CREATE] Yüklendi — lokasyon:', locs.length, 'personel:', staff.length);
 
         if (locs.length === 0 && staff.length === 0) {
@@ -3323,7 +3328,8 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
 
         const nowTR = new Date(Date.now() + (3 * 60 - new Date().getTimezoneOffset()) * 60000);
         const todayStr = nowTR.toISOString().split('T')[0];
-        const [todayLeaves, todayDaily] = await Promise.all([getLeaveRequests(), getDailyOnLeave()]);
+        const tok = await getToken();
+        const [todayLeaves, todayDaily] = await Promise.all([getLeaveRequests(tok), getDailyOnLeave(tok)]);
         const onLeaveSet = new Set<string>();
         for (const l of todayLeaves) {
           if (l.status !== 'rejected' && todayStr >= l.startDate && todayStr <= l.endDate) onLeaveSet.add(l.personnelId);
@@ -3355,7 +3361,8 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
         const nowTR = new Date(Date.now() + (3 * 60 - new Date().getTimezoneOffset()) * 60000);
         const todayStr = nowTR.toISOString().split('T')[0];
         const tomorrowStr = new Date(nowTR.getTime() + 86400000).toISOString().split('T')[0];
-        const [locs, staff, leaves, daily] = await Promise.all([getLocations(), getStaffMembers(), getLeaveRequests(), getDailyOnLeave()]);
+        const tok2 = await getToken();
+        const [locs, staff, leaves, daily] = await Promise.all([getLocations(tok2), getStaffMembers(tok2), getLeaveRequests(tok2), getDailyOnLeave(tok2)]);
 
         const buildAvail = (targetDate: string) => {
           const s = new Set<string>();
@@ -3406,7 +3413,8 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       try {
         const nowTR = new Date(Date.now() + (3 * 60 - new Date().getTimezoneOffset()) * 60000);
         const todayStr = nowTR.toISOString().split('T')[0];
-        const tasks = await getTasks();
+        const tok3 = await getToken();
+        const tasks = await getTasks(tok3);
         const todayTasks = tasks.filter((t: Task) => t.date === todayStr && t.status !== 'cancelled');
         const cancelState: RotationCancelFlowState = { step: 'select', date: todayStr, tasks: todayTasks };
         setRotCancelFlow(cancelState);
@@ -3446,8 +3454,9 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     if (command.startsWith('__ROT_DATE_')) {
       const date = command.replace('__ROT_DATE_', '').replace(/__$/, '');
       try {
-        const [allLeaves, daily] = await Promise.all([getLeaveRequests(), getDailyOnLeave()]);
-        const staff = curFlow?.staffMembers?.length ? curFlow.staffMembers : await getStaffMembers();
+        const tok4 = await getToken();
+        const [allLeaves, daily] = await Promise.all([getLeaveRequests(tok4), getDailyOnLeave(tok4)]);
+        const staff = curFlow?.staffMembers?.length ? curFlow.staffMembers : await getStaffMembers(tok4);
         const onLeaveSet = new Set<string>();
         for (const l of allLeaves) {
           if (l.status !== 'rejected' && date >= l.startDate && date <= l.endDate) onLeaveSet.add(l.personnelId);
@@ -3865,7 +3874,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       const satisResult = await fetchSatisAnalizi(text.trim());
       aiText = satisResult.text;
     } else if (result === 'IZIN_ANALIZI') {
-      const staff = await getStaffMembers();
+      const staff = await getStaffMembers(accessToken || await getToken());
       const analizResult = await fetchIzinAnalizi(text.trim(), staff);
       aiText = analizResult.text;
     } else if (result === 'IZIN_GECMISI') {

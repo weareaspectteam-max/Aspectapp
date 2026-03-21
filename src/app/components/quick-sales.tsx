@@ -14,7 +14,7 @@ import {
 } from '../services/stock-service';
 import { buildHeaders, authHeaders, getToken } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
-import { localDateStr } from '../lib/date';
+import { bizDateStr } from '../lib/date';
 import {
   enqueue as offlineEnqueue,
   dequeue as offlineDequeue,
@@ -651,7 +651,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       setResolvedMekanId(realMekanId);
 
       // ── 2. Rotasyon personeli ────────────────────────────
-      const today = localDateStr();
+      const today = bizDateStr();
       const tasks = await getTasks();
       const todayTasks = (Array.isArray(tasks) ? tasks : []).filter(t =>
         t.date === today &&

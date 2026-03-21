@@ -593,6 +593,7 @@ export default function App() {
             userName={userName}
             userId={userId}
             userAvatar={userAvatar}
+            accessToken={accessToken}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -605,6 +606,7 @@ export default function App() {
             userName={userName}
             userId={userId}
             userAvatar={userAvatar}
+            accessToken={accessToken}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -737,6 +739,7 @@ export default function App() {
             userName={userName}
             userId={userId}
             userRole={userRole}
+            accessToken={accessToken}
             onBack={() => handleNavigate('aspect-ai')}
             onNavigate={handleNavigate}
           />

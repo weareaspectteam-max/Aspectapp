@@ -43,6 +43,7 @@ interface KisiselIzinCetveliProps {
   userName: string;
   userId: string;
   userRole: UserRole;
+  accessToken?: string;
   onBack: () => void;
   onNavigate?: (tab: string) => void;
 }
@@ -79,7 +80,7 @@ function daysInMonth(year: number, month: number): number {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, onBack, onNavigate }: KisiselIzinCetveliProps) {
+export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, accessToken, onBack, onNavigate }: KisiselIzinCetveliProps) {
   const now = new Date();
   const thisYear = now.getFullYear();
   const thisMonth = now.getMonth();
@@ -119,9 +120,9 @@ export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, onBa
     setLoading(true);
     try {
       const [leaves, dailyOnLeave, staffMembers] = await Promise.all([
-        getLeaveRequests(),
-        getDailyOnLeave(),
-        getStaffMembers(),
+        getLeaveRequests(accessToken),
+        getDailyOnLeave(accessToken),
+        getStaffMembers(accessToken),
       ]);
 
       const today = todayStr();
@@ -222,7 +223,7 @@ export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, onBa
     } finally {
       setLoading(false);
     }
-  }, [viewYear, viewMonth, userId, userName]);
+  }, [viewYear, viewMonth, userId, userName, accessToken]);
 
   useEffect(() => { loadData(); }, [loadData]);
 

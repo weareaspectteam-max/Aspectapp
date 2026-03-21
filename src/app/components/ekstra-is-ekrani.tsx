@@ -13,7 +13,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { StaffTopBar } from './staff-top-bar';
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
-import { localDateStr } from '../lib/date';
+import { bizDateStr } from '../lib/date';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -154,7 +154,7 @@ function StokSatir({
 
 // ─── Ana Bileşen ──────────────────────────────────────────────────────────────
 export function EkstraIsEkrani({ userName, userId, userRole, task, onBack, onLogout, onNavigate }: EkstraIsEkraniProps) {
-  const tarih = localDateStr();
+  const tarih = bizDateStr();
 
   // Aşama: yukleniyor | kaynak-sec | yazici-sec | acilis | calisiyor | kapalis | tamamlandi
   type Asama = 'yukleniyor' | 'kaynak-sec' | 'yazici-sec' | 'acilis' | 'calisiyor' | 'kapalis' | 'tamamlandi';

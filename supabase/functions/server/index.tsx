@@ -221,6 +221,22 @@ const sendTelegramWithInlineKeyboard = async (
 };
 
 // ──────────────────────────────────────────
+// İŞ GÜNÜ TARİHİ HELPER (Business Date)
+// Vardiyalar gece geçer; iş günü TR saatiyle 05:00'da başlar.
+// TR 00:00–04:59 → hâlâ önceki takvim günü sayılır.
+// Tüm endpointler "today" için bu fonksiyonu kullanmalıdır.
+// ──────────────────────────────────────────
+const bizDateTR = (): string => {
+  const trMs   = Date.now() + 3 * 60 * 60 * 1000; // UTC+3
+  const trHour = new Date(trMs).getUTCHours();
+  if (trHour < 7) {
+    // 00:00-04:59 TR → önceki iş günü
+    return new Date(trMs - 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  }
+  return new Date(trMs).toISOString().split("T")[0];
+};
+
+// ──────────────────────────────────────────
 // Health check
 // ──────────────────────────────────────────
 app.get("/make-server-4da0b637/health", (c) => {
@@ -483,39 +499,6 @@ app.post("/make-server-4da0b637/telegram/webhook", async (c) => {
 });
 
 // ──────────────────────────────────────────
-// TELEGRAM: Webhook URL kurulumu (bir kez çağır)
-// GET /make-server-4da0b637/telegram/setup-webhook
-// ──────────────────────────────────────────
-app.get("/make-server-4da0b637/telegram/setup-webhook", async (c) => {
-  try {
-    const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-    const pidMatch = supabaseUrl.match(/https:\/\/([^.]+)/);
-    if (!token) return c.json({ error: "TELEGRAM_BOT_TOKEN eksik" }, 500);
-    if (!pidMatch) return c.json({ error: "SUPABASE_URL parse hatası" }, 500);
-
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
-    // Telegram webhook istekleri Authorization header içermez; Supabase platformu ?apikey ile kabul eder.
-    const webhookUrl = `https://${pidMatch[1]}.supabase.co/functions/v1/make-server-4da0b637/telegram/webhook?apikey=${anonKey}`;
-
-    const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url: webhookUrl,
-        allowed_updates: ["callback_query", "message"],
-        drop_pending_updates: true,
-      }),
-    });
-    const result = await res.json();
-    console.log("[TG Webhook Setup]", JSON.stringify(result));
-    return c.json({ result, webhookUrl });
-  } catch (err) {
-    return c.json({ error: String(err) }, 500);
-  }
-});
-
-// ──────────────────────────────────────────
 // TELEGRAM: Webhook bilgisi sorgula (debug)
 // GET /make-server-4da0b637/telegram/webhook-info
 // ──────────────────────────────────────────
@@ -772,7 +755,7 @@ app.get("/make-server-4da0b637/users", async (c) => {
   }
 });
 
-// ──────────────────────────────────────────
+// ──────────────────���───────────────────────
 // USERS: Tek kullanıcı detayı
 // GET /make-server-4da0b637/users/:userId
 // ──────────────────────────────────────────
@@ -1008,7 +991,7 @@ app.get("/make-server-4da0b637/doviz/canli", async (c) => {
     // Canlı çek: USD baz alarak TRY, EUR, GBP (5 sn timeout)
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
-    let res: Response;
+    let res!: Response; // Definite assignment assertion — TS2454 hatasını önler
     try {
       res = await fetch("https://open.er-api.com/v6/latest/USD", { signal: controller.signal });
     } finally {
@@ -2154,7 +2137,7 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
   }
 });
 
-// ──────────────────────────────────────────
+// ─────────────────────────────────��────────
 // STOK: Kapanış kaydet
 // POST /stok/kapanis
 // Body: { mekanId, tarih, sayim, not? }
@@ -2672,17 +2655,12 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
-    // ── Tarih hesabı: Türkiye saati (UTC+3) ──────────────────────────────────
-    // Frontend bugunTarih() yerel saat kullanır. Sunucu UTC'dir.
-    // UTC+3 offseti elle eklenerek frontend ile aynı tarihe hizalanır.
-    const nowUtc = new Date();
-    const turkeyOffset = 3 * 60 * 60 * 1000; // UTC+3
-    const nowTurkey = new Date(nowUtc.getTime() + turkeyOffset);
-    const today = nowTurkey.toISOString().split("T")[0];
-    // Dün tarihini de hesapla (gece yarısı geçişi güvenliği için)
-    const yesterdayTurkey = new Date(nowTurkey.getTime() - 24 * 60 * 60 * 1000);
-    const yesterday = yesterdayTurkey.toISOString().split("T")[0];
-    console.log(`[canli-satis] UTC=${nowUtc.toISOString()} | TR today=${today}`);
+    // ── Tarih hesabı: 05:00 TR kırılımlı iş günü ─────────────────────────────
+    // Vardiyalar gece geçtiğinden iş günü TR 05:00'da başlar.
+    // TR 00:00-04:59 → hâlâ önceki iş günü sayılır.
+    // bizDateTR() bu mantığı zaten içeriyor, ayrıca yesterday gerekmez.
+    const today = bizDateTR();
+    console.log(`[canli-satis] bizDate=${today} | UTC=${new Date().toISOString()}`);
 
     // Tüm mekanları çek → id→mekan map
     const mekanlarList = await getMekanlar();
@@ -2692,12 +2670,12 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
     }
     console.log(`[canli-satis] getMekanlar → ${mekanlarList.length} mekan: ${mekanlarList.map((m: any) => m.name).join(", ")}`);
 
-    // Bugünkü + dünkü stok kayıtlarını çek (tarih uyuşmazlığı güvenliği için dün de dahil)
+    // Sadece bugünkü stok kayıtlarını çek (bizDateTR gece 03:00 → dün olarak yazar, zaten doğru)
     const tumKayitlar = await kv.getByPrefix("stok_gunluk_");
     const bugunKayitlar = (tumKayitlar || []).filter(
-      (k: any) => k.tarih === today || k.tarih === yesterday
+      (k: any) => k.tarih === today
     );
-    console.log(`[canli-satis] stok_gunluk_ toplam=${tumKayitlar?.length ?? 0}, bugün+dün=${bugunKayitlar.length}`);
+    console.log(`[canli-satis] stok_gunluk_ toplam=${tumKayitlar?.length ?? 0}, bugün=${bugunKayitlar.length}`);
     if (bugunKayitlar.length > 0) {
       console.log(`[canli-satis] kayıtlar: ${bugunKayitlar.map((k: any) => `${k.mekanId}→${k.tarih}(${(k.satislar||[]).length}satış)`).join(", ")}`);
     }
@@ -2781,10 +2759,8 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       return c.json({ error: "Yetki yok." }, 403);
     }
 
-    // Türkiye saati (UTC+3)
-    const _nowDash = new Date();
-    const _todayTR = new Date(_nowDash.getTime() + 3 * 60 * 60 * 1000);
-    const today = _todayTR.toISOString().split("T")[0];
+    // İş günü tarihi (05:00 TR kırılımlı)
+    const today = bizDateTR();
 
     // Mekan haritası
     const mekanlarList = await getMekanlar();
@@ -3188,12 +3164,8 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
     const mekanAdi = c.req.query("mekanAdi") || "";
     if (!mekanAdi) return c.json({ error: "mekanAdi zorunludur." }, 400);
 
-    // Bugünün tarihi (TR timezone)
-    const now = new Date();
-    const istanbulOffset = 3 * 60;
-    const localMs = now.getTime() + (now.getTimezoneOffset() + istanbulOffset) * 60000;
-    const localDate = new Date(localMs);
-    const today = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, "0")}-${String(localDate.getDate()).padStart(2, "0")}`;
+    // İş günü tarihi (05:00 TR kırılımlı)
+    const today = bizDateTR();
 
     // Tüm mekanları al, ada göre bul
     const mekanlarList: any[] = await getMekanlar();
@@ -3666,7 +3638,7 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
     const RIBON_PER_TAKIM = 200; // 1 takım = 200 baskı
 
     const mekanlarList: any[] = await getMekanlar();
@@ -3952,6 +3924,7 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
     const stokObj: Record<string, number> = {};
     for (const alan of albumAlanlari) stokObj[alan] = Number(albumSayilari?.[alan]) || 0;
     stokObj.ribon = Number(ribonTakim) || 0;
+    const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
 
     if (mekanId === "depo") {
       const depoStok: any = await kv.get("depo_stok") || {};
@@ -3963,7 +3936,6 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
       return c.json({ basarili: true });
     }
 
-    const today = new Date().toISOString().split("T")[0];
     const kvKey = `stok_gunluk_${mekanId}_${today}`;
     const kayit: any = await kv.get(kvKey) || { mekanId, tarih: today };
     // Hem acilis hem kapanish'e yaz; böylece hiç vardiya açılmamış
@@ -4010,7 +3982,7 @@ app.post("/make-server-4da0b637/stok/mekan/sifirla", async (c) => {
       return c.json({ basarili: true });
     }
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
     const kvKey = `stok_gunluk_${mekanId}_${today}`;
     const kayit: any = await kv.get(kvKey) || { mekanId, tarih: today };
     kayit.acilis = { ...(kayit.acilis || {}), ...sifirStok };
@@ -4052,7 +4024,7 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
       return c.json({ error: "Geçersiz alan." }, 400);
     }
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
     const kullaniciAdi = user.user_metadata?.full_name || user.email || "Bilinmeyen";
 
     // Helper: mekan stok oku (bugün veya fallback)
@@ -4729,7 +4701,7 @@ app.get("/make-server-4da0b637/ai/ozet", async (c) => {
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
     const isAdmin = ["yonetici", "ust-mudur", "mudur", "idari", "operasyon"].includes(callerRole);
 
     // Mekanlar
@@ -6102,7 +6074,7 @@ app.post("/make-server-4da0b637/kare", async (c) => {
     const count = parseInt(frameCount);
     if (isNaN(count) || count <= 0) return c.json({ error: "Geçersiz kare sayısı." }, 400);
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const entry = {
       id,
@@ -9321,32 +9293,34 @@ app.post("/make-server-4da0b637/stok/gecikme-bildir", async (c) => {
   }
 });
 
-// ── Telegram Webhook Otomatik Kurulumu (sunucu başlangıcında, non-blocking) ──
-(async () => {
+// ── Telegram Webhook Kurulumu: modül seviyesinden kaldırıldı.
+// Cold-start sırasında api.telegram.org'a yapılan ağ çağrısı
+// Edge Function'ın ilk yanıt vermesini geciktirip 503'e yol açıyordu.
+// Webhook'u yeniden kurmak için GET /telegram/setup-webhook endpoint'ini kullanın.
+app.get("/make-server-4da0b637/telegram/setup-webhook", async (c) => {
   try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur"].includes(callerRole)) return c.json({ error: "Yetki yok." }, 403);
     const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
     const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
     const pidMatch = supabaseUrl.match(/https:\/\/([^.]+)/);
-    if (!token || !pidMatch) return;
+    if (!token || !pidMatch) return c.json({ error: "Token veya URL eksik." }, 400);
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
-    // Telegram webhook istekleri Authorization header içermez; Supabase platformu ?apikey ile kabul eder.
     const webhookUrl = `https://${pidMatch[1]}.supabase.co/functions/v1/make-server-4da0b637/telegram/webhook?apikey=${anonKey}`;
-    // Her başlangıçta kayıt yap (URL eşleşme kontrolü yok — secret_token da yok, apikey yeterli)
     const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url: webhookUrl,
-        allowed_updates: ["callback_query", "message"],
-        drop_pending_updates: false,
-      }),
+      body: JSON.stringify({ url: webhookUrl, allowed_updates: ["callback_query", "message"], drop_pending_updates: false }),
     });
     const result = await res.json();
-    console.log("[TG Webhook Auto-setup]", result.ok ? "✅ Kuruldu:" : "⚠️ Hata:", webhookUrl, result.description || "");
+    console.log("[TG Webhook setup]", result.ok ? "✅" : "⚠️", result.description || "");
+    return c.json({ ok: result.ok, description: result.description, webhookUrl });
   } catch (e) {
-    console.log("[TG Webhook Auto-setup] Hata:", e);
+    return c.json({ error: String(e) }, 500);
   }
-})();
+});
 
 // ──────────────────────────────────────────
 // VARDİYA CHECK-IN / CHECK-OUT SİSTEMİ
@@ -9358,8 +9332,7 @@ app.get("/make-server-4da0b637/vardiya/bugun", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const userId = user.id;
-    const now = new Date(Date.now() + 3 * 60 * 60 * 1000);
-    const tarih = now.toISOString().split("T")[0];
+    const tarih = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
     const [checkin, checkout, lateNotice] = await Promise.all([
       kv.get(`checkin_${userId}_${tarih}`),
       kv.get(`checkout_${userId}_${tarih}`),
@@ -9382,9 +9355,9 @@ app.post("/make-server-4da0b637/vardiya/checkin", async (c) => {
     const body = await c.req.json();
     const { plannedStart, plannedEnd, location, locationIcon, taskId } = body;
     if (!plannedStart) return c.json({ error: "plannedStart gerekli." }, 400);
-    const now = new Date(Date.now() + 3 * 60 * 60 * 1000);
-    const tarih = now.toISOString().split("T")[0];
-    const checkInTime = now.toISOString();
+    const now = new Date(Date.now() + 3 * 60 * 60 * 1000); // TR saati (lateMin hesabı için)
+    const tarih = bizDateTR();                               // İş günü tarihi (05:00 TR kırılımlı)
+    const checkInTime = new Date().toISOString();            // Gerçek UTC timestamp ✓
     const [ph, pm] = plannedStart.split(":").map(Number);
     const plannedMs = ph * 3600000 + pm * 60000;
     const nowMs = now.getUTCHours() * 3600000 + now.getUTCMinutes() * 60000 + now.getUTCSeconds() * 1000;
@@ -9413,9 +9386,8 @@ app.post("/make-server-4da0b637/vardiya/checkout", async (c) => {
     const userName = user.user_metadata?.name || user.email || userId;
     const body = await c.req.json();
     const { plannedEnd } = body;
-    const now = new Date(Date.now() + 3 * 60 * 60 * 1000);
-    const tarih = now.toISOString().split("T")[0];
-    const checkOutTime = now.toISOString();
+    const tarih = bizDateTR();                               // İş günü tarihi (05:00 TR kırılımlı)
+    const checkOutTime = new Date().toISOString();           // Gerçek UTC timestamp ✓
     const checkin = await kv.get(`checkin_${userId}_${tarih}`);
     const data = { checkOutTime, plannedEnd: plannedEnd || checkin?.plannedEnd, userId, tarih };
     await kv.set(`checkout_${userId}_${tarih}`, data);
@@ -9436,13 +9408,12 @@ app.post("/make-server-4da0b637/vardiya/gec-bildir", async (c) => {
     const userName = user.user_metadata?.name || user.email || userId;
     const body = await c.req.json();
     const { delayMin, reason, plannedStart, location, locationIcon } = body;
-    const now = new Date(Date.now() + 3 * 60 * 60 * 1000);
-    const tarih = now.toISOString().split("T")[0];
+    const tarih = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
     const existing = await kv.get(`lateNotice_${userId}_${tarih}`);
     if (existing) {
       return c.json({ success: true, alreadySent: true, data: existing });
     }
-    const data = { sentAt: now.toISOString(), delayMin: delayMin || 0, reason: reason || "", plannedStart, location, userId, tarih };
+    const data = { sentAt: new Date().toISOString(), delayMin: delayMin || 0, reason: reason || "", plannedStart, location, userId, tarih }; // Gerçek UTC ✓
     await kv.set(`lateNotice_${userId}_${tarih}`, data);
     const reasonEmoji = reason === "Trafik" ? "🚗" : reason === "Ulaşım" ? "🚌" : "💬";
     const telegramText = `⚠️ <b>Geç Kalma Bildirimi</b>\n\n👤 <b>${userName}</b> geç kalacağını bildirdi.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n⏰ Planlanan giriş: <b>${plannedStart || "?"}</b>\n⏱️ Tahmini gecikme: <b>${delayMin || "?"} dk</b>\n${reasonEmoji} Sebep: <b>${reason || "Belirtilmedi"}</b>\n📅 Tarih: ${tarih}`;

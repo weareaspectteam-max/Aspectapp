@@ -5,7 +5,7 @@
 
 import { authHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
-import { localDateStr } from '../lib/date';
+import { bizDateStr } from '../lib/date';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -120,9 +120,9 @@ export interface MekanYazici {
   lastEndRibonMevcut: number | null;
 }
 
-// Bugünün tarihini YYYY-MM-DD formatında döndür (lokal saat, UTC değil)
+// Bugünün tarihini YYYY-MM-DD formatında döndür (05:00 TR kırılımlı iş günü)
 export const bugunTarih = (): string => {
-  return localDateStr();
+  return bizDateStr();
 };
 
 // Günlük stok verisini getir (dünün kapanışı dahil)

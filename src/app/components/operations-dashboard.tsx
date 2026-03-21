@@ -11,10 +11,12 @@ import { projectId } from '/utils/supabase/info';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
+/** İş günü tarihi: TR 00:00-04:59 → hâlâ önceki takvim günü (vardiya 05:00'da biter). */
 function todayTR(): string {
-  const now = new Date();
-  const tr  = new Date(now.getTime() + 3 * 60 * 60 * 1000);
-  return tr.toISOString().split('T')[0];
+  const trMs   = Date.now() + 3 * 60 * 60 * 1000;
+  const trHour = new Date(trMs).getUTCHours();
+  if (trHour < 5) return new Date(trMs - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  return new Date(trMs).toISOString().split('T')[0];
 }
 
 /* ── Glassmorphism — yönetici ile aynı ── */

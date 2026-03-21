@@ -56,10 +56,17 @@ function trNow() {
   return new Date(Date.now() + 3 * 60 * 60 * 1000);
 }
 function fmt(d: Date) { return d.toISOString().split('T')[0]; }
+/** İş günü tarihi: TR 00:00-04:59 → önceki takvim günü (vardiya 05:00'da biter). */
+function bizToday(): string {
+  const trMs   = Date.now() + 3 * 60 * 60 * 1000;
+  const trHour = new Date(trMs).getUTCHours();
+  if (trHour < 5) return new Date(trMs - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  return new Date(trMs).toISOString().split('T')[0];
+}
 function getMonthDates() {
   const now = trNow();
   const baslangic = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-  const bitis = fmt(now);
+  const bitis = bizToday();
   const periodKey = `ay_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   return { baslangic, bitis, periodKey };
 }
@@ -76,7 +83,7 @@ function getLast3Months(): { periodKey: string; baslangic: string; bitis: string
     const periodKey = `ay_${y}-${mm}`;
     const baslangic = `${y}-${mm}-01`;
     const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
-    const bitis = i === 0 ? fmt(trNow()) : `${y}-${mm}-${String(lastDay).padStart(2, '0')}`;
+    const bitis = i === 0 ? bizToday() : `${y}-${mm}-${String(lastDay).padStart(2, '0')}`;
     const monthShort = new Date(y, m - 1, 1).toLocaleString('tr-TR', { month: 'short' });
     result.push({ periodKey, baslangic, bitis, monthShort, isCurrent: i === 0 });
   }

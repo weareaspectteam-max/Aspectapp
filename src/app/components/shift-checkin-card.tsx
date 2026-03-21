@@ -12,17 +12,36 @@ const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0
 function trNow() {
   return new Date(Date.now() + 3 * 60 * 60 * 1000);
 }
-function todayStr() {
-  return trNow().toISOString().split('T')[0];
+/**
+ * İş günü tarihi: TR 00:00-04:59 → hâlâ önceki takvim günü.
+ * Vardiyalar sabah 05:00'da sona erer; gece 03:00'da hâlâ dünün vardiyası devam eder.
+ */
+function bizTodayStr(): string {
+  const trMs  = Date.now() + 3 * 60 * 60 * 1000;
+  const trHour = new Date(trMs).getUTCHours();
+  if (trHour < 5) {
+    return new Date(trMs - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  }
+  return new Date(trMs).toISOString().split('T')[0];
 }
 
-/* ── "HH:MM" → bugünkü Date (TR saati) ── */
+/* ── "HH:MM" → iş gününün Date'i (TR saati → gerçek UTC) ── */
 function timeToTodayDate(hhmm: string): Date {
   const [h, m] = hhmm.split(':').map(Number);
-  const d = trNow();
-  // UTC cinsinden bugün başlangıcı (TR = UTC+3, yani UTC'de -3)
-  const base = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h - 3, m, 0));
-  return base;
+  // Takvim günü değil iş günü tarihini kullan (05:00 kırılımlı)
+  const bizDate = bizTodayStr();
+  const [y, mo, d] = bizDate.split('-').map(Number);
+  // h = TR saati, UTC'ye çevirmek için -3
+  return new Date(Date.UTC(y, mo - 1, d, h - 3, m, 0));
+}
+
+/* ── Gece geçen vardiya desteği: start/end ms hesabı ── */
+function shiftDates(startTime: string, endTime: string): { startMs: number; endMs: number } {
+  const startMs = timeToTodayDate(startTime).getTime();
+  let endMs   = timeToTodayDate(endTime).getTime();
+  // endTime < startTime (ör. 16:00 → 00:00) → ertesi güne taşı
+  if (endMs <= startMs) endMs += 24 * 60 * 60 * 1000;
+  return { startMs, endMs };
 }
 
 /* ── Saniye → "HH:SS:ss" ── */
@@ -154,7 +173,30 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
   /* ── Bugünün görevi ── */
-  const todayTask = tasks.find(t => t.date === todayStr());
+  const todayTask = tasks.find(t => t.date === bizTodayStr());
+
+  /* ── KV verisini bugünün göreviyle doğrula ──────────────────────────────────
+   * Farklı bir gün ya da farklı görevin check-in/out kaydı KV'de kalabilir.
+   * taskId eşleşmiyorsa; taskId yoksa (eski format) plannedStart ile karşılaştır.
+   * Ayrıca checkInTime ISO timestamp'ı vardiya başlangıcından 4+ saat ÖNCEsine
+   * düşüyorsa da stale kabul et (ör. sabah 04:44 kaydı 16:00 vardiyası için).
+   * ─────────────────────────────────────────────────────────────────────────── */
+  const validCheckin: CheckInData | null = (() => {
+    if (!checkin || !todayTask) return null;
+    // taskId varsa ve eşleşmiyorsa geçersiz
+    if (checkin.taskId && checkin.taskId !== todayTask.id) return null;
+    // plannedStart eşleşmiyorsa geçersiz (taskId'siz eski kayıtlar için)
+    if (!checkin.taskId && checkin.plannedStart !== todayTask.startTime) return null;
+    // checkInTime ISO ise: vardiya başlangıcından 4+ saat önce → stale
+    if (checkin.checkInTime && checkin.checkInTime.includes('T')) {
+      const { startMs } = shiftDates(todayTask.startTime, todayTask.endTime);
+      const ciMs = new Date(checkin.checkInTime).getTime();
+      if (ciMs < startMs - 4 * 3600 * 1000) return null;
+    }
+    return checkin;
+  })();
+
+  const validCheckout: CheckOutData | null = validCheckin && checkout ? checkout : null;
 
   /* ── Durum hesapla ── */
   const computeState = (): ShiftState => {
@@ -162,27 +204,21 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
     if (!todayTask) return 'no-shift';
 
     const now = trNow();
-    const startDate = timeToTodayDate(todayTask.startTime);
-    const endDate = timeToTodayDate(todayTask.endTime);
+    const { startMs, endMs } = shiftDates(todayTask.startTime, todayTask.endTime);
     const nowMs = now.getTime();
-    const startMs = startDate.getTime();
-    const endMs = endDate.getTime();
     const diffFromStartSec = Math.floor((nowMs - startMs) / 1000);
     const GRACE_SEC = 5 * 60; // 5 dakika grace
 
-    if (checkout) {
-      // Tamamlandı
-      return checkin?.lateMin && checkin.lateMin > 0 ? 'completed-late' : 'completed-ontime';
+    if (validCheckout) {
+      return validCheckin?.lateMin && validCheckin.lateMin > 0 ? 'completed-late' : 'completed-ontime';
     }
-    if (checkin) {
-      // Check-in yapılmış
+    if (validCheckin) {
       if (nowMs > endMs) return 'overtime';
-      return checkin.lateMin > 0 ? 'active-late' : 'active-ontime';
+      return validCheckin.lateMin > 0 ? 'active-late' : 'active-ontime';
     }
-    // Check-in yok
-    if (nowMs < startMs) return 'waiting';                        // Henüz gelmedi
-    if (diffFromStartSec <= GRACE_SEC) return 'grace';             // 5dk grace
-    return 'late-no-checkin';                                      // Geç kalıyor
+    if (nowMs < startMs) return 'waiting';
+    if (diffFromStartSec <= GRACE_SEC) return 'grace';
+    return 'late-no-checkin';
   };
 
   const state = computeState();
@@ -281,22 +317,20 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
   const computeProgress = () => {
     if (!todayTask) return { missedPct: 0, workedPct: 0, remainPct: 100, markerPct: 0 };
     const now = trNow();
-    const startMs = timeToTodayDate(todayTask.startTime).getTime();
-    const endMs = timeToTodayDate(todayTask.endTime).getTime();
+    const { startMs, endMs } = shiftDates(todayTask.startTime, todayTask.endTime);
     const totalMs = endMs - startMs;
     const nowMs = now.getTime();
 
-    if (!checkin) {
-      // Check-in yok — bar tamamen boş
+    if (!validCheckin) {
       return { missedPct: 0, workedPct: 0, remainPct: 100, markerPct: 0 };
     }
 
-    const checkInMs = new Date(checkin.checkInTime).getTime();
+    const checkInMs = new Date(validCheckin.checkInTime).getTime();
     const checkInMsFromStart = checkInMs - startMs;
     const missedPct = Math.min(100, Math.max(0, (checkInMsFromStart / totalMs) * 100));
 
-    let workedEndMs = checkout ? new Date(checkout.checkOutTime).getTime() : nowMs;
-    workedEndMs = Math.min(workedEndMs, endMs + 2 * 3600000); // max +2sa overtime
+    let workedEndMs = validCheckout ? new Date(validCheckout.checkOutTime).getTime() : nowMs;
+    workedEndMs = Math.min(workedEndMs, endMs + 2 * 3600000);
     const workedMs = Math.max(0, workedEndMs - checkInMs);
     const workedPct = Math.min(100 - missedPct, (workedMs / totalMs) * 100);
     const remainPct = Math.max(0, 100 - missedPct - workedPct);
@@ -307,7 +341,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
   /* ── Geri sayaç (bitiş için kalan saniye) ── */
   const computeCountdown = (): number => {
     if (!todayTask) return 0;
-    const endMs = timeToTodayDate(todayTask.endTime).getTime();
+    const { endMs } = shiftDates(todayTask.startTime, todayTask.endTime);
     return Math.floor((endMs - trNow().getTime()) / 1000);
   };
 
@@ -318,7 +352,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
     return Math.floor((startMs - trNow().getTime()) / 1000);
   };
 
-  /* ── Gecikme sayacı (vardiyadayım ama gelmedi — kaç saniyedir geç) ── */
+  /* ── Gecikme sayacı ── */
   const computeLateElapsed = (): number => {
     if (!todayTask) return 0;
     const startMs = timeToTodayDate(todayTask.startTime).getTime();
@@ -328,7 +362,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
   /* ── Fazla mesai sayacı ── */
   const computeOvertime = (): number => {
     if (!todayTask) return 0;
-    const endMs = timeToTodayDate(todayTask.endTime).getTime();
+    const { endMs } = shiftDates(todayTask.startTime, todayTask.endTime);
     return Math.floor((trNow().getTime() - endMs) / 1000);
   };
 
@@ -393,19 +427,19 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
             </div>
           </div>
           {/* Sağ taraf: check-in saati veya giriş etiketi */}
-          {checkin && !checkout && (
+          {validCheckin && !validCheckout && (
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.40)' }}>Giriş</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: checkin.lateMin > 0 ? '#fb923c' : '#4ade80' }}>
-                {isoToTrTime(checkin.checkInTime)}
-                {checkin.lateMin > 0 && <span style={{ fontSize: 10, marginLeft: 4 }}>⚠️{checkin.lateMin}dk geç</span>}
+              <div style={{ fontSize: 13, fontWeight: 800, color: validCheckin.lateMin > 0 ? '#fb923c' : '#4ade80' }}>
+                {isoToTrTime(validCheckin.checkInTime)}
+                {validCheckin.lateMin > 0 && <span style={{ fontSize: 10, marginLeft: 4 }}>⚠️{validCheckin.lateMin}dk geç</span>}
               </div>
             </div>
           )}
-          {checkout && (
+          {validCheckout && (
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.40)' }}>Çıkış</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#4ade80' }}>{isoToTrTime(checkout.checkOutTime)}</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#4ade80' }}>{isoToTrTime(validCheckout.checkOutTime)}</div>
             </div>
           )}
         </div>
@@ -450,20 +484,20 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
         )}
 
         {/* TAMAMLANDI ÖZETİ */}
-        {(state === 'completed-ontime' || state === 'completed-late') && checkin && checkout && (
+        {(state === 'completed-ontime' || state === 'completed-late') && validCheckin && validCheckout && (
           <div style={{ marginBottom: 14 }}>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <div style={{
                 flex: 1, borderRadius: 10, padding: '8px 10px', textAlign: 'center',
-                background: checkin.lateMin > 0 ? 'rgba(251,146,60,0.10)' : 'rgba(74,222,128,0.10)',
-                border: `1px solid ${checkin.lateMin > 0 ? 'rgba(251,146,60,0.25)' : 'rgba(74,222,128,0.25)'}`,
+                background: validCheckin.lateMin > 0 ? 'rgba(251,146,60,0.10)' : 'rgba(74,222,128,0.10)',
+                border: `1px solid ${validCheckin.lateMin > 0 ? 'rgba(251,146,60,0.25)' : 'rgba(74,222,128,0.25)'}`,
               }}>
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.40)', marginBottom: 2 }}>Giriş</div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: checkin.lateMin > 0 ? '#fb923c' : '#4ade80' }}>
-                  {isoToTrTime(checkin.checkInTime)}
+                <div style={{ fontSize: 14, fontWeight: 800, color: validCheckin.lateMin > 0 ? '#fb923c' : '#4ade80' }}>
+                  {isoToTrTime(validCheckin.checkInTime)}
                 </div>
-                {checkin.lateMin > 0 && (
-                  <div style={{ fontSize: 9, color: '#fb923c', marginTop: 2 }}>⚠️ {checkin.lateMin}dk geç</div>
+                {validCheckin.lateMin > 0 && (
+                  <div style={{ fontSize: 9, color: '#fb923c', marginTop: 2 }}>⚠️ {validCheckin.lateMin}dk geç</div>
                 )}
               </div>
               <div style={{
@@ -473,19 +507,19 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
               }}>
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.40)', marginBottom: 2 }}>Çıkış</div>
                 <div style={{ fontSize: 14, fontWeight: 800, color: '#4ade80' }}>
-                  {isoToTrTime(checkout.checkOutTime)}
+                  {isoToTrTime(validCheckout.checkOutTime)}
                 </div>
               </div>
             </div>
             {(() => {
-              const ciMs = new Date(checkin.checkInTime).getTime();
-              const coMs = new Date(checkout.checkOutTime).getTime();
+              const ciMs = new Date(validCheckin.checkInTime).getTime();
+              const coMs = new Date(validCheckout.checkOutTime).getTime();
               const totalMin = Math.round((coMs - ciMs) / 60000);
               return (
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.40)', textAlign: 'center' }}>
                   Çalışılan: <span style={{ color: 'white', fontWeight: 700 }}>{fmtMin(totalMin)}</span>
-                  {checkin.lateMin > 0 && (
-                    <> · Eksik: <span style={{ color: '#fb923c', fontWeight: 700 }}>{checkin.lateMin}dk</span></>
+                  {validCheckin.lateMin > 0 && (
+                    <> · Eksik: <span style={{ color: '#fb923c', fontWeight: 700 }}>{validCheckin.lateMin}dk</span></>
                   )}
                   {state === 'completed-ontime' && <> · <span style={{ color: '#4ade80' }}>Harika iş! 🎉</span></>}
                 </div>
@@ -503,7 +537,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
           markerPct={markerPct}
           startTime={task.startTime}
           endTime={task.endTime}
-          checkinTime={checkin ? isoToTrTime(checkin.checkInTime) : undefined}
+          checkinTime={validCheckin ? isoToTrTime(validCheckin.checkInTime) : undefined}
         />
 
         {/* BUTONLAR */}

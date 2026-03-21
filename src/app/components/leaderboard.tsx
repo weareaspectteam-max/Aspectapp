@@ -42,6 +42,13 @@ function trNow() {
   return new Date(now.getTime() + 3 * 60 * 60 * 1000);
 }
 function fmt(d: Date) { return d.toISOString().split('T')[0]; }
+/** İş günü tarihi: TR 00:00-04:59 → önceki takvim günü (vardiya 05:00'da biter). */
+function bizToday(): string {
+  const trMs   = Date.now() + 3 * 60 * 60 * 1000;
+  const trHour = new Date(trMs).getUTCHours();
+  if (trHour < 5) return new Date(trMs - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  return new Date(trMs).toISOString().split('T')[0];
+}
 
 /* ────────────────────────────────────────────────────────────
    Tipler
@@ -85,7 +92,7 @@ function getPeriodKey(period: Period): string {
 
 function getPeriodDates(period: Period) {
   const now = trNow();
-  const today = fmt(now);
+  const today = bizToday();
   if (period === 'bu-hafta') {
     const day = now.getDay();
     const diff = day === 0 ? -6 : 1 - day;

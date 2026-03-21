@@ -1592,6 +1592,10 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                 const tod = new Date(); tod.setHours(0,0,0,0);
                 if (td < tod) return true;
                 if (task.date === todayStr && task.endTime) {
+                  // Gece geçen vardiya: endTime < startTime (örn. 18:00-02:00)
+                  // Bitiş ertesi günün sabahına sarkıyor → bugün asla geçmiş sayılmaz
+                  const isOvernight = task.startTime && task.endTime < task.startTime;
+                  if (isOvernight) return false;
                   // "00:00" gece yarısı = ertesi günün başı → asla bugün geçmiş sayılmaz
                   const endNorm = task.endTime === '00:00' ? '24:00' : task.endTime;
                   if (endNorm < currentTime) return true;
