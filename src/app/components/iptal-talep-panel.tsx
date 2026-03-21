@@ -32,7 +32,7 @@ export function IptalTalepPanel({ accessToken, userRole }: Props) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
-  // ── Polling ───────────────────────────────────────────────────────────
+  // ── Polling ──────────────���────────────────────────────────────────────
   useEffect(() => {
     if (!isYonetici || !accessToken) return;
 
@@ -64,10 +64,15 @@ export function IptalTalepPanel({ accessToken, userRole }: Props) {
           console.warn('[IptalTalepPanel] fetchBekleyen non-ok:', res.status, body?.error ?? body);
         }
       } catch (err: any) {
-        // AbortError: component unmount veya effect temizleme — normal, loglama
+        // AbortError: component unmount veya effect temizleme — normal, sessiz geç
         if (err?.name === 'AbortError') return;
         // Çevrimdışı veya geçici ağ hatası — sessiz geç
         if (!navigator.onLine) return;
+        // iOS Safari abort'ta AbortError yerine TypeError: Failed to fetch / Load failed atıyor
+        if (abortController?.signal?.aborted) return;
+        if (err?.message === 'Failed to fetch' || err?.message === 'Load failed') return;
+        // Bileşen zaten unmount olduysa loglama
+        if (destroyed) return;
         console.warn('[IptalTalepPanel] fetchBekleyen hata:', err);
       }
     };

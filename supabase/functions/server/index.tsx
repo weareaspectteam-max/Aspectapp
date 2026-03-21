@@ -230,7 +230,7 @@ const bizDateTR = (): string => {
   const trMs   = Date.now() + 3 * 60 * 60 * 1000; // UTC+3
   const trHour = new Date(trMs).getUTCHours();
   if (trHour < 7) {
-    // 00:00-04:59 TR → önceki iş günü
+    // 00:00-06:59 TR → önceki iş günü
     return new Date(trMs - 24 * 60 * 60 * 1000).toISOString().split("T")[0];
   }
   return new Date(trMs).toISOString().split("T")[0];
@@ -1162,7 +1162,7 @@ app.delete("/make-server-4da0b637/maliyetler/kagitlar/:id", async (c) => {
 
 // ──────────────────────────────────────────
 // MALİYET: Düzenli gider ekle/güncelle/sil
-// ──────────────────────────────────────────
+// ─────────────────────────────────���────────
 app.post("/make-server-4da0b637/maliyetler/giderler", async (c) => {
   try {
     const user = await verifyToken(c);
@@ -2874,7 +2874,7 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       };
     }).sort((a: any, b: any) => b.ciro - a.ciro).slice(0, 5);
 
-    // ── Personel bazlı performans sıralaması ─────────────────────────────────
+    // ── Personel bazlı performans sıralaması ───────────────────────────────��─
     const personelMap: Record<string, { name: string; ciro: number; satisAdet: number; mekan: string }> = {};
     for (const kayit of bugunKayitlar) {
       const mekanP = mekanMap[kayit.mekanId] || { name: kayit.mekanId };
