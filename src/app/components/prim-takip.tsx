@@ -4,7 +4,7 @@ import {
   ChevronLeft, RefreshCw, Trophy, Check, Clock,
   ChevronDown, ChevronUp, Filter, CreditCard,
   Calendar, AlertCircle, CheckCircle2, User, Users,
-  Banknote, X, TrendingUp, Undo2,
+  Banknote, X, TrendingUp, Undo2, Trash2,
 } from 'lucide-react';
 import { getToken, buildHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
@@ -255,6 +255,38 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
       await fetchRapor();
     } catch (e: any) {
       console.error('PrimTakip ode error:', e);
+      setError(e.message || 'İşlem hatası');
+      setTimeout(() => setError(''), 4000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Prim iptali (bekleyen kayıt silme) ───────────────
+  const handleSilPrim = async (items: PrimKayit[], geriAl = false) => {
+    if (!canEdit) return;
+    if (!geriAl && !confirm(`${items.length > 1 ? `${items.length} prim kaydı` : '1 prim kaydı'} iptal edilecek. Emin misiniz?`)) return;
+    setSaving(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/primler/sil`, {
+        method: 'POST',
+        headers: buildHeaders(token),
+        body: JSON.stringify({
+          odemeKeys: items.map(i => i.odemeKey),
+          geriAl,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'İşlem hatası');
+      const msg = geriAl
+        ? `↩️ ${data.islenen} prim kaydı geri alındı.`
+        : `🗑️ ${data.islenen} prim kaydı iptal edildi.`;
+      setSuccessMsg(msg);
+      setTimeout(() => setSuccessMsg(''), 4000);
+      await fetchRapor();
+    } catch (e: any) {
+      console.error('PrimTakip sil error:', e);
       setError(e.message || 'İşlem hatası');
       setTimeout(() => setError(''), 4000);
     } finally {
@@ -762,6 +794,24 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                                       </button>
                                     )}
 
+                                    {/* Bekleyen kayıtları sil (iptal et) */}
+                                    {canEdit && pg.bekleyenKayitlar.length > 0 && (
+                                      <button
+                                        onClick={() => handleSilPrim(pg.bekleyenKayitlar)}
+                                        disabled={saving}
+                                        title="Bekleyen primleri iptal et"
+                                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold active:scale-95 transition-all"
+                                        style={{
+                                          background: 'rgba(248,113,113,0.1)',
+                                          border: '1px solid rgba(248,113,113,0.25)',
+                                          color: '#f87171',
+                                        }}
+                                      >
+                                        {saving ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Trash2 className="w-2.5 h-2.5" />}
+                                        Sil
+                                      </button>
+                                    )}
+
                                     {/* Detay toggle */}
                                     <button
                                       onClick={() => toggleKisiDetay(kisiKey)}
@@ -833,19 +883,36 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                                                       <span style={{ fontSize: 8, color: 'rgba(52,211,153,0.6)', fontWeight: 700 }}>✓</span>
                                                     )
                                                   ) : canEdit ? (
-                                                    <button
-                                                      onClick={() => handleOde([kayit], true)}
-                                                      disabled={saving}
-                                                      style={{
-                                                        fontSize: 8, padding: '1px 5px', borderRadius: 5, fontWeight: 700,
-                                                        background: 'rgba(52,211,153,0.12)',
-                                                        border: '1px solid rgba(52,211,153,0.25)',
-                                                        color: '#34d399',
-                                                      }}
-                                                      className="active:scale-95 transition-all"
-                                                    >
-                                                      Öde
-                                                    </button>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                                                      <button
+                                                        onClick={() => handleOde([kayit], true)}
+                                                        disabled={saving}
+                                                        style={{
+                                                          fontSize: 8, padding: '1px 5px', borderRadius: 5, fontWeight: 700,
+                                                          background: 'rgba(52,211,153,0.12)',
+                                                          border: '1px solid rgba(52,211,153,0.25)',
+                                                          color: '#34d399',
+                                                        }}
+                                                        className="active:scale-95 transition-all"
+                                                      >
+                                                        Öde
+                                                      </button>
+                                                      <button
+                                                        onClick={() => handleSilPrim([kayit])}
+                                                        disabled={saving}
+                                                        title="Bu primi iptal et"
+                                                        style={{
+                                                          padding: '2px 4px', borderRadius: 5,
+                                                          background: 'rgba(248,113,113,0.1)',
+                                                          border: '1px solid rgba(248,113,113,0.25)',
+                                                          color: '#f87171',
+                                                          display: 'flex', alignItems: 'center',
+                                                        }}
+                                                        className="active:scale-95 transition-all"
+                                                      >
+                                                        <Trash2 style={{ width: 7, height: 7 }} />
+                                                      </button>
+                                                    </div>
                                                   ) : null}
                                                 </div>
                                               );

@@ -2946,13 +2946,20 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
       return ky === yil && ka === ayNo;
     });
 
-    // Ödendi kayıtlarını çek — key, odendi ve odemeTarihi saklanıyor
+    // Ödendi kayıtlarını ve iptal edilen (silindi) kayıtları çek
     const odemePrefix = `prim_odendi_`;
-    const tumOdemeler: any[] = await kv.getByPrefix(odemePrefix) || [];
+    const [tumOdemeler, tumSilindi] = await Promise.all([
+      kv.getByPrefix(odemePrefix).catch(() => []),
+      kv.getByPrefix("prim_silindi_").catch(() => []),
+    ]);
     const odemeMap: Record<string, { odendi: boolean; odemeTarihi?: string }> = {};
-    for (const o of tumOdemeler) {
+    for (const o of (tumOdemeler || [])) {
       if (o.key) odemeMap[o.key] = { odendi: o.odendi || false, odemeTarihi: o.odemeTarihi };
     }
+    // iptal edilmiş (silindi) orijinalKey'ler
+    const silinenKeys = new Set<string>(
+      (tumSilindi || []).filter((s: any) => s.silindi).map((s: any) => s.orijinalKey).filter(Boolean)
+    );
 
     // Tüm rotasyon görevlerini çek — personeli buradan alacağız
     const tumRotasyonlar: any[] = await kv.getByPrefix("rotation_task_") || [];
@@ -2979,6 +2986,8 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
         if (!Array.isArray(task.personnel)) continue;
         for (const p of task.personnel) {
           if (p.id && p.name && !seenIds.has(p.id)) {
+            // ust-mudur ve yonetici prime dahil edilmez
+            if (["ust-mudur", "yonetici"].includes(p.role || "")) continue;
             seenIds.add(p.id);
             rotasyonPersonelList.push({ id: p.id, name: p.name, gorev: p.gorev });
           }
@@ -3036,13 +3045,19 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
       }
     }
 
+    // İptal edilmiş (silindi) kayıtları filtrele — silindi flag eklenerek döndür
+    const primKayitlariFinal = primKayitlari.map(p => ({
+      ...p,
+      silindi: silinenKeys.has(p.odemeKey),
+    })).filter(p => !p.silindi || p.odendi); // ödenmişler silinse de göster; sadece bekleyenler gizlenir
+
     // Özet: her kayıt tek kişinin primini tutuyor
-    const toplamPrim = primKayitlari.reduce((s, p) => s + p.primMiktar, 0);
-    const odenenPrim = primKayitlari.filter(p => p.odendi).reduce((s, p) => s + p.primMiktar, 0);
+    const toplamPrim = primKayitlariFinal.reduce((s, p) => s + p.primMiktar, 0);
+    const odenenPrim = primKayitlariFinal.filter(p => p.odendi).reduce((s, p) => s + p.primMiktar, 0);
     const bekleyenPrim = toplamPrim - odenenPrim;
 
-    console.log(`Prim raporu ${ay}: ${primKayitlari.length} kişi-kademe kaydı, toplam ₺${toplamPrim}`);
-    return c.json({ ay, primKayitlari, toplamPrim, odenenPrim, bekleyenPrim });
+    console.log(`Prim raporu ${ay}: ${primKayitlariFinal.length} kişi-kademe kaydı, toplam ₺${toplamPrim}`);
+    return c.json({ ay, primKayitlari: primKayitlariFinal, toplamPrim, odenenPrim, bekleyenPrim });
   } catch (err) {
     console.log("Prim rapor error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -3066,11 +3081,12 @@ app.get("/make-server-4da0b637/primler/kendi-rapor", async (c) => {
     const [yil, ayNo] = ay.split("-").map(Number);
 
     // Paralel veri çekimi
-    const [mekanlarList, tumKayitlar, tumOdemeler, tumRotasyonlar] = await Promise.all([
+    const [mekanlarList, tumKayitlar, tumOdemeler, tumRotasyonlar, tumSilindiKendi] = await Promise.all([
       getMekanlar().catch(() => []),
       kv.getByPrefix("stok_gunluk_").catch(() => []),
       kv.getByPrefix("prim_odendi_").catch(() => []),
       kv.getByPrefix("rotation_task_").catch(() => []),
+      kv.getByPrefix("prim_silindi_").catch(() => []),
     ]);
 
     const mekanMap: Record<string, any> = {};
@@ -3080,6 +3096,9 @@ app.get("/make-server-4da0b637/primler/kendi-rapor", async (c) => {
     for (const o of (tumOdemeler || [])) {
       if (o.key) odemeMap[o.key] = { odendi: o.odendi || false, odemeTarihi: o.odemeTarihi };
     }
+    const silinenKeysKendi = new Set<string>(
+      (tumSilindiKendi || []).filter((s: any) => s.silindi).map((s: any) => s.orijinalKey).filter(Boolean)
+    );
 
     const ayKayitlari = (tumKayitlar || []).filter((k: any) => {
       if (!k.tarih) return false;
@@ -3104,6 +3123,8 @@ app.get("/make-server-4da0b637/primler/kendi-rapor", async (c) => {
         if (!Array.isArray(task.personnel)) continue;
         for (const p of task.personnel) {
           if (p.id && p.name && !seenIds2.has(p.id)) {
+            // ust-mudur ve yonetici prime dahil edilmez
+            if (["ust-mudur", "yonetici"].includes(p.role || "")) continue;
             seenIds2.add(p.id);
             rotasyonPersonelList2.push({ id: p.id, name: p.name, gorev: p.gorev });
           }
@@ -3168,12 +3189,15 @@ app.get("/make-server-4da0b637/primler/kendi-rapor", async (c) => {
 
     primKayitlari.sort((a, b) => b.tarih.localeCompare(a.tarih) || a.kademeIndex - b.kademeIndex);
 
-    const toplamPrim = primKayitlari.reduce((s, p) => s + p.primMiktar, 0);
-    const odenenPrim = primKayitlari.filter((p) => p.odendi).reduce((s, p) => s + p.primMiktar, 0);
+    // Silinmiş (iptal) bekleyen kayıtları filtrele
+    const primKayitlariFinalKendi = primKayitlari.filter(p => !silinenKeysKendi.has(p.odemeKey) || p.odendi);
+
+    const toplamPrim = primKayitlariFinalKendi.reduce((s, p) => s + p.primMiktar, 0);
+    const odenenPrim = primKayitlariFinalKendi.filter((p) => p.odendi).reduce((s, p) => s + p.primMiktar, 0);
     const bekleyenPrim = toplamPrim - odenenPrim;
 
-    console.log(`Kendi prim raporu ${ay} / ${callerAdi}: ${primKayitlari.length} kayıt, ₺${toplamPrim}`);
-    return c.json({ ay, callerAdi, primKayitlari, toplamPrim, odenenPrim, bekleyenPrim });
+    console.log(`Kendi prim raporu ${ay} / ${callerAdi}: ${primKayitlariFinalKendi.length} kayit, ₺${toplamPrim}`);
+    return c.json({ ay, callerAdi, primKayitlari: primKayitlariFinalKendi, toplamPrim, odenenPrim, bekleyenPrim });
   } catch (err) {
     console.log("Kendi prim rapor error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -3249,6 +3273,8 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
     for (const task of todayTasks) {
       for (const p of task.personnel) {
         if (p.id && p.name && !seenIds3.has(p.id)) {
+          // ust-mudur ve yonetici prime dahil edilmez
+          if (["ust-mudur", "yonetici"].includes(p.role || "")) continue;
           seenIds3.add(p.id);
           rotasyonPersonelList3.push({ id: p.id, name: p.name, gorev: p.gorev });
         }
@@ -3432,6 +3458,48 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
   } catch (err) {
     console.log("Prim ode error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// PRİM: Bekleyen prim kaydını iptal/sil
+// POST /primler/sil
+// body: { odemeKeys: string[], geriAl?: boolean }
+// ══════════════════════════════════════════
+app.post("/make-server-4da0b637/primler/sil", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur"].includes(callerRole)) {
+      return c.json({ error: "Prim silme yetkisi yalnızca Yönetici / Üst Müdür rolüne aittir." }, 403);
+    }
+    const body = await c.req.json();
+    const { odemeKeys, geriAl = false } = body;
+    if (!Array.isArray(odemeKeys) || odemeKeys.length === 0) {
+      return c.json({ error: "odemeKeys dizisi zorunludur." }, 400);
+    }
+    const now = new Date().toISOString();
+    let islenen = 0;
+    for (const key of odemeKeys) {
+      const silKey = `prim_silindi_${key}`;
+      if (geriAl) {
+        await kv.del(silKey);
+      } else {
+        await kv.set(silKey, {
+          silindi: true,
+          silindiTarihi: now,
+          silenKisi: user.email || user.id,
+          orijinalKey: key,
+        });
+      }
+      islenen++;
+    }
+    console.log(`Prim ${geriAl ? "geri alindi" : "iptal edildi"}: ${islenen} kayit — by ${user.email}`);
+    return c.json({ success: true, islenen, geriAl });
+  } catch (err) {
+    console.log("Prim sil error:", err);
+    return c.json({ error: `Sunucu hatasi: ${err}` }, 500);
   }
 });
 

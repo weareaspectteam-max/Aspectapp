@@ -278,7 +278,11 @@ export function RotationTaskModal({
       personnel = selectedPersonnel.map(id => {
         const staff = staffMembers.find(s => s.id === id);
         if (!staff) throw new Error(`Personel bulunamadı: ${id}`);
-        const gorev = selectedPersonnel.length > 1 ? gorevMap[id] : undefined;
+        const primeDahilSayisi = selectedPersonnel.filter(sid => {
+          const s = staffMembers.find(x => x.id === sid);
+          return s && !["ust-mudur", "yonetici"].includes(s.role || "");
+        }).length;
+        const gorev = primeDahilSayisi > 1 ? gorevMap[id] : undefined;
         return { id: staff.id, name: staff.name, avatar: staff.avatar, role: staff.role, gorev };
       });
     } catch (err: any) {
@@ -574,8 +578,11 @@ export function RotationTaskModal({
                 </div>
               </div>
 
-              {/* ── Görev Ataması — 2+ kişide göster ── */}
-              {selectedPersonnel.length > 1 && (
+              {/* ── Görev Ataması — prime dahil 2+ kişide göster (ust-mudur/yonetici hariç) ── */}
+              {selectedPersonnel.filter(id => {
+                const s = staffMembers.find(x => x.id === id);
+                return s && !["ust-mudur", "yonetici"].includes(s.role || "");
+              }).length > 1 && (
                 <div>
                   <label className="block text-sm font-semibold text-gray-300 mb-2">
                     🎭 Görev Ataması
@@ -586,31 +593,38 @@ export function RotationTaskModal({
                       const staff = staffMembers.find(s => s.id === id);
                       if (!staff) return null;
                       const gorev = gorevMap[id];
+                      const isPrimDisi = ["ust-mudur", "yonetici"].includes(staff.role || "");
                       return (
                         <div key={id} className="flex items-center gap-2">
                           <span className="text-sm shrink-0 w-5">{staff.avatar}</span>
-                          <span className="text-xs text-white font-medium flex-1 truncate">{staff.name}</span>
-                          <div className="flex gap-1 shrink-0">
-                            {([
-                              { key: 'fotograf-satis', label: '📸', title: 'Fotoğraf/Satış' },
-                              { key: 'baski', label: '🖨️', title: 'Baskı' },
-                              { key: 'album', label: '📒', title: 'Albüm' },
-                            ] as const).map(g => (
-                              <button
-                                key={g.key}
-                                type="button"
-                                title={g.title}
-                                onClick={() => setGorevMap(prev => ({ ...prev, [id]: g.key }))}
-                                className={`w-8 h-8 rounded-lg text-base flex items-center justify-center transition-all active:scale-95 ${
-                                  gorev === g.key
-                                    ? 'bg-[#9dd9ea]/25 border-2 border-[#9dd9ea]/60 scale-110'
-                                    : 'bg-white/8 border border-white/15 opacity-50 hover:opacity-80'
-                                }`}
-                              >
-                                {g.label}
-                              </button>
-                            ))}
-                          </div>
+                          <span className={`text-xs font-medium flex-1 truncate ${isPrimDisi ? 'text-gray-500' : 'text-white'}`}>{staff.name}</span>
+                          {isPrimDisi ? (
+                            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '3px 8px', whiteSpace: 'nowrap' }}>
+                              Prim sistemi dışında
+                            </span>
+                          ) : (
+                            <div className="flex gap-1 shrink-0">
+                              {([
+                                { key: 'fotograf-satis', label: '📸', title: 'Fotoğraf/Satış' },
+                                { key: 'baski', label: '🖨️', title: 'Baskı' },
+                                { key: 'album', label: '📒', title: 'Albüm' },
+                              ] as const).map(g => (
+                                <button
+                                  key={g.key}
+                                  type="button"
+                                  title={g.title}
+                                  onClick={() => setGorevMap(prev => ({ ...prev, [id]: g.key }))}
+                                  className={`w-8 h-8 rounded-lg text-base flex items-center justify-center transition-all active:scale-95 ${
+                                    gorev === g.key
+                                      ? 'bg-[#9dd9ea]/25 border-2 border-[#9dd9ea]/60 scale-110'
+                                      : 'bg-white/8 border border-white/15 opacity-50 hover:opacity-80'
+                                  }`}
+                                >
+                                  {g.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     })}

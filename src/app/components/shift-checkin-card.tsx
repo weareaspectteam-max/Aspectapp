@@ -129,7 +129,7 @@ interface Props {
 
 /* ══════════════════════════════════════════════════════════════
    Ana Bileşen
-══════════════════════════════════════════════════════════════ */
+═════════════════════════════════════���════════════════════════ */
 export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLoading }: Props) {
   const [checkin, setCheckin] = useState<CheckInData | null>(null);
   const [checkout, setCheckout] = useState<CheckOutData | null>(null);
@@ -203,9 +203,8 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
     if (dataLoading || tasksLoading) return 'loading';
     if (!todayTask) return 'no-shift';
 
-    const now = trNow();
+    const nowMs = Date.now();
     const { startMs, endMs } = shiftDates(todayTask.startTime, todayTask.endTime);
-    const nowMs = now.getTime();
     const diffFromStartSec = Math.floor((nowMs - startMs) / 1000);
     const GRACE_SEC = 5 * 60; // 5 dakika grace
 
@@ -316,10 +315,9 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
   /* ── Progress bar hesapla ── */
   const computeProgress = () => {
     if (!todayTask) return { missedPct: 0, workedPct: 0, remainPct: 100, markerPct: 0 };
-    const now = trNow();
+    const nowMs = Date.now();
     const { startMs, endMs } = shiftDates(todayTask.startTime, todayTask.endTime);
     const totalMs = endMs - startMs;
-    const nowMs = now.getTime();
 
     if (!validCheckin) {
       return { missedPct: 0, workedPct: 0, remainPct: 100, markerPct: 0 };
@@ -342,28 +340,28 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
   const computeCountdown = (): number => {
     if (!todayTask) return 0;
     const { endMs } = shiftDates(todayTask.startTime, todayTask.endTime);
-    return Math.floor((endMs - trNow().getTime()) / 1000);
+    return Math.floor((endMs - Date.now()) / 1000);
   };
 
   /* ── Başlamasına kalan saniye ── */
   const computeUntilStart = (): number => {
     if (!todayTask) return 0;
     const startMs = timeToTodayDate(todayTask.startTime).getTime();
-    return Math.floor((startMs - trNow().getTime()) / 1000);
+    return Math.floor((startMs - Date.now()) / 1000);
   };
 
   /* ── Gecikme sayacı ── */
   const computeLateElapsed = (): number => {
     if (!todayTask) return 0;
     const startMs = timeToTodayDate(todayTask.startTime).getTime();
-    return Math.floor((trNow().getTime() - startMs) / 1000);
+    return Math.floor((Date.now() - startMs) / 1000);
   };
 
   /* ── Fazla mesai sayacı ── */
   const computeOvertime = (): number => {
     if (!todayTask) return 0;
     const { endMs } = shiftDates(todayTask.startTime, todayTask.endTime);
-    return Math.floor((trNow().getTime() - endMs) / 1000);
+    return Math.floor((Date.now() - endMs) / 1000);
   };
 
   const { missedPct, workedPct, remainPct, markerPct } = computeProgress();
