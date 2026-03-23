@@ -90,6 +90,10 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   // Kota kademeleri form state
   const [formKotaKademeleri, setFormKotaKademeleri] = useState<KotaKademe[]>([]);
 
+  // Kıdem çarpanları (yönetici + üst-müdür için mekan yönetiminde de gösterilir)
+  const canViewKidem = ['yonetici', 'ust-mudur'].includes(userRole);
+  const [kidemCarpanlar, setKidemCarpanlar] = useState({ kidemsiz: 1.0, kidemli: 1.15, kidemliPlus: 1.30 });
+
   // Access control
   const currentUserRole = userRole as UserRole;
   const hasAccess = currentUserRole !== 'personel' && currentUserRole !== 'bekleyen';
@@ -163,11 +167,23 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   useEffect(() => {
     if (hasAccess) {
       loadMekanlar();
-      loadAvailablePapers(); // Sayfa açılışında yükle — mekan listesinde isim göstermek için
+      loadAvailablePapers();
+      if (canViewKidem) loadKidemCarpanlar();
     } else {
       setLoading(false);
     }
   }, []);
+
+  const loadKidemCarpanlar = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/kidem/carpanlar`, { headers: buildHeaders(accessToken) });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.carpanlar) setKidemCarpanlar(data.carpanlar);
+    } catch (err) {
+      console.error('loadKidemCarpanlar error:', err);
+    }
+  };
 
   // ─── Kağıt tiplerini maliyet yönetiminden yükle ─────────────
   const loadAvailablePapers = async () => {
@@ -819,6 +835,43 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                             </div>
                           </div>
                         </div>
+
+                        {/* Kıdem Bazlı Prim Önizlemesi — sadece yönetici + üst-müdür */}
+                        {canViewKidem && (kota.primTek > 0 || kota.primFotograf > 0 || kota.primBaski > 0 || kota.primAlbum > 0) && (
+                          <div style={{ marginTop: 10, background: 'rgba(157,217,234,0.05)', border: '1px solid rgba(157,217,234,0.15)', borderRadius: 12, padding: '10px 12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
+                              <span style={{ fontSize: 11 }}>🎖️</span>
+                              <span style={{ color: '#9dd9ea', fontSize: 10, fontWeight: 800 }}>Kıdem Bazlı Prim</span>
+                              <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 6, fontWeight: 700, background: 'rgba(157,217,234,0.1)', border: '1px solid rgba(157,217,234,0.2)', color: 'rgba(157,217,234,0.6)', marginLeft: 'auto' }}>
+                                ×{kidemCarpanlar.kidemsiz.toFixed(2)} / ×{kidemCarpanlar.kidemli.toFixed(2)} / ×{kidemCarpanlar.kidemliPlus.toFixed(2)}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                              {([
+                                { rlabel: '👤 Solo', base: kota.primTek, color: '#a7c7e7' },
+                                { rlabel: '📸 Fotoğraf/Satış', base: kota.primFotograf, color: '#9dd9ea' },
+                                { rlabel: '🖨️ Baskı', base: kota.primBaski, color: '#ffd4a3' },
+                                { rlabel: '📒 Albüm', base: kota.primAlbum, color: '#d4b5f7' },
+                              ] as { rlabel: string; base: number; color: string }[]).filter(r => r.base > 0).map(({ rlabel, base, color }) => (
+                                <div key={rlabel} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 9, fontWeight: 700, minWidth: 92 }}>{rlabel}</span>
+                                  <div style={{ display: 'flex', gap: 3, flex: 1 }}>
+                                    {([
+                                      { ckey: 'kidemsiz', klabel: 'Kıdemsiz', carpan: kidemCarpanlar.kidemsiz },
+                                      { ckey: 'kidemli', klabel: 'Kıdemli', carpan: kidemCarpanlar.kidemli },
+                                      { ckey: 'kidemliPlus', klabel: 'Kıdemli+', carpan: kidemCarpanlar.kidemliPlus },
+                                    ] as { ckey: string; klabel: string; carpan: number }[]).map(({ ckey, klabel, carpan }) => (
+                                      <div key={ckey} style={{ flex: 1, textAlign: 'center', background: `${color}08`, border: `1px solid ${color}20`, borderRadius: 7, padding: '3px 2px' }}>
+                                        <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 7, fontWeight: 700, marginBottom: 1 }}>{klabel}</p>
+                                        <p style={{ color, fontSize: 10, fontWeight: 900 }}>₺{Math.round(base * carpan).toLocaleString('tr-TR')}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

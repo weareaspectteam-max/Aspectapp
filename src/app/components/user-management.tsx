@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Shield, UserCog, Users, User, Briefcase, UserPlus, Clock,
   List, ChevronDown, ChevronRight, UserCheck, Trash2, Edit2,
-  X, CheckCircle, ArrowLeft, RefreshCw, AlertCircle,
+  X, CheckCircle, ArrowLeft, RefreshCw, AlertCircle, Medal,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { supabase, SERVER_URL } from '../lib/supabase';
@@ -72,6 +72,23 @@ export function UserManagement({ userRole, accessToken, onNavigate }: UserManage
 
   const currentUserRole: UserRole = userRole as UserRole;
 
+  // ── Kıdem ─────────────────────────────────────────────────────
+  const KIDEM_ELIGIBLE_ROLES: UserRole[] = ['mudur', 'operasyon', 'personel'];
+  const canViewKidem = ['yonetici', 'ust-mudur'].includes(currentUserRole);
+  const canEditKidem = currentUserRole === 'yonetici';
+
+  type KidemSeviye = 'kidemsiz' | 'kidemli' | 'kidemliPlus';
+  interface KidemObj { userId: string; kidemSeviye: KidemSeviye; atanmaTarihi: string; atayanKisi: string; }
+
+  const KIDEM_CONFIG: Record<KidemSeviye, { label: string; emoji: string; color: string; bg: string; border: string }> = {
+    kidemsiz:   { label: 'Kıdemsiz',  emoji: '⚪', color: '#a7c7e7', bg: 'rgba(167,199,231,0.10)', border: 'rgba(167,199,231,0.25)' },
+    kidemli:    { label: 'Kıdemli',   emoji: '🔵', color: '#9dd9ea', bg: 'rgba(157,217,234,0.10)', border: 'rgba(157,217,234,0.25)' },
+    kidemliPlus:{ label: 'Kıdemli+',  emoji: '💜', color: '#d4b5f7', bg: 'rgba(212,181,247,0.12)', border: 'rgba(212,181,247,0.28)' },
+  };
+
+  const [kidemMap, setKidemMap] = useState<Record<string, KidemObj>>({});
+  const [kidemSaving, setKidemSaving] = useState<Record<string, boolean>>({});
+
   const getCurrentUserEmail = async (): Promise<string> => {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.user?.email || '';
@@ -92,6 +109,45 @@ export function UserManagement({ userRole, accessToken, onNavigate }: UserManage
   };
 
   useEffect(() => { loadUsers(); }, []);
+
+  /* ── Kıdem: yükle (sayfa açılışında) ── */
+  useEffect(() => {
+    if (canViewKidem) {
+      fetch(`${SERVER_URL}/kidem/personel`, { headers: buildHeaders(accessToken) })
+        .then(r => r.json())
+        .then(data => {
+          if (data.kidemler) {
+            const map: Record<string, any> = {};
+            data.kidemler.forEach((k: any) => { if (k?.userId) map[k.userId] = k; });
+            setKidemMap(map);
+          }
+        })
+        .catch(e => console.error('kidem yükleme hatası:', e));
+    }
+  }, [canViewKidem, accessToken]);
+
+  /* ── Kıdem ata ── */
+  const handleAssignKidem = async (user: UserData, seviye: KidemSeviye) => {
+    if (!canEditKidem) return;
+    setKidemSaving(prev => ({ ...prev, [user.id]: true }));
+    try {
+      const res = await fetch(`${SERVER_URL}/kidem/personel/${user.id}`, {
+        method: 'POST',
+        headers: buildHeaders(accessToken),
+        body: JSON.stringify({ kidemSeviye: seviye, personelAdi: user.full_name, personelRol: user.role }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Kıdem atanamadı');
+      setKidemMap(prev => ({ ...prev, [user.id]: data.kidem }));
+      setSuccessMessage(`🎖️ ${user.full_name} → ${KIDEM_CONFIG[seviye].label}`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (e: any) {
+      setSuccessMessage(`❌ ${e.message}`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } finally {
+      setKidemSaving(prev => ({ ...prev, [user.id]: false }));
+    }
+  };
 
   /* ── Yetki kontrolleri ── */
   const canEditUser = (t: UserData): boolean => {
@@ -386,6 +442,26 @@ export function UserManagement({ userRole, accessToken, onNavigate }: UserManage
                                       {user.last_sign_in
                                         ? <span style={{ fontSize: 9, color: EMERALD }}>🟢 {fmt(user.last_sign_in)}</span>
                                         : <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.18)' }}>⚫ Hiç giriş yapmadı</span>}
+                                      {/* Kıdem badge — yönetici ve üst-müdür görür */}
+                                      {canViewKidem && KIDEM_ELIGIBLE_ROLES.includes(user.role) && kidemMap[user.id] && (
+                                        <span style={{
+                                          fontSize: 8, padding: '1px 5px', borderRadius: 5, fontWeight: 800,
+                                          background: KIDEM_CONFIG[kidemMap[user.id].kidemSeviye].bg,
+                                          border: `1px solid ${KIDEM_CONFIG[kidemMap[user.id].kidemSeviye].border}`,
+                                          color: KIDEM_CONFIG[kidemMap[user.id].kidemSeviye].color,
+                                        }}>
+                                          {KIDEM_CONFIG[kidemMap[user.id].kidemSeviye].emoji} {KIDEM_CONFIG[kidemMap[user.id].kidemSeviye].label}
+                                        </span>
+                                      )}
+                                      {canViewKidem && KIDEM_ELIGIBLE_ROLES.includes(user.role) && !kidemMap[user.id] && (
+                                        <span style={{
+                                          fontSize: 8, padding: '1px 5px', borderRadius: 5, fontWeight: 700,
+                                          background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                                          color: 'rgba(255,255,255,0.2)',
+                                        }}>
+                                          🎖️ Kıdem yok
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                   {currentUserRole !== 'operasyon' && (
@@ -446,6 +522,66 @@ export function UserManagement({ userRole, accessToken, onNavigate }: UserManage
                                             );
                                           })}
                                         </div>
+
+                                        {/* ── Kıdem Ata — rol gridinin ALTINDA ayrı bölüm ── */}
+                                        {canViewKidem && KIDEM_ELIGIBLE_ROLES.includes(user.role) && (
+                                          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(157,217,234,0.12)' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                                              <Medal style={{ width: 11, height: 11, color: '#9dd9ea' }} />
+                                              <p style={{ fontSize: 9, color: 'rgba(157,217,234,0.6)', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 700 }}>
+                                                Kıdem Ata
+                                              </p>
+                                              {kidemMap[user.id] && (
+                                                <span style={{
+                                                  fontSize: 8, padding: '1px 6px', borderRadius: 6, fontWeight: 800, marginLeft: 'auto',
+                                                  background: KIDEM_CONFIG[kidemMap[user.id].kidemSeviye].bg,
+                                                  border: `1px solid ${KIDEM_CONFIG[kidemMap[user.id].kidemSeviye].border}`,
+                                                  color: KIDEM_CONFIG[kidemMap[user.id].kidemSeviye].color,
+                                                }}>
+                                                  {KIDEM_CONFIG[kidemMap[user.id].kidemSeviye].emoji} Mevcut: {KIDEM_CONFIG[kidemMap[user.id].kidemSeviye].label}
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                                              {(['kidemsiz', 'kidemli', 'kidemliPlus'] as KidemSeviye[]).map(sev => {
+                                                const kc = KIDEM_CONFIG[sev];
+                                                const isSelected = kidemMap[user.id]?.kidemSeviye === sev;
+                                                const isSaving = kidemSaving[user.id];
+                                                return (
+                                                  <motion.button
+                                                    key={sev}
+                                                    whileTap={{ scale: canEditKidem ? 0.95 : 1 }}
+                                                    onClick={() => canEditKidem && handleAssignKidem(user, sev)}
+                                                    disabled={!canEditKidem || isSaving}
+                                                    style={{
+                                                      padding: '8px 4px', borderRadius: 8, textAlign: 'center',
+                                                      cursor: canEditKidem ? 'pointer' : 'not-allowed',
+                                                      background: isSelected ? kc.bg : 'rgba(255,255,255,0.04)',
+                                                      border: isSelected ? `1.5px solid ${kc.border}` : '1px solid rgba(255,255,255,0.08)',
+                                                      color: isSelected ? kc.color : 'rgba(255,255,255,0.35)',
+                                                      fontSize: 10, fontWeight: isSelected ? 800 : 600,
+                                                      opacity: isSaving ? 0.6 : 1,
+                                                      boxShadow: isSelected ? `0 0 8px ${kc.color}30` : 'none',
+                                                    }}>
+                                                    <div style={{ fontSize: 14, marginBottom: 2 }}>{kc.emoji}</div>
+                                                    <div>{kc.label}</div>
+                                                    {isSelected && <div style={{ fontSize: 7, marginTop: 1, opacity: 0.7 }}>✓ Aktif</div>}
+                                                  </motion.button>
+                                                );
+                                              })}
+                                            </div>
+                                            {!canEditKidem && (
+                                              <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', marginTop: 5, textAlign: 'center' }}>
+                                                🔒 Kıdem ataması yalnızca yönetici yapabilir
+                                              </p>
+                                            )}
+                                            {kidemMap[user.id]?.atanmaTarihi && (
+                                              <p style={{ fontSize: 8, color: 'rgba(255,255,255,0.18)', marginTop: 5, textAlign: 'right' }}>
+                                                🕐 {new Date(kidemMap[user.id].atanmaTarihi).toLocaleDateString('tr-TR')} — {kidemMap[user.id].atayanKisi}
+                                              </p>
+                                            )}
+                                          </div>
+                                        )}
                                       </div>
                                     </motion.div>
                                   )}

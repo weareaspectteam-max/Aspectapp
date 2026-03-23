@@ -3503,6 +3503,136 @@ app.post("/make-server-4da0b637/primler/sil", async (c) => {
   }
 });
 
+// ══════════════════════════════════════════
+// KİDEM ÇARPANLARI
+// GET /kidem/carpanlar  — yönetici + üst-müdür
+// POST /kidem/carpanlar — sadece yönetici
+// ══════════════════════════════════════════
+const KIDEM_CARPAN_KEY = "kidem_carpanlari";
+const KIDEM_CARPAN_DEFAULT = { kidemsiz: 1.0, kidemli: 1.15, kidemliPlus: 1.30 };
+
+app.get("/make-server-4da0b637/kidem/carpanlar", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur"].includes(callerRole)) {
+      return c.json({ error: "Bu endpoint yalnızca yönetici ve üst-müdür rolüne açıktır." }, 403);
+    }
+    const stored = await kv.get(KIDEM_CARPAN_KEY);
+    const carpanlar = stored || KIDEM_CARPAN_DEFAULT;
+    return c.json({ carpanlar });
+  } catch (err) {
+    console.log("Kidem carpanlar GET error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+app.post("/make-server-4da0b637/kidem/carpanlar", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole !== "yonetici") {
+      return c.json({ error: "Kıdem çarpanlarını sadece yönetici güncelleyebilir." }, 403);
+    }
+    const body = await c.req.json();
+    const { kidemsiz, kidemli, kidemliPlus } = body;
+    if (
+      typeof kidemsiz !== "number" || typeof kidemli !== "number" || typeof kidemliPlus !== "number" ||
+      kidemsiz <= 0 || kidemli <= 0 || kidemliPlus <= 0
+    ) {
+      return c.json({ error: "Geçersiz çarpan değerleri. Tüm değerler pozitif sayı olmalıdır." }, 400);
+    }
+    const carpanlar = { kidemsiz, kidemli, kidemliPlus };
+    await kv.set(KIDEM_CARPAN_KEY, carpanlar);
+    console.log(`[Kidem] Çarpanlar güncellendi: ${JSON.stringify(carpanlar)} — by ${user.email}`);
+    return c.json({ success: true, carpanlar });
+  } catch (err) {
+    console.log("Kidem carpanlar POST error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// KİDEM ATAMA (Personel bazlı)
+// GET  /kidem/personel            — yönetici + üst-müdür: tüm personel kidem listesi
+// POST /kidem/personel/:userId    — sadece yönetici: kıdem ata/güncelle
+// GET  /kidem/personel/:userId    — yönetici + üst-müdür: tekil kıdem sorgula
+// ══════════════════════════════════════════
+const KIDEM_ELIGIBLE_ROLES = ["mudur", "operasyon", "personel"];
+const KIDEM_LEVELS_ARR = ["kidemsiz", "kidemli", "kidemliPlus"];
+
+app.get("/make-server-4da0b637/kidem/personel", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur"].includes(callerRole)) {
+      return c.json({ error: "Bu endpoint yalnızca yönetici ve üst-müdür rolüne açıktır." }, 403);
+    }
+    const allKidem: any[] = await kv.getByPrefix("kidem_personel_") || [];
+    return c.json({ kidemler: allKidem });
+  } catch (err) {
+    console.log("Kidem personel GET error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+app.get("/make-server-4da0b637/kidem/personel/:userId", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur"].includes(callerRole)) {
+      return c.json({ error: "Bu endpoint yalnızca yönetici ve üst-müdür rolüne açıktır." }, 403);
+    }
+    const { userId } = c.req.param();
+    const kidem = await kv.get(`kidem_personel_${userId}`);
+    return c.json({ kidem: kidem || null });
+  } catch (err) {
+    console.log("Kidem personel/:userId GET error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+app.post("/make-server-4da0b637/kidem/personel/:userId", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole !== "yonetici") {
+      return c.json({ error: "Kıdem ataması sadece yönetici tarafından yapılabilir." }, 403);
+    }
+    const { userId } = c.req.param();
+    const body = await c.req.json();
+    const { kidemSeviye, personelAdi, personelRol } = body;
+
+    if (!KIDEM_LEVELS_ARR.includes(kidemSeviye)) {
+      return c.json({ error: `Geçersiz kıdem seviyesi. Geçerli değerler: ${KIDEM_LEVELS_ARR.join(", ")}` }, 400);
+    }
+    if (personelRol && !KIDEM_ELIGIBLE_ROLES.includes(personelRol)) {
+      return c.json({ error: `${personelRol} rolüne kıdem atanamaz.` }, 400);
+    }
+
+    const now = new Date().toISOString();
+    const kidemObj = {
+      userId,
+      personelAdi: personelAdi || "",
+      personelRol: personelRol || "",
+      kidemSeviye,
+      atanmaTarihi: now,
+      atayanKisi: user.email || user.id,
+    };
+    await kv.set(`kidem_personel_${userId}`, kidemObj);
+    console.log(`[Kidem] ${personelAdi} → ${kidemSeviye} (by ${user.email})`);
+    return c.json({ success: true, kidem: kidemObj });
+  } catch (err) {
+    console.log("Kidem personel POST error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 // ──────────────────────────────────────────
 // STOK: Anomali geçmişi
 // GET /stok/anomali/:mekanId
@@ -7016,7 +7146,7 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
     const mekanById: Record<string, any> = {};
     for (const m of mekanlarList) mekanById[m.id] = m;
 
-    // ── 2. Stok kayıtları filtrele ──
+    // ── 2. Stok kayıtları filtrele ─��
     const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
     const filtrelenmis = tumKayitlar.filter((k: any) => {
       if (!k.tarih) return false;

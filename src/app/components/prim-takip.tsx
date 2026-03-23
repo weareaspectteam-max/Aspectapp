@@ -4,7 +4,7 @@ import {
   ChevronLeft, RefreshCw, Trophy, Check, Clock,
   ChevronDown, ChevronUp, Filter, CreditCard,
   Calendar, AlertCircle, CheckCircle2, User, Users,
-  Banknote, X, TrendingUp, Undo2, Trash2,
+  Banknote, X, TrendingUp, Undo2, Trash2, Settings2, Save,
 } from 'lucide-react';
 import { getToken, buildHeaders } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
@@ -194,6 +194,71 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
   // Filtre: sadece bekleyenler
   const [sadeceBekleyen, setSadeceBekleyen] = useState(false);
 
+  // ── Kıdem çarpanları ─────────────────────────────────────────
+  const canViewKidem = ['yonetici', 'ust-mudur'].includes(userRole);
+  const canEditKidem = userRole === 'yonetici';
+  const [carpanlar, setCarpanlar] = useState({ kidemsiz: 1.0, kidemli: 1.15, kidemliPlus: 1.30 });
+  const [carpanlarLoading, setCarpanlarLoading] = useState(false);
+  const [carpanlarSaving, setCarpanlarSaving] = useState(false);
+  const [carpanlarEdit, setCarpanlarEdit] = useState(false);
+  const [editCarpan, setEditCarpan] = useState({ kidemsiz: '1.00', kidemli: '1.15', kidemliPlus: '1.30' });
+  const [carpanMsg, setCarpanMsg] = useState('');
+
+  const fetchCarpanlar = useCallback(async () => {
+    if (!canViewKidem) return;
+    setCarpanlarLoading(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/kidem/carpanlar`, { headers: buildHeaders(token) });
+      const data = await res.json();
+      if (res.ok && data.carpanlar) {
+        setCarpanlar(data.carpanlar);
+        setEditCarpan({
+          kidemsiz: String(data.carpanlar.kidemsiz),
+          kidemli: String(data.carpanlar.kidemli),
+          kidemliPlus: String(data.carpanlar.kidemliPlus),
+        });
+      }
+    } catch (e) {
+      console.error('fetchCarpanlar error:', e);
+    } finally {
+      setCarpanlarLoading(false);
+    }
+  }, [canViewKidem]);
+
+  const handleSaveCarpanlar = async () => {
+    if (!canEditKidem) return;
+    const kidemsiz = parseFloat(editCarpan.kidemsiz);
+    const kidemli = parseFloat(editCarpan.kidemli);
+    const kidemliPlus = parseFloat(editCarpan.kidemliPlus);
+    if (isNaN(kidemsiz) || isNaN(kidemli) || isNaN(kidemliPlus) || kidemsiz <= 0 || kidemli <= 0 || kidemliPlus <= 0) {
+      setCarpanMsg('❌ Tüm çarpanlar pozitif sayı olmalıdır!');
+      setTimeout(() => setCarpanMsg(''), 3000);
+      return;
+    }
+    setCarpanlarSaving(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE}/kidem/carpanlar`, {
+        method: 'POST',
+        headers: buildHeaders(token),
+        body: JSON.stringify({ kidemsiz, kidemli, kidemliPlus }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Kayıt hatası');
+      setCarpanlar({ kidemsiz, kidemli, kidemliPlus });
+      setCarpanlarEdit(false);
+      setCarpanMsg('✅ Çarpanlar kaydedildi!');
+      setTimeout(() => setCarpanMsg(''), 3000);
+    } catch (e: any) {
+      console.error('handleSaveCarpanlar error:', e);
+      setCarpanMsg(`❌ ${e.message}`);
+      setTimeout(() => setCarpanMsg(''), 4000);
+    } finally {
+      setCarpanlarSaving(false);
+    }
+  };
+
   const fetchRapor = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -219,6 +284,10 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
     fetchRapor();
     setSeciliMap(new Map());
   }, [fetchRapor]);
+
+  useEffect(() => {
+    fetchCarpanlar();
+  }, [fetchCarpanlar]);
 
   // ── Ödeme işlemi ──────────────────────────────────────
   const handleOde = async (items: PrimKayit[], odendiMi: boolean) => {
@@ -404,6 +473,142 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
             ))}
           </div>
         </motion.div>
+
+        {/* ── Kıdem Çarpan Ayarları ── sadece yönetici + üst-müdür görür ── */}
+        {canViewKidem && (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 }}
+            style={{
+              background: 'rgba(157,217,234,0.06)',
+              border: '1px solid rgba(157,217,234,0.18)',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              borderRadius: 20,
+              padding: '14px 16px',
+            }}>
+            {/* Başlık */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <Settings2 style={{ width: 15, height: 15, color: '#9dd9ea', flexShrink: 0 }} />
+              <p style={{ color: '#9dd9ea', fontSize: 13, fontWeight: 800, flex: 1 }}>🎖️ Kıdem Çarpan Ayarları</p>
+              {carpanlarLoading && <RefreshCw style={{ width: 13, height: 13, color: 'rgba(157,217,234,0.4)' }} className="animate-spin" />}
+              {canEditKidem && !carpanlarEdit && (
+                <button
+                  onClick={() => {
+                    setEditCarpan({
+                      kidemsiz: String(carpanlar.kidemsiz),
+                      kidemli: String(carpanlar.kidemli),
+                      kidemliPlus: String(carpanlar.kidemliPlus),
+                    });
+                    setCarpanlarEdit(true);
+                  }}
+                  style={{
+                    fontSize: 10, padding: '3px 10px', borderRadius: 8, fontWeight: 700,
+                    background: 'rgba(157,217,234,0.12)', border: '1px solid rgba(157,217,234,0.3)',
+                    color: '#9dd9ea', cursor: 'pointer',
+                  }}
+                >
+                  Düzenle
+                </button>
+              )}
+              {canEditKidem && carpanlarEdit && (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    onClick={() => { setCarpanlarEdit(false); }}
+                    style={{
+                      fontSize: 10, padding: '3px 10px', borderRadius: 8, fontWeight: 700,
+                      background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+                      color: 'rgba(255,255,255,0.4)', cursor: 'pointer',
+                    }}
+                  >
+                    İptal
+                  </button>
+                  <button
+                    onClick={handleSaveCarpanlar}
+                    disabled={carpanlarSaving}
+                    style={{
+                      fontSize: 10, padding: '3px 10px', borderRadius: 8, fontWeight: 700,
+                      background: 'rgba(52,211,153,0.2)', border: '1px solid rgba(52,211,153,0.4)',
+                      color: '#34d399', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+                    }}
+                  >
+                    {carpanlarSaving ? <RefreshCw style={{ width: 10, height: 10 }} className="animate-spin" /> : <Save style={{ width: 10, height: 10 }} />}
+                    Kaydet
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Bilgi notu */}
+            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, marginBottom: 10 }}>
+              Kıdemsiz · Kıdemli · Kıdemli+ çarpanları tüm mekan kota primlerine uygulanır.
+            </p>
+
+            {/* Çarpan kartları */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+              {[
+                { key: 'kidemsiz' as const, label: 'Kıdemsiz', emoji: '⚪', color: '#a7c7e7' },
+                { key: 'kidemli' as const, label: 'Kıdemli', emoji: '🔵', color: '#9dd9ea' },
+                { key: 'kidemliPlus' as const, label: 'Kıdemli+', emoji: '💜', color: '#d4b5f7' },
+              ].map(({ key, label, emoji, color }) => (
+                <div key={key} style={{
+                  background: `${color}08`,
+                  border: `1px solid ${color}25`,
+                  borderRadius: 14, padding: '10px 8px', textAlign: 'center',
+                }}>
+                  <p style={{ fontSize: 16, marginBottom: 4 }}>{emoji}</p>
+                  <p style={{ color: `${color}`, fontSize: 9, fontWeight: 800, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
+                  {carpanlarEdit && canEditKidem ? (
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={editCarpan[key]}
+                      onChange={(e) => setEditCarpan(prev => ({ ...prev, [key]: e.target.value }))}
+                      style={{
+                        width: '100%', textAlign: 'center', fontSize: 16, fontWeight: 900,
+                        background: 'rgba(255,255,255,0.1)', border: `1.5px solid ${color}50`,
+                        borderRadius: 8, color: 'white', outline: 'none', padding: '4px 2px',
+                      }}
+                    />
+                  ) : (
+                    <p style={{ color: 'white', fontSize: 18, fontWeight: 900 }}>
+                      ×{carpanlar[key].toFixed(2)}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Mesaj */}
+            {carpanMsg && (
+              <p style={{
+                marginTop: 8, fontSize: 11, fontWeight: 700, textAlign: 'center',
+                color: carpanMsg.startsWith('✅') ? '#34d399' : '#fca5a5',
+              }}>{carpanMsg}</p>
+            )}
+
+            {/* Örnek açıklama satırı */}
+            {!carpanlarEdit && (
+              <div style={{
+                marginTop: 10, padding: '8px 10px', borderRadius: 10,
+                background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                display: 'flex', flexWrap: 'wrap', gap: '4px 12px',
+              }}>
+                <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, width: '100%', marginBottom: 2 }}>
+                  📌 Örnek — ₺500 temel prim:
+                </p>
+                {[
+                  { label: 'Kıdemsiz', val: 500 * carpanlar.kidemsiz, color: '#a7c7e7' },
+                  { label: 'Kıdemli', val: 500 * carpanlar.kidemli, color: '#9dd9ea' },
+                  { label: 'Kıdemli+', val: 500 * carpanlar.kidemliPlus, color: '#d4b5f7' },
+                ].map(({ label, val, color }) => (
+                  <span key={label} style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
+                    {label}: <strong style={{ color }}>{formatTL(val)}</strong>
+                  </span>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
 
         {/* ── Özet kartları ── */}
         {rapor && !loading && (
