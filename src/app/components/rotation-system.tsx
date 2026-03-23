@@ -268,6 +268,14 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
     setSelectedDate(localDateStr());
   };
 
+  // Görev simgesi
+  const getGorevIcon = (gorev?: string): string => {
+    if (gorev === 'fotograf-satis') return '📸';
+    if (gorev === 'baski') return '🖨️';
+    if (gorev === 'album') return '📒';
+    return '';
+  };
+
   // Get time period icon
   const getTimePeriodIcon = (startTime: string): string => {
     const hour = parseInt(startTime.split(':')[0]);
@@ -955,10 +963,12 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                               <div className="flex flex-wrap gap-1.5">
                                 {locationTask.personnel.map((person) => {
                                   const staff = staffMembers.find(s => s.id === person.id);
+                                  const gorevIcon = locationTask.personnel.length > 1 ? getGorevIcon(person.gorev) : '';
                                   return (
                                     <div key={person.id} className="flex items-center gap-1.5 bg-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white">
                                       <span>{person.avatar}</span>
                                       <span className="font-medium">{person.name}</span>
+                                      {gorevIcon && <span title={person.gorev}>{gorevIcon}</span>}
                                       {(() => {
                                         if (!staff) return null;
                                         const isOnLeave =
@@ -1256,12 +1266,16 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                             👥 Personel ({task.personnel.length}):
                           </div>
                           <div className="flex flex-wrap gap-1.5">
-                            {task.personnel.map((person) => (
-                              <div key={person.id} className="flex items-center gap-1.5 bg-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white">
-                                <span>{person.avatar}</span>
-                                <span className="font-medium">{person.name}</span>
-                              </div>
-                            ))}
+                            {task.personnel.map((person) => {
+                              const gi = task.personnel.length > 1 ? getGorevIcon(person.gorev) : '';
+                              return (
+                                <div key={person.id} className="flex items-center gap-1.5 bg-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white">
+                                  <span>{person.avatar}</span>
+                                  <span className="font-medium">{person.name}</span>
+                                  {gi && <span title={person.gorev}>{gi}</span>}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                         
@@ -1673,15 +1687,34 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                             Gönderim: {task.status === 'sent' ? task.sentAt : task.status === 'revised' ? task.revisedAt : task.cancelledAt}
                           </span>
                         </div>
+                        {userRole === 'personel' && task.personnel.length > 1 && (() => {
+                          const myEntry = task.personnel.find(p => p.id === currentUserId);
+                          const myGorevIcon = myEntry?.gorev ? getGorevIcon(myEntry.gorev) : '';
+                          if (!myGorevIcon) return null;
+                          const gorevLabels: Record<string, string> = { 'fotograf-satis': 'Fotoğraf / Satış', 'baski': 'Baskı', 'album': 'Albüm' };
+                          return (
+                            <div className="flex items-center gap-2 px-3 py-2 mb-3 rounded-xl"
+                              style={{ background: 'rgba(157,217,234,0.12)', border: '1px solid rgba(157,217,234,0.3)' }}>
+                              <span className="text-base">{myGorevIcon}</span>
+                              <span className="text-xs font-bold" style={{ color: '#9dd9ea' }}>
+                                Bugünkü görevin: {gorevLabels[myEntry!.gorev!] || myEntry!.gorev}
+                              </span>
+                            </div>
+                          );
+                        })()}
                         <div className="bg-white/10 rounded-xl p-2.5 mb-3">
                           <div className="text-xs font-semibold text-gray-400 mb-2">👥 Personel ({task.personnel.length}):</div>
                           <div className="flex flex-wrap gap-1.5">
-                            {task.personnel.map((person) => (
-                              <div key={person.id} className="flex items-center gap-1 bg-white/10 rounded-lg px-2 py-1 text-xs text-white">
-                                <span>{person.avatar}</span>
-                                <span className="flex-1 truncate">{person.name}</span>
-                              </div>
-                            ))}
+                            {task.personnel.map((person) => {
+                              const gi = task.personnel.length > 1 ? getGorevIcon(person.gorev) : '';
+                              return (
+                                <div key={person.id} className="flex items-center gap-1 bg-white/10 rounded-lg px-2 py-1 text-xs text-white">
+                                  <span>{person.avatar}</span>
+                                  <span className="flex-1 truncate">{person.name}</span>
+                                  {gi && <span title={person.gorev}>{gi}</span>}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                         {task.notes && (

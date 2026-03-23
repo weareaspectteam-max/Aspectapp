@@ -35,8 +35,11 @@ export interface Location {
 
 export interface KotaKademe {
   hedef: number;
-  primTek: number;
-  primCoklu: number;
+  primTek: number;      // Solo prim (1 kişi)
+  primFotograf: number; // Takım - Fotoğrafçı/Satışçı
+  primBaski: number;    // Takım - Baskıcı
+  primAlbum: number;    // Takım - Albümcü
+  primCoklu?: number;   // Eski format uyumluluğu
 }
 
 type UserRole =
@@ -737,10 +740,10 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                             <X className="w-3 h-3" />
                           </button>
                         </div>
-                        {/* 3 field alt alta */}
+                        {/* 5 field: hedef + 4 prim */}
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-yellow-400/70 font-bold w-20 flex-shrink-0">Ciro Hedefi</span>
+                            <span className="text-[10px] text-yellow-400/70 font-bold w-20 flex-shrink-0">🎯 Ciro Hedefi</span>
                             <input
                               type="number"
                               value={kota.hedef || ''}
@@ -754,7 +757,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                             />
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-blue-400/70 font-bold w-20 flex-shrink-0">1 Kişi Primi</span>
+                            <span className="text-[10px] text-blue-400/70 font-bold w-20 flex-shrink-0">👤 Solo</span>
                             <input
                               type="number"
                               value={kota.primTek || ''}
@@ -764,22 +767,56 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                                 setFormKotaKademeleri(arr);
                               }}
                               className="flex-1 px-3 py-1.5 bg-white/10 border-2 border-blue-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-400 transition-all text-sm"
-                              placeholder="₺ Tek"
+                              placeholder="₺ Solo prim"
                             />
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-purple-400/70 font-bold w-20 flex-shrink-0">Çoklu Prim</span>
-                            <input
-                              type="number"
-                              value={kota.primCoklu || ''}
-                              onChange={(e) => {
-                                const arr = [...formKotaKademeleri];
-                                arr[index] = { ...arr[index], primCoklu: parseFloat(e.target.value) || 0 };
-                                setFormKotaKademeleri(arr);
-                              }}
-                              className="flex-1 px-3 py-1.5 bg-white/10 border-2 border-purple-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-400 transition-all text-sm"
-                              placeholder="₺ Çoklu"
-                            />
+                          {/* Takım primleri 3'lü grid */}
+                          <div className="ml-0 mt-1 mb-1">
+                            <span className="text-[9px] text-white/30 font-bold uppercase tracking-wide">Takım Primleri</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <div className="flex flex-col gap-1">
+                              <span className="text-[9px] text-green-400/70 font-bold text-center">📸 Fotoğraf</span>
+                              <input
+                                type="number"
+                                value={kota.primFotograf || ''}
+                                onChange={(e) => {
+                                  const arr = [...formKotaKademeleri];
+                                  arr[index] = { ...arr[index], primFotograf: parseFloat(e.target.value) || 0 };
+                                  setFormKotaKademeleri(arr);
+                                }}
+                                className="w-full px-2 py-1.5 bg-white/10 border-2 border-green-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-green-400 transition-all text-xs text-center"
+                                placeholder="₺"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-[9px] text-orange-400/70 font-bold text-center">🖨️ Baskı</span>
+                              <input
+                                type="number"
+                                value={kota.primBaski || ''}
+                                onChange={(e) => {
+                                  const arr = [...formKotaKademeleri];
+                                  arr[index] = { ...arr[index], primBaski: parseFloat(e.target.value) || 0 };
+                                  setFormKotaKademeleri(arr);
+                                }}
+                                className="w-full px-2 py-1.5 bg-white/10 border-2 border-orange-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-orange-400 transition-all text-xs text-center"
+                                placeholder="₺"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-[9px] text-pink-400/70 font-bold text-center">📒 Albüm</span>
+                              <input
+                                type="number"
+                                value={kota.primAlbum || ''}
+                                onChange={(e) => {
+                                  const arr = [...formKotaKademeleri];
+                                  arr[index] = { ...arr[index], primAlbum: parseFloat(e.target.value) || 0 };
+                                  setFormKotaKademeleri(arr);
+                                }}
+                                className="w-full px-2 py-1.5 bg-white/10 border-2 border-pink-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-pink-400 transition-all text-xs text-center"
+                                placeholder="₺"
+                              />
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -789,7 +826,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
 
                 {formKotaKademeleri.length < 6 ? (
                   <button
-                    onClick={() => setFormKotaKademeleri([...formKotaKademeleri, { hedef: 0, primTek: 0, primCoklu: 0 }])}
+                    onClick={() => setFormKotaKademeleri([...formKotaKademeleri, { hedef: 0, primTek: 0, primFotograf: 0, primBaski: 0, primAlbum: 0 }])}
                     className="mt-3 flex items-center gap-2 px-4 py-2 bg-yellow-600/30 border border-yellow-500/40 rounded-xl text-yellow-200 text-sm font-semibold hover:bg-yellow-600/50 transition-all active:scale-95"
                   >
                     <Plus className="w-4 h-4" />

@@ -65,11 +65,18 @@ interface PrimKayit {
   primMiktar: number;
   personelAdi: string;
   personelSayisi: number;
+  personelGorev?: 'fotograf-satis' | 'baski' | 'album';
   coklu: boolean;
   odendi: boolean;
   odemeTarihi: string | null;
   odemeKey: string;
 }
+
+const GOREV_LABEL: Record<string, string> = {
+  'fotograf-satis': '📸 Fotoğraf',
+  'baski': '🖨️ Baskı',
+  'album': '📒 Albüm',
+};
 
 interface Rapor {
   ay: string;
@@ -433,7 +440,9 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
                                 color: '#93c5fd',
                               }}>
                                 <Users style={{ display: 'inline', width: 8, height: 8, marginRight: 2 }} />
-                                Çoklu ekip
+                                {g.kayitlar[0]?.personelGorev
+                                  ? GOREV_LABEL[g.kayitlar[0].personelGorev] || 'Çoklu ekip'
+                                  : 'Çoklu ekip'}
                               </span>
                             )}
                             {tumOdendi ? (

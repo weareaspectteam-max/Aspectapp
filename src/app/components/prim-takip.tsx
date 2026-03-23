@@ -52,12 +52,19 @@ interface PrimKayit {
   kademeHedef: number;
   primMiktar: number;
   personelAdi: string;
+  personelGorev?: 'fotograf-satis' | 'baski' | 'album';
   personelSayisi: number;
   coklu: boolean;
   odendi: boolean;
   odemeTarihi: string | null;
   odemeKey: string;
 }
+
+const GOREV_LABEL: Record<string, string> = {
+  'fotograf-satis': '📸 Fotoğraf',
+  'baski': '🖨️ Baskı',
+  'album': '📒 Albüm',
+};
 
 interface OdemeDetay {
   key: string;
@@ -694,7 +701,10 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                                         <p style={{ color: 'rgba(52,211,153,0.6)', fontSize: 9 }}>Tümü ödendi</p>
                                       ) : (
                                         <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 9 }}>
-                                          {pg.kayitlar[0]?.coklu ? 'Çoklu rotasyon' : 'Tekli rotasyon'} · {pg.kayitlar.length} kademe
+                                          {pg.kayitlar[0]?.coklu
+                                             ? (pg.kayitlar[0]?.personelGorev ? GOREV_LABEL[pg.kayitlar[0].personelGorev] || 'Çoklu rotasyon' : 'Çoklu rotasyon')
+                                             : 'Tekli rotasyon'
+                                          } · {pg.kayitlar.length} kademe
                                         </p>
                                       )}
                                     </div>

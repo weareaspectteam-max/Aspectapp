@@ -1714,7 +1714,7 @@ app.delete("/make-server-4da0b637/rotasyon/gorevler/:id", async (c) => {
 
 // ──────────────────────────────────────────
 // ROTASYON: İzin Talepleri CRUD
-// ──────────────────────────────────────────
+// ──��───────────────────────────────────────
 app.get("/make-server-4da0b637/rotasyon/izinler", async (c) => {
   try {
     const user = await verifyToken(c);
@@ -2117,7 +2117,7 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
     await kv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
     console.log(`Stok açılışı: ${mekanId} / ${tarih} by ${user.id} | ${printerData?.length || 0} yazıcı | ${printerAnomali.length} yazıcı anomali`);
 
-    // ── Telegram: Açılış bildirimi ──────────────────────────────────────────
+    // ── Telegram: Açılış bildirimi ─────────────���────────────────────────────
     try {
       const mekanObj: any = await kv.get(`mekan_${mekanId}`) || await kv.get(mekanId);
       const mekanAdi = mekanObj?.name || mekanId;
@@ -2842,7 +2842,7 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
         ciro: Math.round(d.ciro),
       }));
 
-    // ── Albüm dağılımı ──────────────────────────────────────────────────────
+    // ── Albüm dağılımı ────────────────────────────────────────────────���─────
     const albumSayac: Record<string, number> = {};
     for (const kayit of bugunKayitlar) {
       for (const s of (kayit.satislar || []).filter((s: any) => !s.iptal)) {
@@ -2967,9 +2967,10 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
       const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
       const ciro = satislar.reduce((sum: number, s: any) => sum + (s.finalPrice || 0), 0);
 
-      // Personel listesi: o gün o mekana atanmış rotasyon personeli (id → ad Map ile tekilleştir)
+      // Personel listesi: o gün o mekana atanmış rotasyon personeli (id → {name, gorev})
       const mekanAdi: string = mekan.name || "";
-      const rotasyonPersonelMap = new Map<string, string>(); // id → ad
+      const rotasyonPersonelList: Array<{id: string; name: string; gorev?: string}> = [];
+      const seenIds = new Set<string>();
 
       for (const task of tumRotasyonlar) {
         if (task.date !== kayit.tarih) continue;
@@ -2977,16 +2978,27 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
         if (task.location !== mekanAdi) continue;
         if (!Array.isArray(task.personnel)) continue;
         for (const p of task.personnel) {
-          if (p.id && p.name) rotasyonPersonelMap.set(p.id, p.name);
+          if (p.id && p.name && !seenIds.has(p.id)) {
+            seenIds.add(p.id);
+            rotasyonPersonelList.push({ id: p.id, name: p.name, gorev: p.gorev });
+          }
         }
       }
 
-      const fotografcilar: string[] = rotasyonPersonelMap.size > 0
-        ? Array.from(rotasyonPersonelMap.values())
-        : ["Bilinmiyor"];
+      const rotasyonPersoneller = rotasyonPersonelList.length > 0
+        ? rotasyonPersonelList
+        : [{ id: "bilinmiyor", name: "Bilinmiyor", gorev: undefined }];
 
-      const personelSayisi = fotografcilar.length;
+      const personelSayisi = rotasyonPersoneller.length;
       const coklu = personelSayisi > 1;
+
+      // Göreve göre prim hesaplama yardımcısı (backward compat: primCoklu fallback)
+      const getGorevPrim = (kademe: any, gorev: string | undefined, isCoklu: boolean): number => {
+        if (!isCoklu) return Number(kademe.primTek) || 0;
+        if (gorev === 'baski') return Number(kademe.primBaski) || Number(kademe.primCoklu) || 0;
+        if (gorev === 'album') return Number(kademe.primAlbum) || Number(kademe.primCoklu) || 0;
+        return Number(kademe.primFotograf) || Number(kademe.primCoklu) || 0; // fotograf-satis veya varsayılan
+      };
 
       // Kademeleri hedef'e göre sırala — ki indeksi görsel sırayla eşleşsin
       const sortedKademeler = [...mekan.kotaKademeleri].sort((a: any, b: any) => Number(a.hedef) - Number(b.hedef));
@@ -2994,11 +3006,10 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
       for (let ki = 0; ki < sortedKademeler.length; ki++) {
         const kademe = sortedKademeler[ki];
         if (ciro >= Number(kademe.hedef)) {
-          const primMiktar = (coklu ? Number(kademe.primCoklu) : Number(kademe.primTek)) || 0;
-
-          // Her personel için ayrı kayıt
-          for (const personelAdi of fotografcilar) {
-            const safeAd = encodeURIComponent(personelAdi);
+          // Her personel için ayrı kayıt (göreve göre prim)
+          for (const personel of rotasyonPersoneller) {
+            const primMiktar = getGorevPrim(kademe, personel.gorev, coklu);
+            const safeAd = encodeURIComponent(personel.name);
             const odemeKey = `prim_odendi_${kayit.mekanId}_${kayit.tarih}_${ki}_${safeAd}`;
             const odemeData = odemeMap[odemeKey] || null;
 
@@ -3012,7 +3023,8 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
               kademeIndex: ki,
               kademeHedef: Number(kademe.hedef),
               primMiktar,
-              personelAdi,
+              personelAdi: personel.name,
+              personelGorev: personel.gorev,
               personelSayisi,
               coklu,
               odendi: odemeData?.odendi || false,
@@ -3083,35 +3095,51 @@ app.get("/make-server-4da0b637/primler/kendi-rapor", async (c) => {
 
       // O gün o mekandaki personel listesini rotasyondan al
       const mekanAdi: string = mekan.name || "";
-      const rotasyonPersonelMap = new Map<string, string>();
+      const rotasyonPersonelList2: Array<{id: string; name: string; gorev?: string}> = [];
+      const seenIds2 = new Set<string>();
       for (const task of (tumRotasyonlar || [])) {
         if (task.date !== kayit.tarih) continue;
         if (!["sent", "revised"].includes(task.status)) continue;
         if (task.location !== mekanAdi) continue;
         if (!Array.isArray(task.personnel)) continue;
         for (const p of task.personnel) {
-          if (p.id && p.name) rotasyonPersonelMap.set(p.id, p.name);
+          if (p.id && p.name && !seenIds2.has(p.id)) {
+            seenIds2.add(p.id);
+            rotasyonPersonelList2.push({ id: p.id, name: p.name, gorev: p.gorev });
+          }
         }
       }
 
       // Çağıran kişi bu mekana o gün atanmış mı?
-      const personelListesi = Array.from(rotasyonPersonelMap.values());
-      const buradaVar = personelListesi.some(
-        (ad) => ad.toLowerCase().trim() === callerAdi.toLowerCase().trim()
+      const buradaVar = rotasyonPersonelList2.some(
+        (p) => p.name.toLowerCase().trim() === callerAdi.toLowerCase().trim()
       );
       if (!buradaVar) continue;
 
+      // Çağıran kişinin görevi
+      const callerGorev = rotasyonPersonelList2.find(
+        (p) => p.name.toLowerCase().trim() === callerAdi.toLowerCase().trim()
+      )?.gorev;
+
       const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
       const ciro = satislar.reduce((sum: number, s: any) => sum + (s.finalPrice || 0), 0);
-      const personelSayisi = personelListesi.length;
+      const personelSayisi = rotasyonPersonelList2.length;
       const coklu = personelSayisi > 1;
+
+      // Göreve göre prim (backward compat: primCoklu fallback)
+      const getGorevPrim2 = (kademe: any, gorev: string | undefined, isCoklu: boolean): number => {
+        if (!isCoklu) return Number(kademe.primTek) || 0;
+        if (gorev === 'baski') return Number(kademe.primBaski) || Number(kademe.primCoklu) || 0;
+        if (gorev === 'album') return Number(kademe.primAlbum) || Number(kademe.primCoklu) || 0;
+        return Number(kademe.primFotograf) || Number(kademe.primCoklu) || 0;
+      };
 
       const sortedKademeler = [...mekan.kotaKademeleri].sort((a: any, b: any) => Number(a.hedef) - Number(b.hedef));
 
       for (let ki = 0; ki < sortedKademeler.length; ki++) {
         const kademe = sortedKademeler[ki];
         if (ciro >= Number(kademe.hedef)) {
-          const primMiktar = (coklu ? Number(kademe.primCoklu) : Number(kademe.primTek)) || 0;
+          const primMiktar = getGorevPrim2(kademe, callerGorev, coklu);
           const safeAd = encodeURIComponent(callerAdi);
           const odemeKey = `prim_odendi_${kayit.mekanId}_${kayit.tarih}_${ki}_${safeAd}`;
           const odemeData = odemeMap[odemeKey] || null;
@@ -3127,6 +3155,7 @@ app.get("/make-server-4da0b637/primler/kendi-rapor", async (c) => {
             kademeHedef: Number(kademe.hedef),
             primMiktar,
             personelAdi: callerAdi,
+            personelGorev: callerGorev,
             personelSayisi,
             coklu,
             odendi: odemeData?.odendi || false,
@@ -3183,6 +3212,9 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
     const kotaKademeOzetErken = kotaKademeleri.map((k: any) => ({
       hedef: Number(k.hedef),
       primTek: Number(k.primTek) || 0,
+      primFotograf: Number(k.primFotograf) || Number(k.primCoklu) || 0,
+      primBaski: Number(k.primBaski) || Number(k.primCoklu) || 0,
+      primAlbum: Number(k.primAlbum) || Number(k.primCoklu) || 0,
       primCoklu: Number(k.primCoklu) || 0,
     }));
 
@@ -3203,10 +3235,41 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
     const satislar: any[] = (kayit.satislar || []).filter((s: any) => !s.iptal);
     const ciro = Math.round(satislar.reduce((sum: number, s: any) => sum + (Number(s.finalPrice) || 0), 0));
 
-    // Personel sayısı
-    const fotografcilar = new Set((kayit.kareKayitlari || []).map((k: any) => k.photographerName).filter(Boolean));
-    const personelSayisi = fotografcilar.size || 1;
+    // Rotasyon görevinden personel listesi ve çağıran kişinin görevi
+    const callerName = user.user_metadata?.full_name || user.email || "";
+    const tumRotasyonlarPrim: any[] = await kv.getByPrefix("rotasyon_gorev_").catch(() => []) || [];
+    const todayTasks = tumRotasyonlarPrim.filter((t: any) =>
+      t.date === today &&
+      ["sent", "revised"].includes(t.status || "") &&
+      (t.location || "").toLowerCase().trim() === mekanAdi.toLowerCase().trim() &&
+      Array.isArray(t.personnel)
+    );
+    const rotasyonPersonelList3: Array<{id: string; name: string; gorev?: string}> = [];
+    const seenIds3 = new Set<string>();
+    for (const task of todayTasks) {
+      for (const p of task.personnel) {
+        if (p.id && p.name && !seenIds3.has(p.id)) {
+          seenIds3.add(p.id);
+          rotasyonPersonelList3.push({ id: p.id, name: p.name, gorev: p.gorev });
+        }
+      }
+    }
+    const callerGorevPrim = rotasyonPersonelList3.find(
+      (p) => p.name.toLowerCase().trim() === callerName.toLowerCase().trim()
+    )?.gorev;
+
+    // Personel sayısı (rotasyondan; yoksa kare kayıtlarından)
+    const personelSayisi = rotasyonPersonelList3.length ||
+      new Set((kayit.kareKayitlari || []).map((k: any) => k.photographerName).filter(Boolean)).size || 1;
     const coklu = personelSayisi > 1;
+
+    // Göreve göre prim yardımcısı (backward compat)
+    const getGorevPrim3 = (kademe: any, gorev: string | undefined, isCoklu: boolean): number => {
+      if (!isCoklu) return Number(kademe.primTek) || 0;
+      if (gorev === 'baski') return Number(kademe.primBaski) || Number(kademe.primCoklu) || 0;
+      if (gorev === 'album') return Number(kademe.primAlbum) || Number(kademe.primCoklu) || 0;
+      return Number(kademe.primFotograf) || Number(kademe.primCoklu) || 0;
+    };
 
     // Sıralı dizi üzerinden geçilen kademeler (index = sıralı pozisyon)
     const gecilenKademeler = kotaKademeleri
@@ -3216,6 +3279,9 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
     const kotaKademeOzet = kotaKademeleri.map((k: any) => ({
       hedef: Number(k.hedef),
       primTek: Number(k.primTek) || 0,
+      primFotograf: Number(k.primFotograf) || Number(k.primCoklu) || 0,
+      primBaski: Number(k.primBaski) || Number(k.primCoklu) || 0,
+      primAlbum: Number(k.primAlbum) || Number(k.primCoklu) || 0,
       primCoklu: Number(k.primCoklu) || 0,
     }));
 
@@ -3232,17 +3298,19 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
     }
 
     const topKademe = gecilenKademeler[gecilenKademeler.length - 1];
-    const toplamPrim = gecilenKademeler.reduce((s: number, k: any) => s + ((coklu ? Number(k.primCoklu) : Number(k.primTek)) || 0), 0);
+    const toplamPrim = gecilenKademeler.reduce((s: number, k: any) => s + getGorevPrim3(k, callerGorevPrim, coklu), 0);
+    const topKademePrim = getGorevPrim3(topKademe, callerGorevPrim, coklu);
 
     return c.json({
       primBilgi: {
         kademeIndex: topKademe.index,
         kademeHedef: Number(topKademe.hedef),
-        topKademePrim: (coklu ? Number(topKademe.primCoklu) : Number(topKademe.primTek)) || 0,
+        topKademePrim,
         toplamPrim,
         toplamKademe: gecilenKademeler.length,
         toplamKademeAdet: kotaKademeleri.length,
         personelSayisi,
+        callerGorev: callerGorevPrim,
         coklu,
         ciro,
       },

@@ -52,6 +52,7 @@ export function RotationTaskModal({
   const [startTime, setStartTime] = useState<string>('09:00');
   const [endTime, setEndTime] = useState<string>('17:00');
   const [selectedPersonnel, setSelectedPersonnel] = useState<string[]>([]);
+  const [gorevMap, setGorevMap] = useState<Record<string, 'fotograf-satis' | 'baski' | 'album'>>({});
   const [notes, setNotes] = useState<string>('');
   const [showWarning, setShowWarning] = useState<string>('');
   const [doubleAssignWarning, setDoubleAssignWarning] = useState<string>(''); // amber, kaydetmeyi engellemez
@@ -86,24 +87,29 @@ export function RotationTaskModal({
       setStartTime(editingTask.startTime);
       setEndTime(editingTask.endTime);
       // Edit modunda onaylı izinli personeli baştan listeden çıkar
-      setSelectedPersonnel(
-        editingTask.personnel
-          .map(p => p.id)
-          .filter(id => {
-            const staff = staffMembers.find(s => s.id === id);
-            if (!staff) return true;
-            const isOnLeave =
-              staff.status === 'on_leave' ||
-              leaveRequests.some(
-                leave =>
-                  leave.personnelId === staff.id &&
-                  leave.status === 'approved' &&
-                  new Date(selectedDate) >= new Date(leave.startDate) &&
-                  new Date(selectedDate) <= new Date(leave.endDate)
-              );
-            return !isOnLeave;
-          })
-      );
+      const filteredIds = editingTask.personnel
+        .map(p => p.id)
+        .filter(id => {
+          const staff = staffMembers.find(s => s.id === id);
+          if (!staff) return true;
+          const isOnLeave =
+            staff.status === 'on_leave' ||
+            leaveRequests.some(
+              leave =>
+                leave.personnelId === staff.id &&
+                leave.status === 'approved' &&
+                new Date(selectedDate) >= new Date(leave.startDate) &&
+                new Date(selectedDate) <= new Date(leave.endDate)
+            );
+          return !isOnLeave;
+        });
+      setSelectedPersonnel(filteredIds);
+      // Mevcut görev atamalarını yükle
+      const existingGorevMap: Record<string, 'fotograf-satis' | 'baski' | 'album'> = {};
+      editingTask.personnel.forEach(p => {
+        if (p.gorev) existingGorevMap[p.id] = p.gorev;
+      });
+      setGorevMap(existingGorevMap);
       setNotes(editingTask.notes || '');
     } else {
       if (preselectedLocation && modalType === 'regular_location') {
@@ -116,6 +122,7 @@ export function RotationTaskModal({
       setStartTime('09:00');
       setEndTime('17:00');
       setSelectedPersonnel([]);
+      setGorevMap({});
       setNotes('');
       setTaskType('special');
     }
@@ -271,7 +278,8 @@ export function RotationTaskModal({
       personnel = selectedPersonnel.map(id => {
         const staff = staffMembers.find(s => s.id === id);
         if (!staff) throw new Error(`Personel bulunamadı: ${id}`);
-        return { id: staff.id, name: staff.name, avatar: staff.avatar, role: staff.role };
+        const gorev = selectedPersonnel.length > 1 ? gorevMap[id] : undefined;
+        return { id: staff.id, name: staff.name, avatar: staff.avatar, role: staff.role, gorev };
       });
     } catch (err: any) {
       setShowWarning(err.message || 'Personel verisi hatası.');
@@ -565,6 +573,53 @@ export function RotationTaskModal({
                   })}
                 </div>
               </div>
+
+              {/* ── Görev Ataması — 2+ kişide göster ── */}
+              {selectedPersonnel.length > 1 && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">
+                    🎭 Görev Ataması
+                    <span className="ml-2 text-xs font-normal text-gray-500">(Prim hesaplaması için)</span>
+                  </label>
+                  <div className="space-y-2 p-3 bg-white/5 rounded-xl border border-white/10">
+                    {selectedPersonnel.map(id => {
+                      const staff = staffMembers.find(s => s.id === id);
+                      if (!staff) return null;
+                      const gorev = gorevMap[id];
+                      return (
+                        <div key={id} className="flex items-center gap-2">
+                          <span className="text-sm shrink-0 w-5">{staff.avatar}</span>
+                          <span className="text-xs text-white font-medium flex-1 truncate">{staff.name}</span>
+                          <div className="flex gap-1 shrink-0">
+                            {([
+                              { key: 'fotograf-satis', label: '📸', title: 'Fotoğraf/Satış' },
+                              { key: 'baski', label: '🖨️', title: 'Baskı' },
+                              { key: 'album', label: '📒', title: 'Albüm' },
+                            ] as const).map(g => (
+                              <button
+                                key={g.key}
+                                type="button"
+                                title={g.title}
+                                onClick={() => setGorevMap(prev => ({ ...prev, [id]: g.key }))}
+                                className={`w-8 h-8 rounded-lg text-base flex items-center justify-center transition-all active:scale-95 ${
+                                  gorev === g.key
+                                    ? 'bg-[#9dd9ea]/25 border-2 border-[#9dd9ea]/60 scale-110'
+                                    : 'bg-white/8 border border-white/15 opacity-50 hover:opacity-80'
+                                }`}
+                              >
+                                {g.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      📸 Fotoğrafçı/Satış · 🖨️ Baskı · 📒 Albüm — seçilmezse Fotoğraf primi uygulanır
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Location Input - ONLY for extra_special */}
               {modalType === 'extra_special' && (
