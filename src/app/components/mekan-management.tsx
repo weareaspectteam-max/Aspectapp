@@ -752,7 +752,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                                 arr[index] = { ...arr[index], hedef: parseFloat(e.target.value) || 0 };
                                 setFormKotaKademeleri(arr);
                               }}
-                              className="flex-1 px-3 py-1.5 bg-white/10 border-2 border-yellow-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-yellow-400 transition-all text-sm"
+                              className="flex-1 min-w-0 px-3 py-1.5 bg-white/10 border-2 border-yellow-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-yellow-400 transition-all text-sm"
                               placeholder="₺ Hedef"
                             />
                           </div>
@@ -766,7 +766,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                                 arr[index] = { ...arr[index], primTek: parseFloat(e.target.value) || 0 };
                                 setFormKotaKademeleri(arr);
                               }}
-                              className="flex-1 px-3 py-1.5 bg-white/10 border-2 border-blue-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-400 transition-all text-sm"
+                              className="flex-1 min-w-0 px-3 py-1.5 bg-white/10 border-2 border-blue-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-400 transition-all text-sm"
                               placeholder="₺ Solo prim"
                             />
                           </div>
