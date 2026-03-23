@@ -405,7 +405,7 @@ app.get("/make-server-4da0b637/telegram/test", async (c) => {
   }
 });
 
-// ────────────────────────────────────────���─
+// ─────────��──────────────────────────────���─
 // TELEGRAM: Webhook handler (Telegram callback_query'lerini işler)
 // POST /make-server-4da0b637/telegram/webhook
 // ──────────────────────────────────────────
@@ -568,7 +568,7 @@ app.post("/make-server-4da0b637/auth/signup", async (c) => {
 // ──────────────────────────────────────────
 // AUTH: Mevcut kullanıcı profili
 // GET /make-server-4da0b637/auth/me
-// ──────────────────────────────────────────
+// ───────��──────────────────────────────────
 app.get("/make-server-4da0b637/auth/me", async (c) => {
   try {
     const user = await verifyToken(c);
@@ -1162,7 +1162,7 @@ app.delete("/make-server-4da0b637/maliyetler/kagitlar/:id", async (c) => {
 
 // ──────────────────────────────────────────
 // MALİYET: Düzenli gider ekle/güncelle/sil
-// ─────────────────────────────────���────────
+// ─────────────────────────────────����────────
 app.post("/make-server-4da0b637/maliyetler/giderler", async (c) => {
   try {
     const user = await verifyToken(c);
@@ -3409,7 +3409,7 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
           odemeTipi: "prim",
           amount: detay.primMiktar || 0,
           currency: "TRY",
-          description: `Personel Prim Ödemesi — ${detay.personelAdi || "Bilinmiyor"} — ${detay.mekanAdi || ""} ${detay.tarih || todayStr} ${kademeLabel}`,
+          description: `Personel Prim Ödemesi �� ${detay.personelAdi || "Bilinmiyor"} — ${detay.mekanAdi || ""} ${detay.tarih || todayStr} ${kademeLabel}`,
           date: detay.tarih || todayStr,
           personelAdi: detay.personelAdi,
           mekanAdi: detay.mekanAdi,
@@ -4095,7 +4095,7 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
 // STOK: Mekan / Depo stok sıfırla (yönetici)
 // POST /make-server-4da0b637/stok/mekan/sifirla
 // Body: { mekanId: string }
-// ──────────────────────────────────────────
+// ───────��──────────────────────────────────
 app.post("/make-server-4da0b637/stok/mekan/sifirla", async (c) => {
   try {
     const user = await verifyToken(c);
@@ -9501,10 +9501,19 @@ app.post("/make-server-4da0b637/vardiya/checkin", async (c) => {
     const isLate = lateMin > 5;
     const data = { checkInTime, plannedStart, plannedEnd, location, locationIcon, taskId, lateMin: isLate ? lateMin : 0, userId, tarih };
     await kv.set(`checkin_${userId}_${tarih}`, data);
+    // Yeni check-in geldiğinde eski checkout verisini sil (stale data önlemi)
+    await kv.del(`checkout_${userId}_${tarih}`);
     console.log(`[Vardiya] Check-in: ${userName} — ${tarih} ${plannedStart} → ${isLate ? `${lateMin}dk geç` : "zamanında"}`);
     if (isLate) {
       const telegramText = `⚠️ <b>Geç Giriş Bildirimi</b>\n\n👤 <b>${userName}</b> vardiyasına geç başladı.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n⏰ Planlanan: <b>${plannedStart}</b>\n⏱️ Gecikme: <b>${lateMin} dk</b>\n📅 Tarih: ${tarih}`;
       sendTelegramMessage(telegramText, "HTML").catch(() => {});
+    } else {
+      const nowTrHH = String(now.getUTCHours()).padStart(2, "0");
+      const nowTrMM = String(now.getUTCMinutes()).padStart(2, "0");
+      const nowTrStr = `${nowTrHH}:${nowTrMM}`;
+      const erken = lateMin < 0 ? ` (${Math.abs(lateMin)} dk erken)` : "";
+      const telegramText2 = `✅ <b>Vardiya Başladı</b>\n\n👤 <b>${userName}</b> vardiyasına başladı.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n⏰ Planlanan: <b>${plannedStart}</b>\n🕐 Giriş saati: <b>${nowTrStr}</b>${erken}\n📅 Tarih: ${tarih}`;
+      sendTelegramMessage(telegramText2, "HTML").catch(() => {});
     }
     return c.json({ success: true, data, isLate, lateMin: isLate ? lateMin : 0 });
   } catch (err) {
@@ -9528,6 +9537,31 @@ app.post("/make-server-4da0b637/vardiya/checkout", async (c) => {
     const data = { checkOutTime, plannedEnd: plannedEnd || checkin?.plannedEnd, userId, tarih };
     await kv.set(`checkout_${userId}_${tarih}`, data);
     console.log(`[Vardiya] Check-out: ${userName} — ${tarih}`);
+
+    // Telegram bildirimi
+    const nowTR2 = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    const outHH = String(nowTR2.getUTCHours()).padStart(2, "0");
+    const outMM = String(nowTR2.getUTCMinutes()).padStart(2, "0");
+    const outTrStr = `${outHH}:${outMM}`;
+
+    let sureStr = "";
+    if (checkin?.checkInTime) {
+      const ciMs = new Date(checkin.checkInTime).getTime();
+      const coMs = new Date(checkOutTime).getTime();
+      const totalMin = Math.round((coMs - ciMs) / 60000);
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      sureStr = h > 0 ? `${h} sa ${m} dk` : `${m} dk`;
+    }
+
+    const loc = checkin?.location || "Bilinmiyor";
+    const locIcon = checkin?.locationIcon || "📍";
+    const plannedEndStr = data.plannedEnd || "?";
+    const lateMinOut = checkin?.lateMin || 0;
+
+    const checkoutTelegramText = `🔴 <b>Vardiya Bitti</b>\n\n👤 <b>${userName}</b> vardiyasını tamamladı.\n📍 ${locIcon} ${loc}\n⏰ Planlanan bitiş: <b>${plannedEndStr}</b>\n🕐 Çıkış saati: <b>${outTrStr}</b>\n⏱️ Çalışılan süre: <b>${sureStr || "?"}</b>${lateMinOut > 0 ? `\n⚠️ Geç giriş: <b>${lateMinOut} dk</b>` : ""}\n📅 Tarih: ${tarih}`;
+    sendTelegramMessage(checkoutTelegramText, "HTML").catch(() => {});
+
     return c.json({ success: true, data });
   } catch (err) {
     console.log("vardiya/checkout error:", err);

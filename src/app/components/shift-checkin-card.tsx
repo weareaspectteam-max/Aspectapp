@@ -129,7 +129,7 @@ interface Props {
 
 /* ══════════════════════════════════════════════════════════════
    Ana Bileşen
-═════════════════════════════════════���════════════════════════ */
+═════════════════════════════════════���═══════════════════════ */
 export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLoading }: Props) {
   const [checkin, setCheckin] = useState<CheckInData | null>(null);
   const [checkout, setCheckout] = useState<CheckOutData | null>(null);
@@ -196,7 +196,14 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
     return checkin;
   })();
 
-  const validCheckout: CheckOutData | null = validCheckin && checkout ? checkout : null;
+  const validCheckout: CheckOutData | null = (() => {
+    if (!validCheckin || !checkout) return null;
+    // checkout zamanı checkin'den önce ise stale veri → gösterme
+    if (checkout.checkOutTime && validCheckin.checkInTime) {
+      if (new Date(checkout.checkOutTime).getTime() <= new Date(validCheckin.checkInTime).getTime()) return null;
+    }
+    return checkout;
+  })();
 
   /* ── Durum hesapla ── */
   const computeState = (): ShiftState => {
