@@ -3,6 +3,7 @@ import {
   Shield, UserCog, Users, User, Briefcase, UserPlus, Clock,
   List, ChevronDown, ChevronRight, UserCheck, Trash2, Edit2,
   X, CheckCircle, ArrowLeft, RefreshCw, AlertCircle, Medal,
+  Copy, Link, Check,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { supabase, SERVER_URL } from '../lib/supabase';
@@ -12,6 +13,7 @@ interface UserManagementProps {
   userName: string;
   userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
   accessToken: string;
+  userCompanyId?: string; // ← Yeni: çok kiracılı yapı için
   onLogout: () => void;
   onNavigate: (tab: string) => void;
 }
@@ -59,7 +61,7 @@ const roleConfig = {
   bekleyen:   { label: 'Bekleyen',  emoji: '⏳', color: 'rgba(255,255,255,0.45)', accent: 'rgba(255,255,255,0.07)', border: 'rgba(255,255,255,0.15)', glow: 'rgba(255,255,255,0.05)', headerBg: 'linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))' },
 };
 
-export function UserManagement({ userRole, accessToken, onNavigate }: UserManagementProps) {
+export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect', onNavigate }: UserManagementProps) {
   const [users, setUsers]               = useState<UserData[]>([]);
   const [pendingUsers, setPendingUsers]  = useState<UserData[]>([]);
   const [activeTab, setActiveTab]        = useState<ActiveTab>('active');
@@ -69,6 +71,7 @@ export function UserManagement({ userRole, accessToken, onNavigate }: UserManage
   const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading]            = useState(true);
   const [error, setError]                = useState('');
+  const [linkCopied, setLinkCopied]      = useState(false); // ← Yeni: kopyalama feedback
 
   const currentUserRole: UserRole = userRole as UserRole;
 
@@ -99,7 +102,9 @@ export function UserManagement({ userRole, accessToken, onNavigate }: UserManage
     setLoading(true); setError('');
     try {
       const headers = buildHeaders(accessToken);
-      const res = await fetch(`${SERVER_URL}/users`, { headers });
+      // Superadmin ghost modunda company_id query param ile şirketi belirt
+      const url = `${SERVER_URL}/users${userCompanyId !== 'aspect' ? `?company_id=${userCompanyId}` : ''}`;
+      const res = await fetch(url, { headers });
       if (!res.ok) { const j = await res.json(); setError(j.error || 'Kullanıcılar yüklenemedi.'); return; }
       const { users: all } = await res.json();
       setUsers(all.filter((u: UserData) => u.role !== 'bekleyen'));
@@ -108,7 +113,7 @@ export function UserManagement({ userRole, accessToken, onNavigate }: UserManage
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadUsers(); }, []);
+  useEffect(() => { loadUsers(); }, [userCompanyId]);
 
   /* ── Kıdem: yükle (sayfa açılışında) ── */
   useEffect(() => {
@@ -240,9 +245,14 @@ export function UserManagement({ userRole, accessToken, onNavigate }: UserManage
   };
 
   const groupBy = (list: UserData[]) => {
-    const g: Record<UserRole, UserData[]> = { yonetici: [], 'ust-mudur': [], mudur: [], operasyon: [], personel: [], idari: [], bekleyen: [] };
-    list.forEach(u => g[u.role].push(u));
-    return g;
+    const g: Record<string, UserData[]> = { yonetici: [], 'ust-mudur': [], mudur: [], operasyon: [], personel: [], idari: [], bekleyen: [] };
+    list.forEach(u => {
+      // superadmin rolü yonetici grubunda gösterilir; bilinmeyen roller yonetici'ye düşer
+      const key = u.role === 'superadmin' ? 'yonetici' : u.role;
+      if (!g[key]) g[key] = [];
+      g[key].push(u);
+    });
+    return g as Record<UserRole, UserData[]>;
   };
 
   const getFiltered = () => {
@@ -388,6 +398,92 @@ export function UserManagement({ userRole, accessToken, onNavigate }: UserManage
                 );
               })}
             </motion.div>
+
+            {/* ── Personel Davet Linki ── */}
+            {['yonetici', 'ust-mudur', 'mudur'].includes(currentUserRole) && (() => {
+              const signupUrl = `${window.location.origin}/signup/${userCompanyId}`;
+              const handleCopy = () => {
+                const fallbackCopy = () => {
+                  const ta = document.createElement('textarea');
+                  ta.value = signupUrl;
+                  ta.style.position = 'fixed';
+                  ta.style.opacity = '0';
+                  document.body.appendChild(ta);
+                  ta.focus();
+                  ta.select();
+                  try { document.execCommand('copy'); } catch {}
+                  document.body.removeChild(ta);
+                  setLinkCopied(true);
+                  setTimeout(() => setLinkCopied(false), 2500);
+                };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  navigator.clipboard.writeText(signupUrl).then(() => {
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 2500);
+                  }).catch(fallbackCopy);
+                } else {
+                  fallbackCopy();
+                }
+              };
+              return (
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+                  style={{ ...glass, padding: 16, border: '1px solid rgba(157,217,234,0.28)', background: 'rgba(157,217,234,0.06)' }}
+                >
+                  <div className="flex gap-3 items-start">
+                    <div style={{
+                      width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+                      background: 'rgba(157,217,234,0.15)', border: '1px solid rgba(157,217,234,0.35)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <Link style={{ width: 18, height: 18, color: CYAN }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-bold text-white" style={{ fontSize: 13 }}>Personel Kayıt Linki</p>
+                        <span style={{
+                          fontSize: 9, fontWeight: 700, color: CYAN,
+                          background: 'rgba(157,217,234,0.15)', border: '1px solid rgba(157,217,234,0.30)',
+                          borderRadius: 6, padding: '2px 6px', letterSpacing: '0.05em',
+                        }}>
+                          {userCompanyId.toUpperCase()}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 10, lineHeight: 1.4 }}>
+                        Bu linki çalışanlarınızla paylaşın. Kayıt olduktan sonra "Bekleyen" listesinde görünürler.
+                      </p>
+                      {/* Link kutusu */}
+                      <div style={{
+                        background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(157,217,234,0.20)',
+                        borderRadius: 10, padding: '8px 10px',
+                        fontSize: 10, color: 'rgba(255,255,255,0.5)',
+                        fontFamily: 'monospace', wordBreak: 'break-all', marginBottom: 8,
+                      }}>
+                        {signupUrl}
+                      </div>
+                      <motion.button
+                        whileTap={{ scale: 0.96 }}
+                        onClick={handleCopy}
+                        className="w-full flex items-center justify-center gap-2"
+                        style={{
+                          padding: '10px', borderRadius: 10, cursor: 'pointer',
+                          background: linkCopied ? 'rgba(52,211,153,0.15)' : 'rgba(157,217,234,0.12)',
+                          border: linkCopied ? '1px solid rgba(52,211,153,0.40)' : '1px solid rgba(157,217,234,0.35)',
+                          color: linkCopied ? EMERALD : CYAN,
+                          fontSize: 13, fontWeight: 700,
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        {linkCopied
+                          ? <><Check style={{ width: 14, height: 14 }} /> Kopyalandı!</>
+                          : <><Copy style={{ width: 14, height: 14 }} /> Linki Kopyala</>
+                        }
+                      </motion.button>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })()}
 
             {/* ═══════════ AKTİF KULLANICILAR ═══════════ */}
             {activeTab === 'active' && (

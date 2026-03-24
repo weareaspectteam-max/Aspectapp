@@ -12,7 +12,7 @@ import {
   Cake, User, Settings, LogOut, ChevronRight, Package,
   BarChart2, ClipboardList, CalendarDays, FileBarChart, Wallet, Gamepad2,
   ChevronDown, Crown, Sliders, Brain, Globe, Loader2, Users, DollarSign, TrendingUp,
-  AlertTriangle,
+  AlertTriangle, Building2, Eye, ArrowLeftRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
@@ -41,33 +41,36 @@ interface Section {
 
 /* ─────────────────────── Rol meta ──────────────────── */
 const ROLE_COLORS: Record<UserRole, string> = {
-  'yonetici':  '#a855f7',
-  'ust-mudur': '#7c3aed',
-  'mudur':     '#6366f1',
-  'operasyon': '#fb923c',
-  'personel':  '#34d399',
-  'idari':     '#60a5fa',
-  'bekleyen':  '#9ca3af',
+  'yonetici':   '#a855f7',
+  'ust-mudur':  '#7c3aed',
+  'mudur':      '#6366f1',
+  'operasyon':  '#fb923c',
+  'personel':   '#34d399',
+  'idari':      '#60a5fa',
+  'bekleyen':   '#9ca3af',
+  'superadmin': '#fbbf24',
 };
 
 const ROLE_TITLES: Record<UserRole, string> = {
-  'yonetici':  'Yönetici',
-  'ust-mudur': 'Üst Müdür',
-  'mudur':     'Müdür',
-  'operasyon': 'Operasyon Yön.',
-  'personel':  'Personel',
-  'idari':     'İdari Görevli',
-  'bekleyen':  'Onay Bekliyor',
+  'yonetici':   'Yönetici',
+  'ust-mudur':  'Üst Müdür',
+  'mudur':      'Müdür',
+  'operasyon':  'Operasyon Yön.',
+  'personel':   'Personel',
+  'idari':      'İdari Görevli',
+  'bekleyen':   'Onay Bekliyor',
+  'superadmin': 'Süper Yönetici',
 };
 
 const ROLE_AVATARS: Record<UserRole, string> = {
-  'yonetici':  '👑',
-  'ust-mudur': '🏢',
-  'mudur':     '💼',
-  'operasyon': '⚡',
-  'personel':  '📸',
-  'idari':     '📋',
-  'bekleyen':  '⏳',
+  'yonetici':   '👑',
+  'ust-mudur':  '🏢',
+  'mudur':      '💼',
+  'operasyon':  '⚡',
+  'personel':   '📸',
+  'idari':      '📋',
+  'bekleyen':   '⏳',
+  'superadmin': '⚡',
 };
 
 function shortName(name: string) {
@@ -82,12 +85,16 @@ function getSections(
   onLogout: () => void,
   close: () => void,
   activeTab: string,
+  companyId: string = 'aspect',
 ): Section[] {
   const go = (tab: string) => { onNavigate(tab); close(); };
 
-  const all:  UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','personel','bekleyen'];
-  const mgmt: UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari'];
-  const ops:  UserRole[] = ['yonetici','ust-mudur','mudur','operasyon'];
+  const all:  UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','personel','bekleyen','superadmin'];
+  const mgmt: UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','superadmin'];
+  const ops:  UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','superadmin'];
+
+  // Aspect AI yalnızca aspect şirketinde görünür
+  const isAspect = companyId === 'aspect';
 
   const sections: Section[] = [
     {
@@ -108,7 +115,7 @@ function getSections(
         { icon: Home,          label: 'Dashboard',        roles: all,  action: () => go('dashboard')   },
         { icon: MessageCircle, label: 'Mesajlar',          roles: all,  action: () => go('messaging')   },
         { icon: Trophy,        label: 'Liderlik Tablosu',  roles: all,  action: () => go('leaderboard') },
-        { icon: Sparkles,      label: 'Aspect AI',         roles: all,  action: () => go('aspect-ai')   },
+        ...(isAspect ? [{ icon: Sparkles as IconComp, label: 'Aspect AI', roles: all as UserRole[], action: () => go('aspect-ai') } as MenuItem] : [] as MenuItem[]),
         { icon: GraduationCap, label: 'Akademi',           roles: all,  action: () => go('academy')     },
       ],
     },
@@ -217,12 +224,16 @@ function ToggleSwitch({
 
 /* ─────────────────────── Props ─────────────────────── */
 interface HamburgerMenuProps {
-  userName:   string;
-  userRole:   UserRole;
-  userId?:    string;
-  onLogout:   () => void;
-  onNavigate: (tab: string) => void;
-  activeTab?: string;
+  userName:          string;
+  userRole:          UserRole;
+  userId?:           string;
+  onLogout:          () => void;
+  onNavigate:        (tab: string) => void;
+  activeTab?:        string;
+  isSuperAdmin?:     boolean;
+  ghostCompanyId?:   string | null;
+  effectiveCompanyId?: string;
+  onSwitchCompany?:  (companyId: string | null) => void;
 }
 
 /* ─────────────────────── Component ─────────────────── */
@@ -233,6 +244,10 @@ export function HamburgerMenu({
   onLogout,
   onNavigate,
   activeTab = '',
+  isSuperAdmin = false,
+  ghostCompanyId = null,
+  effectiveCompanyId = 'aspect',
+  onSwitchCompany,
 }: HamburgerMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const close = () => setIsOpen(false);
@@ -248,7 +263,7 @@ export function HamburgerMenu({
   const [toggleLoading, setToggleLoading]     = useState<string | null>(null);
   const [settingsLoaded, setSettingsLoaded]   = useState(false);
 
-  const sections  = getSections(userRole, onNavigate, onLogout, close, activeTab);
+  const sections  = getSections(userRole, onNavigate, onLogout, close, activeTab, effectiveCompanyId);
   const roleColor = ROLE_COLORS[userRole] ?? '#a855f7';
   const roleTitle = ROLE_TITLES[userRole] ?? '';
   const roleAvatar= ROLE_AVATARS[userRole] ?? '👤';
@@ -573,6 +588,115 @@ export function HamburgerMenu({
                       </div>
                     </div>
                   ))}
+
+                  {/* ── SÜPER YÖNETİM — sadece superadmin görür, gizli bölüm ── */}
+                  {isSuperAdmin && onSwitchCompany && (
+                    <div style={{
+                      background: 'linear-gradient(135deg, rgba(251,191,36,0.10), rgba(251,191,36,0.04))',
+                      border: '1px solid rgba(251,191,36,0.35)',
+                      borderLeft: '3px solid rgba(251,191,36,0.80)',
+                      borderRadius: 14,
+                      padding: '10px 8px 10px',
+                    }}>
+                      <div className="flex items-center gap-2 px-1 mb-3">
+                        <div className="h-px flex-1 rounded-full" style={{ background: 'linear-gradient(to right, #fbbf2440, transparent)' }} />
+                        <span className="font-black tracking-widest flex-shrink-0" style={{
+                          fontSize: 9, color: '#fbbf24', letterSpacing: '0.15em',
+                          background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.40)',
+                          borderRadius: 20, padding: '2px 8px', boxShadow: '0 0 10px rgba(251,191,36,0.25)',
+                        }}>
+                          ⚡ SÜPER YÖNETİM
+                        </span>
+                        <div className="h-px flex-1 rounded-full" style={{ background: 'linear-gradient(to left, #fbbf2440, transparent)' }} />
+                      </div>
+                      <p style={{ fontSize: 10, color: 'rgba(251,191,36,0.55)', margin: '0 4px 10px', lineHeight: 1.5 }}>
+                        Ghost mod — şirket geçişleri kaydedilmez, kapayınca Aspect'e döner.
+                      </p>
+                      {(['aspect', 'frame', 'tetra'] as const).map(cId => {
+                        const isActive = (ghostCompanyId ?? 'aspect') === cId;
+                        const configs: Record<string, { emoji: string; label: string; color: string }> = {
+                          aspect: { emoji: '✦', label: 'Aspect Agency',  color: '#a855f7' },
+                          frame:  { emoji: '🖼', label: 'Frame Studios', color: '#9dd9ea' },
+                          tetra:  { emoji: '🔷', label: 'Tetra Works',   color: '#34d399' },
+                        };
+                        const cfg = configs[cId];
+                        return (
+                          <motion.button
+                            key={cId}
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() => { onSwitchCompany(cId === 'aspect' ? null : cId); close(); }}
+                            className="w-full flex items-center gap-3 rounded-xl mb-1.5"
+                            style={{
+                              padding: '10px 12px',
+                              background: isActive ? `linear-gradient(135deg, ${cfg.color}25, ${cfg.color}12)` : 'rgba(255,255,255,0.04)',
+                              border: isActive ? `1px solid ${cfg.color}55` : '1px solid rgba(255,255,255,0.09)',
+                              boxShadow: isActive ? `0 0 14px ${cfg.color}20` : 'none',
+                              transition: 'all 0.2s',
+                            }}
+                          >
+                            <div style={{
+                              width: 32, height: 32, borderRadius: 10, flexShrink: 0,
+                              background: isActive ? `${cfg.color}30` : 'rgba(255,255,255,0.06)',
+                              border: `1px solid ${isActive ? cfg.color + '50' : 'rgba(255,255,255,0.12)'}`,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 16, boxShadow: isActive ? `0 0 10px ${cfg.color}40` : 'none',
+                              transition: 'all 0.2s',
+                            }}>
+                              {cfg.emoji}
+                            </div>
+                            <div className="flex-1 min-w-0 text-left">
+                              <p style={{ fontSize: 12, fontWeight: 700, color: isActive ? cfg.color : 'rgba(255,255,255,0.60)', margin: 0 }}>
+                                {cfg.label}
+                              </p>
+                              <p style={{ fontSize: 9, color: isActive ? `${cfg.color}80` : 'rgba(255,255,255,0.25)', marginTop: 1 }}>
+                                {isActive ? '👁 İzleniyor' : 'Geçiş yap'}
+                              </p>
+                            </div>
+                            {isActive
+                              ? <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: cfg.color, boxShadow: `0 0 8px ${cfg.color}` }} />
+                              : <ArrowLeftRight style={{ width: 12, height: 12, color: 'rgba(255,255,255,0.25)', flexShrink: 0 }} />
+                            }
+                          </motion.button>
+                        );
+                      })}
+                      {ghostCompanyId && (
+                        <motion.button
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => { onSwitchCompany(null); close(); }}
+                          className="w-full flex items-center justify-center gap-2 rounded-xl mt-2"
+                          style={{
+                            padding: '9px', fontSize: 11, fontWeight: 700,
+                            background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.35)',
+                            color: '#fbbf24', cursor: 'pointer',
+                          }}
+                        >
+                          ↩ Aspect'e Dön (Ghost Çık)
+                        </motion.button>
+                      )}
+
+                      {/* Şirket Yönetim Paneli butonu */}
+                      <motion.button
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() => { onNavigate('super-admin'); close(); }}
+                        className="w-full flex items-center gap-3 rounded-xl mt-2"
+                        style={{
+                          padding: '11px 12px',
+                          background: 'linear-gradient(135deg, rgba(251,191,36,0.18), rgba(245,158,11,0.10))',
+                          border: '1px solid rgba(251,191,36,0.50)',
+                          boxShadow: '0 0 16px rgba(251,191,36,0.15)',
+                        }}
+                      >
+                        <div style={{ width: 30, height: 30, borderRadius: 10, flexShrink: 0, background: 'rgba(251,191,36,0.22)', border: '1px solid rgba(251,191,36,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>
+                          🏢
+                        </div>
+                        <div className="flex-1 text-left">
+                          <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: '#fbbf24' }}>Şirket Yönetim Paneli</p>
+                          <p style={{ margin: 0, fontSize: 9, color: 'rgba(251,191,36,0.55)' }}>Şirket oluştur, kullanıcı ekle</p>
+                        </div>
+                        <Globe style={{ width: 14, height: 14, color: 'rgba(251,191,36,0.60)', flexShrink: 0 }} />
+                      </motion.button>
+                    </div>
+                  )}
 
                   {/* ── YÖNETİCİ PANELİ — en alta, HESAP'ın üstü ── */}
                   {showAdminPanel && (

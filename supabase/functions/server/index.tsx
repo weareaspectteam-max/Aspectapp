@@ -4,15 +4,19 @@ import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js";
 import { jwtVerify, decodeJwt } from "npm:jose@5";
 import * as kv from "./kv_store.tsx";
+import { companyKvFor, getCompanyId, migrateLegacyToAspect } from "./company_kv.tsx";
 
-// ── Sadece gerçek mekan objelerini döndüren helper ──────────────────────────
-// kv.getByPrefix("mekan_") çağrısı "mekan_ziyaret_*" kayıtlarını da eşleştirir.
+// ── Şirket-bağımlı mekan helper'ı ───────────────────────────────────────────
+// kv.getByPrefix("mekan_") "mekan_ziyaret_*" kayıtlarını da eşleştirir.
 // Gerçek mekan objeleri `name` ve `emoji` alanına sahiptir; ziyaret kayıtları sahip değildir.
-// `printType` bazı mekanlarda henüz set edilmemiş olabilir, bu yüzden o koşula bağlamıyoruz.
-const getMekanlar = async (): Promise<any[]> => {
-  const all: any[] = await kv.getByPrefix("mekan_") || [];
+// getMekanlarFor: multi-tenant (companyId prefix'li)
+// getMekanlar: legacy alias — aspect-only context'ler için (Telegram webhook vb.)
+const getMekanlarFor = async (companyId: string): Promise<any[]> => {
+  const ckv = companyKvFor(companyId);
+  const all: any[] = await ckv.getByPrefix("mekan_") || [];
   return all.filter((m: any) => m && m.name && m.emoji);
 };
+const getMekanlar = (): Promise<any[]> => getMekanlarFor("aspect");
 
 const app = new Hono();
 
@@ -73,15 +77,22 @@ const verifyToken = async (c: any) => {
   }
 
   // ── Payload'dan user nesnesi oluşturan helper ──
-  const buildUser = (p: any) => ({
-    id: p.sub,
-    email: p.email ?? "",
-    role: p.role ?? "",
-    user_metadata: p.user_metadata ?? {},
-    app_metadata: p.app_metadata ?? {},
-    created_at: p.iat ? new Date(p.iat * 1000).toISOString() : "",
-    last_sign_in_at: "",
-  });
+  const buildUser = (p: any) => {
+    const rawMeta = p.user_metadata ?? {};
+    const rawRole = rawMeta.role ?? "";
+    // superadmin → yonetici seviyesinde tüm yetki kontrollerini geçer.
+    // Orijinal rol originalRole'de saklanır; superadmin endpoint'leri bunu kontrol eder.
+    const effectiveRole = rawRole === "superadmin" ? "yonetici" : rawRole;
+    return {
+      id: p.sub,
+      email: p.email ?? "",
+      role: p.role ?? "",
+      user_metadata: { ...rawMeta, role: effectiveRole, originalRole: rawRole },
+      app_metadata: p.app_metadata ?? {},
+      created_at: p.iat ? new Date(p.iat * 1000).toISOString() : "",
+      last_sign_in_at: "",
+    };
+  };
 
   // ── decodeJwt fallback helper: imzasız + exp kontrollü ──
   const tryDecodeJwtFallback = (): ReturnType<typeof buildUser> | null => {
@@ -105,11 +116,12 @@ const verifyToken = async (c: any) => {
 
   // ── 1. Yerel JWT doğrulaması — clockTolerance:300 ──
   const jwtSecret = Deno.env.get("SUPABASE_JWT_SECRET");
+  let prelimUser: ReturnType<typeof buildUser> | null = null;
   if (jwtSecret) {
     try {
       const secret = new TextEncoder().encode(jwtSecret);
       const { payload } = await jwtVerify(xToken, secret, { clockTolerance: 300 });
-      if (payload?.sub) return buildUser(payload);
+      if (payload?.sub) prelimUser = buildUser(payload);
     } catch (jwtErr) {
       console.log("[verifyToken] yerel JWT başarısız:", String(jwtErr).slice(0, 100));
     }
@@ -117,26 +129,69 @@ const verifyToken = async (c: any) => {
     console.log("[verifyToken] SUPABASE_JWT_SECRET yok → decodeJwt fallback");
   }
 
-  // ── 2. decodeJwt fallback — network çağrısı yok, connection reset riski sıfır ──
-  return tryDecodeJwtFallback();
+  if (!prelimUser) {
+    // ── 2. decodeJwt fallback — network çağrısı yok, connection reset riski sıfır ──
+    prelimUser = tryDecodeJwtFallback();
+  }
+
+  if (!prelimUser) return null;
+
+  // ── 3. Stale JWT tespiti: JWT rolü bekleyen/boş ise Supabase admin'den canlı rol al ──
+  // Bu, kullanıcının rolü değiştirildikten sonra yeni JWT almadan yaptığı istekleri kapsar.
+  const jwtRole = prelimUser.user_metadata?.role ?? "";
+  if (jwtRole === "bekleyen" || jwtRole === "") {
+    try {
+      const supabaseAdmin = getAdminClient();
+      const { data: { user: liveUser }, error: liveErr } = await supabaseAdmin.auth.admin.getUserById(prelimUser.id);
+      if (!liveErr && liveUser?.user_metadata?.role) {
+        const rawRole = liveUser.user_metadata.role as string;
+        const effectiveRole = rawRole === "superadmin" ? "yonetici" : rawRole;
+        console.log(`[verifyToken] stale JWT düzeltmesi: ${prelimUser.email} ${jwtRole} → ${rawRole}`);
+        prelimUser = {
+          ...prelimUser,
+          user_metadata: { ...liveUser.user_metadata, role: effectiveRole, originalRole: rawRole },
+        };
+      }
+    } catch (liveErr) {
+      // Admin API başarısız — JWT rolüyle devam et
+      console.log("[verifyToken] canlı rol kontrolü başarısız:", String(liveErr).slice(0, 80));
+    }
+  }
+
+  return prelimUser;
+};
+
+// ── Yetki yardımcısı: superadmin her zaman geçer ──────────────────────────
+// Kullanım: if (!hasPermission(callerRole, ["yonetici", "mudur"])) return 403
+const hasPermission = (callerRole: string, allowedRoles: string[]): boolean =>
+  callerRole === "superadmin" || allowedRoles.includes(callerRole);
+
+// ── Efektif rol: superadmin → yonetici gibi davranır, tüm yetki listelerini geçer ──
+// Superadmin-özel endpoint'ler user.user_metadata?.role doğrudan okur, bu etkilenmez.
+const getEffectiveRole = (user: any): string => {
+  const role = user?.user_metadata?.role ?? "";
+  return role === "superadmin" ? "yonetici" : role;
 };
 
 // ──────────────────────────────────────────
 // BİLDİRİM HELPER: Kullanıcıya bildirim oluştur (non-blocking)
+// companyId parametresi eklendi — multi-tenant KV prefix desteği
 // ──────────────────────────────────────────
 const createNotification = async (
   userId: string,
   type: string,
   title: string,
   body: string,
-  meta?: any
+  meta?: any,
+  companyId: string = "aspect"
 ): Promise<void> => {
   try {
     if (!userId) return;
-    const ts = Date.now();
+    const ts   = Date.now();
     const rand = Math.random().toString(36).slice(2, 7);
-    const key = `notif_${userId}_${ts}_${rand}`;
-    await kv.set(key, {
+    const key  = `notif_${userId}_${ts}_${rand}`;
+    const ckv  = companyKvFor(companyId);
+    await ckv.set(key, {
       id: key,
       userId,
       type,
@@ -241,6 +296,341 @@ const bizDateTR = (): string => {
 // ──────────────────────────────────────────
 app.get("/make-server-4da0b637/health", (c) => {
   return c.json({ status: "ok" });
+});
+
+// ──────────────────────────────────────────
+// MIGRATION: Legacy aspect verisi → aspect: prefix'i altına kopyala
+// POST /make-server-4da0b637/admin/migrate-legacy
+// Sadece yönetici çağırabilir. İdempotent (iki kez çalıştırılabilir).
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/admin/migrate-legacy", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const callerRole      = callerUser.user_metadata?.role;
+    const callerCompanyId = getCompanyId(callerUser);
+
+    if (callerRole !== "yonetici" || callerCompanyId !== "aspect") {
+      return c.json({ error: "Bu işlem yalnızca Aspect yöneticisi tarafından yapılabilir." }, 403);
+    }
+
+    console.log("[migrate-legacy] Migration başladı...");
+
+    // Migrate edilecek KV prefix'leri (tüm şirket verileri)
+    const PREFIXES_TO_MIGRATE = [
+      "mekan_",
+      "vardiya_",
+      "satis_",
+      "stok_",
+      "kota_",
+      "kidem_",
+      "kidem_personel_",
+      "notif_",
+      "cost_",
+      "odeme_",
+      "business_",
+      "equipment_",
+      "iptal_talep_",
+      "isletme_gider_",
+      "ziyaret_",
+      "gorusme_",
+      "mudur_rapor_",
+      "rotasyon_",
+      "izin_",
+      "aktarim_",
+      "anomali_",
+      "duyuru_",
+      "mesaj_",
+      "dm_",
+      "kanal_",
+      "prim_",
+      "leaderboard_",
+      "game_",
+      "gecikme_",
+      "kare_",
+    ];
+
+    const result = await migrateLegacyToAspect(PREFIXES_TO_MIGRATE);
+    console.log("[migrate-legacy] Tamamlandı:", result);
+
+    return c.json({
+      success: true,
+      message: `Migration tamamlandı. ${result.migrated} kayıt kopyalandı, ${result.skipped} atlandı (zaten var).`,
+      ...result,
+    });
+  } catch (err) {
+    console.log("[migrate-legacy] Error:", err);
+    return c.json({ error: `Migration hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════
+// SUPERADMIN — Şirket Yönetimi (Multi-Tenant)
+// Sadece role === 'superadmin' erişebilir.
+// Şirket profilleri global KV'de company_profile_{id} anahtarıyla tutulur.
+// ══════════════════════════════════════════════════════════════════
+
+/** Tüm şirket profillerini getir (başlangıç 3 şirketi dahil) */
+const seedInitialCompanies = async () => {
+  const defaults = [
+    { id: "aspect", name: "Aspect Agency",  emoji: "✦", color: "#a855f7", description: "Turistik fotoğrafçılık operasyon merkezi", status: "active" },
+    { id: "frame",  name: "Frame Studios",  emoji: "🖼", color: "#9dd9ea", description: "Frame fotoğraf stüdyoları",               status: "active" },
+    { id: "tetra",  name: "Tetra Works",    emoji: "🔷", color: "#34d399", description: "Tetra operasyon birimi",                   status: "active" },
+  ];
+  for (const c of defaults) {
+    const existing = await kv.get(`company_profile_${c.id}`);
+    if (!existing) {
+      await kv.set(`company_profile_${c.id}`, { ...c, createdAt: new Date().toISOString(), createdBy: "system" });
+    }
+  }
+};
+// Sunucu başlangıcında seed'le (non-blocking)
+seedInitialCompanies().catch(e => console.log("[seed] company profiles error:", e));
+
+/** ozgur.demirbas@yandex.com kullanıcısını superadmin yap (idempotent) */
+const bootstrapSuperAdmin = async () => {
+  const TARGET_EMAIL = "ozgur.demirbas@yandex.com";
+  try {
+    const supabase = getAdminClient();
+    const { data: { users }, error } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+    if (error) { console.log("[bootstrap-sa] listUsers error:", error.message); return; }
+    const target = users?.find((u: any) => u.email === TARGET_EMAIL);
+    if (!target) { console.log(`[bootstrap-sa] ${TARGET_EMAIL} henüz kayıtlı değil, atlanıyor.`); return; }
+    if (target.user_metadata?.role === "superadmin") { console.log(`[bootstrap-sa] ${TARGET_EMAIL} zaten superadmin.`); return; }
+    const { error: updateErr } = await supabase.auth.admin.updateUserById(target.id, {
+      user_metadata: {
+        ...target.user_metadata,
+        role: "superadmin",
+        company_id: target.user_metadata?.company_id || "aspect",
+        full_name: target.user_metadata?.full_name || "Özgür Demirbaş",
+      },
+    });
+    if (updateErr) { console.log(`[bootstrap-sa] güncelleme hatası: ${updateErr.message}`); return; }
+    console.log(`[bootstrap-sa] ✅ ${TARGET_EMAIL} → superadmin yapıldı!`);
+  } catch (e) {
+    console.log("[bootstrap-sa] beklenmeyen hata:", e);
+  }
+};
+bootstrapSuperAdmin().catch(e => console.log("[bootstrap-sa] error:", e));
+
+// GET /superadmin/companies — tüm şirketleri listele
+app.get("/make-server-4da0b637/superadmin/companies", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user || user.user_metadata?.originalRole !== "superadmin")
+      return c.json({ error: "Yetkisiz erişim." }, 403);
+
+    const companies: any[] = await kv.getByPrefix("company_profile_") || [];
+    // Her şirket için kullanıcı sayısını da getir
+    const supabase = getAdminClient();
+    const { data: { users: allUsers } } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+    const countByCompany: Record<string, number> = {};
+    for (const u of allUsers || []) {
+      const cid = u.user_metadata?.company_id || "aspect";
+      countByCompany[cid] = (countByCompany[cid] || 0) + 1;
+    }
+    const result = companies.map((c: any) => ({
+      ...c,
+      userCount: countByCompany[c.id] || 0,
+    })).sort((a: any, b: any) => a.id.localeCompare(b.id));
+
+    return c.json({ companies: result });
+  } catch (err) {
+    console.log("[superadmin/companies GET] error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /superadmin/companies — yeni şirket oluştur
+app.post("/make-server-4da0b637/superadmin/companies", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user || user.user_metadata?.originalRole !== "superadmin")
+      return c.json({ error: "Yetkisiz erişim." }, 403);
+
+    const body = await c.req.json();
+    const { id, name, emoji, color, description } = body;
+
+    if (!id || !name) return c.json({ error: "id ve name zorunludur." }, 400);
+    const companyId = id.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!companyId) return c.json({ error: "Geçersiz company ID. Sadece küçük harf, rakam, - ve _ kullanabilirsiniz." }, 400);
+    if (companyId.length < 2 || companyId.length > 20) return c.json({ error: "Company ID 2-20 karakter arası olmalıdır." }, 400);
+
+    const existing = await kv.get(`company_profile_${companyId}`);
+    if (existing) return c.json({ error: `'${companyId}' ID'li şirket zaten mevcut.` }, 409);
+
+    const profile = {
+      id: companyId,
+      name: name.trim(),
+      emoji: emoji || "🏢",
+      color: color || "#a855f7",
+      description: description?.trim() || "",
+      status: "active",
+      createdAt: new Date().toISOString(),
+      createdBy: user.id,
+    };
+    await kv.set(`company_profile_${companyId}`, profile);
+    console.log(`[superadmin] Yeni şirket oluşturuldu: ${companyId} — ${name}`);
+    return c.json({ success: true, company: profile });
+  } catch (err) {
+    console.log("[superadmin/companies POST] error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// PUT /superadmin/companies/:id — şirket profili güncelle
+app.put("/make-server-4da0b637/superadmin/companies/:id", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user || user.user_metadata?.originalRole !== "superadmin")
+      return c.json({ error: "Yetkisiz erişim." }, 403);
+
+    const companyId = c.req.param("id").toLowerCase();
+    const existing = await kv.get(`company_profile_${companyId}`);
+    if (!existing) return c.json({ error: "Şirket bulunamadı." }, 404);
+
+    const body = await c.req.json();
+    const updated = {
+      ...existing,
+      name:        body.name        ?? existing.name,
+      emoji:       body.emoji       ?? existing.emoji,
+      color:       body.color       ?? existing.color,
+      description: body.description ?? existing.description,
+      status:      body.status      ?? existing.status,
+      updatedAt:   new Date().toISOString(),
+      updatedBy:   user.id,
+    };
+    await kv.set(`company_profile_${companyId}`, updated);
+    return c.json({ success: true, company: updated });
+  } catch (err) {
+    console.log("[superadmin/companies PUT] error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /superadmin/companies/:id/create-admin — şirket için kullanıcı oluştur
+app.post("/make-server-4da0b637/superadmin/companies/:id/create-admin", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user || user.user_metadata?.originalRole !== "superadmin")
+      return c.json({ error: "Yetkisiz erişim." }, 403);
+
+    const companyId = c.req.param("id").toLowerCase();
+    const profile = await kv.get(`company_profile_${companyId}`);
+    if (!profile) return c.json({ error: "Şirket bulunamadı." }, 404);
+
+    const { email, password, full_name, phone, role: reqRole } = await c.req.json();
+    if (!email || !password || !full_name)
+      return c.json({ error: "email, password ve full_name zorunludur." }, 400);
+
+    const allowedRoles = ["yonetici", "ust-mudur", "mudur", "operasyon", "idari", "personel"];
+    const assignedRole = allowedRoles.includes(reqRole) ? reqRole : "yonetici";
+
+    const supabase = getAdminClient();
+    const { data, error } = await supabase.auth.admin.createUser({
+      email: email.toLowerCase().trim(),
+      password,
+      user_metadata: {
+        full_name: full_name.trim(),
+        role: assignedRole,
+        phone: phone?.trim() || "",
+        company_id: companyId,
+      },
+      email_confirm: true,
+    });
+
+    if (error) {
+      if (error.message.includes("already registered"))
+        return c.json({ error: "Bu e-posta zaten kayıtlı." }, 400);
+      return c.json({ error: `Kullanıcı oluşturma hatası: ${error.message}` }, 400);
+    }
+
+    console.log(`[superadmin] ${companyId} şirketi için kullanıcı oluşturuldu: ${data.user?.email} (${assignedRole})`);
+    return c.json({
+      success: true,
+      user: {
+        id: data.user?.id,
+        email: data.user?.email,
+        full_name: data.user?.user_metadata?.full_name,
+        role: data.user?.user_metadata?.role,
+        company_id: companyId,
+      },
+    });
+  } catch (err) {
+    console.log("[superadmin/create-admin] error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// GET /superadmin/companies/:id/users — şirketteki kullanıcıları listele
+app.get("/make-server-4da0b637/superadmin/companies/:id/users", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user || user.user_metadata?.originalRole !== "superadmin")
+      return c.json({ error: "Yetkisiz erişim." }, 403);
+
+    const companyId = c.req.param("id").toLowerCase();
+    const supabase = getAdminClient();
+    const { data: { users: allUsers }, error } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+    if (error) return c.json({ error: `Kullanıcı listesi alınamadı: ${error.message}` }, 500);
+
+    const filtered = (allUsers || [])
+      .filter((u: any) => (u.user_metadata?.company_id || "aspect") === companyId)
+      .map((u: any) => ({
+        id: u.id,
+        email: u.email,
+        full_name: u.user_metadata?.full_name || "",
+        role: u.user_metadata?.role || "bekleyen",
+        created_at: u.created_at,
+        last_sign_in: u.last_sign_in_at,
+      }));
+
+    return c.json({ users: filtered, total: filtered.length });
+  } catch (err) {
+    console.log("[superadmin/company-users] error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ── ONE-TIME: ozgur.demirbas@yandex.com → superadmin yap ──────────────────
+app.post("/make-server-4da0b637/bootstrap/make-superadmin", async (c) => {
+  try {
+    const TARGET_EMAIL = "ozgur.demirbas@yandex.com";
+    const supabase = getAdminClient();
+
+    const { data: { users }, error: listErr } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+    if (listErr) return c.json({ error: `Kullanıcı listesi alınamadı: ${listErr.message}` }, 500);
+
+    const target = users?.find((u: any) => u.email === TARGET_EMAIL);
+    if (!target) {
+      return c.json({ error: `${TARGET_EMAIL} bulunamadı. Önce bu e-posta ile kayıt olunmalı.` }, 404);
+    }
+
+    const { data, error: updateErr } = await supabase.auth.admin.updateUserById(target.id, {
+      user_metadata: {
+        ...target.user_metadata,
+        role: "superadmin",
+        company_id: target.user_metadata?.company_id || "aspect",
+        full_name: target.user_metadata?.full_name || "Özgür Demirbaş",
+      },
+    });
+    if (updateErr) return c.json({ error: `Güncelleme hatası: ${updateErr.message}` }, 500);
+
+    console.log(`[bootstrap] ${TARGET_EMAIL} → superadmin yapıldı. ID: ${target.id}`);
+    return c.json({
+      success: true,
+      message: `✅ ${TARGET_EMAIL} artık superadmin!`,
+      user: {
+        id: data.user?.id,
+        email: data.user?.email,
+        role: data.user?.user_metadata?.role,
+      },
+    });
+  } catch (err) {
+    console.log("[bootstrap/make-superadmin] error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
 });
 
 // ──────────────────────────────────────────
@@ -521,10 +911,24 @@ app.get("/make-server-4da0b637/telegram/webhook-info", async (c) => {
 // ──────────────────────────────────────────
 app.post("/make-server-4da0b637/auth/signup", async (c) => {
   try {
-    const { email, password, full_name, phone } = await c.req.json();
+    const { email, password, full_name, phone, company_id } = await c.req.json();
 
     if (!email || !password || !full_name) {
       return c.json({ error: "E-posta, şifre ve ad soyad zorunludur." }, 400);
+    }
+
+    // Şirket doğrulama — KV'deki tüm şirket profillerini kabul et (dinamik)
+    let resolvedCompanyId = "aspect"; // varsayılan: aspect (eski kayıtlar için geriye dönük uyumluluk)
+    if (company_id) {
+      const cid = company_id.toLowerCase();
+      const companyProfile = await kv.get(`company_profile_${cid}`);
+      if (companyProfile && companyProfile.status !== "suspended") {
+        resolvedCompanyId = cid;
+      } else if (!companyProfile) {
+        // KV'de yok — eski hardcoded fallback
+        const HARDCODED = ["aspect", "frame", "tetra"];
+        if (HARDCODED.includes(cid)) resolvedCompanyId = cid;
+      }
     }
 
     const supabase = getAdminClient();
@@ -536,6 +940,7 @@ app.post("/make-server-4da0b637/auth/signup", async (c) => {
         full_name: full_name.trim(),
         role: "bekleyen", // Yeni kullanıcılar bekleyen olarak başlar
         phone: phone?.trim() || "",
+        company_id: resolvedCompanyId,
       },
       // E-posta sunucusu yapılandırılmadığı için otomatik onaylıyoruz
       email_confirm: true,
@@ -655,7 +1060,7 @@ app.put("/make-server-4da0b637/auth/update-role", async (c) => {
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
 
     const callerRole = callerUser.user_metadata?.role;
-    if (!["yonetici", "ust-mudur", "mudur"].includes(callerRole)) {
+    if (!hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
 
@@ -670,9 +1075,17 @@ app.put("/make-server-4da0b637/auth/update-role", async (c) => {
       yonetici: 6, "ust-mudur": 5, mudur: 4, operasyon: 3, idari: 2, personel: 1, bekleyen: 0,
     };
 
+    const callerCompanyId = getCompanyId(callerUser);
     const supabase = getAdminClient();
     const { data: targetData } = await supabase.auth.admin.getUserById(userId);
     if (!targetData?.user) return c.json({ error: "Kullanıcı bulunamadı." }, 404);
+
+    // ── Multi-tenant güvenlik: farklı şirketteki kullanıcıya dokunulamaz ──
+    const targetCompanyId = getCompanyId(targetData.user);
+    if (targetCompanyId !== callerCompanyId) {
+      console.log(`[update-role] Şirket uyuşmazlığı: ${callerCompanyId} → ${targetCompanyId}`);
+      return c.json({ error: "Bu kullanıcı başka bir şirkete ait." }, 403);
+    }
 
     if (callerRole !== "yonetici") {
       const callerLevel = hierarchy[callerRole] ?? 0;
@@ -724,9 +1137,16 @@ app.get("/make-server-4da0b637/users", async (c) => {
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
 
     const callerRole = callerUser.user_metadata?.role;
-    if (!["yonetici", "ust-mudur", "mudur", "idari"].includes(callerRole)) {
+    if (!["yonetici", "ust-mudur", "mudur", "idari", "superadmin"].includes(callerRole)) {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
+
+    // Superadmin — isteğe bağlı company_id query parametresiyle farklı şirketi izleyebilir
+    const isSuperAdmin = callerRole === "superadmin";
+    const requestedCompanyId = c.req.query("company_id");
+    const callerCompanyId = isSuperAdmin && requestedCompanyId
+      ? requestedCompanyId
+      : getCompanyId(callerUser);
 
     const supabase = getAdminClient();
     const { data: { users }, error } = await supabase.auth.admin.listUsers({
@@ -738,7 +1158,15 @@ app.get("/make-server-4da0b637/users", async (c) => {
       return c.json({ error: `Kullanıcılar listelenemedi: ${error.message}` }, 400);
     }
 
-    const mappedUsers = users.map((u) => ({
+    // ── Multi-tenant filtreleme: yalnızca aynı şirketteki kullanıcılar ──
+    // superadmin tüm şirket kullanıcılarını görebilir (company_id query param ile)
+    // company_id yoksa (legacy aspect kullanıcısı) → aspect'e dahil et
+    const companyUsers = users.filter((u) => {
+      const cId = u.user_metadata?.company_id || "aspect";
+      return cId === callerCompanyId;
+    });
+
+    const mappedUsers = companyUsers.map((u) => ({
       id: u.id,
       email: u.email,
       full_name: u.user_metadata?.full_name || "",
@@ -798,12 +1226,13 @@ app.get("/make-server-4da0b637/mekanlar", async (c) => {
 
     const callerRole = user.user_metadata?.role;
     const allowedRoles = ["yonetici", "ust-mudur", "mudur", "operasyon", "personel", "idari"];
-    if (!allowedRoles.includes(callerRole)) {
+    if (!hasPermission(callerRole, allowedRoles)) {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
 
-    const mekanlar = await getMekanlar();
-    const sorted = mekanlar.sort((a: any, b: any) =>
+    const cId     = getCompanyId(user);
+    const mekanlar = await getMekanlarFor(cId);
+    const sorted   = mekanlar.sort((a: any, b: any) =>
       new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     );
 
@@ -835,7 +1264,9 @@ app.post("/make-server-4da0b637/mekanlar", async (c) => {
       return c.json({ error: "Mekan adı zorunludur." }, 400);
     }
 
-    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const cId  = getCompanyId(user);
+    const ckv  = companyKvFor(cId);
+    const id   = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const mekan = {
       id,
       name: name.trim(),
@@ -853,8 +1284,8 @@ app.post("/make-server-4da0b637/mekanlar", async (c) => {
       created_by: user.id,
     };
 
-    await kv.set(`mekan_${id}`, mekan);
-    console.log(`Mekan oluşturuldu: ${name} by ${user.id}`);
+    await ckv.set(`mekan_${id}`, mekan);
+    console.log(`[${cId}] Mekan oluşturuldu: ${name} by ${user.id}`);
     return c.json({ mekan }, 201);
   } catch (err) {
     console.log("Create mekan error:", err);
@@ -876,8 +1307,10 @@ app.put("/make-server-4da0b637/mekanlar/:id", async (c) => {
       return c.json({ error: "Mekan düzenleme yetkisi yalnızca Yönetici rolüne aittir." }, 403);
     }
 
+    const cId  = getCompanyId(user);
+    const ckv  = companyKvFor(cId);
     const { id } = c.req.param();
-    const existing = await kv.get(`mekan_${id}`);
+    const existing = await ckv.get(`mekan_${id}`);
     if (!existing) return c.json({ error: "Mekan bulunamadı." }, 404);
 
     const body = await c.req.json();
@@ -904,8 +1337,8 @@ app.put("/make-server-4da0b637/mekanlar/:id", async (c) => {
       updated_by: user.id,
     };
 
-    await kv.set(`mekan_${id}`, updated);
-    console.log(`Mekan güncellendi: ${id} by ${user.id}`);
+    await ckv.set(`mekan_${id}`, updated);
+    console.log(`[${cId}] Mekan güncellendi: ${id} by ${user.id}`);
     return c.json({ mekan: updated });
   } catch (err) {
     console.log("Update mekan error:", err);
@@ -927,12 +1360,14 @@ app.delete("/make-server-4da0b637/mekanlar/:id", async (c) => {
       return c.json({ error: "Mekan silme yetkisi yalnızca Yönetici rolüne aittir." }, 403);
     }
 
+    const cId  = getCompanyId(user);
+    const ckv  = companyKvFor(cId);
     const { id } = c.req.param();
-    const existing = await kv.get(`mekan_${id}`);
+    const existing = await ckv.get(`mekan_${id}`);
     if (!existing) return c.json({ error: "Mekan bulunamadı." }, 404);
 
-    await kv.del(`mekan_${id}`);
-    console.log(`Mekan silindi: ${id} (${existing.name}) by ${user.id}`);
+    await ckv.del(`mekan_${id}`);
+    console.log(`[${cId}] Mekan silindi: ${id} (${existing.name}) by ${user.id}`);
     return c.json({ message: `"${existing.name}" mekanı silindi.` });
   } catch (err) {
     console.log("Delete mekan error:", err);
@@ -951,12 +1386,13 @@ app.get("/make-server-4da0b637/maliyetler", async (c) => {
     const callerRole = user.user_metadata?.role;
     // Maliyet okuma: tüm aktif roller erişebilir (personel/operasyon kağıt kapasitesine ihtiyaç duyar)
     const allowedReadRoles = ["yonetici", "ust-mudur", "mudur", "idari", "operasyon", "personel"];
-    if (!allowedReadRoles.includes(callerRole)) {
+    if (!hasPermission(callerRole, allowedReadRoles)) {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
 
-    const exchangeRates = await kv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20, isAuto: false };
-    const albums = await kv.get("cost_albums") || [
+    const ckv = companyKvFor(getCompanyId(user));
+    const exchangeRates = await ckv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20, isAuto: false };
+    const albums = await ckv.get("cost_albums") || [
       { size: 3,  tamBoy: 25, yarimBoy: 20, currency: "TRY" },
       { size: 5,  tamBoy: 35, yarimBoy: 28, currency: "TRY" },
       { size: 7,  tamBoy: 45, yarimBoy: 36, currency: "TRY" },
@@ -965,9 +1401,9 @@ app.get("/make-server-4da0b637/maliyetler", async (c) => {
       { size: 13, tamBoy: 75, yarimBoy: 60, currency: "TRY" },
       { size: 15, tamBoy: 85, yarimBoy: 68, currency: "TRY" },
     ];
-    const papers = await kv.getByPrefix("cost_paper_");
-    const recurring = await kv.getByPrefix("cost_recurring_");
-    const salaries = await kv.getByPrefix("cost_salary_");
+    const papers = await ckv.getByPrefix("cost_paper_");
+    const recurring = await ckv.getByPrefix("cost_recurring_");
+    const salaries = await ckv.getByPrefix("cost_salary_");
 
     return c.json({ exchangeRates, albums, papers, recurring, salaries });
   } catch (err) {
@@ -982,7 +1418,18 @@ app.get("/make-server-4da0b637/maliyetler", async (c) => {
 // ──────────────────────────────────────────
 app.get("/make-server-4da0b637/doviz/canli", async (c) => {
   try {
-    // Önce KV cache'e bak (10 dk TTL)
+    // companyId: auth token'dan veya query param'dan al (manuel kur fallback için)
+    let ckvCompany: ReturnType<typeof companyKvFor> | null = null;
+    try {
+      const u = await verifyToken(c);
+      if (u) ckvCompany = companyKvFor(getCompanyId(u));
+    } catch (_) { /* no token */ }
+    if (!ckvCompany) {
+      const qcid = (c.req.query("companyId") || "").toLowerCase() || "aspect";
+      ckvCompany = companyKvFor(qcid);
+    }
+
+    // Önce KV cache'e bak (10 dk TTL) — global, tüm şirketler için aynı
     const cached = await kv.get("live_rates_cache");
     if (cached && cached.fetchedAt && (Date.now() - cached.fetchedAt) < 10 * 60 * 1000) {
       return c.json({ rates: cached.rates, source: "cache", fetchedAt: cached.fetchedAt });
@@ -1047,7 +1494,7 @@ app.get("/make-server-4da0b637/doviz/canli", async (c) => {
     if (stale?.rates) {
       return c.json({ rates: stale.rates, trend: stale.trend || null, source: "stale", fetchedAt: stale.fetchedAt });
     }
-    const manual = await kv.get("cost_exchange_rates");
+    const manual = await ckvCompany.get("cost_exchange_rates");
     if (manual) {
       return c.json({ rates: { USD: Number(manual.USD), EUR: Number(manual.EUR), GBP: Number(manual.GBP) }, trend: null, source: "manual" });
     }
@@ -1068,7 +1515,8 @@ app.put("/make-server-4da0b637/maliyetler/doviz", async (c) => {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
     const body = await c.req.json();
-    await kv.set("cost_exchange_rates", body);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set("cost_exchange_rates", body);
     return c.json({ exchangeRates: body });
   } catch (err) {
     console.log("Update doviz error:", err);
@@ -1089,7 +1537,8 @@ app.put("/make-server-4da0b637/maliyetler/albumler", async (c) => {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
     const { albums } = await c.req.json();
-    await kv.set("cost_albums", albums);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set("cost_albums", albums);
     return c.json({ albums });
   } catch (err) {
     console.log("Update albumler error:", err);
@@ -1111,8 +1560,9 @@ app.post("/make-server-4da0b637/maliyetler/kagitlar", async (c) => {
     }
     const body = await c.req.json();
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const ckv = companyKvFor(getCompanyId(user));
     const paper = { ...body, id };
-    await kv.set(`cost_paper_${id}`, paper);
+    await ckv.set(`cost_paper_${id}`, paper);
     return c.json({ paper }, 201);
   } catch (err) {
     console.log("Create kagit error:", err);
@@ -1130,11 +1580,12 @@ app.put("/make-server-4da0b637/maliyetler/kagitlar/:id", async (c) => {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
     const { id } = c.req.param();
-    const existing = await kv.get(`cost_paper_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`cost_paper_${id}`);
     if (!existing) return c.json({ error: "Kağıt bulunamadı." }, 404);
     const body = await c.req.json();
     const paper = { ...existing, ...body, id };
-    await kv.set(`cost_paper_${id}`, paper);
+    await ckv.set(`cost_paper_${id}`, paper);
     return c.json({ paper });
   } catch (err) {
     console.log("Update kagit error:", err);
@@ -1152,7 +1603,8 @@ app.delete("/make-server-4da0b637/maliyetler/kagitlar/:id", async (c) => {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
     const { id } = c.req.param();
-    await kv.del(`cost_paper_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del(`cost_paper_${id}`);
     return c.json({ message: "Kağıt silindi." });
   } catch (err) {
     console.log("Delete kagit error:", err);
@@ -1173,8 +1625,9 @@ app.post("/make-server-4da0b637/maliyetler/giderler", async (c) => {
     }
     const body = await c.req.json();
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const ckv = companyKvFor(getCompanyId(user));
     const gider = { ...body, id };
-    await kv.set(`cost_recurring_${id}`, gider);
+    await ckv.set(`cost_recurring_${id}`, gider);
     return c.json({ gider }, 201);
   } catch (err) {
     console.log("Create gider error:", err);
@@ -1191,11 +1644,12 @@ app.put("/make-server-4da0b637/maliyetler/giderler/:id", async (c) => {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
     const { id } = c.req.param();
-    const existing = await kv.get(`cost_recurring_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`cost_recurring_${id}`);
     if (!existing) return c.json({ error: "Gider bulunamadı." }, 404);
     const body = await c.req.json();
     const gider = { ...existing, ...body, id };
-    await kv.set(`cost_recurring_${id}`, gider);
+    await ckv.set(`cost_recurring_${id}`, gider);
     return c.json({ gider });
   } catch (err) {
     console.log("Update gider error:", err);
@@ -1212,7 +1666,8 @@ app.delete("/make-server-4da0b637/maliyetler/giderler/:id", async (c) => {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
     const { id } = c.req.param();
-    await kv.del(`cost_recurring_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del(`cost_recurring_${id}`);
     return c.json({ message: "Gider silindi." });
   } catch (err) {
     console.log("Delete gider error:", err);
@@ -1233,8 +1688,9 @@ app.post("/make-server-4da0b637/maliyetler/maaslar", async (c) => {
     }
     const body = await c.req.json();
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const ckv = companyKvFor(getCompanyId(user));
     const maas = { ...body, id };
-    await kv.set(`cost_salary_${id}`, maas);
+    await ckv.set(`cost_salary_${id}`, maas);
     return c.json({ maas }, 201);
   } catch (err) {
     console.log("Create maas error:", err);
@@ -1251,11 +1707,12 @@ app.put("/make-server-4da0b637/maliyetler/maaslar/:id", async (c) => {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
     const { id } = c.req.param();
-    const existing = await kv.get(`cost_salary_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`cost_salary_${id}`);
     if (!existing) return c.json({ error: "Maaş bulunamadı." }, 404);
     const body = await c.req.json();
     const maas = { ...existing, ...body, id };
-    await kv.set(`cost_salary_${id}`, maas);
+    await ckv.set(`cost_salary_${id}`, maas);
     return c.json({ maas });
   } catch (err) {
     console.log("Update maas error:", err);
@@ -1272,7 +1729,8 @@ app.delete("/make-server-4da0b637/maliyetler/maaslar/:id", async (c) => {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
     const { id } = c.req.param();
-    await kv.del(`cost_salary_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del(`cost_salary_${id}`);
     return c.json({ message: "Maaş silindi." });
   } catch (err) {
     console.log("Delete maas error:", err);
@@ -1291,7 +1749,8 @@ app.get("/make-server-4da0b637/isletme/giderler", async (c) => {
     if (callerRole === "bekleyen" || callerRole === "personel") {
       return c.json({ error: "Bu sayfaya erişim yetkiniz yok." }, 403);
     }
-    const tumGiderler: any[] = await kv.getByPrefix("isletme_gider_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumGiderler: any[] = await ckv.getByPrefix("isletme_gider_") || [];
     const sirali = tumGiderler.sort((a: any, b: any) =>
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
@@ -1318,7 +1777,8 @@ app.post("/make-server-4da0b637/isletme/giderler", async (c) => {
       created_at: new Date().toISOString(),
       created_by: user.user_metadata?.full_name || user.email,
     };
-    await kv.set(`isletme_gider_${id}`, gider);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(`isletme_gider_${id}`, gider);
     return c.json({ gider }, 201);
   } catch (err) {
     console.log("Create isletme gider error:", err);
@@ -1335,11 +1795,12 @@ app.put("/make-server-4da0b637/isletme/giderler/:id", async (c) => {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
     const { id } = c.req.param();
-    const existing = await kv.get(`isletme_gider_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`isletme_gider_${id}`);
     if (!existing) return c.json({ error: "Gider bulunamadı." }, 404);
     const body = await c.req.json();
     const gider = { ...existing, ...body, id };
-    await kv.set(`isletme_gider_${id}`, gider);
+    await ckv.set(`isletme_gider_${id}`, gider);
     return c.json({ gider });
   } catch (err) {
     console.log("Update isletme gider error:", err);
@@ -1356,7 +1817,8 @@ app.delete("/make-server-4da0b637/isletme/giderler/:id", async (c) => {
       return c.json({ error: "Silme için yetkiniz yok." }, 403);
     }
     const { id } = c.req.param();
-    await kv.del(`isletme_gider_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del(`isletme_gider_${id}`);
     return c.json({ message: "Gider silindi." });
   } catch (err) {
     console.log("Delete isletme gider error:", err);
@@ -1373,7 +1835,8 @@ app.get("/make-server-4da0b637/ziyaretler", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
     if (["bekleyen", "personel"].includes(callerRole)) return c.json({ error: "Yetki yok." }, 403);
-    const all: any[] = await kv.getByPrefix("mekan_ziyaret_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const all: any[] = await ckv.getByPrefix("mekan_ziyaret_") || [];
     all.sort((a: any, b: any) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime());
     return c.json({ ziyaretler: all });
   } catch (err) { console.log("Get ziyaretler error:", err); return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
@@ -1387,7 +1850,8 @@ app.post("/make-server-4da0b637/ziyaretler", async (c) => {
     const body = await c.req.json();
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const ziyaret = { ...body, id, created_at: new Date().toISOString(), created_by: user.user_metadata?.full_name || user.email };
-    await kv.set(`mekan_ziyaret_${id}`, ziyaret);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(`mekan_ziyaret_${id}`, ziyaret);
     return c.json({ ziyaret }, 201);
   } catch (err) { console.log("Create ziyaret error:", err); return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -1398,11 +1862,12 @@ app.put("/make-server-4da0b637/ziyaretler/:id", async (c) => {
     const callerRole = user.user_metadata?.role;
     if (!["yonetici", "ust-mudur", "mudur", "idari"].includes(callerRole)) return c.json({ error: "Yetki yok." }, 403);
     const { id } = c.req.param();
-    const existing = await kv.get(`mekan_ziyaret_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`mekan_ziyaret_${id}`);
     if (!existing) return c.json({ error: "Ziyaret bulunamadı." }, 404);
     const body = await c.req.json();
     const ziyaret = { ...existing, ...body, id };
-    await kv.set(`mekan_ziyaret_${id}`, ziyaret);
+    await ckv.set(`mekan_ziyaret_${id}`, ziyaret);
     return c.json({ ziyaret });
   } catch (err) { console.log("Update ziyaret error:", err); return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -1413,7 +1878,8 @@ app.delete("/make-server-4da0b637/ziyaretler/:id", async (c) => {
     const callerRole = user.user_metadata?.role;
     if (!["yonetici", "ust-mudur", "mudur", "idari"].includes(callerRole)) return c.json({ error: "Yetki yok." }, 403);
     const { id } = c.req.param();
-    await kv.del(`mekan_ziyaret_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del(`mekan_ziyaret_${id}`);
     return c.json({ message: "Ziyaret silindi." });
   } catch (err) { console.log("Delete ziyaret error:", err); return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -1427,7 +1893,8 @@ app.get("/make-server-4da0b637/gorusmeler", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
     if (["bekleyen", "personel"].includes(callerRole)) return c.json({ error: "Yetki yok." }, 403);
-    const all: any[] = await kv.getByPrefix("personel_gorusme_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const all: any[] = await ckv.getByPrefix("personel_gorusme_") || [];
     const callerName = user.user_metadata?.full_name || user.email;
     const filtered = ["yonetici", "ust-mudur"].includes(callerRole) ? all : all.filter((g: any) => g.managerName === callerName);
     filtered.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -1443,7 +1910,8 @@ app.post("/make-server-4da0b637/gorusmeler", async (c) => {
     const body = await c.req.json();
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const gorusme = { ...body, id, created_at: new Date().toISOString(), managerName: body.managerName || user.user_metadata?.full_name || user.email };
-    await kv.set(`personel_gorusme_${id}`, gorusme);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(`personel_gorusme_${id}`, gorusme);
     return c.json({ gorusme }, 201);
   } catch (err) { console.log("Create gorusme error:", err); return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -1454,10 +1922,11 @@ app.put("/make-server-4da0b637/gorusmeler/:id", async (c) => {
     const callerRole = user.user_metadata?.role;
     if (!["yonetici", "ust-mudur", "mudur", "idari"].includes(callerRole)) return c.json({ error: "Yetki yok." }, 403);
     const { id } = c.req.param();
-    const existing = await kv.get(`personel_gorusme_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`personel_gorusme_${id}`);
     if (!existing) return c.json({ error: "Görüşme bulunamadı." }, 404);
     const body = await c.req.json();
-    await kv.set(`personel_gorusme_${id}`, { ...existing, ...body, id });
+    await ckv.set(`personel_gorusme_${id}`, { ...existing, ...body, id });
     return c.json({ gorusme: { ...existing, ...body, id } });
   } catch (err) { console.log("Update gorusme error:", err); return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -1466,7 +1935,8 @@ app.delete("/make-server-4da0b637/gorusmeler/:id", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const { id } = c.req.param();
-    await kv.del(`personel_gorusme_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del(`personel_gorusme_${id}`);
     return c.json({ message: "Görüşme silindi." });
   } catch (err) { console.log("Delete gorusme error:", err); return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -1480,7 +1950,8 @@ app.get("/make-server-4da0b637/mudur-raporlar", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
     if (["bekleyen", "personel", "operasyon"].includes(callerRole)) return c.json({ error: "Yetki yok." }, 403);
-    const all: any[] = await kv.getByPrefix("mudur_rapor_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const all: any[] = await ckv.getByPrefix("mudur_rapor_") || [];
     const callerName = user.user_metadata?.full_name || user.email;
     const filtered = ["yonetici", "ust-mudur"].includes(callerRole) ? all : all.filter((r: any) => r.managerName === callerName);
     filtered.sort((a: any, b: any) => new Date(b.created_at || b.startDate).getTime() - new Date(a.created_at || a.startDate).getTime());
@@ -1496,7 +1967,8 @@ app.post("/make-server-4da0b637/mudur-raporlar", async (c) => {
     const body = await c.req.json();
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const rapor = { ...body, id, created_at: new Date().toISOString(), managerName: body.managerName || user.user_metadata?.full_name || user.email };
-    await kv.set(`mudur_rapor_${id}`, rapor);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(`mudur_rapor_${id}`, rapor);
     return c.json({ rapor }, 201);
   } catch (err) { console.log("Create mudur-rapor error:", err); return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -1507,10 +1979,11 @@ app.put("/make-server-4da0b637/mudur-raporlar/:id", async (c) => {
     const callerRole = user.user_metadata?.role;
     if (!["yonetici", "ust-mudur", "mudur", "idari"].includes(callerRole)) return c.json({ error: "Yetki yok." }, 403);
     const { id } = c.req.param();
-    const existing = await kv.get(`mudur_rapor_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`mudur_rapor_${id}`);
     if (!existing) return c.json({ error: "Rapor bulunamadı." }, 404);
     const body = await c.req.json();
-    await kv.set(`mudur_rapor_${id}`, { ...existing, ...body, id });
+    await ckv.set(`mudur_rapor_${id}`, { ...existing, ...body, id });
     return c.json({ rapor: { ...existing, ...body, id } });
   } catch (err) { console.log("Update mudur-rapor error:", err); return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -1521,7 +1994,8 @@ app.delete("/make-server-4da0b637/mudur-raporlar/:id", async (c) => {
     const callerRole = user.user_metadata?.role;
     if (!["yonetici", "ust-mudur", "mudur", "idari"].includes(callerRole)) return c.json({ error: "Yetki yok." }, 403);
     const { id } = c.req.param();
-    await kv.del(`mudur_rapor_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del(`mudur_rapor_${id}`);
     return c.json({ message: "Rapor silindi." });
   } catch (err) { console.log("Delete mudur-rapor error:", err); return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -1572,7 +2046,8 @@ app.get("/make-server-4da0b637/rotasyon/gorevler", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
-    const tasks = await kv.getByPrefix("rotation_task_");
+    const ckv = companyKvFor(getCompanyId(user));
+    const tasks = await ckv.getByPrefix("rotation_task_");
     return c.json({ tasks: tasks || [] });
   } catch (err) {
     console.log("Get gorevler error:", err);
@@ -1591,7 +2066,8 @@ app.post("/make-server-4da0b637/rotasyon/gorevler", async (c) => {
     const body = await c.req.json();
     if (!body.id) return c.json({ error: "Görev ID gerekli." }, 400);
     const task = { ...body, created_by: user.id };
-    await kv.set(`rotation_task_${body.id}`, task);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(`rotation_task_${body.id}`, task);
     console.log(`Görev oluşturuldu: ${body.id} by ${user.id}`);
 
     // Personellere bildirim gönder (sadece sent/revised durumundaki görevler)
@@ -1624,11 +2100,12 @@ app.put("/make-server-4da0b637/rotasyon/gorevler/:id", async (c) => {
       return c.json({ error: "Görev güncelleme yetkisi yok." }, 403);
     }
     const { id } = c.req.param();
-    const existing = await kv.get(`rotation_task_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`rotation_task_${id}`);
     if (!existing) return c.json({ error: "Görev bulunamadı." }, 404);
     const body = await c.req.json();
     const task = { ...existing, ...body };
-    await kv.set(`rotation_task_${id}`, task);
+    await ckv.set(`rotation_task_${id}`, task);
     console.log(`Görev güncellendi: ${id} by ${user.id}`);
 
     // Personel değişiklik bildirimleri
@@ -1688,8 +2165,9 @@ app.delete("/make-server-4da0b637/rotasyon/gorevler/:id", async (c) => {
       return c.json({ error: "Görev silme yetkisi yok." }, 403);
     }
     const { id } = c.req.param();
-    const existingTask = await kv.get(`rotation_task_${id}`);
-    await kv.del(`rotation_task_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existingTask = await ckv.get(`rotation_task_${id}`);
+    await ckv.del(`rotation_task_${id}`);
     console.log(`Görev silindi: ${id} by ${user.id}`);
 
     // Eski personellere bildirim gönder
@@ -1721,7 +2199,8 @@ app.get("/make-server-4da0b637/rotasyon/izinler", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
-    const leaveRequests = await kv.getByPrefix("rotation_leave_");
+    const ckv = companyKvFor(getCompanyId(user));
+    const leaveRequests = await ckv.getByPrefix("rotation_leave_");
     return c.json({ leaveRequests: leaveRequests || [] });
   } catch (err) {
     console.log("Get izinler error:", err);
@@ -1737,8 +2216,9 @@ app.post("/make-server-4da0b637/rotasyon/izinler", async (c) => {
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
     const body = await c.req.json();
     if (!body.id) return c.json({ error: "İzin ID gerekli." }, 400);
+    const ckv = companyKvFor(getCompanyId(user));
     const leave = { ...body, created_by: user.id };
-    await kv.set(`rotation_leave_${body.id}`, leave);
+    await ckv.set(`rotation_leave_${body.id}`, leave);
     console.log(`İzin talebi oluşturuldu: ${body.id} by ${user.id}`);
 
     // Yöneticilere bildirim gönder
@@ -1774,11 +2254,12 @@ app.put("/make-server-4da0b637/rotasyon/izinler/:id", async (c) => {
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
     const { id } = c.req.param();
-    const existing = await kv.get(`rotation_leave_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`rotation_leave_${id}`);
     if (!existing) return c.json({ error: "İzin talebi bulunamadı." }, 404);
     const body = await c.req.json();
     const leave = { ...existing, ...body };
-    await kv.set(`rotation_leave_${id}`, leave);
+    await ckv.set(`rotation_leave_${id}`, leave);
     console.log(`İzin güncellendi: ${id} by ${user.id}`);
 
     // Durum değişikliği bildirimi → personele
@@ -1818,7 +2299,8 @@ app.delete("/make-server-4da0b637/rotasyon/izinler/:id", async (c) => {
       return c.json({ error: "İzin silme yetkisi yok." }, 403);
     }
     const { id } = c.req.param();
-    await kv.del(`rotation_leave_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del(`rotation_leave_${id}`);
     console.log(`İzin silindi: ${id} by ${user.id}`);
     return c.json({ message: "İzin talebi silindi." });
   } catch (err) {
@@ -1838,7 +2320,8 @@ app.get("/make-server-4da0b637/rotasyon/gunluk-izin", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
-    const dailyOnLeave = await kv.get("rotation_daily_onleave") || {};
+    const ckv = companyKvFor(getCompanyId(user));
+    const dailyOnLeave = await ckv.get("rotation_daily_onleave") || {};
     return c.json({ dailyOnLeave });
   } catch (err) {
     console.log("Get gunluk-izin error:", err);
@@ -1855,8 +2338,9 @@ app.put("/make-server-4da0b637/rotasyon/gunluk-izin", async (c) => {
       return c.json({ error: "Yetki yok." }, 403);
     }
     const body = await c.req.json();
-    const oldDailyOnLeave: Record<string, string[]> = await kv.get("rotation_daily_onleave") || {};
-    await kv.set("rotation_daily_onleave", body.dailyOnLeave);
+    const ckv = companyKvFor(getCompanyId(user));
+    const oldDailyOnLeave: Record<string, string[]> = await ckv.get("rotation_daily_onleave") || {};
+    await ckv.set("rotation_daily_onleave", body.dailyOnLeave);
 
     // Yeni izinli eklenen kişilere bildirim gönder
     const newDailyOnLeave: Record<string, string[]> = body.dailyOnLeave || {};
@@ -1889,9 +2373,10 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+    const ckv = companyKvFor(getCompanyId(user));
 
     const { mekanId, tarih } = c.req.param();
-    const bugunRaw = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
+    const bugunRaw = await ckv.get(`stok_gunluk_${mekanId}_${tarih}`);
 
     // ── Baskı maliyeti kur düzeltmesi ──
     // Eski kayıtlarda toplamMaliyet yabancı para birimi cinsinden TL gibi kaydedilmiş olabilir.
@@ -1903,7 +2388,7 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
       // Eğer kur dönüşümü daha önce yapılmamışsa (kurCarpani eksikse veya 1'se)
       const kurZatenUygulanmis = !!vt.kurCarpani && vt.kurCarpani !== 1;
       if (paperCur !== "TRY" && !kurZatenUygulanmis) {
-        const exRates = await kv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
+        const exRates = await ckv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
         const kur = paperCur === "EUR" ? Number(exRates.EUR) || 35.50
           : paperCur === "USD" ? Number(exRates.USD) || 32.80
           : paperCur === "GBP" ? Number(exRates.GBP) || 41.20
@@ -1929,10 +2414,10 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
 
     // ── Bağımsız KV okumalarını paralel çalıştır (timeout riskini azaltır) ─
     const [dun, tumEklemelerRaw, tumAktarimlarRaw, tumEkipmanlarRaw] = await Promise.all([
-      kv.get(`stok_gunluk_${mekanId}_${dunStr}`).catch(() => null),
-      kv.getByPrefix(`stok_ekleme_`).catch(() => []),
-      kv.getByPrefix(`stok_aktarim_`).catch(() => []),
-      kv.getByPrefix(`ekipman_`).catch(() => []),
+      ckv.get(`stok_gunluk_${mekanId}_${dunStr}`).catch(() => null),
+      ckv.getByPrefix(`stok_ekleme_`).catch(() => []),
+      ckv.getByPrefix(`stok_aktarim_`).catch(() => []),
+      ckv.getByPrefix(`ekipman_`).catch(() => []),
     ]);
 
     const tumEklemeler: any[] = tumEklemelerRaw || [];
@@ -1974,7 +2459,7 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
           return d.toISOString().split('T')[0];
         });
         const gunKayitlar = await Promise.all(
-          gunStrler.map(gStr => kv.get(`stok_gunluk_${mekanId}_${gStr}`).catch(() => null))
+          gunStrler.map(gStr => ckv.get(`stok_gunluk_${mekanId}_${gStr}`).catch(() => null))
         );
         for (const gunKayit of gunKayitlar) {
           if (eksikler.every((y: any) => y.ribonMevcut !== null)) break;
@@ -2009,18 +2494,19 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
 // Personel rolündeki kullanıcının belirli mekana bugün atanmış olup olmadığını kontrol eder.
 // Yönetici rolleri için her zaman true döner.
 // ──────────────────────────────────────────
-const checkRotasyonYetkisi = async (userId: string, role: string, mekanId: string, tarih: string): Promise<boolean> => {
-  // SADECE yonetici rotasyonu bypass eder
-  if (role === "yonetici") return true;
+const checkRotasyonYetkisi = async (userId: string, role: string, mekanId: string, tarih: string, companyId: string = "aspect"): Promise<boolean> => {
+  // SADECE yonetici ve superadmin rotasyonu bypass eder
+  if (role === "yonetici" || role === "superadmin") return true;
   // Diğer herkes (ust-mudur, mudur, operasyon, personel, idari vb.) rotasyona tabi
+  const ckv = companyKvFor(companyId);
 
   // Mekana ait lokasyon adını al
-  const mekan: any = await kv.get(`mekan_${mekanId}`);
+  const mekan: any = await ckv.get(`mekan_${mekanId}`);
   if (!mekan) return false;
   const mekanAdi: string = mekan.name || "";
 
   // Bugüne ait rotasyon görevlerini tara
-  const tasks: any[] = await kv.getByPrefix("rotation_task_") || [];
+  const tasks: any[] = await ckv.getByPrefix("rotation_task_") || [];
   const atanmis = tasks.some((t: any) => {
     if (t.date !== tarih) return false;
     if (!["sent", "revised"].includes(t.status)) return false;
@@ -2044,6 +2530,8 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+    const companyId = getCompanyId(user);
+    const ckv = companyKvFor(companyId);
 
     const { mekanId, tarih, sayim, not: acilisNot, printerData } = await c.req.json();
     if (!mekanId || !tarih || !sayim) {
@@ -2051,7 +2539,7 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
     }
 
     // Rotasyon yetkisi kontrolü
-    const yetkili = await checkRotasyonYetkisi(user.id, callerRole, mekanId, tarih);
+    const yetkili = await checkRotasyonYetkisi(user.id, callerRole, mekanId, tarih, companyId);
     if (!yetkili) {
       console.log(`Rotasyon yetki reddi — acilis: user=${user.id}, role=${callerRole}, mekan=${mekanId}, tarih=${tarih}`);
       return c.json({ error: "Bu mekana bugünkü rotasyonunuzda atanmamışsınız. Açılış yapma yetkiniz yok." }, 403);
@@ -2060,7 +2548,7 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
     const dunTarih = new Date(tarih);
     dunTarih.setDate(dunTarih.getDate() - 1);
     const dunStr = dunTarih.toISOString().split("T")[0];
-    const dun = await kv.get(`stok_gunluk_${mekanId}_${dunStr}`);
+    const dun = await ckv.get(`stok_gunluk_${mekanId}_${dunStr}`);
     const dunKapanis = dun?.kapanish || null;
 
     const anomali: Record<string, number> = {};
@@ -2080,7 +2568,7 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
         if (!pr.ekipmanId) continue;
         const startCounter = Number(pr.startCounter) || 0;
         if (startCounter === 0) continue;
-        const ekipman: any = await kv.get(pr.ekipmanId);
+        const ekipman: any = await ckv.get(pr.ekipmanId);
         const beklenen = (ekipman?.ribonMevcut !== undefined && ekipman?.ribonMevcut !== null)
           ? Number(ekipman.ribonMevcut)
           : null;
@@ -2097,7 +2585,7 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
       }
     }
 
-    const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`) || {};
+    const existing = await ckv.get(`stok_gunluk_${mekanId}_${tarih}`) || {};
     const kayit = {
       ...existing,
       mekanId,
@@ -2114,12 +2602,12 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
       acilisYaziciAnomali: printerAnomali,
     };
 
-    await kv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
+    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
     console.log(`Stok açılışı: ${mekanId} / ${tarih} by ${user.id} | ${printerData?.length || 0} yazıcı | ${printerAnomali.length} yazıcı anomali`);
 
-    // ── Telegram: Açılış bildirimi ─────────────���────────────────────────────
+    // ── Telegram: Açılış bildirimi ─────────────
     try {
-      const mekanObj: any = await kv.get(`mekan_${mekanId}`) || await kv.get(mekanId);
+      const mekanObj: any = await ckv.get(`mekan_${mekanId}`) || await ckv.get(mekanId);
       const mekanAdi = mekanObj?.name || mekanId;
       const mekanEmoji = mekanObj?.emoji || "🏪";
       const kullanici = user.user_metadata?.full_name || user.email || "Bilinmiyor";
@@ -2148,6 +2636,8 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+    const companyId = getCompanyId(user);
+    const ckv = companyKvFor(companyId);
 
     const { mekanId, tarih, sayim, not: kapanisNot, printerData } = await c.req.json();
     if (!mekanId || !tarih || !sayim) {
@@ -2155,19 +2645,19 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     }
 
     // Rotasyon yetkisi kontrolü
-    const yetkiliKapanis = await checkRotasyonYetkisi(user.id, callerRole, mekanId, tarih);
+    const yetkiliKapanis = await checkRotasyonYetkisi(user.id, callerRole, mekanId, tarih, companyId);
     if (!yetkiliKapanis) {
       console.log(`Rotasyon yetki reddi — kapanis: user=${user.id}, role=${callerRole}, mekan=${mekanId}, tarih=${tarih}`);
       return c.json({ error: "Bu mekana bugünkü rotasyonunuzda atanmamışsınız. Kapanış yapma yetkiniz yok." }, 403);
     }
 
-    const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
+    const existing = await ckv.get(`stok_gunluk_${mekanId}_${tarih}`);
     if (!existing) return c.json({ error: "Önce açılış kaydı yapılmalıdır." }, 400);
 
     // Paralel KV okuma
     const [tumEklemelerKapRaw, tumAktarimlarKapRaw] = await Promise.all([
-      kv.getByPrefix(`stok_ekleme_`).catch(() => []),
-      kv.getByPrefix(`stok_aktarim_`).catch(() => []),
+      ckv.getByPrefix(`stok_ekleme_`).catch(() => []),
+      ckv.getByPrefix(`stok_aktarim_`).catch(() => []),
     ]);
     const tumEklemeler: any[] = tumEklemelerKapRaw || [];
     const tumAktarimlar: any[] = tumAktarimlarKapRaw || [];
@@ -2226,17 +2716,17 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     }
 
     // ── Vardiya Baskı & Maliyet Hesaplamaları ──
-    const mekan = await kv.get(`mekan_${mekanId}`);
+    const mekan = await ckv.get(`mekan_${mekanId}`);
     const printType: string = mekan?.printType || "yarim"; // "tam" | "yarim"
     const paperTypeId: string | null = mekan?.paperType || null;
 
     let paper: any = null;
     if (paperTypeId) {
       // Önce doğrudan ID ile ara
-      paper = await kv.get(`cost_paper_${paperTypeId}`);
+      paper = await ckv.get(`cost_paper_${paperTypeId}`);
       // Bulunamazsa tüm kağıtlar içinde isim veya id ile eşleştir (eski kayıtlar isim saklıyor olabilir)
       if (!paper) {
-        const allPapers: any[] = await kv.getByPrefix("cost_paper_").catch(() => []) || [];
+        const allPapers: any[] = await ckv.getByPrefix("cost_paper_").catch(() => []) || [];
         paper = allPapers.find((p: any) => p.id === paperTypeId || p.name === paperTypeId) || null;
         if (paper) console.log(`Kağıt fallback (isim eşleşmesi): "${paperTypeId}" → "${paper.name}" (${paper.id})`);
       }
@@ -2248,7 +2738,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     const kapasitePerTakim = paper ? (safePcsPerBox / safeSetsPerBox) : 0;
 
     // Kur dönüşümü: kağıt para birimi → TL
-    const exchangeRates = await kv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
+    const exchangeRates = await ckv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
     const paperCurrency: string = paper?.currency || "TRY";
     const kurCarpani = paperCurrency === "TRY" ? 1
       : paperCurrency === "EUR" ? Number(exchangeRates.EUR) || 35.50
@@ -2360,11 +2850,11 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       kapanisYaziciAnomali: kapanisYaziciAnomali || null,
     };
 
-    await kv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
+    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
 
     // ── Telegram: Kapanış bildirimi ─────────────────────────────────────────
     try {
-      const mekanObjKap: any = await kv.get(`mekan_${mekanId}`) || await kv.get(mekanId);
+      const mekanObjKap: any = await ckv.get(`mekan_${mekanId}`) || await ckv.get(mekanId);
       const mekanAdiKap = mekanObjKap?.name || mekanId;
       const mekanEmojiKap = mekanObjKap?.emoji || "🏪";
       const kullaniciKap = user.user_metadata?.full_name || user.email || "Bilinmiyor";
@@ -2380,9 +2870,9 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       const eid = pr.ekipmanId || pr.id;
       if (!eid || pr.endCounter === undefined || pr.endCounter === null) continue;
       try {
-        const ekipman: any = await kv.get(eid);
+        const ekipman: any = await ckv.get(eid);
         if (ekipman) {
-          await kv.set(eid, {
+          await ckv.set(eid, {
             ...ekipman,
             ribonMevcut: Number(pr.endCounter),
           });
@@ -2417,8 +2907,10 @@ app.post("/make-server-4da0b637/stok/acilis-sifirla", async (c) => {
       return c.json({ error: "mekanId ve tarih zorunludur." }, 400);
     }
 
+    const companyId = getCompanyId(user);
+    const ckv = companyKvFor(companyId);
     const kvKey = `stok_gunluk_${mekanId}_${tarih}`;
-    const existing: any = await kv.get(kvKey);
+    const existing: any = await ckv.get(kvKey);
 
     if (!existing) {
       return c.json({ error: "Bu tarih için kayıt bulunamadı." }, 404);
@@ -2457,7 +2949,7 @@ app.post("/make-server-4da0b637/stok/acilis-sifirla", async (c) => {
       acilisSifirlamaYapanAd: user.user_metadata?.full_name || user.email,
     };
 
-    await kv.set(kvKey, yeniKayit);
+    await ckv.set(kvKey, yeniKayit);
     console.log(`Açılış+Kapanış sıfırlandı: ${mekanId} / ${tarih} by ${user.id}`);
     return c.json({ message: "Açılış ve kapanış başarıyla sıfırlandı. Satış verileri korundu.", kayit: yeniKayit });
   } catch (err) {
@@ -2492,7 +2984,8 @@ app.post("/make-server-4da0b637/stok/ekleme", async (c) => {
       girenZaman: new Date().toISOString(),
     };
 
-    await kv.set(`stok_ekleme_${id}`, ekleme);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(`stok_ekleme_${id}`, ekleme);
     console.log(`Stok ekleme: ${mekanId} / ${tarih} by ${user.id}`);
     return c.json({ ekleme }, 201);
   } catch (err) {
@@ -2536,7 +3029,8 @@ app.post("/make-server-4da0b637/aktarim", async (c) => {
       miktarAnomali: {},
     };
 
-    await kv.set(`stok_aktarim_${id}`, aktarim);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(`stok_aktarim_${id}`, aktarim);
     console.log(`Aktarım oluşturuldu: ${id} ${kaynakMekanId} → ${hedefMekanId}`);
     return c.json({ aktarim }, 201);
   } catch (err) {
@@ -2558,7 +3052,8 @@ app.put("/make-server-4da0b637/aktarim/:id/onayla", async (c) => {
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
     const { id } = c.req.param();
-    const existing = await kv.get(`stok_aktarim_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`stok_aktarim_${id}`);
     if (!existing) return c.json({ error: "Aktarım bulunamadı." }, 404);
     if (existing.durum !== "bekliyor") return c.json({ error: "Bu aktarım zaten işlendi." }, 400);
 
@@ -2581,7 +3076,7 @@ app.put("/make-server-4da0b637/aktarim/:id/onayla", async (c) => {
       onayZamani: new Date().toISOString(),
     };
 
-    await kv.set(`stok_aktarim_${id}`, updated);
+    await ckv.set(`stok_aktarim_${id}`, updated);
     console.log(`Aktarım onaylandı: ${id} by ${user.id}`);
     return c.json({ aktarim: updated, miktarAnomali });
   } catch (err) {
@@ -2602,7 +3097,8 @@ app.put("/make-server-4da0b637/aktarim/:id/iptal", async (c) => {
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
     const { id } = c.req.param();
-    const existing = await kv.get(`stok_aktarim_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`stok_aktarim_${id}`);
     if (!existing) return c.json({ error: "Aktarım bulunamadı." }, 404);
     if (existing.durum !== "bekliyor") return c.json({ error: "Bu aktarım zaten işlendi." }, 400);
 
@@ -2612,7 +3108,7 @@ app.put("/make-server-4da0b637/aktarim/:id/iptal", async (c) => {
       iptalZamani: new Date().toISOString(),
       iptalEdenId: user.id,
     };
-    await kv.set(`stok_aktarim_${id}`, updated);
+    await ckv.set(`stok_aktarim_${id}`, updated);
     console.log(`Aktarım iptal: ${id} by ${user.id}`);
     return c.json({ aktarim: updated });
   } catch (err) {
@@ -2633,7 +3129,8 @@ app.get("/make-server-4da0b637/aktarim/bekleyen/:mekanId", async (c) => {
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
     const { mekanId } = c.req.param();
-    const tumAktarimlar = await kv.getByPrefix(`stok_aktarim_`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumAktarimlar = await ckv.getByPrefix(`stok_aktarim_`);
     const bekleyen = tumAktarimlar.filter(
       (a: any) => a.hedefMekanId === mekanId && a.durum === "bekliyor"
     );
@@ -2671,7 +3168,8 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
     console.log(`[canli-satis] getMekanlar → ${mekanlarList.length} mekan: ${mekanlarList.map((m: any) => m.name).join(", ")}`);
 
     // Sadece bugünkü stok kayıtlarını çek (bizDateTR gece 03:00 → dün olarak yazar, zaten doğru)
-    const tumKayitlar = await kv.getByPrefix("stok_gunluk_");
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumKayitlar = await ckv.getByPrefix("stok_gunluk_");
     const bugunKayitlar = (tumKayitlar || []).filter(
       (k: any) => k.tarih === today
     );
@@ -2755,8 +3253,10 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
-    if (!["yonetici", "ust-mudur", "mudur"].includes(callerRole)) {
-      return c.json({ error: "Yetki yok." }, 403);
+    const originalRole = user.user_metadata?.originalRole;
+    console.log(`[dashboard-summary] callerRole=${callerRole} originalRole=${originalRole} email=${user.email}`);
+    if (!hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) {
+      return c.json({ error: "Yetki yok.", debug: { callerRole, originalRole } }, 403);
     }
 
     // İş günü tarihi (05:00 TR kırılımlı)
@@ -2770,7 +3270,8 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
     }
 
     // Bugünkü stok kayıtları
-    const tumKayitlar = await kv.getByPrefix("stok_gunluk_");
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumKayitlar = await ckv.getByPrefix("stok_gunluk_");
     const bugunKayitlar = (tumKayitlar || []).filter((k: any) => k.tarih === today);
 
     let toplamCiro = 0;
@@ -2939,7 +3440,8 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
     for (const m of mekanlarList) mekanMap[m.id] = m;
 
     // O aya ait tüm stok kayıtlarını çek
-    const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
     const ayKayitlari = tumKayitlar.filter((k: any) => {
       if (!k.tarih) return false;
       const [ky, ka] = k.tarih.split("-").map(Number);
@@ -2949,8 +3451,8 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
     // Ödendi kayıtlarını ve iptal edilen (silindi) kayıtları çek
     const odemePrefix = `prim_odendi_`;
     const [tumOdemeler, tumSilindi] = await Promise.all([
-      kv.getByPrefix(odemePrefix).catch(() => []),
-      kv.getByPrefix("prim_silindi_").catch(() => []),
+      ckv.getByPrefix(odemePrefix).catch(() => []),
+      ckv.getByPrefix("prim_silindi_").catch(() => []),
     ]);
     const odemeMap: Record<string, { odendi: boolean; odemeTarihi?: string }> = {};
     for (const o of (tumOdemeler || [])) {
@@ -2962,7 +3464,7 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
     );
 
     // Tüm rotasyon görevlerini çek — personeli buradan alacağız
-    const tumRotasyonlar: any[] = await kv.getByPrefix("rotation_task_") || [];
+    const tumRotasyonlar: any[] = await ckv.getByPrefix("rotation_task_") || [];
 
     // Her gün × her mekan × her kademe × her personel için AYRI prim kaydı
     const primKayitlari: any[] = [];
@@ -3081,12 +3583,13 @@ app.get("/make-server-4da0b637/primler/kendi-rapor", async (c) => {
     const [yil, ayNo] = ay.split("-").map(Number);
 
     // Paralel veri çekimi
+    const ckv = companyKvFor(getCompanyId(user));
     const [mekanlarList, tumKayitlar, tumOdemeler, tumRotasyonlar, tumSilindiKendi] = await Promise.all([
       getMekanlar().catch(() => []),
-      kv.getByPrefix("stok_gunluk_").catch(() => []),
-      kv.getByPrefix("prim_odendi_").catch(() => []),
-      kv.getByPrefix("rotation_task_").catch(() => []),
-      kv.getByPrefix("prim_silindi_").catch(() => []),
+      ckv.getByPrefix("stok_gunluk_").catch(() => []),
+      ckv.getByPrefix("prim_odendi_").catch(() => []),
+      ckv.getByPrefix("rotation_task_").catch(() => []),
+      ckv.getByPrefix("prim_silindi_").catch(() => []),
     ]);
 
     const mekanMap: Record<string, any> = {};
@@ -3244,7 +3747,8 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
 
     // Bugünkü stok kaydını al — yoksa ciro:0 ile kademeleri yine de döndür
     const stokKey = `stok_gunluk_${mekan.id}_${today}`;
-    const kayit: any = await kv.get(stokKey);
+    const ckv = companyKvFor(getCompanyId(user));
+    const kayit: any = await ckv.get(stokKey);
     if (!kayit) {
       return c.json({
         primBilgi: null,
@@ -3261,7 +3765,7 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
 
     // Rotasyon görevinden personel listesi ve çağıran kişinin görevi
     const callerName = user.user_metadata?.full_name || user.email || "";
-    const tumRotasyonlarPrim: any[] = await kv.getByPrefix("rotasyon_gorev_").catch(() => []) || [];
+    const tumRotasyonlarPrim: any[] = await ckv.getByPrefix("rotasyon_gorev_").catch(() => []) || [];
     const todayTasks = tumRotasyonlarPrim.filter((t: any) =>
       t.date === today &&
       ["sent", "revised"].includes(t.status || "") &&
@@ -3380,9 +3884,10 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
     let giderSilinen = 0;
 
     // İptal durumunda silinecek gider kayıtlarını önceden tek seferde çek
+    const ckv = companyKvFor(getCompanyId(user));
     let tumGiderler: any[] = [];
     if (!odendiMi) {
-      tumGiderler = await kv.getByPrefix("isletme_gider_").catch(() => []) || [];
+      tumGiderler = await ckv.getByPrefix("isletme_gider_").catch(() => []) || [];
     }
 
     for (const key of odemeKeys) {
@@ -3396,7 +3901,7 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
         mekanAdi: detay?.mekanAdi,
         primMiktar: detay?.primMiktar,
       };
-      await kv.set(key, record);
+      await ckv.set(key, record);
       results.push(key);
 
       if (odendiMi && detay) {
@@ -3417,13 +3922,13 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
           created_at: now,
           created_by: user.email || user.id,
         };
-        await kv.set(`isletme_gider_${giderId}`, gider);
+        await ckv.set(`isletme_gider_${giderId}`, gider);
         giderSayisi++;
       } else if (!odendiMi) {
         // İptal → bu prime ait işletme gider kaydını/kayıtlarını sil
         const eslesen = tumGiderler.filter((g: any) => g.primKey === key);
         for (const g of eslesen) {
-          await kv.del(`isletme_gider_${g.id}`);
+          await ckv.del(`isletme_gider_${g.id}`);
           giderSilinen++;
         }
       }
@@ -3480,13 +3985,14 @@ app.post("/make-server-4da0b637/primler/sil", async (c) => {
       return c.json({ error: "odemeKeys dizisi zorunludur." }, 400);
     }
     const now = new Date().toISOString();
+    const ckv = companyKvFor(getCompanyId(user));
     let islenen = 0;
     for (const key of odemeKeys) {
       const silKey = `prim_silindi_${key}`;
       if (geriAl) {
-        await kv.del(silKey);
+        await ckv.del(silKey);
       } else {
-        await kv.set(silKey, {
+        await ckv.set(silKey, {
           silindi: true,
           silindiTarihi: now,
           silenKisi: user.email || user.id,
@@ -3519,7 +4025,8 @@ app.get("/make-server-4da0b637/kidem/carpanlar", async (c) => {
     if (!["yonetici", "ust-mudur"].includes(callerRole)) {
       return c.json({ error: "Bu endpoint yalnızca yönetici ve üst-müdür rolüne açıktır." }, 403);
     }
-    const stored = await kv.get(KIDEM_CARPAN_KEY);
+    const ckv = companyKvFor(getCompanyId(user));
+    const stored = await ckv.get(KIDEM_CARPAN_KEY);
     const carpanlar = stored || KIDEM_CARPAN_DEFAULT;
     return c.json({ carpanlar });
   } catch (err) {
@@ -3545,7 +4052,8 @@ app.post("/make-server-4da0b637/kidem/carpanlar", async (c) => {
       return c.json({ error: "Geçersiz çarpan değerleri. Tüm değerler pozitif sayı olmalıdır." }, 400);
     }
     const carpanlar = { kidemsiz, kidemli, kidemliPlus };
-    await kv.set(KIDEM_CARPAN_KEY, carpanlar);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(KIDEM_CARPAN_KEY, carpanlar);
     console.log(`[Kidem] Çarpanlar güncellendi: ${JSON.stringify(carpanlar)} — by ${user.email}`);
     return c.json({ success: true, carpanlar });
   } catch (err) {
@@ -3571,7 +4079,8 @@ app.get("/make-server-4da0b637/kidem/personel", async (c) => {
     if (!["yonetici", "ust-mudur"].includes(callerRole)) {
       return c.json({ error: "Bu endpoint yalnızca yönetici ve üst-müdür rolüne açıktır." }, 403);
     }
-    const allKidem: any[] = await kv.getByPrefix("kidem_personel_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const allKidem: any[] = await ckv.getByPrefix("kidem_personel_") || [];
     return c.json({ kidemler: allKidem });
   } catch (err) {
     console.log("Kidem personel GET error:", err);
@@ -3588,7 +4097,8 @@ app.get("/make-server-4da0b637/kidem/personel/:userId", async (c) => {
       return c.json({ error: "Bu endpoint yalnızca yönetici ve üst-müdür rolüne açıktır." }, 403);
     }
     const { userId } = c.req.param();
-    const kidem = await kv.get(`kidem_personel_${userId}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const kidem = await ckv.get(`kidem_personel_${userId}`);
     return c.json({ kidem: kidem || null });
   } catch (err) {
     console.log("Kidem personel/:userId GET error:", err);
@@ -3624,7 +4134,8 @@ app.post("/make-server-4da0b637/kidem/personel/:userId", async (c) => {
       atanmaTarihi: now,
       atayanKisi: user.email || user.id,
     };
-    await kv.set(`kidem_personel_${userId}`, kidemObj);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(`kidem_personel_${userId}`, kidemObj);
     console.log(`[Kidem] ${personelAdi} → ${kidemSeviye} (by ${user.email})`);
     return c.json({ success: true, kidem: kidemObj });
   } catch (err) {
@@ -3647,7 +4158,8 @@ app.get("/make-server-4da0b637/stok/anomali/:mekanId", async (c) => {
     }
 
     const { mekanId } = c.req.param();
-    const tumKayitlar = await kv.getByPrefix(`stok_gunluk_${mekanId}_`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumKayitlar = await ckv.getByPrefix(`stok_gunluk_${mekanId}_`);
     const anomaliler = tumKayitlar
       .filter((k: any) => {
         const acilisVar = k.acilisAnomali && Object.keys(k.acilisAnomali).length > 0;
@@ -3679,7 +4191,8 @@ app.get("/make-server-4da0b637/stok/anomali-raporu", async (c) => {
     const baslangic = c.req.query("baslangic") || "";
     const bitis = c.req.query("bitis") || "";
 
-    const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
     const mekanlarList: any[] = await getMekanlar();
     const mekanMap: Record<string, any> = {};
     for (const m of mekanlarList) mekanMap[m.id] = m;
@@ -3775,7 +4288,8 @@ app.get("/make-server-4da0b637/announcements", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
 
-    const all = await kv.getByPrefix("announcement_");
+    const ckv = companyKvFor(getCompanyId(user));
+    const all = await ckv.getByPrefix("announcement_");
     const now = new Date();
 
     const active = (all || []).filter((a: any) => {
@@ -3828,7 +4342,8 @@ app.post("/make-server-4da0b637/announcements", async (c) => {
       createdByRole: role,
     };
 
-    await kv.set(`announcement_${id}`, announcement);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(`announcement_${id}`, announcement);
     console.log(`Announcement created: ${id} by ${user.id}`);
     return c.json({ announcement });
   } catch (err) {
@@ -3848,7 +4363,8 @@ app.put("/make-server-4da0b637/announcements/:id", async (c) => {
     if (!canEdit) return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
 
     const id = c.req.param("id");
-    const existing = await kv.get(`announcement_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`announcement_${id}`);
     if (!existing) return c.json({ error: "Duyuru bulunamadı." }, 404);
 
     const body = await c.req.json();
@@ -3865,7 +4381,7 @@ app.put("/make-server-4da0b637/announcements/:id", async (c) => {
       updatedAt: new Date().toISOString(),
     };
 
-    await kv.set(`announcement_${id}`, updated);
+    await ckv.set(`announcement_${id}`, updated);
     return c.json({ announcement: updated });
   } catch (err) {
     console.log("Put announcement error:", err);
@@ -3884,7 +4400,8 @@ app.delete("/make-server-4da0b637/announcements/:id", async (c) => {
     if (!canDelete) return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
 
     const id = c.req.param("id");
-    await kv.del(`announcement_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del(`announcement_${id}`);
     console.log(`Announcement deleted: ${id} by ${user.id}`);
     return c.json({ success: true });
   } catch (err) {
@@ -3908,7 +4425,8 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
     const RIBON_PER_TAKIM = 200; // 1 takım = 200 baskı
 
     const mekanlarList: any[] = await getMekanlar();
-    const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
     const bugunKayitlar = tumKayitlar.filter((k: any) => k.tarih === today);
 
     const kayitMap: Record<string, any> = {};
@@ -3997,7 +4515,7 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
     const genelRibonKapasite = mekanOzetleri.reduce((s: number, m: any) => s + m.toplamRibonKapasite, 0);
 
     // Depo stoğunu dahil et
-    const depoStok: any = await kv.get("depo_stok") || {};
+    const depoStok: any = await ckv.get("depo_stok") || {};
     const depoAlbumSayilari: Record<string, number> = {};
     for (const alan of albumTipleri) {
       depoAlbumSayilari[alan] = Number(depoStok[alan]) || 0;
@@ -4051,7 +4569,8 @@ app.get("/make-server-4da0b637/depo/stok", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role;
     if (role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
-    const stok: any = await kv.get("depo_stok") || {};
+    const ckv = companyKvFor(getCompanyId(user));
+    const stok: any = await ckv.get("depo_stok") || {};
     return c.json({ stok });
   } catch (err) {
     console.log("Depo stok error:", err);
@@ -4074,11 +4593,12 @@ app.post("/make-server-4da0b637/depo/giris", async (c) => {
     const { alan, miktar, not: notText } = await c.req.json();
     if (!alan || !miktar || miktar <= 0) return c.json({ error: "Alan ve pozitif miktar zorunludur." }, 400);
 
-    const mevcutStok: any = await kv.get("depo_stok") || {};
+    const ckv = companyKvFor(getCompanyId(user));
+    const mevcutStok: any = await ckv.get("depo_stok") || {};
     const eskiDeger = Number(mevcutStok[alan]) || 0;
     mevcutStok[alan] = eskiDeger + miktar;
     mevcutStok.guncellenmeTarihi = new Date().toISOString();
-    await kv.set("depo_stok", mevcutStok);
+    await ckv.set("depo_stok", mevcutStok);
 
     const hareket = {
       id: `depo_hareket_${Date.now()}`,
@@ -4092,7 +4612,7 @@ app.post("/make-server-4da0b637/depo/giris", async (c) => {
       kullaniciId: user.id,
       kullaniciAdi: user.user_metadata?.full_name || user.email,
     };
-    await kv.set(hareket.id, hareket);
+    await ckv.set(hareket.id, hareket);
 
     console.log(`Depo giriş: ${alan} +${miktar} (${hareket.kullaniciAdi})`);
     return c.json({ basarili: true, yeniDeger: mevcutStok[alan], hareket });
@@ -4117,13 +4637,14 @@ app.post("/make-server-4da0b637/depo/cikis", async (c) => {
     const { alan, miktar, hedefMekan, not: notText } = await c.req.json();
     if (!alan || !miktar || miktar <= 0) return c.json({ error: "Alan ve pozitif miktar zorunludur." }, 400);
 
-    const mevcutStok: any = await kv.get("depo_stok") || {};
+    const ckv = companyKvFor(getCompanyId(user));
+    const mevcutStok: any = await ckv.get("depo_stok") || {};
     const eskiDeger = Number(mevcutStok[alan]) || 0;
     if (eskiDeger < miktar) return c.json({ error: `Yetersiz stok. Mevcut: ${eskiDeger}, İstenen: ${miktar}` }, 400);
 
     mevcutStok[alan] = eskiDeger - miktar;
     mevcutStok.guncellenmeTarihi = new Date().toISOString();
-    await kv.set("depo_stok", mevcutStok);
+    await ckv.set("depo_stok", mevcutStok);
 
     const hareket = {
       id: `depo_hareket_${Date.now()}`,
@@ -4138,7 +4659,7 @@ app.post("/make-server-4da0b637/depo/cikis", async (c) => {
       kullaniciId: user.id,
       kullaniciAdi: user.user_metadata?.full_name || user.email,
     };
-    await kv.set(hareket.id, hareket);
+    await ckv.set(hareket.id, hareket);
 
     console.log(`Depo çıkış: ${alan} -${miktar} → ${hedefMekan || "manuel"} (${hareket.kullaniciAdi})`);
     return c.json({ basarili: true, yeniDeger: mevcutStok[alan], hareket });
@@ -4159,7 +4680,8 @@ app.get("/make-server-4da0b637/depo/hareketler", async (c) => {
     const role = user.user_metadata?.role;
     if (!["admin", "yonetici", "ust-mudur", "mudur"].includes(role)) return c.json({ error: "Yetki yok." }, 403);
 
-    const tumHareketler: any[] = await kv.getByPrefix("depo_hareket_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumHareketler: any[] = await ckv.getByPrefix("depo_hareket_") || [];
     const sirali = tumHareketler.sort((a: any, b: any) =>
       new Date(b.tarih).getTime() - new Date(a.tarih).getTime()
     );
@@ -4192,18 +4714,19 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
     stokObj.ribon = Number(ribonTakim) || 0;
     const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
 
+    const ckv = companyKvFor(getCompanyId(user));
     if (mekanId === "depo") {
-      const depoStok: any = await kv.get("depo_stok") || {};
+      const depoStok: any = await ckv.get("depo_stok") || {};
       for (const alan of albumAlanlari) depoStok[alan] = stokObj[alan];
       depoStok.ribon = stokObj.ribon;
       depoStok.guncellenmeTarihi = new Date().toISOString();
-      await kv.set("depo_stok", depoStok);
+      await ckv.set("depo_stok", depoStok);
       console.log(`Depo stok güncellendi: ${user.user_metadata?.full_name}`);
       return c.json({ basarili: true });
     }
 
     const kvKey = `stok_gunluk_${mekanId}_${today}`;
-    const kayit: any = await kv.get(kvKey) || { mekanId, tarih: today };
+    const kayit: any = await ckv.get(kvKey) || { mekanId, tarih: today };
     // Hem acilis hem kapanish'e yaz; böylece hiç vardiya açılmamış
     // mekanlarda da stok görünür ve fallback mantığı çalışır.
     kayit.acilis = { ...(kayit.acilis || {}), ...stokObj };
@@ -4211,7 +4734,7 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
     kayit.kapanish = { ...(kayit.kapanish || {}), ...stokObj };
     kayit.kapanisYapildi = true;
     kayit.yoneticiGuncelleme = new Date().toISOString();
-    await kv.set(kvKey, kayit);
+    await ckv.set(kvKey, kayit);
 
     console.log(`Mekan stok güncellendi: mekan=${mekanId}, kullanıcı=${user.user_metadata?.full_name}`);
     return c.json({ basarili: true });
@@ -4241,20 +4764,21 @@ app.post("/make-server-4da0b637/stok/mekan/sifirla", async (c) => {
     for (const alan of albumAlanlari) sifirStok[alan] = 0;
     sifirStok.ribon = 0;
 
+    const ckv = companyKvFor(getCompanyId(user));
     if (mekanId === "depo") {
       const depoStok: any = { ...sifirStok, guncellenmeTarihi: new Date().toISOString() };
-      await kv.set("depo_stok", depoStok);
+      await ckv.set("depo_stok", depoStok);
       console.log(`Depo stok sıfırlandı: ${user.user_metadata?.full_name}`);
       return c.json({ basarili: true });
     }
 
     const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
     const kvKey = `stok_gunluk_${mekanId}_${today}`;
-    const kayit: any = await kv.get(kvKey) || { mekanId, tarih: today };
+    const kayit: any = await ckv.get(kvKey) || { mekanId, tarih: today };
     kayit.acilis = { ...(kayit.acilis || {}), ...sifirStok };
     kayit.acilisYapildi = true;
     kayit.yoneticiSifirlama = new Date().toISOString();
-    await kv.set(kvKey, kayit);
+    await ckv.set(kvKey, kayit);
 
     console.log(`Mekan stok sıfırlandı: mekan=${mekanId}, kullanıcı=${user.user_metadata?.full_name}`);
     return c.json({ basarili: true });
@@ -4293,17 +4817,19 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
     const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
     const kullaniciAdi = user.user_metadata?.full_name || user.email || "Bilinmeyen";
 
+    const ckv = companyKvFor(getCompanyId(user));
+
     // Helper: mekan stok oku (bugün veya fallback)
     const getMekanStok = async (mekanId: string) => {
       const kvKey = `stok_gunluk_${mekanId}_${today}`;
-      const kayit: any = await kv.get(kvKey);
+      const kayit: any = await ckv.get(kvKey);
       if (kayit) {
         const aktifField = kayit.kapanisYapildi ? "kapanish" : "acilis";
         const aktif = kayit[aktifField] || {};
         return { kayit, kvKey, aktif, alan_deger: Number(aktif[alan]) || 0, aktifField };
       }
       // Fallback: en son kapanış kaydı
-      const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+      const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
       const mekanKayitlari = tumKayitlar
         .filter((k: any) => k.mekanId === mekanId && k.kapanisYapildi && k.kapanish)
         .sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
@@ -4317,18 +4843,18 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
       yeniKayit[aktifField] = { ...aktif, [alan]: yeniDeger };
       if (aktifField === "acilis") yeniKayit.acilisYapildi = true;
       yeniKayit.stokTransferGuncelleme = new Date().toISOString();
-      await kv.set(kvKey, yeniKayit);
+      await ckv.set(kvKey, yeniKayit);
     };
 
     // Mekan isimlerini al (log için)
     let kaynakAdi = "Depo", hedefAdi = "Depo";
     let kaynakEmoji = "🏪", hedefEmoji = "🏪";
     if (kaynakId !== "depo") {
-      const m: any = await kv.get(`mekan_${kaynakId}`);
+      const m: any = await ckv.get(`mekan_${kaynakId}`);
       if (m) { kaynakAdi = m.name; kaynakEmoji = m.emoji || "📍"; }
     }
     if (hedefId !== "depo") {
-      const m: any = await kv.get(`mekan_${hedefId}`);
+      const m: any = await ckv.get(`mekan_${hedefId}`);
       if (m) { hedefAdi = m.name; hedefEmoji = m.emoji || "📍"; }
     }
 
@@ -4337,7 +4863,7 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
 
     // Kaynak: stok azalt
     if (kaynakId === "depo") {
-      const depoStok: any = await kv.get("depo_stok") || {};
+      const depoStok: any = await ckv.get("depo_stok") || {};
       eskiKaynakDeger = Number(depoStok[alan]) || 0;
       if (eskiKaynakDeger < miktar) {
         return c.json({ error: `Depo stoğu yetersiz. Mevcut: ${eskiKaynakDeger}, İstenen: ${miktar}` }, 400);
@@ -4345,7 +4871,7 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
       yeniKaynakDeger = eskiKaynakDeger - miktar;
       depoStok[alan] = yeniKaynakDeger;
       depoStok.guncellenmeTarihi = new Date().toISOString();
-      await kv.set("depo_stok", depoStok);
+      await ckv.set("depo_stok", depoStok);
     } else {
       const { kayit, kvKey, aktif, alan_deger, aktifField } = await getMekanStok(kaynakId);
       eskiKaynakDeger = alan_deger;
@@ -4358,12 +4884,12 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
 
     // Hedef: stok artır
     if (hedefId === "depo") {
-      const depoStok: any = await kv.get("depo_stok") || {};
+      const depoStok: any = await ckv.get("depo_stok") || {};
       eskiHedefDeger = Number(depoStok[alan]) || 0;
       yeniHedefDeger = eskiHedefDeger + miktar;
       depoStok[alan] = yeniHedefDeger;
       depoStok.guncellenmeTarihi = new Date().toISOString();
-      await kv.set("depo_stok", depoStok);
+      await ckv.set("depo_stok", depoStok);
     } else {
       const { kayit, kvKey, aktif, alan_deger, aktifField } = await getMekanStok(hedefId);
       eskiHedefDeger = alan_deger;
@@ -4385,7 +4911,7 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
       eskiKaynakDeger, yeniKaynakDeger,
       eskiHedefDeger, yeniHedefDeger,
     };
-    await kv.set(transferId, transferLog);
+    await ckv.set(transferId, transferLog);
 
     console.log(`Stok transfer: ${alan} x${miktar} | ${kaynakEmoji}${kaynakAdi} → ${hedefEmoji}${hedefAdi} | ${kullaniciAdi}`);
     return c.json({ basarili: true, transfer: transferLog });
@@ -4395,7 +4921,7 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
   }
 });
 
-// ──────────────────────────────────────────
+// ─────────────────���────────────────────────
 // STOK: Transfer geçmişi (son 50)
 // GET /make-server-4da0b637/stok/transferler
 // ──────────────────────────────────────────
@@ -4407,7 +4933,8 @@ app.get("/make-server-4da0b637/stok/transferler", async (c) => {
     if (!["yonetici", "ust-mudur", "mudur"].includes(role)) {
       return c.json({ error: "Yetki yok." }, 403);
     }
-    const tumTransferler: any[] = await kv.getByPrefix("stok_transfer_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumTransferler: any[] = await ckv.getByPrefix("stok_transfer_") || [];
     const sirali = tumTransferler.sort((a: any, b: any) =>
       new Date(b.tarih).getTime() - new Date(a.tarih).getTime()
     );
@@ -4435,6 +4962,7 @@ app.get("/make-server-4da0b637/ekstra-is/kaynaklar", async (c) => {
     const bugunTR = nowTR.toISOString().split('T')[0];
     const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15"];
 
+    const ckv = companyKvFor(getCompanyId(user));
     // Her mekan için bugünün günlük stok kaydını çek
     const mekanlar = await Promise.all(mekanlarList.map(async (m: any) => {
       // Önce bugünü dene, bulamazsan geriye doğru 14 güne kadar tara
@@ -4443,7 +4971,7 @@ app.get("/make-server-4da0b637/ekstra-is/kaynaklar", async (c) => {
       for (let i = 0; i <= 14; i++) {
         const d = new Date(Date.now() + 3 * 60 * 60 * 1000 - i * 86400000);
         const dStr = d.toISOString().split('T')[0];
-        const kayit: any = await kv.get(`stok_gunluk_${m.id}_${dStr}`);
+        const kayit: any = await ckv.get(`stok_gunluk_${m.id}_${dStr}`);
         if (kayit && (kayit.kapanish || kayit.acilis)) {
           bulunanKayit = kayit;
           bulunanTarih = dStr;
@@ -4462,7 +4990,7 @@ app.get("/make-server-4da0b637/ekstra-is/kaynaklar", async (c) => {
       return { id: m.id, name: m.name, emoji: m.emoji || "📍", color: m.color || "#9dd9ea", albumSayilari, stokTarihi };
     }));
 
-    const depoStok: any = await kv.get("depo_stok") || {};
+    const depoStok: any = await ckv.get("depo_stok") || {};
     const depo = {
       id: "depo",
       name: "Depo",
@@ -4480,7 +5008,7 @@ app.get("/make-server-4da0b637/ekstra-is/kaynaklar", async (c) => {
     };
 
     // ── Tüm yazıcıları getir (ekipman kaydından) ──────────────────────────
-    const tumEkipmanlarEkstra: any[] = await kv.getByPrefix("ekipman_") || [];
+    const tumEkipmanlarEkstra: any[] = await ckv.getByPrefix("ekipman_") || [];
     const tumYazicilar = tumEkipmanlarEkstra.filter((eq: any) =>
       eq.category === 'printer' && eq.status !== 'broken'
     );
@@ -4502,7 +5030,7 @@ app.get("/make-server-4da0b637/ekstra-is/kaynaklar", async (c) => {
         for (let i = 0; i <= 14; i++) {
           const d = new Date(nowTR2.getTime() - i * 86400000);
           const dStr = d.toISOString().split('T')[0];
-          const gunKayit: any = await kv.get(`stok_gunluk_${eq.locationId}_${dStr}`);
+          const gunKayit: any = await ckv.get(`stok_gunluk_${eq.locationId}_${dStr}`);
           if (gunKayit?.printerData && Array.isArray(gunKayit.printerData)) {
             const pr = gunKayit.printerData.find((p: any) => (p.ekipmanId || p.id) === eq.id);
             if (pr?.endCounter !== undefined) {
@@ -4548,7 +5076,8 @@ app.get("/make-server-4da0b637/ekstra-is/durum/:taskId/:tarih", async (c) => {
     if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
     const { taskId, tarih } = c.req.param();
-    const kayit: any = await kv.get(`ekstra_is_${taskId}_${tarih}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const kayit: any = await ckv.get(`ekstra_is_${taskId}_${tarih}`);
     return c.json({ kayit: kayit || null });
   } catch (err) {
     console.log("Ekstra-is durum error:", err);
@@ -4572,7 +5101,8 @@ app.post("/make-server-4da0b637/ekstra-is/acilis", async (c) => {
       return c.json({ error: "taskId, tarih, kaynakId ve acilis zorunludur." }, 400);
     }
 
-    const mevcutKayit: any = await kv.get(`ekstra_is_${taskId}_${tarih}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const mevcutKayit: any = await ckv.get(`ekstra_is_${taskId}_${tarih}`);
     if (mevcutKayit?.acilisYapildi) {
       return c.json({ error: "Açılış zaten yapılmış." }, 400);
     }
@@ -4581,7 +5111,7 @@ app.post("/make-server-4da0b637/ekstra-is/acilis", async (c) => {
 
     // Kaynak stoktan düş
     if (kaynakId === "depo") {
-      const depoStok: any = await kv.get("depo_stok") || {};
+      const depoStok: any = await ckv.get("depo_stok") || {};
       for (const alan of albumAlanlari) {
         const istenen = Number(acilis[alan]) || 0;
         if (istenen <= 0) continue;
@@ -4592,10 +5122,10 @@ app.post("/make-server-4da0b637/ekstra-is/acilis", async (c) => {
         depoStok[alan] = mevcutStok - istenen;
       }
       depoStok.guncellenmeTarihi = new Date().toISOString();
-      await kv.set("depo_stok", depoStok);
+      await ckv.set("depo_stok", depoStok);
     } else {
       // Mekan stoku — bugünün kaydından düş, yoksa önceki en son kaydı bul
-      let mekanKayit: any = await kv.get(`stok_gunluk_${kaynakId}_${tarih}`);
+      let mekanKayit: any = await ckv.get(`stok_gunluk_${kaynakId}_${tarih}`);
       let stokKayitAnahtari = `stok_gunluk_${kaynakId}_${tarih}`;
       if (!mekanKayit) {
         const bugunDt = new Date(tarih);
@@ -4603,7 +5133,7 @@ app.post("/make-server-4da0b637/ekstra-is/acilis", async (c) => {
           const dt = new Date(bugunDt);
           dt.setDate(bugunDt.getDate() - i);
           const dtStr = dt.toISOString().split("T")[0];
-          const gecmis: any = await kv.get(`stok_gunluk_${kaynakId}_${dtStr}`);
+          const gecmis: any = await ckv.get(`stok_gunluk_${kaynakId}_${dtStr}`);
           if (gecmis) { mekanKayit = gecmis; stokKayitAnahtari = `stok_gunluk_${kaynakId}_${dtStr}`; break; }
         }
       }
@@ -4628,13 +5158,13 @@ app.post("/make-server-4da0b637/ekstra-is/acilis", async (c) => {
         aktifStok[alan] = (Number(aktifStok[alan]) || 0) - istenen;
       }
       const guncelKayit: any = { ...mekanKayit, [aktifField]: aktifStok, stokTransferGuncelleme: new Date().toISOString() };
-      await kv.set(stokKayitAnahtari, guncelKayit);
+      await ckv.set(stokKayitAnahtari, guncelKayit);
     }
 
     // ── Yazıcı sayaç anomali tespiti (açılıştaki startCounter vs önceki endCounter) ──
     let yaziciAnomali: any = null;
     if (yaziciData?.ekipmanId && yaziciData?.startCounter !== undefined) {
-      const ekipman: any = await kv.get(yaziciData.ekipmanId);
+      const ekipman: any = await ckv.get(yaziciData.ekipmanId);
       const startC = Number(yaziciData.startCounter);
       let lastEnd: number | null = ekipman?.lastEndCounter !== undefined ? Number(ekipman.lastEndCounter) : null;
       if (lastEnd === null) {
@@ -4646,7 +5176,7 @@ app.post("/make-server-4da0b637/ekstra-is/acilis", async (c) => {
           const dStr = d.toISOString().split('T')[0];
           // Mekan stok kaydında ara
           if (ekipman?.locationId) {
-            const gk: any = await kv.get(`stok_gunluk_${ekipman.locationId}_${dStr}`);
+            const gk: any = await ckv.get(`stok_gunluk_${ekipman.locationId}_${dStr}`);
             if (gk?.printerData) {
               const pr = gk.printerData.find((p: any) => (p.ekipmanId || p.id) === yaziciData.ekipmanId);
               if (pr?.endCounter !== undefined) { lastEnd = Number(pr.endCounter); break; }
@@ -4680,7 +5210,7 @@ app.post("/make-server-4da0b637/ekstra-is/acilis", async (c) => {
       yaziciAnomali: yaziciAnomali || null,
     };
 
-    await kv.set(`ekstra_is_${taskId}_${tarih}`, kayit);
+    await ckv.set(`ekstra_is_${taskId}_${tarih}`, kayit);
     console.log(`Ekstra iş açılış: taskId=${taskId} tarih=${tarih} kaynak=${kaynakAdi} by ${user.id}`);
     return c.json({ kayit });
   } catch (err) {
@@ -4703,7 +5233,8 @@ app.post("/make-server-4da0b637/ekstra-is/kare", async (c) => {
     const { taskId, tarih, photographerName, photographerId, frameCount } = await c.req.json();
     if (!taskId || !tarih || !frameCount) return c.json({ error: "taskId, tarih ve frameCount zorunludur." }, 400);
 
-    const mevcut: any = await kv.get(`ekstra_is_${taskId}_${tarih}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const mevcut: any = await ckv.get(`ekstra_is_${taskId}_${tarih}`);
     if (!mevcut?.acilisYapildi) return c.json({ error: "Önce açılış yapılmalıdır." }, 400);
 
     const yeniKare = {
@@ -4717,7 +5248,7 @@ app.post("/make-server-4da0b637/ekstra-is/kare", async (c) => {
     };
 
     const kareKayitlari = [...(mevcut.kareKayitlari || []), yeniKare];
-    await kv.set(`ekstra_is_${taskId}_${tarih}`, { ...mevcut, kareKayitlari });
+    await ckv.set(`ekstra_is_${taskId}_${tarih}`, { ...mevcut, kareKayitlari });
     console.log(`Ekstra iş kare: taskId=${taskId} fotoğrafçı=${photographerName} kare=${frameCount}`);
     return c.json({ kare: yeniKare, kareKayitlari });
   } catch (err) {
@@ -4741,7 +5272,8 @@ app.post("/make-server-4da0b637/ekstra-is/kapalis", async (c) => {
     if (!taskId || !tarih || !kapalis) return c.json({ error: "taskId, tarih ve kapalis zorunludur." }, 400);
     if (!iadeHedefId) return c.json({ error: "İade hedefi seçilmedi." }, 400);
 
-    const mevcut: any = await kv.get(`ekstra_is_${taskId}_${tarih}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const mevcut: any = await ckv.get(`ekstra_is_${taskId}_${tarih}`);
     if (!mevcut?.acilisYapildi) return c.json({ error: "Önce açılış yapılmalıdır." }, 400);
     if (mevcut?.kapanisYapildi) return c.json({ error: "Kapanış zaten yapılmış." }, 400);
 
@@ -4778,17 +5310,17 @@ app.post("/make-server-4da0b637/ekstra-is/kapalis", async (c) => {
 
     // İade stokunu seçilen hedefe aktar (depo veya mekan)
     if (iadeHedefId === "depo") {
-      const depoStok: any = await kv.get("depo_stok") || {};
+      const depoStok: any = await ckv.get("depo_stok") || {};
       for (const alan of albumAlanlari) {
         const iade = Number(kapalis[alan]) || 0;
         if (iade <= 0) continue;
         depoStok[alan] = (Number(depoStok[alan]) || 0) + iade;
       }
       depoStok.guncellenmeTarihi = new Date().toISOString();
-      await kv.set("depo_stok", depoStok);
+      await ckv.set("depo_stok", depoStok);
     } else {
       // Mekan — bugünkü kayıt yoksa önceki en son kaydı bul
-      let mekanKayit: any = await kv.get(`stok_gunluk_${iadeHedefId}_${tarih}`);
+      let mekanKayit: any = await ckv.get(`stok_gunluk_${iadeHedefId}_${tarih}`);
       let iadeKayitAnahtari = `stok_gunluk_${iadeHedefId}_${tarih}`;
       if (!mekanKayit) {
         const bugunDt = new Date(tarih);
@@ -4796,7 +5328,7 @@ app.post("/make-server-4da0b637/ekstra-is/kapalis", async (c) => {
           const dt = new Date(bugunDt);
           dt.setDate(bugunDt.getDate() - i);
           const dtStr = dt.toISOString().split("T")[0];
-          const gecmis: any = await kv.get(`stok_gunluk_${iadeHedefId}_${dtStr}`);
+          const gecmis: any = await ckv.get(`stok_gunluk_${iadeHedefId}_${dtStr}`);
           if (gecmis) { mekanKayit = gecmis; iadeKayitAnahtari = `stok_gunluk_${iadeHedefId}_${dtStr}`; break; }
         }
       }
@@ -4809,7 +5341,7 @@ app.post("/make-server-4da0b637/ekstra-is/kapalis", async (c) => {
           guncelStok[alan] = (Number(guncelStok[alan]) || 0) + iade;
         }
         const guncelKayit: any = { ...mekanKayit, [aktifField]: guncelStok, stokTransferGuncelleme: new Date().toISOString() };
-        await kv.set(iadeKayitAnahtari, guncelKayit);
+        await ckv.set(iadeKayitAnahtari, guncelKayit);
       } else {
         console.log(`Iade hedefi ${iadeHedefAdi} için stok kaydı bulunamadı, iade yapılamadı.`);
       }
@@ -4818,7 +5350,7 @@ app.post("/make-server-4da0b637/ekstra-is/kapalis", async (c) => {
     // ── Yazıcı kapanış: ekipman kaydına son endCounter yaz ──────────────
     if (yaziciKapanisData?.ekipmanId && yaziciKapanisData?.endCounter !== undefined) {
       try {
-        const ekipman: any = await kv.get(yaziciKapanisData.ekipmanId);
+        const ekipman: any = await ckv.get(yaziciKapanisData.ekipmanId);
         if (ekipman) {
           const guncelEkipman = {
             ...ekipman,
@@ -4826,7 +5358,7 @@ app.post("/make-server-4da0b637/ekstra-is/kapalis", async (c) => {
             lastEndTarih: tarih,
             lastEndRibonMevcut: yaziciKapanisData.ribonMevcut !== undefined ? Number(yaziciKapanisData.ribonMevcut) : (ekipman.lastEndRibonMevcut || null),
           };
-          await kv.set(yaziciKapanisData.ekipmanId, guncelEkipman);
+          await ckv.set(yaziciKapanisData.ekipmanId, guncelEkipman);
           console.log(`Yazıcı endCounter güncellendi: ${yaziciKapanisData.ekipmanId} → ${yaziciKapanisData.endCounter}`);
         }
       } catch (e) {
@@ -4850,7 +5382,7 @@ app.post("/make-server-4da0b637/ekstra-is/kapalis", async (c) => {
       yaziciKapanisData: yaziciKapanisData || null,
     };
 
-    await kv.set(`ekstra_is_${taskId}_${tarih}`, guncelKayit);
+    await ckv.set(`ekstra_is_${taskId}_${tarih}`, guncelKayit);
     console.log(`Ekstra iş kapanış: taskId=${taskId} tarih=${tarih} iadeHedef=${iadeHedefAdi} by ${user.id} anomali=${JSON.stringify(anomali)}`);
     return c.json({ kayit: guncelKayit, anomali, beklenen });
   } catch (err) {
@@ -4870,7 +5402,8 @@ app.get("/make-server-4da0b637/ozel-is/durum/:taskId/:tarih", async (c) => {
     if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
     const { taskId, tarih } = c.req.param();
-    const kayit: any = await kv.get(`ozel_is_${taskId}_${tarih}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const kayit: any = await ckv.get(`ozel_is_${taskId}_${tarih}`);
     return c.json({ kayit: kayit || null });
   } catch (err) {
     console.log("Ozel-is durum error:", err);
@@ -4892,7 +5425,8 @@ app.post("/make-server-4da0b637/ozel-is/baslat", async (c) => {
     const { taskId, tarih, baslamaNot } = await c.req.json();
     if (!taskId || !tarih) return c.json({ error: "taskId ve tarih zorunludur." }, 400);
 
-    const mevcutKayit: any = await kv.get(`ozel_is_${taskId}_${tarih}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const mevcutKayit: any = await ckv.get(`ozel_is_${taskId}_${tarih}`);
     if (mevcutKayit?.baslatildi) return c.json({ error: "Görev zaten başlatılmış." }, 400);
 
     const kayit = {
@@ -4909,7 +5443,7 @@ app.post("/make-server-4da0b637/ozel-is/baslat", async (c) => {
       fotografUrl: null,
     };
 
-    await kv.set(`ozel_is_${taskId}_${tarih}`, kayit);
+    await ckv.set(`ozel_is_${taskId}_${tarih}`, kayit);
     console.log(`Özel iş başlatıldı: taskId=${taskId} tarih=${tarih} by ${user.id}`);
     return c.json({ kayit });
   } catch (err) {
@@ -4932,7 +5466,8 @@ app.post("/make-server-4da0b637/ozel-is/tamamla", async (c) => {
     const { taskId, tarih, tamamlamaNot, fotografUrl } = await c.req.json();
     if (!taskId || !tarih) return c.json({ error: "taskId ve tarih zorunludur." }, 400);
 
-    const mevcutKayit: any = await kv.get(`ozel_is_${taskId}_${tarih}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const mevcutKayit: any = await ckv.get(`ozel_is_${taskId}_${tarih}`);
     if (!mevcutKayit?.baslatildi) return c.json({ error: "Önce görevi başlatmalısınız." }, 400);
     if (mevcutKayit?.tamamlandi) return c.json({ error: "Görev zaten tamamlanmış." }, 400);
 
@@ -4946,7 +5481,7 @@ app.post("/make-server-4da0b637/ozel-is/tamamla", async (c) => {
       tamamlamaTarihi: new Date().toISOString(),
     };
 
-    await kv.set(`ozel_is_${taskId}_${tarih}`, guncelKayit);
+    await ckv.set(`ozel_is_${taskId}_${tarih}`, guncelKayit);
     console.log(`Özel iş tamamlandı: taskId=${taskId} tarih=${tarih} by ${user.id}`);
     return c.json({ kayit: guncelKayit });
   } catch (err) {
@@ -4976,7 +5511,8 @@ app.get("/make-server-4da0b637/ai/ozet", async (c) => {
     for (const m of mekanlarList) mekanMap[m.id] = m;
 
     // Bugünkü tüm stok kayıtları
-    const tumKayitlar = await kv.getByPrefix("stok_gunluk_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumKayitlar = await ckv.getByPrefix("stok_gunluk_") || [];
     const bugunKayitlar = tumKayitlar.filter((k: any) => k.tarih === today);
 
     // Satış aggregation
@@ -5245,7 +5781,8 @@ app.get("/make-server-4da0b637/isletme/ciro", async (c) => {
     const baslangic = c.req.query("baslangic") || "";
     const bitis = c.req.query("bitis") || "";
 
-    const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
 
     const filtrelenmis = tumKayitlar.filter((k: any) => {
       if (!k.tarih) return false;
@@ -5325,7 +5862,8 @@ app.get("/make-server-4da0b637/isletme/satis-raporu", async (c) => {
     const bitis = c.req.query("bitis") || "";
     const mekanIdFilter = c.req.query("mekanId") || "";
 
-    const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
     const mekanlarList: any[] = await getMekanlar();
     const mekanMap: Record<string, any> = {};
     for (const m of mekanlarList) mekanMap[m.id] = m;
@@ -5450,7 +5988,8 @@ app.get("/make-server-4da0b637/personel/indirim-istatistik", async (c) => {
     for (const m of mekanlarList) mekanById[m.id] = m;
 
     // Tüm günlük kayıtları çek, isteğe bağlı mekan filtresi
-    const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
     let filtrelenmis = mekanIdQ
       ? tumKayitlar.filter((k: any) => k.mekanId === mekanIdQ)
       : tumKayitlar;
@@ -5589,7 +6128,8 @@ app.get("/make-server-4da0b637/personel/anomali-puanlar", async (c) => {
     }
 
     // ── 2. Rotation task haritası: { "YYYY-MM-DD__mekanAdi" → Personnel[] } ──
-    const allTasks: any[] = await kv.getByPrefix("rotation_task_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const allTasks: any[] = await ckv.getByPrefix("rotation_task_") || [];
     const taskMap: Record<string, any[]> = {};
     for (const t of allTasks) {
       if (!t.date || !t.location || t.status === "cancelled") continue;
@@ -5603,8 +6143,8 @@ app.get("/make-server-4da0b637/personel/anomali-puanlar", async (c) => {
       }
     }
 
-    // ── 3. Stok kayıtları — anomali olanları filtrele ─���
-    const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+    // ── 3. Stok kayıtları — anomali olanları filtrele ──
+    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
     const anomaliKayitlar = tumKayitlar.filter((k: any) => {
       if (!k.tarih) return false;
       if (baslangic && k.tarih < baslangic) return false;
@@ -5743,7 +6283,8 @@ app.get("/make-server-4da0b637/birthday", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
-    const privacy = await kv.get(`bday_privacy_${user.id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const privacy = await ckv.get(`bday_privacy_${user.id}`);
     return c.json({
       birth_date: user.user_metadata?.birth_date || null,
       hideBirthdayFromOthers: privacy?.hideBirthdayFromOthers ?? false,
@@ -5773,7 +6314,8 @@ app.put("/make-server-4da0b637/birthday", async (c) => {
       hideOthersBirthdays: !!hideOthersBirthdays,
       updatedAt: new Date().toISOString(),
     };
-    await kv.set(`bday_privacy_${user.id}`, privacy);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(`bday_privacy_${user.id}`, privacy);
     console.log(`Birthday privacy updated for user: ${user.id}`);
     return c.json({ ...privacy, birth_date: user.user_metadata?.birth_date || null });
   } catch (err) {
@@ -5792,7 +6334,8 @@ app.get("/make-server-4da0b637/birthdays", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
-    const myPrivacy = await kv.get(`bday_privacy_${user.id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const myPrivacy = await ckv.get(`bday_privacy_${user.id}`);
     const hideOthers = myPrivacy?.hideOthersBirthdays === true;
 
     const supabase = getAdminClient();
@@ -5800,7 +6343,7 @@ app.get("/make-server-4da0b637/birthdays", async (c) => {
     if (error) return c.json({ error: `Kullanıcılar yüklenemedi: ${error.message}` }, 400);
 
     // Tüm gizlilik ayarlarını toplu çek, userId bazında map oluştur
-    const allPrivacy = await kv.getByPrefix("bday_privacy_");
+    const allPrivacy = await ckv.getByPrefix("bday_privacy_");
     const privacyMapById: Record<string, any> = {};
     (allPrivacy || []).forEach((p: any) => {
       if (p?.userId) privacyMapById[p.userId] = p;
@@ -5853,14 +6396,17 @@ app.post("/make-server-4da0b637/stok/satis", async (c) => {
       return c.json({ error: "mekanId, tarih, items, totalPrice, paymentMethod zorunludur." }, 400);
     }
 
+    const companyId = getCompanyId(user);
+    const ckv = companyKvFor(companyId);
+
     // Rotasyon yetkisi kontrolü
-    const yetkiliSatis = await checkRotasyonYetkisi(user.id, callerRole, mekanId, tarih);
+    const yetkiliSatis = await checkRotasyonYetkisi(user.id, callerRole, mekanId, tarih, companyId);
     if (!yetkiliSatis) {
       console.log(`Rotasyon yetki reddi — satis: user=${user.id}, role=${callerRole}, mekan=${mekanId}, tarih=${tarih}`);
       return c.json({ error: "Bu mekana bugünkü rotasyonunuzda atanmamışsınız. Satış kaydedemezsiniz." }, 403);
     }
 
-    const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`) || { mekanId, tarih };
+    const existing = await ckv.get(`stok_gunluk_${mekanId}_${tarih}`) || { mekanId, tarih };
     const satislar: any[] = existing.satislar || [];
 
     const satisId = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -5881,7 +6427,7 @@ app.post("/make-server-4da0b637/stok/satis", async (c) => {
       iptalZamani: null,
     };
     satislar.unshift(satis);
-    await kv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, satislar });
+    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, satislar });
     console.log(`Satış kaydedildi: ${satisId} | ${mekanId} | ${tarih} | ${satis.finalPrice} TRY`);
     return c.json({ satis });
   } catch (err) {
@@ -5902,7 +6448,8 @@ app.delete("/make-server-4da0b637/stok/satis/:mekanId/:tarih/:satisId", async (c
     let skipTelegram = false;
     try { const body = await c.req.json(); neden = body.neden || ""; skipTelegram = !!body.skipTelegram; } catch {}
 
-    const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`stok_gunluk_${mekanId}_${tarih}`);
     if (!existing) return c.json({ error: "Kayıt bulunamadı." }, 404);
 
     // İptal edilecek satışı bul (bildirim için)
@@ -5916,7 +6463,7 @@ app.delete("/make-server-4da0b637/stok/satis/:mekanId/:tarih/:satisId", async (c
         ? { ...s, iptal: true, iptalNeden: neden, iptalZamani, iptalEden }
         : s
     );
-    await kv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, satislar });
+    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, satislar });
     console.log(`Satış iptal: ${satisId} | neden: ${neden} | skipTelegram: ${skipTelegram}`);
 
     // ── Telegram bildirimi — onay akışından geliyorsa atla (karar endpoint zaten gönderdi) ──
@@ -5925,7 +6472,7 @@ app.delete("/make-server-4da0b637/stok/satis/:mekanId/:tarih/:satisId", async (c
         // Mekan adını çek
         let mekanAdi = mekanId;
         try {
-          const mekanObj: any = await kv.get(`mekan_${mekanId}`);
+          const mekanObj: any = await ckv.get(`mekan_${mekanId}`);
           if (mekanObj?.name) mekanAdi = `${mekanObj.emoji || "📍"} ${mekanObj.name}`;
         } catch {}
 
@@ -5997,7 +6544,8 @@ app.post("/make-server-4da0b637/stok/satis-iptal-talep", async (c) => {
       return c.json({ error: "İptal sebebi zorunludur." }, 400);
     }
 
-    const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`stok_gunluk_${mekanId}_${tarih}`);
     if (!existing) return c.json({ error: "Günlük kayıt bulunamadı." }, 404);
 
     const satis = (existing.satislar || []).find((s: any) => s.id === satisId);
@@ -6007,7 +6555,7 @@ app.post("/make-server-4da0b637/stok/satis-iptal-talep", async (c) => {
     // Mekan adını çek
     let mekanAdi = mekanId;
     try {
-      const mekanObj: any = await kv.get(`mekan_${mekanId}`);
+      const mekanObj: any = await ckv.get(`mekan_${mekanId}`);
       if (mekanObj?.name) mekanAdi = `${mekanObj.emoji || "📍"} ${mekanObj.name}`;
     } catch {}
 
@@ -6213,7 +6761,8 @@ app.post("/make-server-4da0b637/stok/kare", async (c) => {
       return c.json({ error: "Bu mekana bugünkü rotasyonunuzda atanmamışsınız. Kare kaydı yapma yetkiniz yok." }, 403);
     }
 
-    const existing = await kv.get(`stok_gunluk_${mekanId}_${tarih}`) || { mekanId, tarih };
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`stok_gunluk_${mekanId}_${tarih}`) || { mekanId, tarih };
     const kareKayitlari: any[] = existing.kareKayitlari || [];
     const entryId = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const entry = {
@@ -6226,7 +6775,7 @@ app.post("/make-server-4da0b637/stok/kare", async (c) => {
       kaydedenId: user.id,
     };
     kareKayitlari.push(entry);
-    await kv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, kareKayitlari });
+    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, kareKayitlari });
     console.log(`Kare kaydedildi: ${entryId} | ${photographerName} | ${count} kare | ${mekanId}/${tarih}`);
     return c.json({ entry });
   } catch (err) {
@@ -6253,7 +6802,8 @@ app.delete("/make-server-4da0b637/stok/kare/:mekanId/:tarih/:id", async (c) => {
     const tarih   = c.req.param("tarih");
     const id      = c.req.param("id");
 
-    const kayit: any = await kv.get(`stok_gunluk_${mekanId}_${tarih}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const kayit: any = await ckv.get(`stok_gunluk_${mekanId}_${tarih}`);
     if (!kayit) return c.json({ error: "Stok kaydı bulunamadı." }, 404);
 
     const onceki: any[] = kayit.kareKayitlari || [];
@@ -6266,7 +6816,7 @@ app.delete("/make-server-4da0b637/stok/kare/:mekanId/:tarih/:id", async (c) => {
     }
 
     const guncellendi = onceki.filter((k: any) => k.id !== id);
-    await kv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...kayit, kareKayitlari: guncellendi });
+    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...kayit, kareKayitlari: guncellendi });
 
     const silenAd = user.user_metadata?.full_name || user.email || "Bilinmiyor";
     const silenRole = user.user_metadata?.role || role;
@@ -6276,7 +6826,7 @@ app.delete("/make-server-4da0b637/stok/kare/:mekanId/:tarih/:id", async (c) => {
     try {
       let mekanAdi = mekanId;
       try {
-        const mekanObj: any = await kv.get(`mekan_${mekanId}`);
+        const mekanObj: any = await ckv.get(`mekan_${mekanId}`);
         if (mekanObj?.name) mekanAdi = `${mekanObj.emoji || "📍"} ${mekanObj.name}`;
       } catch {}
 
@@ -6355,7 +6905,8 @@ app.post("/make-server-4da0b637/kare", async (c) => {
       enteredById: user.id,
     };
 
-    await kv.set(`kare_${today}_${id}`, entry);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(`kare_${today}_${id}`, entry);
     console.log(`Kare entry saved: ${id} | ${photographerName} | ${count} kare | ${location}`);
     return c.json({ entry });
   } catch (err) {
@@ -6373,7 +6924,8 @@ app.get("/make-server-4da0b637/kare", async (c) => {
     const dateParam = c.req.query("date") || new Date().toISOString().split("T")[0];
     const locationParam = c.req.query("location");
 
-    const all = await kv.getByPrefix(`kare_${dateParam}_`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const all = await ckv.getByPrefix(`kare_${dateParam}_`);
     let entries = (all || []).filter(Boolean);
 
     if (locationParam) {
@@ -6400,7 +6952,8 @@ app.delete("/make-server-4da0b637/kare/:date/:id", async (c) => {
 
     const date = c.req.param("date");
     const id = c.req.param("id");
-    await kv.del(`kare_${date}_${id}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del(`kare_${date}_${id}`);
     return c.json({ success: true });
   } catch (err) {
     console.log("Delete kare error:", err);
@@ -6495,7 +7048,8 @@ app.get("/make-server-4da0b637/malzeme/liste", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
-    const tumEkipmanlar: any[] = await kv.getByPrefix("ekipman_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumEkipmanlar: any[] = await ckv.getByPrefix("ekipman_") || [];
     const sirali = tumEkipmanlar.sort((a: any, b: any) =>
       new Date(a.olusturulmaTarihi || 0).getTime() - new Date(b.olusturulmaTarihi || 0).getTime()
     );
@@ -6557,7 +7111,8 @@ app.post("/make-server-4da0b637/malzeme/ekle", async (c) => {
       olusturanAdi: user.user_metadata?.full_name || user.email,
       guncellemeTarihi: new Date().toISOString(),
     };
-    await kv.set(id, ekipman);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(id, ekipman);
 
     console.log(`Malzeme eklendi: ${brand} ${model} — ${user.user_metadata?.full_name}`);
     return c.json({ basarili: true, ekipman });
@@ -6583,7 +7138,8 @@ app.put("/make-server-4da0b637/malzeme/guncelle", async (c) => {
     const { id, ...fields } = body;
     if (!id) return c.json({ error: "id zorunludur." }, 400);
 
-    const mevcut: any = await kv.get(id);
+    const ckv = companyKvFor(getCompanyId(user));
+    const mevcut: any = await ckv.get(id);
     if (!mevcut) return c.json({ error: "Ekipman bulunamadı." }, 404);
 
     const guncellendi = {
@@ -6594,7 +7150,7 @@ app.put("/make-server-4da0b637/malzeme/guncelle", async (c) => {
       guncelleyenId: user.id,
       guncelleyenAdi: user.user_metadata?.full_name || user.email,
     };
-    await kv.set(id, guncellendi);
+    await ckv.set(id, guncellendi);
 
     console.log(`Malzeme güncellendi: ${id} — ${user.user_metadata?.full_name}`);
     return c.json({ basarili: true, ekipman: guncellendi });
@@ -6619,7 +7175,8 @@ app.put("/make-server-4da0b637/malzeme/zimmet", async (c) => {
     const { id, assignedTo, assignedToId } = await c.req.json();
     if (!id) return c.json({ error: "id zorunludur." }, 400);
 
-    const mevcut: any = await kv.get(id);
+    const ckv = companyKvFor(getCompanyId(user));
+    const mevcut: any = await ckv.get(id);
     if (!mevcut) return c.json({ error: "Ekipman bulunamadı." }, 404);
 
     mevcut.assignedTo = assignedTo || undefined;
@@ -6627,7 +7184,7 @@ app.put("/make-server-4da0b637/malzeme/zimmet", async (c) => {
     mevcut.guncellemeTarihi = new Date().toISOString();
     mevcut.zimmetTarihi = assignedTo ? new Date().toISOString() : undefined;
     mevcut.zimmeti = user.user_metadata?.full_name || user.email;
-    await kv.set(id, mevcut);
+    await ckv.set(id, mevcut);
 
     console.log(`Zimmet: ${id} → ${assignedTo || "kaldırıldı"} — ${user.user_metadata?.full_name}`);
     return c.json({ basarili: true, ekipman: mevcut });
@@ -6650,7 +7207,8 @@ app.delete("/make-server-4da0b637/malzeme/sil/:id", async (c) => {
       return c.json({ error: "Yetki yok." }, 403);
 
     const id = c.req.param("id");
-    const mevcut: any = await kv.get(id);
+    const ckv = companyKvFor(getCompanyId(user));
+    const mevcut: any = await ckv.get(id);
     if (!mevcut) return c.json({ error: "Ekipman bulunamadı." }, 404);
 
     // Storage'dan fotoğrafı sil (varsa)
@@ -6664,7 +7222,7 @@ app.delete("/make-server-4da0b637/malzeme/sil/:id", async (c) => {
       }
     }
 
-    await kv.del(id);
+    await ckv.del(id);
 
     console.log(`Malzeme silindi: ${mevcut.brand} ${mevcut.model} — ${user.user_metadata?.full_name}`);
     return c.json({ basarili: true });
@@ -6684,7 +7242,8 @@ app.get("/make-server-4da0b637/ai/role-config", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
-    const config = await kv.get("ai_role_config_v1") || null;
+    const ckv = companyKvFor(getCompanyId(user));
+    const config = await ckv.get("ai_role_config_v1") || null;
     return c.json({ config });
   } catch (err) {
     console.log("AI role-config GET error:", err);
@@ -6702,7 +7261,8 @@ app.post("/make-server-4da0b637/ai/role-config", async (c) => {
     }
     const body = await c.req.json();
     if (!body.config) return c.json({ error: "config alanı zorunlu." }, 400);
-    await kv.set("ai_role_config_v1", body.config);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set("ai_role_config_v1", body.config);
     console.log(`AI role-config güncellendi: ${callerRole} — ${user.user_metadata?.full_name}`);
     return c.json({ ok: true });
   } catch (err) {
@@ -6737,6 +7297,14 @@ app.delete("/make-server-4da0b637/users/:userId", async (c) => {
     const { data: targetData } = await supabase.auth.admin.getUserById(userId);
     if (!targetData?.user) return c.json({ error: "Kullanıcı bulunamadı." }, 404);
 
+    // ── Multi-tenant güvenlik: farklı şirketteki kullanıcı silinemez ──
+    const callerCompanyId = getCompanyId(callerUser);
+    const targetCompanyId = getCompanyId(targetData.user);
+    if (targetCompanyId !== callerCompanyId) {
+      console.log(`[userDelete] Şirket uyuşmazlığı: ${callerCompanyId} → ${targetCompanyId}`);
+      return c.json({ error: "Bu kullanıcı başka bir şirkete ait." }, 403);
+    }
+
     const targetRole = targetData.user.user_metadata?.role ?? "bekleyen";
     const hierarchy: Record<string, number> = {
       yonetici: 6, "ust-mudur": 5, mudur: 4, operasyon: 3, idari: 2, personel: 1, bekleyen: 0,
@@ -6747,11 +7315,12 @@ app.delete("/make-server-4da0b637/users/:userId", async (c) => {
 
     const targetName = targetData.user.user_metadata?.full_name || targetData.user.email || userId;
     let kvTemizlendi = 0;
+    const ckv = companyKvFor(callerCompanyId);
 
     // ── 1. rotation_task_* — personeli görevden çıkar ──
     // Tek kişilik görev → tamamen sil | Çok kişilik → sadece bu kişiyi çıkar
     try {
-      const tasks = await kv.getByPrefix("rotation_task_");
+      const tasks = await ckv.getByPrefix("rotation_task_");
       for (const task of (tasks || [])) {
         if (!task.id) continue;
         const personnel: any[] = Array.isArray(task.personnel) ? task.personnel : [];
@@ -6759,12 +7328,12 @@ app.delete("/make-server-4da0b637/users/:userId", async (c) => {
         if (!buKisiVar) continue;
 
         if (personnel.length <= 1) {
-          await kv.del(`rotation_task_${task.id}`);
+          await ckv.del(`rotation_task_${task.id}`);
           kvTemizlendi++;
           console.log(`[userDelete] rotation_task_${task.id} silindi (tek kişilik görev)`);
         } else {
           const yeniPersonnel = personnel.filter((p: any) => p.id !== userId);
-          await kv.set(`rotation_task_${task.id}`, { ...task, personnel: yeniPersonnel });
+          await ckv.set(`rotation_task_${task.id}`, { ...task, personnel: yeniPersonnel });
           kvTemizlendi++;
           console.log(`[userDelete] rotation_task_${task.id} güncellendi (${personnel.length} → ${yeniPersonnel.length} kişi)`);
         }
@@ -6775,10 +7344,10 @@ app.delete("/make-server-4da0b637/users/:userId", async (c) => {
 
     // ── 2. rotation_leave_* — bu kullanıcının izin talepleri ──
     try {
-      const leaves = await kv.getByPrefix("rotation_leave_");
+      const leaves = await ckv.getByPrefix("rotation_leave_");
       for (const leave of (leaves || [])) {
         if (leave.personnelId === userId || leave.staffId === userId || leave.created_by === userId) {
-          await kv.del(`rotation_leave_${leave.id}`);
+          await ckv.del(`rotation_leave_${leave.id}`);
           kvTemizlendi++;
           console.log(`[userDelete] rotation_leave_${leave.id} silindi`);
         }
@@ -6789,7 +7358,7 @@ app.delete("/make-server-4da0b637/users/:userId", async (c) => {
 
     // ── 3. rotation_daily_onleave — tarih bazlı listeden userId çıkar ──
     try {
-      const dailyOnLeave = await kv.get("rotation_daily_onleave");
+      const dailyOnLeave = await ckv.get("rotation_daily_onleave");
       if (dailyOnLeave && typeof dailyOnLeave === "object") {
         let degisti = false;
         for (const tarih of Object.keys(dailyOnLeave)) {
@@ -6800,7 +7369,7 @@ app.delete("/make-server-4da0b637/users/:userId", async (c) => {
           }
         }
         if (degisti) {
-          await kv.set("rotation_daily_onleave", dailyOnLeave);
+          await ckv.set("rotation_daily_onleave", dailyOnLeave);
           console.log(`[userDelete] rotation_daily_onleave güncellendi`);
           kvTemizlendi++;
         }
@@ -6811,7 +7380,7 @@ app.delete("/make-server-4da0b637/users/:userId", async (c) => {
 
     // ── 4. bday_privacy_ — doğum günü gizlilik kaydını sil ──
     try {
-      await kv.del(`bday_privacy_${userId}`);
+      await ckv.del(`bday_privacy_${userId}`);
       console.log(`[userDelete] bday_privacy_${userId} silindi`);
     } catch (e) {
       console.log("[userDelete] bday_privacy temizlik hatası:", e);
@@ -6876,17 +7445,18 @@ app.get("/make-server-4da0b637/mesajlar/kanallar", async (c) => {
     }
 
     // Özel kanallar — tüm aktif roller görebilir
-    const customs: any[] = await kv.getByPrefix("chat_channel_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const customs: any[] = await ckv.getByPrefix("chat_channel_") || [];
     const customChannels = customs.map((ch: any) => ({
       id: ch.id, name: ch.name, type: "channel", emoji: ch.emoji || "💬",
       isAdminOnly: false, deletable: true, createdBy: ch.createdBy,
     }));
 
     const allChannels = [...STATIC_CHANNELS, ...mekanChannels, ...customChannels];
-    const readMap: Record<string, string> = await kv.get(`chat_read_${user.id}`) || {};
+    const readMap: Record<string, string> = await ckv.get(`chat_read_${user.id}`) || {};
 
     const channelsWithMeta = await Promise.all(allChannels.map(async (ch) => {
-      const data: any = await kv.get(`chat_msgs_${ch.id}`) || { messages: [] };
+      const data: any = await ckv.get(`chat_msgs_${ch.id}`) || { messages: [] };
       const msgs: any[] = data.messages || [];
       const lastMsg = msgs[msgs.length - 1];
       const lastReadTime = readMap[ch.id] ? new Date(readMap[ch.id]).getTime() : 0;
@@ -6922,7 +7492,8 @@ app.post("/make-server-4da0b637/mesajlar/ozel-kanal", async (c) => {
       createdById: user.id,
       createdAt: new Date().toISOString(),
     };
-    await kv.set(`chat_channel_${id}`, channel);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(`chat_channel_${id}`, channel);
     console.log(`Yeni özel kanal: ${name} by ${user.id}`);
     return c.json({ channel }, 201);
   } catch (err) {
@@ -6941,8 +7512,9 @@ app.delete("/make-server-4da0b637/mesajlar/ozel-kanal/:channelId", async (c) => 
       return c.json({ error: "Kanal silme yetkisi yalnızca Yönetici ve Üst Müdür rolüne aittir." }, 403);
     }
     const { channelId } = c.req.param();
-    await kv.del(`chat_channel_${channelId}`);
-    await kv.del(`chat_msgs_${channelId}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del(`chat_channel_${channelId}`);
+    await ckv.del(`chat_msgs_${channelId}`);
     console.log(`Özel kanal silindi: ${channelId} by ${user.id}`);
     return c.json({ success: true });
   } catch (err) {
@@ -6957,10 +7529,11 @@ app.get("/make-server-4da0b637/mesajlar/kanallar/:channelId", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const { channelId } = c.req.param();
-    const data: any = await kv.get(`chat_msgs_${channelId}`) || { messages: [] };
-    const readMap: Record<string, string> = await kv.get(`chat_read_${user.id}`) || {};
+    const ckv = companyKvFor(getCompanyId(user));
+    const data: any = await ckv.get(`chat_msgs_${channelId}`) || { messages: [] };
+    const readMap: Record<string, string> = await ckv.get(`chat_read_${user.id}`) || {};
     readMap[channelId] = new Date().toISOString();
-    await kv.set(`chat_read_${user.id}`, readMap);
+    await ckv.set(`chat_read_${user.id}`, readMap);
     return c.json({ messages: data.messages || [] });
   } catch (err) {
     console.log("GET mesajlar/kanallar/:id error:", err);
@@ -6989,9 +7562,10 @@ app.post("/make-server-4da0b637/mesajlar/kanallar/:channelId", async (c) => {
       channelId,
     };
 
-    const data: any = await kv.get(`chat_msgs_${channelId}`) || { messages: [] };
+    const ckv = companyKvFor(getCompanyId(user));
+    const data: any = await ckv.get(`chat_msgs_${channelId}`) || { messages: [] };
     const messages = [...(data.messages || []), msg].slice(-MAX_MSGS);
-    await kv.set(`chat_msgs_${channelId}`, { messages, lastUpdated: new Date().toISOString() });
+    await ckv.set(`chat_msgs_${channelId}`, { messages, lastUpdated: new Date().toISOString() });
     console.log(`Mesaj: ${user.user_metadata?.full_name} → #${channelId}`);
     return c.json({ message: msg }, 201);
   } catch (err) {
@@ -7029,21 +7603,22 @@ app.get("/make-server-4da0b637/mesajlar/dm-list", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
 
+    const ckv = companyKvFor(getCompanyId(user));
     const dmListKey = `chat_dm_list_${user.id}`;
-    const dmList: string[] = await kv.get(dmListKey) || [];
+    const dmList: string[] = await ckv.get(dmListKey) || [];
 
     const supabase = getAdminClient();
     const { data: { users } } = await supabase.auth.admin.listUsers({ perPage: 500 });
     const userMap: Record<string, any> = {};
     for (const u of (users || [])) userMap[u.id] = u;
 
-    const readMap: Record<string, string> = await kv.get(`chat_read_${user.id}`) || {};
+    const readMap: Record<string, string> = await ckv.get(`chat_read_${user.id}`) || {};
 
     const conversations = await Promise.all(dmList.map(async (otherUserId: string) => {
       const other = userMap[otherUserId];
       if (!other) return null;
       const dmKey = sortedDmKey(user.id, otherUserId);
-      const data: any = await kv.get(dmKey) || { messages: [] };
+      const data: any = await ckv.get(dmKey) || { messages: [] };
       const msgs: any[] = data.messages || [];
       const lastMsg = msgs[msgs.length - 1];
       const lastReadTime = readMap[`dm_${otherUserId}`]
@@ -7075,11 +7650,12 @@ app.get("/make-server-4da0b637/mesajlar/dm/:otherUserId", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const { otherUserId } = c.req.param();
+    const ckv = companyKvFor(getCompanyId(user));
     const dmKey = sortedDmKey(user.id, otherUserId);
-    const data: any = await kv.get(dmKey) || { messages: [] };
-    const readMap: Record<string, string> = await kv.get(`chat_read_${user.id}`) || {};
+    const data: any = await ckv.get(dmKey) || { messages: [] };
+    const readMap: Record<string, string> = await ckv.get(`chat_read_${user.id}`) || {};
     readMap[`dm_${otherUserId}`] = new Date().toISOString();
-    await kv.set(`chat_read_${user.id}`, readMap);
+    await ckv.set(`chat_read_${user.id}`, readMap);
     return c.json({ messages: data.messages || [] });
   } catch (err) {
     console.log("GET mesajlar/dm/:id error:", err);
@@ -7096,6 +7672,7 @@ app.post("/make-server-4da0b637/mesajlar/dm/:otherUserId", async (c) => {
     const { content } = await c.req.json();
     if (!content?.trim()) return c.json({ error: "Mesaj boş olamaz." }, 400);
 
+    const ckv = companyKvFor(getCompanyId(user));
     const dmKey = sortedDmKey(user.id, otherUserId);
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const msg = {
@@ -7107,15 +7684,15 @@ app.post("/make-server-4da0b637/mesajlar/dm/:otherUserId", async (c) => {
       timestamp: new Date().toISOString(),
     };
 
-    const data: any = await kv.get(dmKey) || { messages: [] };
+    const data: any = await ckv.get(dmKey) || { messages: [] };
     const messages = [...(data.messages || []), msg].slice(-MAX_MSGS);
-    await kv.set(dmKey, { messages, lastUpdated: new Date().toISOString() });
+    await ckv.set(dmKey, { messages, lastUpdated: new Date().toISOString() });
 
     // Her iki kullanıcının DM listesine ekle
     for (const [meId, themId] of [[user.id, otherUserId], [otherUserId, user.id]]) {
       const listKey = `chat_dm_list_${meId}`;
-      const list: string[] = await kv.get(listKey) || [];
-      if (!list.includes(themId)) await kv.set(listKey, [...list, themId]);
+      const list: string[] = await ckv.get(listKey) || [];
+      if (!list.includes(themId)) await ckv.set(listKey, [...list, themId]);
     }
 
     console.log(`DM: ${user.user_metadata?.full_name} → ${otherUserId}`);
@@ -7146,8 +7723,9 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
     const mekanById: Record<string, any> = {};
     for (const m of mekanlarList) mekanById[m.id] = m;
 
-    // ── 2. Stok kayıtları filtrele ─��
-    const tumKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+    // ── 2. Stok kayıtları filtrele ──
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
     const filtrelenmis = tumKayitlar.filter((k: any) => {
       if (!k.tarih) return false;
       if (baslangic && k.tarih < baslangic) return false;
@@ -7222,7 +7800,7 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
     }
 
     // ── 4. Rotasyon görevleri: vardiya sayısı + avatar güncelleme ──
-    const allTasks: any[] = await kv.getByPrefix("rotation_task_") || [];
+    const allTasks: any[] = await ckv.getByPrefix("rotation_task_") || [];
     const taskMap: Record<string, any[]> = {};
     const personVardiya: Record<string, Set<string>> = {};
 
@@ -7356,12 +7934,12 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
     const quotesMap: Record<string, string> = {};
     if (periodKey) {
       const top3Ids = new Set(result.slice(0, 3).map((p: any) => p.id));
-      const allQuotes: any[] = await kv.getByPrefix("podium_quote_") || [];
+      const allQuotes: any[] = await ckv.getByPrefix("podium_quote_") || [];
       for (const q of allQuotes) {
         if (q._periodKey !== periodKey) continue;
         if (!top3Ids.has(q.userId)) {
           // Top3 dışına düştü — quote'u sil
-          await kv.del(`podium_quote_${q.userId}_${periodKey}`);
+          await ckv.del(`podium_quote_${q.userId}_${periodKey}`);
         } else if (q.quote) {
           quotesMap[q.userId] = q.quote;
         }
@@ -7396,13 +7974,14 @@ app.put("/make-server-4da0b637/leaderboard/quotes", async (c) => {
     if (typeof quote !== "string" || quote.length > 120) return c.json({ error: "Mesaj en fazla 120 karakter olmalı." }, 400);
 
     const trimmed = quote.trim();
+    const ckv = companyKvFor(getCompanyId(user));
     if (!trimmed) {
       // Boş mesaj → sil
-      await kv.del(`podium_quote_${user.id}_${periodKey}`);
+      await ckv.del(`podium_quote_${user.id}_${periodKey}`);
       return c.json({ ok: true, deleted: true });
     }
 
-    await kv.set(`podium_quote_${user.id}_${periodKey}`, {
+    await ckv.set(`podium_quote_${user.id}_${periodKey}`, {
       userId: user.id,
       _periodKey: periodKey,
       quote: trimmed,
@@ -7435,11 +8014,12 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
     const qBitis    = c.req.query("bitis") || "";
     const qMekanId  = c.req.query("mekanId") || "";
 
+    const ckv = companyKvFor(getCompanyId(user));
     const [tumKayitlarRaw, mekanlarList, costAlbumsRaw, exRatesRaw] = await Promise.all([
-      kv.getByPrefix("stok_gunluk_"),
+      ckv.getByPrefix("stok_gunluk_"),
       getMekanlar(),
-      kv.get("cost_albums"),
-      kv.get("cost_exchange_rates"),
+      ckv.get("cost_albums"),
+      ckv.get("cost_exchange_rates"),
     ]);
 
     const mekanMap: Record<string, any> = {};
@@ -7679,12 +8259,13 @@ app.delete("/make-server-4da0b637/vardiya/sil", async (c) => {
     }
 
     const kvKey = `stok_gunluk_${mekanId}_${tarih}`;
-    const mevcut = await kv.get(kvKey);
+    const ckv = companyKvFor(getCompanyId(user));
+    const mevcut = await ckv.get(kvKey);
     if (!mevcut) {
       return c.json({ error: `KV kaydi bulunamadi: ${kvKey}` }, 404);
     }
 
-    await kv.del(kvKey);
+    await ckv.del(kvKey);
     console.log(`Vardiya silindi: ${kvKey} | silen: ${user.email}`);
     return c.json({ ok: true, silinen: kvKey });
   } catch (err) {
@@ -7700,7 +8281,15 @@ app.delete("/make-server-4da0b637/vardiya/sil", async (c) => {
 
 app.get("/make-server-4da0b637/ai/status", async (c) => {
   try {
-    const globalEnabled = await kv.get("ai_global_enabled");
+    // ai_global_enabled is per-company. Try auth first; fall back to companyId query param.
+    let cid: string | null = null;
+    try {
+      const u = await verifyToken(c);
+      if (u) cid = getCompanyId(u);
+    } catch (_) { /* no token — ok */ }
+    if (!cid) cid = (c.req.query("companyId") || "").toLowerCase() || "aspect";
+    const ckv = companyKvFor(cid);
+    const globalEnabled = await ckv.get("ai_global_enabled");
     return c.json({ ai_global_enabled: globalEnabled !== null ? Boolean(globalEnabled) : true });
   } catch (err) {
     console.log("AI status GET error:", err);
@@ -7725,13 +8314,14 @@ app.get("/make-server-4da0b637/ai/toggle-settings", async (c) => {
     if (callerRole !== "yonetici") {
       return c.json({ error: "Bu ayara yalnızca Yönetici erişebilir." }, 403);
     }
+    const ckv = companyKvFor(getCompanyId(user));
     const personalKey = `ai_personal_yonetici_${user.id}`;
     const [personalEnabled, yonetimEnabled, idariEnabled, personelEnabled, operasyonEnabled] = await Promise.all([
-      kv.get(personalKey),
-      kv.get("ai_yonetim_enabled"),
-      kv.get("ai_idari_enabled"),
-      kv.get("ai_personel_enabled"),
-      kv.get("ai_operasyon_enabled"),
+      ckv.get(personalKey),
+      ckv.get("ai_yonetim_enabled"),
+      ckv.get("ai_idari_enabled"),
+      ckv.get("ai_personel_enabled"),
+      ckv.get("ai_operasyon_enabled"),
     ]);
     return c.json({
       ai_personal_yonetici: personalEnabled  !== null ? Boolean(personalEnabled)  : true,
@@ -7764,11 +8354,12 @@ app.post("/make-server-4da0b637/ai/toggle-settings", async (c) => {
     ];
     for (const key of perRoleKeys) {
       if (typeof body[key] !== "undefined") {
+        const ckv = companyKvFor(getCompanyId(user));
         if (key === "ai_personal_yonetici") {
-          await kv.set(`ai_personal_yonetici_${user.id}`, Boolean(body[key]));
+          await ckv.set(`ai_personal_yonetici_${user.id}`, Boolean(body[key]));
           console.log(`[AI Toggle] ai_personal_yonetici_${user.id} → ${body[key]} | ${user.user_metadata?.full_name}`);
         } else {
-          await kv.set(key, Boolean(body[key]));
+          await ckv.set(key, Boolean(body[key]));
           console.log(`[AI Toggle] ${key} → ${body[key]} | ${user.user_metadata?.full_name}`);
         }
       }
@@ -7797,22 +8388,23 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
     const { messages, userRole, userName, systemContext, ozet } = body;
 
     // Toggle durumunu belirle — her rol için ayrı KV anahtarı
+    const ckv = companyKvFor(getCompanyId(user));
     let useOpenAI = false;
     if (userRole === "yonetici") {
       const personalKey = `ai_personal_yonetici_${user.id}`;
-      const personalEnabled = await kv.get(personalKey);
+      const personalEnabled = await ckv.get(personalKey);
       useOpenAI = personalEnabled !== null ? Boolean(personalEnabled) : true;
     } else if (userRole === "ust-mudur" || userRole === "mudur") {
-      const val = await kv.get("ai_yonetim_enabled");
+      const val = await ckv.get("ai_yonetim_enabled");
       useOpenAI = val !== null ? Boolean(val) : true;
     } else if (userRole === "idari") {
-      const val = await kv.get("ai_idari_enabled");
+      const val = await ckv.get("ai_idari_enabled");
       useOpenAI = val !== null ? Boolean(val) : true;
     } else if (userRole === "personel") {
-      const val = await kv.get("ai_personel_enabled");
+      const val = await ckv.get("ai_personel_enabled");
       useOpenAI = val !== null ? Boolean(val) : true;
     } else if (userRole === "operasyon") {
-      const val = await kv.get("ai_operasyon_enabled");
+      const val = await ckv.get("ai_operasyon_enabled");
       useOpenAI = val !== null ? Boolean(val) : true;
     } else {
       // Bilinmeyen rol → varsayılan açık
@@ -7842,14 +8434,14 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       let izinGecmisiStr = "  Veri yok.";
       try {
         const todayStr = new Date().toISOString().split("T")[0];
-        const allLeaves: any[] = await kv.getByPrefix("rotation_leave_") || [];
+        const allLeaves: any[] = await ckv.getByPrefix("rotation_leave_") || [];
         const bugunIzinliler = allLeaves.filter((l: any) => {
           if (l.status === "rejected") return false;
           const start = l.startDate || l.date || "";
           const end   = l.endDate   || l.date || "";
           return start <= todayStr && todayStr <= end;
         });
-        const dailyOnLeaveMap: Record<string, string[]> = await kv.get("rotation_daily_onleave") || {};
+        const dailyOnLeaveMap: Record<string, string[]> = await ckv.get("rotation_daily_onleave") || {};
         const gunlukIzinIds: string[] = dailyOnLeaveMap[todayStr] || [];
         let allStaff: any[] = [];
         try {
@@ -7948,9 +8540,9 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
         const mekanlarDetay: any[] = await getMekanlar();
         if (mekanlarDetay.length > 0) {
           // Döviz kurları (birim maliyet için)
-          const mekanExRates: any = await kv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
+          const mekanExRates: any = await ckv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
           // Kağıt adını ID üzerinden çözmek için tüm kağıtları çek
-          const tumKagitlar: any[] = await kv.getByPrefix("cost_paper_").catch(() => []) || [];
+          const tumKagitlar: any[] = await ckv.getByPrefix("cost_paper_").catch(() => []) || [];
           const kagitById: Record<string, string> = {};
           for (const k of tumKagitlar) {
             if (k.id && k.name) kagitById[k.id] = k.name;
@@ -8012,11 +8604,11 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Maliyet / Malzeme yönetimi ──
       let maliyetStr = "  Veri yok.";
       try {
-        const exRates: any = await kv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
-        const albumMaliyetler: any = await kv.get("cost_albums") || [];
-        const kagitlar: any[] = await kv.getByPrefix("cost_paper_") || [];
-        const giderler: any[] = await kv.getByPrefix("cost_recurring_") || [];
-        const maaslar: any[] = await kv.getByPrefix("cost_salary_") || [];
+        const exRates: any = await ckv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
+        const albumMaliyetler: any = await ckv.get("cost_albums") || [];
+        const kagitlar: any[] = await ckv.getByPrefix("cost_paper_") || [];
+        const giderler: any[] = await ckv.getByPrefix("cost_recurring_") || [];
+        const maaslar: any[] = await ckv.getByPrefix("cost_salary_") || [];
 
         const dovizStr = `EUR: ${exRates.EUR || 35.5} ₺, USD: ${exRates.USD || 32.8} ₺, GBP: ${exRates.GBP || 41.2} ₺`;
 
@@ -8065,7 +8657,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
         let bugunBaskiMaliyetStr = "  Henüz kapanış yapılmadı veya veri yok.";
         try {
           const bugunStr = new Date().toISOString().split("T")[0];
-          const tumBugunKayitlar: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+          const tumBugunKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
           const bugunKayitlar = tumBugunKayitlar.filter((k: any) => k.tarih === bugunStr && k.vardiyaToplam);
           if (bugunKayitlar.length > 0) {
             const mekanlarBugun: any[] = await getMekanlar();
@@ -8088,9 +8680,9 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Mekan × Albüm Boyutu Üretim Maliyet Tablosu (PRE-COMPUTED) ──
       let mekanAlbumMaliyetTabloStr = "  Veri yok.";
       try {
-        const exRatesTablo: any = await kv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
-        const albumMaliyetlerTablo: any[] = await kv.get("cost_albums") || [];
-        const kagitlarTablo: any[] = await kv.getByPrefix("cost_paper_") || [];
+        const exRatesTablo: any = await ckv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
+        const albumMaliyetlerTablo: any[] = await ckv.get("cost_albums") || [];
+        const kagitlarTablo: any[] = await ckv.getByPrefix("cost_paper_") || [];
         const mekanlarTablo: any[] = await getMekanlar();
 
         const albumMalMapT: Record<string, { tam: number; yarim: number }> = {};
@@ -8153,7 +8745,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       };
       let depoStokObj: Record<string, number> = {};
       try {
-        const depoStok: any = await kv.get("depo_stok") || {};
+        const depoStok: any = await ckv.get("depo_stok") || {};
         depoStokObj = depoStok;
         const depoLines = Object.entries(albumEtikDepo).map(([key, label]) => {
           const adet = Number(depoStok[key]) || 0;
@@ -8167,7 +8759,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       let mekanAnlikStokStr = "  Veri yok.";
       const tumStokByKey: Record<string, number> = {};
       try {
-        const tumGunlukAI: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+        const tumGunlukAI: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
         const mekanlarAI: any[] = await getMekanlar();
         // Her mekan için en son kapanış stoğunu (yoksa açılış stoğunu) bul
         const mekanSonStok: Record<string, { tarih: string; stok: Record<string, number>; tip: string }> = {};
@@ -8215,7 +8807,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── İşletme Gider Kayıtları (son 30 gün) ──
       let isletmeGiderStr = "  Veri yok.";
       try {
-        const tumGiderlerAI: any[] = await kv.getByPrefix("isletme_gider_") || [];
+        const tumGiderlerAI: any[] = await ckv.getByPrefix("isletme_gider_") || [];
         if (tumGiderlerAI.length > 0) {
           const son30gAI = new Date(); son30gAI.setDate(son30gAI.getDate() - 30);
           const son30StrAI = son30gAI.toISOString().split("T")[0];
@@ -8239,7 +8831,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Ekipman / Malzeme Listesi ──
       let ekipmanStr = "  Veri yok.";
       try {
-        const tumEkipmanlarAI: any[] = await kv.getByPrefix("ekipman_") || [];
+        const tumEkipmanlarAI: any[] = await ckv.getByPrefix("ekipman_") || [];
         if (tumEkipmanlarAI.length > 0) {
           const statusLabelAI: Record<string, string> = {
             active: "✅ Aktif", maintenance: "🔧 Bakımda", broken: "❌ Arızalı", retired: "⬛ Emekli"
@@ -8267,7 +8859,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Mekan Ziyaret Kayıtları (son 90 gün) ──
       let ziyaretStr = "  Veri yok.";
       try {
-        const tumZiyaretlerAI: any[] = await kv.getByPrefix("mekan_ziyaret_") || [];
+        const tumZiyaretlerAI: any[] = await ckv.getByPrefix("mekan_ziyaret_") || [];
         if (tumZiyaretlerAI.length > 0) {
           const son90z = new Date(); son90z.setDate(son90z.getDate() - 90);
           const son90zStr = son90z.toISOString().split("T")[0];
@@ -8287,7 +8879,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Müdür Raporları (son 90 gün) ──
       let mudurRaporStr = "  Veri yok.";
       try {
-        const tumRaporlarAI: any[] = await kv.getByPrefix("mudur_rapor_") || [];
+        const tumRaporlarAI: any[] = await ckv.getByPrefix("mudur_rapor_") || [];
         if (tumRaporlarAI.length > 0) {
           const son90r = new Date(); son90r.setDate(son90r.getDate() - 90);
           const son90rStr = son90r.toISOString().split("T")[0];
@@ -8307,7 +8899,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Aktif Duyurular ──
       let duyuruStr = "  Aktif duyuru yok.";
       try {
-        const tumDuyurularAI: any[] = await kv.getByPrefix("announcement_") || [];
+        const tumDuyurularAI: any[] = await ckv.getByPrefix("announcement_") || [];
         if (tumDuyurularAI.length > 0) {
           const bugunDuyuru = new Date().toISOString().split("T")[0];
           const aktifDuyurular = tumDuyurularAI
@@ -8329,15 +8921,15 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Mekan Bazlı Günlük Operasyon Geçmişi (son 30 gün, bugün hariç) ──
       let mekanGunlukGecmisStr = "";
       try {
-        const tumGunlukKayitlarGecmis: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+        const tumGunlukKayitlarGecmis: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
         const mekanlarGecmis: any[] = await getMekanlar();
         const mekanMapGecmis: Record<string, any> = {};
         for (const m of mekanlarGecmis) mekanMapGecmis[m.id] = m;
 
         // ── Üretim maliyeti hesabı için maliyet verilerini çek ──
-        const exRatesGecmis: any = await kv.get("cost_exchange_rates").catch(() => ({})) || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
-        const albumMaliyetlerGecmis: any[] = await kv.get("cost_albums").catch(() => []) || [];
-        const kagitlarGecmis: any[] = await kv.getByPrefix("cost_paper_").catch(() => []) || [];
+        const exRatesGecmis: any = await ckv.get("cost_exchange_rates").catch(() => ({})) || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
+        const albumMaliyetlerGecmis: any[] = await ckv.get("cost_albums").catch(() => []) || [];
+        const kagitlarGecmis: any[] = await ckv.getByPrefix("cost_paper_").catch(() => []) || [];
 
         // Mekan başına 1 fotoğraf baskı maliyeti (kağıt/yazıcı, printType göz önüne alınarak)
         const mekanFotMaliyetMap: Record<string, number> = {};
@@ -8496,7 +9088,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Stok Aktarım Geçmişi (son 30 gün) ──
       let stokAktarimStr = "";
       try {
-        const tumAktarimlarAI: any[] = await kv.getByPrefix("stok_aktarim_") || [];
+        const tumAktarimlarAI: any[] = await ckv.getByPrefix("stok_aktarim_") || [];
         const son30a = new Date(); son30a.setDate(son30a.getDate() - 30);
         const son30aStr = son30a.toISOString().split("T")[0];
         const filtreA = tumAktarimlarAI
@@ -8516,7 +9108,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Stok Ekleme Geçmişi (son 30 gün) ──
       let stokEklemeStr = "";
       try {
-        const tumEklemelerAI: any[] = await kv.getByPrefix("stok_ekleme_") || [];
+        const tumEklemelerAI: any[] = await ckv.getByPrefix("stok_ekleme_") || [];
         const son30e = new Date(); son30e.setDate(son30e.getDate() - 30);
         const son30eStr = son30e.toISOString().split("T")[0];
         const filtreE = tumEklemelerAI
@@ -8536,7 +9128,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Rotasyon Programı (bugün + gelecek 7 gün + geçmiş 30 gün) ──
       let rotasyonStr = "";
       try {
-        const tumRotasyonAI: any[] = await kv.getByPrefix("rotation_task_") || [];
+        const tumRotasyonAI: any[] = await ckv.getByPrefix("rotation_task_") || [];
         const bugunTRAI = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().split("T")[0];
         const son30rAI = new Date(Date.now() + 3 * 60 * 60 * 1000);
         son30rAI.setDate(son30rAI.getDate() - 30);
@@ -8732,7 +9324,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
         // Geçmiş anomaliler (son 30 gün)
         let gecmisAnomaliStr = "";
         try {
-          const tumKayitlarAnomali: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+          const tumKayitlarAnomali: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
           const mekanlarAnomali: any[] = await getMekanlar();
           const mekanMapAnomali: Record<string, any> = {};
           for (const m of mekanlarAnomali) mekanMapAnomali[m.id] = m;
@@ -8795,7 +9387,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
         // Son 7 günlük satış özeti (bugün hariç)
         let sonYediGunStr = "";
         try {
-          const tumKayitlarHafta: any[] = await kv.getByPrefix("stok_gunluk_") || [];
+          const tumKayitlarHafta: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
           const yediGunOnce = new Date();
           yediGunOnce.setDate(yediGunOnce.getDate() - 7);
           const yediGunStr = yediGunOnce.toISOString().split("T")[0];
@@ -8993,7 +9585,7 @@ ${izinGecmisiStr}
       // 2. Kişisel izin talepleri (KV'den çek, user.id ile filtrele)
       let izinStr = "  Veri yok.";
       try {
-        const allLeaves: any[] = await kv.getByPrefix("rotation_leave_") || [];
+        const allLeaves: any[] = await ckv.getByPrefix("rotation_leave_") || [];
         const myLeaves = allLeaves.filter((l: any) =>
           l.personnelId === user.id || l.staffId === user.id || l.created_by === user.id
         );
@@ -9010,12 +9602,12 @@ ${izinGecmisiStr}
       let primStr = "  Veri yok.";
       try {
         const safeAd = encodeURIComponent(userName || "");
-        const allPrimler: any[] = await kv.getByPrefix("prim_odendi_") || [];
+        const allPrimler: any[] = await ckv.getByPrefix("prim_odendi_") || [];
         // prim key formatı: prim_odendi_{mekanId}_{tarih}_{ki}_{safeAd}
         // stok_gunluk_ kayıtlarından bu kullanıcının prim verilerini bulmak için
         // personelPrimTakip endpoint'indeki mantığı kullanalım
         const mekanlarList: any[] = await getMekanlar().catch(() => []);
-        const stokKayitlar: any[] = await kv.getByPrefix("stok_gunluk_").catch(() => []);
+        const stokKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_").catch(() => []);
         const odemeMap: Record<string, any> = {};
         for (const o of allPrimler) {
           if (o.key) odemeMap[o.key] = o;
@@ -9073,7 +9665,7 @@ ${izinGecmisiStr}
       // 4. Kişisel görevler (rotation_task'tan) — son 30 gün + gelecek 7 gün
       let gorevStr = "  Veri yok.";
       try {
-        const allTasksKisisel: any[] = await kv.getByPrefix("rotation_task_") || [];
+        const allTasksKisisel: any[] = await ckv.getByPrefix("rotation_task_") || [];
         const bugunTRKisisel = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().split("T")[0];
         const son30kisisel = new Date(Date.now() + 3 * 60 * 60 * 1000);
         son30kisisel.setDate(son30kisisel.getDate() - 30);
@@ -9241,8 +9833,8 @@ app.get("/make-server-4da0b637/game/skorlar", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
 
     const tip = c.req.query("tip") || "haftalik";
-
-    const tumSkorlar: any[] = await kv.getByPrefix("game_skor_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumSkorlar: any[] = await ckv.getByPrefix("game_skor_") || [];
 
     let filtrelenmis = tumSkorlar;
     if (tip === "haftalik") {
@@ -9297,7 +9889,8 @@ app.post("/make-server-4da0b637/game/skor", async (c) => {
       tarih: new Date().toISOString(),
     };
 
-    await kv.set(`game_skor_${id}`, kayit);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(`game_skor_${id}`, kayit);
     console.log(`Game skor: ${isim} → ${skor}`);
     return c.json({ kayit });
   } catch (err) {
@@ -9318,7 +9911,8 @@ app.get("/make-server-4da0b637/game/quest/skorlar", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
 
     const tip = c.req.query("tip") || "haftalik";
-    const tumSkorlar: any[] = await kv.getByPrefix("game_quest_skor_") || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumSkorlar: any[] = await ckv.getByPrefix("game_quest_skor_") || [];
 
     let filtrelenmis = tumSkorlar;
     if (tip === "haftalik") {
@@ -9373,7 +9967,8 @@ app.post("/make-server-4da0b637/game/quest/skor", async (c) => {
       tarih: new Date().toISOString(),
     };
 
-    await kv.set(`game_quest_skor_${id}`, kayit);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(`game_quest_skor_${id}`, kayit);
     console.log(`Quest skor: ${isim} → ${skor} (Seviye ${seviye})`);
     return c.json({ kayit });
   } catch (err) {
@@ -9391,7 +9986,8 @@ app.get("/make-server-4da0b637/bildirimler", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
-    const all = await kv.getByPrefix(`notif_${user.id}_`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const all = await ckv.getByPrefix(`notif_${user.id}_`);
     const now = Date.now();
     const TTL_MS = 24 * 60 * 60 * 1000; // 24 saat
 
@@ -9400,7 +9996,7 @@ app.get("/make-server-4da0b637/bildirimler", async (c) => {
       (n: any) => n?.created_at && now - new Date(n.created_at).getTime() > TTL_MS
     );
     if (expired.length > 0) {
-      Promise.all(expired.map((n: any) => kv.del(n.id))).catch(() => {});
+      Promise.all(expired.map((n: any) => ckv.del(n.id))).catch(() => {});
       console.log(`[Bildirim TTL] ${expired.length} bildirim 24 saat doldu, silindi.`);
     }
 
@@ -9424,9 +10020,10 @@ app.put("/make-server-4da0b637/bildirimler/hepsini-oku", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
-    const all = await kv.getByPrefix(`notif_${user.id}_`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const all = await ckv.getByPrefix(`notif_${user.id}_`);
     const unread = (all || []).filter((n: any) => !n.read);
-    await Promise.all(unread.map((n: any) => kv.set(n.id, { ...n, read: true })));
+    await Promise.all(unread.map((n: any) => ckv.set(n.id, { ...n, read: true })));
     return c.json({ success: true, markedCount: unread.length });
   } catch (err) {
     console.log("Hepsini oku error:", err);
@@ -9440,9 +10037,10 @@ app.put("/make-server-4da0b637/bildirimler/:notifId/oku", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const { notifId } = c.req.param();
-    const existing = await kv.get(notifId);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(notifId);
     if (!existing || existing.userId !== user.id) return c.json({ error: "Bildirim bulunamadı." }, 404);
-    await kv.set(notifId, { ...existing, read: true });
+    await ckv.set(notifId, { ...existing, read: true });
     return c.json({ success: true });
   } catch (err) {
     console.log("Bildirim oku error:", err);
@@ -9456,9 +10054,10 @@ app.delete("/make-server-4da0b637/bildirimler/:notifId", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const { notifId } = c.req.param();
-    const existing = await kv.get(notifId);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(notifId);
     if (!existing || existing.userId !== user.id) return c.json({ error: "Bildirim bulunamadı." }, 404);
-    await kv.del(notifId);
+    await ckv.del(notifId);
     return c.json({ success: true });
   } catch (err) {
     console.log("Bildirim sil error:", err);
@@ -9588,7 +10187,7 @@ app.get("/make-server-4da0b637/telegram/setup-webhook", async (c) => {
   }
 });
 
-// ──────────────────────────────────────────
+// ─────────────────���────────────────────────
 // VARDİYA CHECK-IN / CHECK-OUT SİSTEMİ
 // ──────────────────────────────────────────
 
@@ -9599,12 +10198,13 @@ app.get("/make-server-4da0b637/vardiya/bugun", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const userId = user.id;
     const tarih = bizDateTR();
+    const ckv = companyKvFor(getCompanyId(user));
     const [checkin, checkout, lateNotice, sessions, paused] = await Promise.all([
-      kv.get(`checkin_${userId}_${tarih}`),
-      kv.get(`checkout_${userId}_${tarih}`),
-      kv.get(`lateNotice_${userId}_${tarih}`),
-      kv.get(`sessions_${userId}_${tarih}`),
-      kv.get(`paused_${userId}_${tarih}`),
+      ckv.get(`checkin_${userId}_${tarih}`),
+      ckv.get(`checkout_${userId}_${tarih}`),
+      ckv.get(`lateNotice_${userId}_${tarih}`),
+      ckv.get(`sessions_${userId}_${tarih}`),
+      ckv.get(`paused_${userId}_${tarih}`),
     ]);
     return c.json({
       tarih,
@@ -9625,6 +10225,13 @@ app.post("/make-server-4da0b637/vardiya/checkin", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    // ── Ghost mod: superadmin check-in yapamaz ──
+    if (user.user_metadata?.originalRole === "superadmin") {
+      console.log("[checkin] superadmin ghost mod — check-in atlandı");
+      return c.json({ ghost: true, message: "Süper yönetici vardiya check-in'e girmez (ghost mod)." });
+    }
+
     const userId = user.id;
     const userName = user.user_metadata?.name || user.email || userId;
     const body = await c.req.json();
@@ -9640,7 +10247,8 @@ app.post("/make-server-4da0b637/vardiya/checkin", async (c) => {
     const isLate = lateMin > 5;
 
     // Sessions yönetimi
-    const existingSessions: any[] = (await kv.get(`sessions_${userId}_${tarih}`)) || [];
+    const ckv = companyKvFor(getCompanyId(user));
+    const existingSessions: any[] = (await ckv.get(`sessions_${userId}_${tarih}`)) || [];
     const isResume = existingSessions.length > 0;
 
     // Zaten aktif oturum varsa hata dön
@@ -9658,16 +10266,16 @@ app.post("/make-server-4da0b637/vardiya/checkin", async (c) => {
       type: isResume ? "resume" : "initial",
     };
     const updatedSessions = [...existingSessions, newSession];
-    await kv.set(`sessions_${userId}_${tarih}`, updatedSessions);
+    await ckv.set(`sessions_${userId}_${tarih}`, updatedSessions);
 
     // İlk giriş: checkin_ anahtarını geriye dönük uyumluluk için yaz
     const data = { checkInTime, plannedStart, plannedEnd, location, locationIcon, taskId, lateMin: (!isResume && isLate) ? lateMin : 0, userId, tarih };
     if (!isResume) {
-      await kv.set(`checkin_${userId}_${tarih}`, data);
+      await ckv.set(`checkin_${userId}_${tarih}`, data);
     }
     // Her durumda checkout_ ve paused_ anahtarlarını temizle
-    await kv.del(`checkout_${userId}_${tarih}`);
-    await kv.del(`paused_${userId}_${tarih}`);
+    await ckv.del(`checkout_${userId}_${tarih}`);
+    await ckv.del(`paused_${userId}_${tarih}`);
 
     const nowTrHH = String(now.getUTCHours()).padStart(2, "0");
     const nowTrMM = String(now.getUTCMinutes()).padStart(2, "0");
@@ -9709,10 +10317,11 @@ app.post("/make-server-4da0b637/vardiya/checkout", async (c) => {
     const { plannedEnd, erken } = body;
     const tarih = bizDateTR();
     const checkOutTime = new Date().toISOString();
-    const checkin = await kv.get(`checkin_${userId}_${tarih}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const checkin = await ckv.get(`checkin_${userId}_${tarih}`);
 
     // Sessions güncelle: son açık oturumun checkOut'unu kapat
-    const existingSessions: any[] = (await kv.get(`sessions_${userId}_${tarih}`)) || [];
+    const existingSessions: any[] = (await ckv.get(`sessions_${userId}_${tarih}`)) || [];
     if (existingSessions.length > 0) {
       // Son açık oturumu bul
       let lastOpenIdx = -1;
@@ -9722,12 +10331,12 @@ app.post("/make-server-4da0b637/vardiya/checkout", async (c) => {
       if (lastOpenIdx !== -1) {
         existingSessions[lastOpenIdx].checkOut = checkOutTime;
       }
-      await kv.set(`sessions_${userId}_${tarih}`, existingSessions);
+      await ckv.set(`sessions_${userId}_${tarih}`, existingSessions);
     } else {
       // Eski format için geriye dönük uyumluluk: sessions yoksa checkin'den oluştur
       if (checkin?.checkInTime) {
         const retroSessions = [{ checkIn: checkin.checkInTime, checkOut: checkOutTime, lateMin: checkin.lateMin || 0, type: "initial" }];
-        await kv.set(`sessions_${userId}_${tarih}`, retroSessions);
+        await ckv.set(`sessions_${userId}_${tarih}`, retroSessions);
       }
     }
 
@@ -9737,7 +10346,7 @@ app.post("/make-server-4da0b637/vardiya/checkout", async (c) => {
     const outTrStr = `${outHH}:${outMM}`;
 
     // Toplam çalışılan süreyi sessions üzerinden hesapla
-    const updatedSessions: any[] = (await kv.get(`sessions_${userId}_${tarih}`)) || [];
+    const updatedSessions: any[] = (await ckv.get(`sessions_${userId}_${tarih}`)) || [];
     let totalWorkedMin = 0;
     for (const s of updatedSessions) {
       if (s.checkIn && s.checkOut) {
@@ -9763,7 +10372,7 @@ app.post("/make-server-4da0b637/vardiya/checkout", async (c) => {
         sessionCount: updatedSessions.length,
         totalWorkedMin,
       };
-      await kv.set(`paused_${userId}_${tarih}`, pausedData);
+      await ckv.set(`paused_${userId}_${tarih}`, pausedData);
       console.log(`[Vardiya] Geçici Çıkış: ${userName} — ${tarih} ${outTrStr}`);
       const tg = `⏸️ <b>Geçici Çıkış</b>\n\n👤 <b>${userName}</b> kısa süreliğine vardiyasından ayrıldı.\n📍 ${locIcon} ${loc}\n🕐 Ayrılış: <b>${outTrStr}</b>\n⏱️ Şimdiye kadar: <b>${sureStr}</b>\n📅 Tarih: ${tarih}\n💡 Devam etmek için tekrar giriş yapabilir.`;
       sendTelegramMessage(tg, "HTML").catch(() => {});
@@ -9771,8 +10380,8 @@ app.post("/make-server-4da0b637/vardiya/checkout", async (c) => {
     } else {
       // Final çıkış: checkout_ yaz, paused_ temizle
       const data = { checkOutTime, plannedEnd: plannedEndStr, userId, tarih, totalWorkedMin };
-      await kv.set(`checkout_${userId}_${tarih}`, data);
-      await kv.del(`paused_${userId}_${tarih}`);
+      await ckv.set(`checkout_${userId}_${tarih}`, data);
+      await ckv.del(`paused_${userId}_${tarih}`);
       console.log(`[Vardiya] Final Çıkış: ${userName} — ${tarih} ${outTrStr}`);
       const sessionNote = updatedSessions.length > 1 ? `\n🔄 Oturum sayısı: <b>${updatedSessions.length}</b>` : "";
       const tg = `🔴 <b>Vardiya Bitti</b>\n\n👤 <b>${userName}</b> vardiyasını tamamladı.\n📍 ${locIcon} ${loc}\n⏰ Planlanan bitiş: <b>${plannedEndStr}</b>\n🕐 Çıkış saati: <b>${outTrStr}</b>\n⏱️ Toplam çalışılan: <b>${sureStr}</b>${lateMinOut > 0 ? `\n⚠️ Geç giriş: <b>${lateMinOut} dk</b>` : ""}${sessionNote}\n📅 Tarih: ${tarih}`;
@@ -9795,12 +10404,13 @@ app.post("/make-server-4da0b637/vardiya/gec-bildir", async (c) => {
     const body = await c.req.json();
     const { delayMin, reason, plannedStart, location, locationIcon } = body;
     const tarih = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
-    const existing = await kv.get(`lateNotice_${userId}_${tarih}`);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existing = await ckv.get(`lateNotice_${userId}_${tarih}`);
     if (existing) {
       return c.json({ success: true, alreadySent: true, data: existing });
     }
     const data = { sentAt: new Date().toISOString(), delayMin: delayMin || 0, reason: reason || "", plannedStart, location, userId, tarih }; // Gerçek UTC ✓
-    await kv.set(`lateNotice_${userId}_${tarih}`, data);
+    await ckv.set(`lateNotice_${userId}_${tarih}`, data);
     const reasonEmoji = reason === "Trafik" ? "🚗" : reason === "Ulaşım" ? "🚌" : "💬";
     const telegramText = `⚠️ <b>Geç Kalma Bildirimi</b>\n\n👤 <b>${userName}</b> geç kalacağını bildirdi.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n⏰ Planlanan giriş: <b>${plannedStart || "?"}</b>\n⏱️ Tahmini gecikme: <b>${delayMin || "?"} dk</b>\n${reasonEmoji} Sebep: <b>${reason || "Belirtilmedi"}</b>\n📅 Tarih: ${tarih}`;
     await sendTelegramMessage(telegramText, "HTML");

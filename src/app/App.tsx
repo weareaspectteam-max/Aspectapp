@@ -1,3 +1,5 @@
+import { RouterProvider, createBrowserRouter } from 'react-router';
+import { SignupPage } from './components/signup-page';
 import HeaderBarDemo from './components/header-bar-demo';
 import { KotaProgressDemo } from './components/kota-progress-demo';
 import { PrimTakip } from './components/prim-takip';
@@ -59,11 +61,29 @@ import { EkstraIsEkrani } from './components/ekstra-is-ekrani';
 import { OzelIsEkrani } from './components/ozel-is-ekrani';
 import { NotificationsPanel, useNotificationCount } from './components/notifications-panel';
 import { IptalTalepPanel } from './components/iptal-talep-panel';
+import { SuperAdminPanel } from './components/super-admin-panel';
 import type { UserRole } from './components/login';
 import type { ShiftSetupData } from './components/shift-setup';
 import type { Task } from './services/rotation-service';
 
 export default function App() {
+  return <RouterProvider router={router} />;
+}
+
+// ── Router config ───────────────────────────────────────────────────────────
+const router = createBrowserRouter([
+  {
+    path: '/signup/:companyId',
+    Component: SignupPage,
+  },
+  {
+    path: '/*',
+    Component: MainApp,
+  },
+]);
+
+// ── Ana uygulama (mevcut mantığın tamamı burada) ───────────────────────────
+function MainApp() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>('personel');
   const [userName, setUserName] = useState('');
@@ -72,6 +92,9 @@ export default function App() {
   const [userAvatar, setUserAvatar] = useState('👨‍💼');
   const [userEmail, setUserEmail] = useState('');
   const [userBirthDate, setUserBirthDate] = useState('');
+  const [userCompanyId, setUserCompanyId] = useState('aspect'); // ← Kendi şirket kimliği (JWT'den)
+  const [ghostCompanyId, setGhostCompanyId] = useState<string | null>(null); // ← SuperAdmin ghost mod (localStorage'a yazılmaz)
+  const [isSuperAdminFlag, setIsSuperAdminFlag] = useState(false); // ← Gerçek superadmin mi? (userRole 'yonetici'ye normalize edilse bile)
   const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('');
   const [selectedProject, setSelectedProject] = useState<string>('');
@@ -127,11 +150,22 @@ export default function App() {
 
   // ─── Supabase session yönetimi ───────────────────
   useEffect(() => {
-    // Mevcut session'ı kontrol et
+    // Mevcut session'ı kontrol et — ardından hemen yenile (stale JWT / güncellenmiş rol sorunu için)
     supabase.auth.getSession()
-      .then(({ data: { session } }) => {
+      .then(async ({ data: { session } }) => {
         if (session?.user) {
+          // Önce mevcut session ile uygula (hızlı yükleme)
           _applySession(session.user, session.access_token);
+          // Ardından refresh — Supabase'deki en güncel user_metadata'yı JWT'ye yansıtır
+          try {
+            const { data: fresh } = await supabase.auth.refreshSession();
+            if (fresh.session?.user && fresh.session.access_token !== session.access_token) {
+              console.log('[App] Session yenilendi, rol güncelleniyor:', fresh.session.user.user_metadata?.role);
+              _applySession(fresh.session.user, fresh.session.access_token);
+            }
+          } catch (refreshErr) {
+            console.warn('[App] refreshSession hatası (görmezden gelindi):', refreshErr);
+          }
         }
         setAuthLoading(false);
       })
@@ -147,9 +181,16 @@ export default function App() {
       } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         _applySession(session.user, session.access_token);
       } else if (event === 'TOKEN_REFRESHED') {
-        // Sadece token'ı güncelle, aktif tab'ı değiştirme
+        // Token yenilendi — user_metadata da güncellenmiş olabilir (rol değişikliği)
         setAccessToken(session.access_token);
         setAuthToken(session.access_token);
+        // Rol güncellemesini de yansıt (tab değişmeden), superadmin → yonetici normalize et
+        if (session.user?.user_metadata?.role) {
+          const rawR = session.user.user_metadata.role as string;
+          const isSA = rawR === 'superadmin';
+          setIsSuperAdminFlag(isSA);
+          setUserRole(isSA ? 'yonetici' : (rawR as UserRole));
+        }
       }
     });
 
@@ -157,12 +198,20 @@ export default function App() {
   }, []);
 
   const _applySession = (user: any, token: string) => {
-    const role: UserRole = (user.user_metadata?.role as UserRole) || 'bekleyen';
+    const rawRole: string = (user.user_metadata?.role as string) || 'bekleyen';
+    // superadmin → yonetici olarak normalize edilir; böylece tüm bileşenlerdeki
+    // `=== 'yonetici'` kontrolleri sorunsuz çalışır. Gerçek superadmin kimliği
+    // isSuperAdminFlag üzerinden korunur.
+    const isSA = rawRole === 'superadmin';
+    const role: UserRole = isSA ? 'yonetici' : (rawRole as UserRole);
     const name: string = user.user_metadata?.full_name || user.email || '';
     const avatar: string = user.user_metadata?.avatar || '👨‍💼';
+    // company_id yoksa mevcut Aspect kullanıcıları için 'aspect' varsayılanı
+    const companyId: string = user.user_metadata?.company_id || 'aspect';
 
     setUserId(user.id);
     setUserRole(role);
+    setIsSuperAdminFlag(isSA);
     setUserName(name);
     setUserEmail(user.email || '');
     setUserBirthDate(user.user_metadata?.birth_date || '');
@@ -170,11 +219,13 @@ export default function App() {
     setIsLoggedIn(true);
     setAuthToken(token); // ← Cache'e yaz, authHeaders() için fallback
     setUserAvatar(avatar);
+    setUserCompanyId(companyId); // ← Şirket kimliği
 
     // Sadece ilk girişte dashboard'a yönlendir, sonraki token yenilemelerinde değil
     if (!sessionApplied.current) {
       sessionApplied.current = true;
-      setActiveTab(role === 'bekleyen' ? '' : 'dashboard');
+      // superadmin normalize edildiğinden rawRole ile bekleyen kontrolü yap
+      setActiveTab(rawRole === 'bekleyen' ? '' : 'dashboard');
     }
   };
 
@@ -194,6 +245,9 @@ export default function App() {
     setUserAvatar('👨‍💼');
     setUserEmail('');
     setUserBirthDate('');
+    setUserCompanyId('aspect');
+    setGhostCompanyId(null); // ← Ghost mod sıfırla
+    setIsSuperAdminFlag(false); // ← SuperAdmin flag sıfırla
     setAuthToken(''); // ← Cache'i temizle
     setActiveTab('');
     setSelectedProject('');
@@ -210,16 +264,20 @@ export default function App() {
     setShowNotifications(false);
   };
 
-  const handleLogin = (role: UserRole, name: string, uid: string, token: string, avatar: string = '👨‍💼', email: string = '') => {
+  const handleLogin = (role: UserRole, name: string, uid: string, token: string, avatar: string = '👨‍💼', email: string = '', companyId: string = 'aspect') => {
+    const isSA = (role as string) === 'superadmin';
+    const effectiveRole: UserRole = isSA ? 'yonetici' : role;
     setUserId(uid);
-    setUserRole(role);
+    setUserRole(effectiveRole);
+    setIsSuperAdminFlag(isSA);
     setUserName(name);
     setAccessToken(token);
     setUserAvatar(avatar);
     setUserEmail(email);
+    setUserCompanyId(companyId); // ← Şirket kimliği
     setIsLoggedIn(true);
     setAuthToken(token); // ← Cache'e yaz
-    setActiveTab(role === 'bekleyen' ? '' : 'dashboard');
+    setActiveTab(role === 'bekleyen' ? '' : 'dashboard'); // role hâlâ orijinal (superadmin), bekleyen kontrolü doğru çalışır
   };
 
   const handleLogout = async () => {
@@ -326,8 +384,15 @@ export default function App() {
     }
   };
 
-  // Rol bazlı yetki kontrolleri
-  const isManagerRole = ['yonetici', 'ust-mudur', 'mudur'].includes(userRole);
+  // ── Superadmin + Ghost mod ──────────────────────────────────────────────────
+  // userRole 'yonetici'ye normalize edildiğinden isSuperAdmin flag'den okunur
+  const isSuperAdmin = isSuperAdminFlag;
+  // Ghost modda görüntülenen şirket; null = kendi şirketi (aspect)
+  const effectiveCompanyId = ghostCompanyId ?? userCompanyId;
+  const handleSwitchCompany = (cId: string | null) => setGhostCompanyId(cId);
+
+  // Rol bazlı yetki kontrolleri (superadmin tüm yönetici işlemlerini yapabilir)
+  const isManagerRole = ['yonetici', 'ust-mudur', 'mudur', 'superadmin'].includes(userRole);
   const isOperationsRole = userRole === 'operasyon';
   const isAdministrativeRole = userRole === 'idari';
   const isStaffRole = userRole === 'personel';
@@ -336,13 +401,14 @@ export default function App() {
   // Rol isimlerini Türkçeleştir
   const getRoleTitle = (role: UserRole): string => {
     const titles: Record<UserRole, string> = {
-      'yonetici': 'Yönetici',
-      'ust-mudur': 'Üst Müdür',
-      'mudur': 'Müdür',
-      'operasyon': 'Operasyon Yöneticisi',
-      'personel': 'Personel',
-      'idari': 'İdari Görevli',
-      'bekleyen': 'Bekleyen Kullanıcı',
+      'yonetici':   'Yönetici',
+      'ust-mudur':  'Üst Müdür',
+      'mudur':      'Müdür',
+      'operasyon':  'Operasyon Yöneticisi',
+      'personel':   'Personel',
+      'idari':      'İdari Görevli',
+      'bekleyen':   'Bekleyen Kullanıcı',
+      'superadmin': 'Süper Yönetici',
     };
     return titles[role];
   };
@@ -587,19 +653,25 @@ export default function App() {
         );
       
       case 'aspect-ai':
-        return (
-          <AspectAIPage 
-            userRole={userRole}
-            userName={userName}
-            userId={userId}
-            userAvatar={userAvatar}
-            accessToken={accessToken}
-            onLogout={handleLogout}
-            onNavigate={handleNavigate}
-          />
-        );
-      
       case 'aspect-ai-page':
+        // Aspect AI yalnızca Aspect şirketine özel; diğer şirketlerde erişilemez
+        if (effectiveCompanyId !== 'aspect') {
+          return (
+            <div className="flex items-center justify-center min-h-[60vh] px-8 text-center">
+              <div style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(157,217,234,0.20)',
+                backdropFilter: 'blur(20px)',
+                borderRadius: 20,
+                padding: 32,
+              }}>
+                <div className="text-4xl mb-4">🔒</div>
+                <p className="text-white font-bold text-lg mb-2">Aspect AI</p>
+                <p className="text-white/40 text-sm">Bu modül yalnızca Aspect Agency şirketine özeldir.</p>
+              </div>
+            </div>
+          );
+        }
         return (
           <AspectAIPage 
             userRole={userRole}
@@ -656,6 +728,7 @@ export default function App() {
             userName={userName}
             userRole={userRole}
             accessToken={accessToken}
+            userCompanyId={effectiveCompanyId}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />
@@ -882,6 +955,26 @@ export default function App() {
       case 'aspect-quest':
         return <AspectQuest userRole={userRole} userName={userName} accessToken={accessToken} onBack={() => handleNavigate('dashboard')} />;
       
+      case 'super-admin':
+        if (!isSuperAdminFlag) {
+          return (
+            <div className="flex items-center justify-center min-h-[60vh] px-8 text-center">
+              <div style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(239,68,68,0.25)', backdropFilter: 'blur(20px)', borderRadius: 20, padding: 32 }}>
+                <div className="text-4xl mb-4">🔒</div>
+                <p className="text-white font-bold text-lg mb-2">Erişim Kısıtlı</p>
+                <p className="text-white/40 text-sm">Bu panel yalnızca Süper Yöneticiye açıktır.</p>
+              </div>
+            </div>
+          );
+        }
+        return (
+          <SuperAdminPanel
+            userName={userName}
+            onNavigate={handleNavigate}
+            onLogout={handleLogout}
+          />
+        );
+
       default:
         return renderDashboard();
     }
@@ -946,6 +1039,41 @@ export default function App() {
           <IptalTalepPanel accessToken={accessToken} userRole={userRole} />
         )}
 
+        {/* ── Ghost Mod Bant Göstergesi — sadece superadmin ghost moddayken ── */}
+        {isSuperAdmin && ghostCompanyId && (
+          <div
+            style={{
+              position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+              background: 'linear-gradient(90deg, rgba(251,191,36,0.20), rgba(251,191,36,0.12), rgba(251,191,36,0.20))',
+              borderBottom: '1px solid rgba(251,191,36,0.45)',
+              backdropFilter: 'blur(20px)',
+              padding: '4px 16px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 8,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 10 }}>👁</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#fbbf24', letterSpacing: '0.04em' }}>
+                GHOST:{' '}
+                <span style={{ textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+                  {ghostCompanyId}
+                </span>
+              </span>
+            </div>
+            <button
+              onClick={() => setGhostCompanyId(null)}
+              style={{
+                fontSize: 9, fontWeight: 700, color: '#fbbf24',
+                background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.40)',
+                borderRadius: 6, padding: '2px 8px', cursor: 'pointer',
+              }}
+            >
+              ↩ Aspect'e Dön
+            </button>
+          </div>
+        )}
+
         {/* App Header — tüm roller için, vardiya akışı dışında */}
         {(activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock || showEkstraIs || showOzelIs)) && (
           <AppHeader
@@ -958,6 +1086,10 @@ export default function App() {
             onBellClick={() => setShowNotifications(prev => !prev)}
             notificationCount={unreadCount}
             hasNotification={unreadCount > 0}
+            isSuperAdmin={isSuperAdmin}
+            ghostCompanyId={ghostCompanyId}
+            effectiveCompanyId={effectiveCompanyId}
+            onSwitchCompany={handleSwitchCompany}
           />
         )}
 
@@ -973,7 +1105,7 @@ export default function App() {
         {/* Main Content */}
         <main className={
           (activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock || showEkstraIs || showOzelIs))
-            ? 'pt-[60px] pb-24'
+            ? `${isSuperAdmin && ghostCompanyId ? 'pt-[82px]' : 'pt-[60px]'} pb-24`
             : ''
         }>
           {renderContent()}
@@ -981,7 +1113,7 @@ export default function App() {
 
         {/* Bottom Navigation */}
         {(activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock || showEkstraIs || showOzelIs)) && (
-          <NewBottomNav activeTab={activeTab} onTabChange={handleNavigate} userRole={userRole} unreadMessages={unreadMessages} />
+          <NewBottomNav activeTab={activeTab} onTabChange={handleNavigate} userRole={userRole} unreadMessages={unreadMessages} effectiveCompanyId={effectiveCompanyId} />
         )}
 
       </div>

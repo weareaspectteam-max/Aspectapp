@@ -10,6 +10,7 @@
  */
 
 import { Home, Zap, Trophy, MessageCircle, Users, Sparkles, Activity, Megaphone } from 'lucide-react';
+// Trophy zaten import edildi — aspect-ai yerine kullanılacak
 import { motion } from 'motion/react';
 import type { UserRole } from './login';
 
@@ -75,16 +76,25 @@ const ROLE_TABS: Record<string, Tab[]> = {
 };
 
 interface NewBottomNavProps {
-  activeTab:    string;
-  onTabChange?: (tab: string) => void;
-  onNavigate?:  (tab: string) => void;
-  userRole:     UserRole;
-  unreadMessages?: number;
+  activeTab:           string;
+  onTabChange?:        (tab: string) => void;
+  onNavigate?:         (tab: string) => void;
+  userRole:            UserRole;
+  unreadMessages?:     number;
+  effectiveCompanyId?: string;
 }
 
-export function NewBottomNav({ activeTab, onTabChange, onNavigate, userRole, unreadMessages = 0 }: NewBottomNavProps) {
-  const handleNav = onNavigate || onTabChange || (() => {});
-  const tabs      = ROLE_TABS[userRole] ?? ROLE_TABS['personel'];
+export function NewBottomNav({ activeTab, onTabChange, onNavigate, userRole, unreadMessages = 0, effectiveCompanyId = 'aspect' }: NewBottomNavProps) {
+  const handleNav  = onNavigate || onTabChange || (() => {});
+  const isAspect   = effectiveCompanyId === 'aspect';
+  // Aspect AI yalnızca Aspect şirketinde görünür; diğer şirketlerde leaderboard ile değiştirilir
+  const rawTabs    = ROLE_TABS[userRole] ?? ROLE_TABS['personel'];
+  const tabs       = isAspect
+    ? rawTabs
+    : rawTabs.map(t => t.key === 'aspect-ai'
+        ? { key: 'leaderboard', icon: Trophy, color: '#fbbf24' }
+        : t
+      );
 
   return (
     <div

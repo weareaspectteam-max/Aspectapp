@@ -49,6 +49,7 @@ const PAGE_LABELS: Record<string, string> = {
   'frame-tracking':      'Kare Takibi',
   'operations-demo':     'Demo',
   'header-demo':         'Demo',
+  'super-admin':         'Şirket Yönetimi',
 };
 
 const PAGE_COLORS: Record<string, string> = {
@@ -76,38 +77,45 @@ const PAGE_COLORS: Record<string, string> = {
   'birthday-calendar':   '#f472b6',
   'announcements':       '#fb923c',
   'frame-tracking':      '#60a5fa',
+  'super-admin':         '#fbbf24',
 };
 
 const ROLE_COLORS: Record<UserRole, string> = {
-  'yonetici':  '#a855f7',
-  'ust-mudur': '#7c3aed',
-  'mudur':     '#6366f1',
-  'operasyon': '#fb923c',
-  'personel':  '#34d399',
-  'idari':     '#60a5fa',
-  'bekleyen':  '#9ca3af',
+  'yonetici':   '#a855f7',
+  'ust-mudur':  '#7c3aed',
+  'mudur':      '#6366f1',
+  'operasyon':  '#fb923c',
+  'personel':   '#34d399',
+  'idari':      '#60a5fa',
+  'bekleyen':   '#9ca3af',
+  'superadmin': '#fbbf24',
 };
 
 const ROLE_TITLES: Record<UserRole, string> = {
-  'yonetici':  'Yönetici',
-  'ust-mudur': 'Üst Müdür',
-  'mudur':     'Müdür',
-  'operasyon': 'Operasyon',
-  'personel':  'Personel',
-  'idari':     'İdari Görevli',
-  'bekleyen':  'Bekleyen',
+  'yonetici':   'Yönetici',
+  'ust-mudur':  'Üst Müdür',
+  'mudur':      'Müdür',
+  'operasyon':  'Operasyon',
+  'personel':   'Personel',
+  'idari':      'İdari Görevli',
+  'bekleyen':   'Bekleyen',
+  'superadmin': 'Süper Yönetici',
 };
 
 interface AppHeaderProps {
-  userName:         string;
-  userRole:         UserRole;
-  userId?:          string;
-  activeTab:        string;
-  onNavigate:       (tab: string) => void;
-  onLogout:         () => void;
-  hasNotification?: boolean;
-  onBellClick?:     () => void;
-  notificationCount?: number;
+  userName:            string;
+  userRole:            UserRole;
+  userId?:             string;
+  activeTab:           string;
+  onNavigate:          (tab: string) => void;
+  onLogout:            () => void;
+  hasNotification?:    boolean;
+  onBellClick?:        () => void;
+  notificationCount?:  number;
+  isSuperAdmin?:       boolean;
+  ghostCompanyId?:     string | null;
+  effectiveCompanyId?: string;
+  onSwitchCompany?:    (companyId: string | null) => void;
 }
 
 export function AppHeader({
@@ -120,6 +128,10 @@ export function AppHeader({
   hasNotification = true,
   onBellClick,
   notificationCount = 0,
+  isSuperAdmin = false,
+  ghostCompanyId = null,
+  effectiveCompanyId = 'aspect',
+  onSwitchCompany,
 }: AppHeaderProps) {
   const isDash    = !activeTab || activeTab === 'dashboard' || activeTab === 'home';
   const pageLabel = PAGE_LABELS[activeTab] ?? 'Dashboard';
@@ -301,6 +313,10 @@ export function AppHeader({
             onLogout={onLogout}
             onNavigate={onNavigate}
             activeTab={activeTab}
+            isSuperAdmin={isSuperAdmin}
+            ghostCompanyId={ghostCompanyId}
+            effectiveCompanyId={effectiveCompanyId}
+            onSwitchCompany={onSwitchCompany}
           />
         </div>
       </div>

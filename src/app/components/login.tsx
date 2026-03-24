@@ -4,10 +4,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { supabase, SERVER_URL } from '../lib/supabase';
 import { buildHeaders } from '../lib/api';
 
-export type UserRole = 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
+export type UserRole = 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen' | 'superadmin';
 
 interface LoginProps {
-  onLogin: (role: UserRole, name: string, userId: string, accessToken: string, avatar: string, email: string) => void;
+  onLogin: (role: UserRole, name: string, userId: string, accessToken: string, avatar: string, email: string, companyId: string) => void;
 }
 
 type AuthMode = 'signin' | 'signup';
@@ -65,12 +65,23 @@ export function Login({ onLogin }: LoginProps) {
         return;
       }
 
-      const user = data.user;
-      const session = data.session;
+      // Giriş sonrası token'ı yenile — Supabase'deki en güncel user_metadata'yı yansıtır
+      // (bootstrapSuperAdmin veya rol güncellemesi sonrası stale JWT sorununu çözer)
+      let user = data.user;
+      let session = data.session;
+      try {
+        const { data: fresh } = await supabase.auth.refreshSession();
+        if (fresh.session?.user) {
+          user = fresh.session.user;
+          session = fresh.session;
+        }
+      } catch { /* refresh başarısız — orijinal session ile devam */ }
+
       const role: UserRole = (user.user_metadata?.role as UserRole) || 'bekleyen';
       const name: string = user.user_metadata?.full_name || user.email || '';
+      const companyId: string = user.user_metadata?.company_id || '';
 
-      onLogin(role, name, user.id, session.access_token, user.user_metadata?.avatar || '', user.email || '');
+      onLogin(role, name, user.id, session.access_token, user.user_metadata?.avatar || '', user.email || '', companyId);
     } catch (err) {
       setError(`Beklenmeyen hata: ${err}`);
       console.error('Sign in error:', err);
@@ -129,8 +140,9 @@ export function Login({ onLogin }: LoginProps) {
       const session = signInData.session;
       const role: UserRole = (user.user_metadata?.role as UserRole) || 'bekleyen';
       const name: string = user.user_metadata?.full_name || user.email || '';
+      const companyId: string = user.user_metadata?.company_id || '';
 
-      onLogin(role, name, user.id, session.access_token, user.user_metadata?.avatar || '', user.email || '');
+      onLogin(role, name, user.id, session.access_token, user.user_metadata?.avatar || '', user.email || '', companyId);
     } catch (err) {
       setError(`Beklenmeyen hata: ${err}`);
       console.error('Sign up error:', err);
