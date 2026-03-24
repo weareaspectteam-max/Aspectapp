@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   CheckCircle2, AlertCircle,
-  LogIn, LogOut, Bell, X, Loader2, Timer,
+  LogIn, LogOut, Bell, X, Loader2, Timer, Play, Coffee,
 } from 'lucide-react';
 import { buildHeaders, getToken } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
@@ -97,6 +97,23 @@ interface CheckInData {
 interface CheckOutData {
   checkOutTime: string;
   plannedEnd: string;
+  totalWorkedMin?: number;
+}
+
+interface SessionData {
+  checkIn: string;
+  checkOut: string | null;
+  lateMin: number;
+  type: 'initial' | 'resume';
+}
+
+interface PausedData {
+  pausedAt: string;
+  plannedEnd: string;
+  location: string;
+  locationIcon: string;
+  sessionCount: number;
+  totalWorkedMin: number;
 }
 
 interface LateNoticeData {
@@ -116,6 +133,7 @@ type ShiftState =
   | 'active-ontime'
   | 'active-late'
   | 'overtime'
+  | 'paused'
   | 'completed-ontime'
   | 'completed-late';
 
@@ -134,6 +152,8 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
   const [checkin, setCheckin] = useState<CheckInData | null>(null);
   const [checkout, setCheckout] = useState<CheckOutData | null>(null);
   const [lateNotice, setLateNotice] = useState<LateNoticeData | null>(null);
+  const [sessions, setSessions] = useState<SessionData[] | null>(null);
+  const [paused, setPaused] = useState<PausedData | null>(null);
   const [dataLoading, setDataLoading] = useState(true);
 
   const [, setRefreshTick] = useState(0); // saniye sayacı — her tick render tetikler
@@ -163,6 +183,8 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
       setCheckin(data.checkin);
       setCheckout(data.checkout);
       setLateNotice(data.lateNotice);
+      setSessions(data.sessions || null);
+      setPaused(data.paused || null);
     } catch (e) {
       console.error('[ShiftCard] fetchStatus error:', e);
     } finally {
@@ -218,6 +240,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
     if (validCheckout) {
       return validCheckin?.lateMin && validCheckin.lateMin > 0 ? 'completed-late' : 'completed-ontime';
     }
+    if (paused) return 'paused';
     if (validCheckin) {
       if (nowMs > endMs) return 'overtime';
       return validCheckin.lateMin > 0 ? 'active-late' : 'active-ontime';
@@ -259,7 +282,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
     }
   };
 
-  /* ── Check-out ── */
+  /* ── Final Check-out (Vardiyamı Bitir) ── */
   const handleCheckOut = async () => {
     if (!todayTask) return;
     setActionLoading(true);
@@ -268,7 +291,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
       const res = await fetch(`${API_BASE}/vardiya/checkout`, {
         method: 'POST',
         headers: buildHeaders(token),
-        body: JSON.stringify({ plannedEnd: todayTask.endTime }),
+        body: JSON.stringify({ plannedEnd: todayTask.endTime, erken: false }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -278,6 +301,60 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
       await fetchStatus();
     } catch (e) {
       console.error('[ShiftCard] handleCheckOut error:', e);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  /* ── Erken / Geçici Check-out (Devam Edebilir) ── */
+  const handleEarlyCheckOut = async () => {
+    if (!todayTask) return;
+    setActionLoading(true);
+    try {
+      const token = accessToken || await getToken();
+      const res = await fetch(`${API_BASE}/vardiya/checkout`, {
+        method: 'POST',
+        headers: buildHeaders(token),
+        body: JSON.stringify({ plannedEnd: todayTask.endTime, erken: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        console.error('[ShiftCard] earlyCheckout error:', err);
+        return;
+      }
+      await fetchStatus();
+    } catch (e) {
+      console.error('[ShiftCard] handleEarlyCheckOut error:', e);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  /* ── Devam Et (Paused → Active) ── */
+  const handleResume = async () => {
+    if (!todayTask) return;
+    setActionLoading(true);
+    try {
+      const token = accessToken || await getToken();
+      const res = await fetch(`${API_BASE}/vardiya/checkin`, {
+        method: 'POST',
+        headers: buildHeaders(token),
+        body: JSON.stringify({
+          plannedStart: todayTask.startTime,
+          plannedEnd: todayTask.endTime,
+          location: todayTask.location,
+          locationIcon: todayTask.locationIcon,
+          taskId: todayTask.id,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        console.error('[ShiftCard] resume error:', err);
+        return;
+      }
+      await fetchStatus();
+    } catch (e) {
+      console.error('[ShiftCard] handleResume error:', e);
     } finally {
       setActionLoading(false);
     }
@@ -334,7 +411,11 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
     const checkInMsFromStart = checkInMs - startMs;
     const missedPct = Math.min(100, Math.max(0, (checkInMsFromStart / totalMs) * 100));
 
-    let workedEndMs = validCheckout ? new Date(validCheckout.checkOutTime).getTime() : nowMs;
+    let workedEndMs = validCheckout
+      ? new Date(validCheckout.checkOutTime).getTime()
+      : paused
+        ? new Date(paused.pausedAt).getTime()
+        : nowMs;
     workedEndMs = Math.min(workedEndMs, endMs + 2 * 3600000);
     const workedMs = Math.max(0, workedEndMs - checkInMs);
     const workedPct = Math.min(100 - missedPct, (workedMs / totalMs) * 100);
@@ -387,6 +468,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
     'active-ontime': { label: '🟢 Aktif', color: '#4ade80', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.30)' },
     'active-late':   { label: '🟠 Geç Katıldı', color: '#fb923c', bg: 'rgba(251,146,60,0.12)', border: 'rgba(251,146,60,0.30)' },
     overtime:        { label: '⚠️ Çıkış Yapılmadı', color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.35)', blink: true },
+    paused:          { label: '⏸️ Beklemede', color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.30)' },
     'completed-ontime': { label: '✅ Tamamlandı', color: '#4ade80', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.25)' },
     'completed-late':   { label: '✅ Tamamlandı', color: '#4ade80', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.25)' },
   };
@@ -488,16 +570,146 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
           </div>
         )}
 
+        {/* PAUSED (GEÇİCİ ÇIKIŞ) ÖZETİ */}
+        {state === 'paused' && paused && (
+          <div style={{ marginBottom: 14 }}>
+            {/* Özet kutu */}
+            <div style={{
+              borderRadius: 12, padding: '12px 14px', marginBottom: 12,
+              background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.22)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <Coffee style={{ width: 14, height: 14, color: '#fbbf24' }} />
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24' }}>Geçici Çıkış Yapıldı</span>
+                {paused.sessionCount > 1 && (
+                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.30)', marginLeft: 'auto' }}>
+                    {paused.sessionCount}. oturum
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Ayrılış</div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: '#fbbf24' }}>{isoToTrTime(paused.pausedAt)}</div>
+                </div>
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Çalışılan</div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: '#9dd9ea' }}>{fmtMin(paused.totalWorkedMin)}</div>
+                </div>
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Planlanan Bitiş</div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: 'rgba(255,255,255,0.55)' }}>{paused.plannedEnd}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Sessions geçmişi (birden fazla varsa) */}
+            {sessions && sessions.length > 1 && (
+              <div style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {sessions.map((s, i) => (
+                  <div key={i} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '6px 10px', borderRadius: 8,
+                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                  }}>
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', minWidth: 14, fontWeight: 700 }}>{i + 1}.</span>
+                    <span style={{ fontSize: 10, color: s.type === 'resume' ? '#d4b5f7' : '#9dd9ea', fontWeight: 700 }}>
+                      {isoToTrTime(s.checkIn)}
+                    </span>
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)' }}>→</span>
+                    <span style={{ fontSize: 10, color: s.checkOut ? '#4ade80' : '#fbbf24', fontWeight: 700 }}>
+                      {s.checkOut ? isoToTrTime(s.checkOut) : '—'}
+                    </span>
+                    {s.checkOut && (
+                      <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.30)', marginLeft: 'auto' }}>
+                        {fmtMin(Math.round((new Date(s.checkOut).getTime() - new Date(s.checkIn).getTime()) / 60000))}
+                      </span>
+                    )}
+                    {s.lateMin > 0 && (
+                      <span style={{ fontSize: 8, color: '#fb923c' }}>⚠️ {s.lateMin}dk</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Aksiyon butonları */}
+            <button
+              onClick={handleResume}
+              disabled={actionLoading}
+              style={{
+                width: '100%', padding: '13px', borderRadius: 14, border: 'none',
+                background: 'linear-gradient(135deg,#22c55e,#16a34a)',
+                color: 'white', fontSize: 14, fontWeight: 800, cursor: actionLoading ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                boxShadow: '0 4px 16px rgba(34,197,94,0.30)',
+                opacity: actionLoading ? 0.7 : 1,
+                marginBottom: 8,
+              }}
+            >
+              {actionLoading
+                ? <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
+                : <Play style={{ width: 16, height: 16 }} />}
+              Vardiyaya Devam Et
+            </button>
+            <button
+              onClick={handleCheckOut}
+              disabled={actionLoading}
+              style={{
+                width: '100%', padding: '10px', borderRadius: 12, border: '1px solid rgba(239,68,68,0.30)',
+                background: 'rgba(239,68,68,0.10)',
+                color: '#f87171', fontSize: 13, fontWeight: 700, cursor: actionLoading ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                opacity: actionLoading ? 0.7 : 1,
+              }}
+            >
+              {actionLoading
+                ? <Loader2 style={{ width: 14, height: 14, animation: 'spin 1s linear infinite' }} />
+                : <LogOut style={{ width: 14, height: 14 }} />}
+              Vardiyamı Tamamen Bitir
+            </button>
+          </div>
+        )}
+
         {/* TAMAMLANDI ÖZETİ */}
         {(state === 'completed-ontime' || state === 'completed-late') && validCheckin && validCheckout && (
           <div style={{ marginBottom: 14 }}>
+            {/* Sessions geçmişi (birden fazla giriş-çıkış varsa) */}
+            {sessions && sessions.length > 1 && (
+              <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.30)', marginBottom: 4, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  Oturum Geçmişi
+                </div>
+                {sessions.map((s, i) => (
+                  <div key={i} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '6px 10px', borderRadius: 8,
+                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                  }}>
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', minWidth: 14, fontWeight: 700 }}>{i + 1}.</span>
+                    <span style={{ fontSize: 10, color: s.type === 'resume' ? '#d4b5f7' : '#9dd9ea', fontWeight: 700 }}>
+                      {isoToTrTime(s.checkIn)}
+                    </span>
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)' }}>→</span>
+                    <span style={{ fontSize: 10, color: '#4ade80', fontWeight: 700 }}>
+                      {s.checkOut ? isoToTrTime(s.checkOut) : isoToTrTime(validCheckout.checkOutTime)}
+                    </span>
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.30)', marginLeft: 'auto' }}>
+                      {s.checkOut
+                        ? fmtMin(Math.round((new Date(s.checkOut).getTime() - new Date(s.checkIn).getTime()) / 60000))
+                        : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <div style={{
                 flex: 1, borderRadius: 10, padding: '8px 10px', textAlign: 'center',
                 background: validCheckin.lateMin > 0 ? 'rgba(251,146,60,0.10)' : 'rgba(74,222,128,0.10)',
                 border: `1px solid ${validCheckin.lateMin > 0 ? 'rgba(251,146,60,0.25)' : 'rgba(74,222,128,0.25)'}`,
               }}>
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.40)', marginBottom: 2 }}>Giriş</div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.40)', marginBottom: 2 }}>İlk Giriş</div>
                 <div style={{ fontSize: 14, fontWeight: 800, color: validCheckin.lateMin > 0 ? '#fb923c' : '#4ade80' }}>
                   {isoToTrTime(validCheckin.checkInTime)}
                 </div>
@@ -510,19 +722,24 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
                 background: 'rgba(74,222,128,0.10)',
                 border: '1px solid rgba(74,222,128,0.25)',
               }}>
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.40)', marginBottom: 2 }}>Çıkış</div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.40)', marginBottom: 2 }}>Son Çıkış</div>
                 <div style={{ fontSize: 14, fontWeight: 800, color: '#4ade80' }}>
                   {isoToTrTime(validCheckout.checkOutTime)}
                 </div>
               </div>
             </div>
             {(() => {
-              const ciMs = new Date(validCheckin.checkInTime).getTime();
-              const coMs = new Date(validCheckout.checkOutTime).getTime();
-              const totalMin = Math.round((coMs - ciMs) / 60000);
+              const totalMin = validCheckout.totalWorkedMin ?? (() => {
+                const ciMs = new Date(validCheckin.checkInTime).getTime();
+                const coMs = new Date(validCheckout.checkOutTime).getTime();
+                return Math.round((coMs - ciMs) / 60000);
+              })();
               return (
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.40)', textAlign: 'center' }}>
-                  Çalışılan: <span style={{ color: 'white', fontWeight: 700 }}>{fmtMin(totalMin)}</span>
+                  Toplam çalışılan: <span style={{ color: 'white', fontWeight: 700 }}>{fmtMin(totalMin)}</span>
+                  {sessions && sessions.length > 1 && (
+                    <> · <span style={{ color: '#d4b5f7', fontWeight: 700 }}>{sessions.length} oturum</span></>
+                  )}
                   {validCheckin.lateMin > 0 && (
                     <> · Eksik: <span style={{ color: '#fb923c', fontWeight: 700 }}>{validCheckin.lateMin}dk</span></>
                   )}
@@ -542,7 +759,13 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
           markerPct={markerPct}
           startTime={task.startTime}
           endTime={task.endTime}
-          checkinTime={validCheckin ? isoToTrTime(validCheckin.checkInTime) : undefined}
+          checkinTime={
+            validCheckin
+              ? isoToTrTime(validCheckin.checkInTime)
+              : sessions?.[0]?.checkIn
+                ? isoToTrTime(sessions[0].checkIn)
+                : undefined
+          }
         />
 
         {/* BUTONLAR */}
@@ -569,31 +792,53 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
             </button>
           )}
 
-          {/* Vardiyayı Bitir */}
+          {/* Vardiyayı Bitir + Geçici Çıkış */}
           {(state === 'active-ontime' || state === 'active-late' || state === 'overtime') && (
-            <button
-              onClick={handleCheckOut}
-              disabled={actionLoading}
-              style={{
-                width: '100%', padding: '13px', borderRadius: 14, border: 'none',
-                background: state === 'overtime'
-                  ? 'linear-gradient(135deg,#f59e0b,#d97706)'
-                  : 'linear-gradient(135deg,#ef4444,#dc2626)',
-                color: 'white', fontSize: 14, fontWeight: 800, cursor: actionLoading ? 'not-allowed' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                boxShadow: state === 'overtime'
-                  ? '0 4px 16px rgba(245,158,11,0.30)'
-                  : '0 4px 16px rgba(239,68,68,0.30)',
-                opacity: actionLoading ? 0.7 : 1,
-                transition: 'opacity 0.2s',
-                animation: state === 'overtime' ? 'pulse 2s ease-in-out infinite' : 'none',
-              }}
-            >
-              {actionLoading
-                ? <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
-                : <LogOut style={{ width: 16, height: 16 }} />}
-              Vardiyamı Bitir
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                onClick={handleCheckOut}
+                disabled={actionLoading}
+                style={{
+                  width: '100%', padding: '13px', borderRadius: 14, border: 'none',
+                  background: state === 'overtime'
+                    ? 'linear-gradient(135deg,#f59e0b,#d97706)'
+                    : 'linear-gradient(135deg,#ef4444,#dc2626)',
+                  color: 'white', fontSize: 14, fontWeight: 800, cursor: actionLoading ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  boxShadow: state === 'overtime'
+                    ? '0 4px 16px rgba(245,158,11,0.30)'
+                    : '0 4px 16px rgba(239,68,68,0.30)',
+                  opacity: actionLoading ? 0.7 : 1,
+                  transition: 'opacity 0.2s',
+                  animation: state === 'overtime' ? 'pulse 2s ease-in-out infinite' : 'none',
+                }}
+              >
+                {actionLoading
+                  ? <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
+                  : <LogOut style={{ width: 16, height: 16 }} />}
+                Vardiyamı Bitir
+              </button>
+              {/* Geçici çıkış sadece overtime DEĞİLKEN gösterilir */}
+              {state !== 'overtime' && (
+                <button
+                  onClick={handleEarlyCheckOut}
+                  disabled={actionLoading}
+                  style={{
+                    width: '100%', padding: '10px', borderRadius: 12,
+                    border: '1px solid rgba(251,191,36,0.30)',
+                    background: 'rgba(251,191,36,0.08)',
+                    color: '#fbbf24', fontSize: 12, fontWeight: 700,
+                    cursor: actionLoading ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    opacity: actionLoading ? 0.6 : 1,
+                    transition: 'opacity 0.2s',
+                  }}
+                >
+                  <Coffee style={{ width: 13, height: 13 }} />
+                  Geçici Çıkış — Devam Edebilirim
+                </button>
+              )}
+            </div>
           )}
         </div>
 
@@ -822,8 +1067,8 @@ function ProgressBar({ state, missedPct, workedPct, remainPct, markerPct, startT
   const showBar = !['no-shift', 'loading'].includes(state);
   if (!showBar) return null;
 
-  /* Tamamlandı → %100 yeşil veya kırmızı+yeşil */
-  const isCompleted = state === 'completed-ontime' || state === 'completed-late';
+  /* Tamamlandı/Paused → renkli bar */
+  const isCompleted = state === 'completed-ontime' || state === 'completed-late' || state === 'paused';
 
   return (
     <div style={{ marginBottom: 4 }}>

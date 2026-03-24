@@ -9592,26 +9592,35 @@ app.get("/make-server-4da0b637/telegram/setup-webhook", async (c) => {
 // VARDİYA CHECK-IN / CHECK-OUT SİSTEMİ
 // ──────────────────────────────────────────
 
-// GET /vardiya/bugun — Bugünkü check-in/out + geç bildirim durumu
+// GET /vardiya/bugun — Bugünkü check-in/out + geç bildirim + sessions + paused
 app.get("/make-server-4da0b637/vardiya/bugun", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const userId = user.id;
-    const tarih = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
-    const [checkin, checkout, lateNotice] = await Promise.all([
+    const tarih = bizDateTR();
+    const [checkin, checkout, lateNotice, sessions, paused] = await Promise.all([
       kv.get(`checkin_${userId}_${tarih}`),
       kv.get(`checkout_${userId}_${tarih}`),
       kv.get(`lateNotice_${userId}_${tarih}`),
+      kv.get(`sessions_${userId}_${tarih}`),
+      kv.get(`paused_${userId}_${tarih}`),
     ]);
-    return c.json({ tarih, checkin: checkin || null, checkout: checkout || null, lateNotice: lateNotice || null });
+    return c.json({
+      tarih,
+      checkin: checkin || null,
+      checkout: checkout || null,
+      lateNotice: lateNotice || null,
+      sessions: sessions || null,
+      paused: paused || null,
+    });
   } catch (err) {
     console.log("vardiya/bugun error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
 
-// POST /vardiya/checkin — Vardiyayı başlat
+// POST /vardiya/checkin — Vardiyayı başlat veya devam ettir
 app.post("/make-server-4da0b637/vardiya/checkin", async (c) => {
   try {
     const user = await verifyToken(c);
@@ -9621,38 +9630,75 @@ app.post("/make-server-4da0b637/vardiya/checkin", async (c) => {
     const body = await c.req.json();
     const { plannedStart, plannedEnd, location, locationIcon, taskId } = body;
     if (!plannedStart) return c.json({ error: "plannedStart gerekli." }, 400);
-    const now = new Date(Date.now() + 3 * 60 * 60 * 1000); // TR saati (lateMin hesabı için)
-    const tarih = bizDateTR();                               // İş günü tarihi (05:00 TR kırılımlı)
-    const checkInTime = new Date().toISOString();            // Gerçek UTC timestamp ✓
+    const now = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    const tarih = bizDateTR();
+    const checkInTime = new Date().toISOString();
     const [ph, pm] = plannedStart.split(":").map(Number);
     const plannedMs = ph * 3600000 + pm * 60000;
     const nowMs = now.getUTCHours() * 3600000 + now.getUTCMinutes() * 60000 + now.getUTCSeconds() * 1000;
     const lateMin = Math.round((nowMs - plannedMs) / 60000);
     const isLate = lateMin > 5;
-    const data = { checkInTime, plannedStart, plannedEnd, location, locationIcon, taskId, lateMin: isLate ? lateMin : 0, userId, tarih };
-    await kv.set(`checkin_${userId}_${tarih}`, data);
-    // Yeni check-in geldiğinde eski checkout verisini sil (stale data önlemi)
-    await kv.del(`checkout_${userId}_${tarih}`);
-    console.log(`[Vardiya] Check-in: ${userName} — ${tarih} ${plannedStart} → ${isLate ? `${lateMin}dk geç` : "zamanında"}`);
-    if (isLate) {
-      const telegramText = `⚠️ <b>Geç Giriş Bildirimi</b>\n\n👤 <b>${userName}</b> vardiyasına geç başladı.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n⏰ Planlanan: <b>${plannedStart}</b>\n⏱️ Gecikme: <b>${lateMin} dk</b>\n📅 Tarih: ${tarih}`;
-      sendTelegramMessage(telegramText, "HTML").catch(() => {});
-    } else {
-      const nowTrHH = String(now.getUTCHours()).padStart(2, "0");
-      const nowTrMM = String(now.getUTCMinutes()).padStart(2, "0");
-      const nowTrStr = `${nowTrHH}:${nowTrMM}`;
-      const erken = lateMin < 0 ? ` (${Math.abs(lateMin)} dk erken)` : "";
-      const telegramText2 = `✅ <b>Vardiya Başladı</b>\n\n👤 <b>${userName}</b> vardiyasına başladı.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n⏰ Planlanan: <b>${plannedStart}</b>\n🕐 Giriş saati: <b>${nowTrStr}</b>${erken}\n📅 Tarih: ${tarih}`;
-      sendTelegramMessage(telegramText2, "HTML").catch(() => {});
+
+    // Sessions yönetimi
+    const existingSessions: any[] = (await kv.get(`sessions_${userId}_${tarih}`)) || [];
+    const isResume = existingSessions.length > 0;
+
+    // Zaten aktif oturum varsa hata dön
+    if (isResume) {
+      const lastSession = existingSessions[existingSessions.length - 1];
+      if (!lastSession.checkOut) {
+        return c.json({ error: "Zaten aktif bir vardiya var." }, 400);
+      }
     }
-    return c.json({ success: true, data, isLate, lateMin: isLate ? lateMin : 0 });
+
+    const newSession = {
+      checkIn: checkInTime,
+      checkOut: null as string | null,
+      lateMin: (!isResume && isLate) ? lateMin : 0,
+      type: isResume ? "resume" : "initial",
+    };
+    const updatedSessions = [...existingSessions, newSession];
+    await kv.set(`sessions_${userId}_${tarih}`, updatedSessions);
+
+    // İlk giriş: checkin_ anahtarını geriye dönük uyumluluk için yaz
+    const data = { checkInTime, plannedStart, plannedEnd, location, locationIcon, taskId, lateMin: (!isResume && isLate) ? lateMin : 0, userId, tarih };
+    if (!isResume) {
+      await kv.set(`checkin_${userId}_${tarih}`, data);
+    }
+    // Her durumda checkout_ ve paused_ anahtarlarını temizle
+    await kv.del(`checkout_${userId}_${tarih}`);
+    await kv.del(`paused_${userId}_${tarih}`);
+
+    const nowTrHH = String(now.getUTCHours()).padStart(2, "0");
+    const nowTrMM = String(now.getUTCMinutes()).padStart(2, "0");
+    const nowTrStr = `${nowTrHH}:${nowTrMM}`;
+
+    if (isResume) {
+      console.log(`[Vardiya] Devam: ${userName} — ${tarih} ${nowTrStr}`);
+      const tg = `▶️ <b>Vardiya Devam Etti</b>\n\n👤 <b>${userName}</b> vardiyasına geri döndü.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n🕐 Dönüş saati: <b>${nowTrStr}</b>\n📅 Tarih: ${tarih}\n🔄 Oturum: ${updatedSessions.length}. giriş`;
+      sendTelegramMessage(tg, "HTML").catch(() => {});
+    } else if (isLate) {
+      console.log(`[Vardiya] Check-in (geç): ${userName} — ${tarih} ${plannedStart} → ${lateMin}dk geç`);
+      const tg = `⚠️ <b>Geç Giriş Bildirimi</b>\n\n👤 <b>${userName}</b> vardiyasına geç başladı.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n⏰ Planlanan: <b>${plannedStart}</b>\n⏱️ Gecikme: <b>${lateMin} dk</b>\n📅 Tarih: ${tarih}`;
+      sendTelegramMessage(tg, "HTML").catch(() => {});
+    } else {
+      console.log(`[Vardiya] Check-in: ${userName} — ${tarih} ${plannedStart}`);
+      const erken = lateMin < 0 ? ` (${Math.abs(lateMin)} dk erken)` : "";
+      const tg = `✅ <b>Vardiya Başladı</b>\n\n👤 <b>${userName}</b> vardiyasına başladı.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n⏰ Planlanan: <b>${plannedStart}</b>\n🕐 Giriş saati: <b>${nowTrStr}</b>${erken}\n📅 Tarih: ${tarih}`;
+      sendTelegramMessage(tg, "HTML").catch(() => {});
+    }
+
+    return c.json({ success: true, data, isLate: !isResume && isLate, lateMin: (!isResume && isLate) ? lateMin : 0, isResume });
   } catch (err) {
     console.log("vardiya/checkin error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
 
-// POST /vardiya/checkout — Vardiyayı bitir
+// POST /vardiya/checkout — Vardiyayı bitir (erken/geçici veya final)
+// Body: { plannedEnd, erken?: boolean }
+// erken=true → paused durumu (devam ettirebilir)
+// erken=false/undefined → final çıkış
 app.post("/make-server-4da0b637/vardiya/checkout", async (c) => {
   try {
     const user = await verifyToken(c);
@@ -9660,39 +9706,79 @@ app.post("/make-server-4da0b637/vardiya/checkout", async (c) => {
     const userId = user.id;
     const userName = user.user_metadata?.name || user.email || userId;
     const body = await c.req.json();
-    const { plannedEnd } = body;
-    const tarih = bizDateTR();                               // İş günü tarihi (05:00 TR kırılımlı)
-    const checkOutTime = new Date().toISOString();           // Gerçek UTC timestamp ✓
+    const { plannedEnd, erken } = body;
+    const tarih = bizDateTR();
+    const checkOutTime = new Date().toISOString();
     const checkin = await kv.get(`checkin_${userId}_${tarih}`);
-    const data = { checkOutTime, plannedEnd: plannedEnd || checkin?.plannedEnd, userId, tarih };
-    await kv.set(`checkout_${userId}_${tarih}`, data);
-    console.log(`[Vardiya] Check-out: ${userName} — ${tarih}`);
 
-    // Telegram bildirimi
+    // Sessions güncelle: son açık oturumun checkOut'unu kapat
+    const existingSessions: any[] = (await kv.get(`sessions_${userId}_${tarih}`)) || [];
+    if (existingSessions.length > 0) {
+      // Son açık oturumu bul
+      let lastOpenIdx = -1;
+      for (let i = existingSessions.length - 1; i >= 0; i--) {
+        if (!existingSessions[i].checkOut) { lastOpenIdx = i; break; }
+      }
+      if (lastOpenIdx !== -1) {
+        existingSessions[lastOpenIdx].checkOut = checkOutTime;
+      }
+      await kv.set(`sessions_${userId}_${tarih}`, existingSessions);
+    } else {
+      // Eski format için geriye dönük uyumluluk: sessions yoksa checkin'den oluştur
+      if (checkin?.checkInTime) {
+        const retroSessions = [{ checkIn: checkin.checkInTime, checkOut: checkOutTime, lateMin: checkin.lateMin || 0, type: "initial" }];
+        await kv.set(`sessions_${userId}_${tarih}`, retroSessions);
+      }
+    }
+
     const nowTR2 = new Date(Date.now() + 3 * 60 * 60 * 1000);
     const outHH = String(nowTR2.getUTCHours()).padStart(2, "0");
     const outMM = String(nowTR2.getUTCMinutes()).padStart(2, "0");
     const outTrStr = `${outHH}:${outMM}`;
 
-    let sureStr = "";
-    if (checkin?.checkInTime) {
-      const ciMs = new Date(checkin.checkInTime).getTime();
-      const coMs = new Date(checkOutTime).getTime();
-      const totalMin = Math.round((coMs - ciMs) / 60000);
-      const h = Math.floor(totalMin / 60);
-      const m = totalMin % 60;
-      sureStr = h > 0 ? `${h} sa ${m} dk` : `${m} dk`;
+    // Toplam çalışılan süreyi sessions üzerinden hesapla
+    const updatedSessions: any[] = (await kv.get(`sessions_${userId}_${tarih}`)) || [];
+    let totalWorkedMin = 0;
+    for (const s of updatedSessions) {
+      if (s.checkIn && s.checkOut) {
+        totalWorkedMin += Math.round((new Date(s.checkOut).getTime() - new Date(s.checkIn).getTime()) / 60000);
+      }
     }
+    const twH = Math.floor(totalWorkedMin / 60);
+    const twM = totalWorkedMin % 60;
+    const sureStr = twH > 0 ? `${twH} sa ${twM} dk` : `${twM} dk`;
 
     const loc = checkin?.location || "Bilinmiyor";
     const locIcon = checkin?.locationIcon || "📍";
-    const plannedEndStr = data.plannedEnd || "?";
+    const plannedEndStr = plannedEnd || checkin?.plannedEnd || "?";
     const lateMinOut = checkin?.lateMin || 0;
 
-    const checkoutTelegramText = `🔴 <b>Vardiya Bitti</b>\n\n👤 <b>${userName}</b> vardiyasını tamamladı.\n📍 ${locIcon} ${loc}\n⏰ Planlanan bitiş: <b>${plannedEndStr}</b>\n🕐 Çıkış saati: <b>${outTrStr}</b>\n⏱️ Çalışılan süre: <b>${sureStr || "?"}</b>${lateMinOut > 0 ? `\n⚠️ Geç giriş: <b>${lateMinOut} dk</b>` : ""}\n📅 Tarih: ${tarih}`;
-    sendTelegramMessage(checkoutTelegramText, "HTML").catch(() => {});
-
-    return c.json({ success: true, data });
+    if (erken) {
+      // Geçici çıkış: paused_ yaz, checkout_ yazma
+      const pausedData = {
+        pausedAt: checkOutTime,
+        plannedEnd: plannedEndStr,
+        location: loc,
+        locationIcon: locIcon,
+        sessionCount: updatedSessions.length,
+        totalWorkedMin,
+      };
+      await kv.set(`paused_${userId}_${tarih}`, pausedData);
+      console.log(`[Vardiya] Geçici Çıkış: ${userName} — ${tarih} ${outTrStr}`);
+      const tg = `⏸️ <b>Geçici Çıkış</b>\n\n👤 <b>${userName}</b> kısa süreliğine vardiyasından ayrıldı.\n📍 ${locIcon} ${loc}\n🕐 Ayrılış: <b>${outTrStr}</b>\n⏱️ Şimdiye kadar: <b>${sureStr}</b>\n📅 Tarih: ${tarih}\n💡 Devam etmek için tekrar giriş yapabilir.`;
+      sendTelegramMessage(tg, "HTML").catch(() => {});
+      return c.json({ success: true, erken: true, totalWorkedMin });
+    } else {
+      // Final çıkış: checkout_ yaz, paused_ temizle
+      const data = { checkOutTime, plannedEnd: plannedEndStr, userId, tarih, totalWorkedMin };
+      await kv.set(`checkout_${userId}_${tarih}`, data);
+      await kv.del(`paused_${userId}_${tarih}`);
+      console.log(`[Vardiya] Final Çıkış: ${userName} — ${tarih} ${outTrStr}`);
+      const sessionNote = updatedSessions.length > 1 ? `\n🔄 Oturum sayısı: <b>${updatedSessions.length}</b>` : "";
+      const tg = `🔴 <b>Vardiya Bitti</b>\n\n👤 <b>${userName}</b> vardiyasını tamamladı.\n📍 ${locIcon} ${loc}\n⏰ Planlanan bitiş: <b>${plannedEndStr}</b>\n🕐 Çıkış saati: <b>${outTrStr}</b>\n⏱️ Toplam çalışılan: <b>${sureStr}</b>${lateMinOut > 0 ? `\n⚠️ Geç giriş: <b>${lateMinOut} dk</b>` : ""}${sessionNote}\n📅 Tarih: ${tarih}`;
+      sendTelegramMessage(tg, "HTML").catch(() => {});
+      return c.json({ success: true, data });
+    }
   } catch (err) {
     console.log("vardiya/checkout error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
