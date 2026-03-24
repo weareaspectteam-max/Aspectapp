@@ -43,7 +43,8 @@ export const companyKvFor = (companyId: CompanyId) => {
     /** Tekil okuma — aspect için legacy fallback */
     async get(key: string): Promise<any> {
       const val = await kv.get(p(key));
-      if (val === null && isAspect) {
+      // == null: hem null hem undefined için fallback yap (KV store hangisini döndürürse döndürsün)
+      if (val == null && isAspect) {
         return kv.get(key); // legacy (prefix'siz) fallback
       }
       return val;
@@ -59,23 +60,48 @@ export const companyKvFor = (companyId: CompanyId) => {
       return kv.del(p(key));
     },
 
-    /** Prefix ile çoklu okuma — aspect için legacy fallback */
+    /** Prefix ile çoklu okuma — aspect için legacy + prefixed MERGE */
     async getByPrefix(prefix: string): Promise<any[]> {
       const vals = await kv.getByPrefix(p(prefix));
-      if ((!vals || vals.length === 0) && isAspect) {
-        return kv.getByPrefix(prefix); // legacy fallback
+      if (!isAspect) return vals || [];
+
+      // Aspect: her zaman iki seti birleştir (yeni prefix'li + eski legacy)
+      // Böylece yeni kayıt eklense bile eski veriler kaybolmaz.
+      const legacyVals = await kv.getByPrefix(prefix);
+      if (!legacyVals || legacyVals.length === 0) return vals || [];
+      if (!vals || vals.length === 0) return legacyVals;
+
+      // Dedup: prefix'li kayıtlar önceliklidir.
+      // Aynı kaydın legacy ve prefix'li versiyonu varsa legacy atlanır.
+      // Birincil anahtar: id > mekanId+tarih > (aynı obje içermeyen)
+      const fingerprint = (v: any): string | null => {
+        if (!v || typeof v !== "object") return null;
+        if (v.id)                        return `id:${v.id}`;
+        if (v.mekanId && v.tarih)        return `mt:${v.mekanId}_${v.tarih}`;
+        if (v.userId && v.kidemSeviye)   return `kidem:${v.userId}`;
+        return null; // benzersiz anahtar yok — ekle (risk: duplicate ama daha iyi hata)
+      };
+
+      const seenKeys = new Set<string>(
+        (vals as any[]).map(fingerprint).filter(Boolean) as string[]
+      );
+      const merged = [...vals];
+      for (const leg of legacyVals as any[]) {
+        const fp = fingerprint(leg);
+        if (fp && seenKeys.has(fp)) continue; // prefix'li versiyonu var, atla
+        merged.push(leg);
       }
-      return vals || [];
+      return merged;
     },
 
     /** Çoklu okuma — aspect için eksik anahtarlara legacy fallback */
     async mget(keys: string[]): Promise<any[]> {
       const prefixedVals: any[] = await kv.mget(keys.map(k => p(k)));
       if (!isAspect) return prefixedVals;
-      // Aspect: null gelen indisler için legacy anahtarı dene
+      // Aspect: null/undefined gelen indisler için legacy anahtarı dene
       return Promise.all(
         prefixedVals.map((v: any, i: number) =>
-          v === null ? kv.get(keys[i]) : Promise.resolve(v)
+          v == null ? kv.get(keys[i]) : Promise.resolve(v)
         )
       );
     },

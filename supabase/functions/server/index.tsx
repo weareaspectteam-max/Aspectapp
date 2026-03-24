@@ -2101,7 +2101,16 @@ app.put("/make-server-4da0b637/rotasyon/gorevler/:id", async (c) => {
     }
     const { id } = c.req.param();
     const ckv = companyKvFor(getCompanyId(user));
-    const existing = await ckv.get(`rotation_task_${id}`);
+    let existing = await ckv.get(`rotation_task_${id}`);
+    // Güvenli fallback: doğrudan anahtar bulunamazsa tüm görevler arasında id ile ara
+    // (legacy/prefix uyumsuzluğu veya KV null/undefined davranışı durumunda koruma)
+    if (!existing) {
+      const allTasks: any[] = await ckv.getByPrefix("rotation_task_").catch(() => []);
+      existing = allTasks.find((t: any) => t?.id === id) ?? null;
+      if (existing) {
+        console.log(`[updateTask] doğrudan anahtar bulunamadı, prefix arama ile bulundu: ${id}`);
+      }
+    }
     if (!existing) return c.json({ error: "Görev bulunamadı." }, 404);
     const body = await c.req.json();
     const task = { ...existing, ...body };
@@ -2166,7 +2175,12 @@ app.delete("/make-server-4da0b637/rotasyon/gorevler/:id", async (c) => {
     }
     const { id } = c.req.param();
     const ckv = companyKvFor(getCompanyId(user));
-    const existingTask = await ckv.get(`rotation_task_${id}`);
+    let existingTask = await ckv.get(`rotation_task_${id}`);
+    // Fallback: tüm görevler arasında ara (legacy anahtar uyumsuzluğu koruması)
+    if (!existingTask) {
+      const allTasks: any[] = await ckv.getByPrefix("rotation_task_").catch(() => []);
+      existingTask = allTasks.find((t: any) => t?.id === id) ?? null;
+    }
     await ckv.del(`rotation_task_${id}`);
     console.log(`Görev silindi: ${id} by ${user.id}`);
 
