@@ -7,6 +7,8 @@ import { PrimTakip } from './components/prim-takip';
 import { PersonelPrimTakip } from './components/personel-prim-takip';
 import { AspectRunner } from './components/aspect-runner';
 import { AspectQuest } from './components/aspect-quest';
+import { XoxGame } from './components/xox-game';
+import { FotoTkm } from './components/foto-tkm';
 import { useState, useEffect, useRef } from 'react';
 import { AppHeader } from './components/app-header';
 import { AspectLogo } from './components/aspect-logo';
@@ -948,6 +950,28 @@ function MainApp() {
       
       case 'aspect-quest':
         return <AspectQuest userRole={userRole} userName={userName} accessToken={accessToken} onBack={() => handleNavigate('dashboard')} />;
+
+      case 'xox-game':
+        return (
+          <XoxGame
+            userName={userName}
+            userId={userId}
+            userCompanyId={effectiveCompanyId}
+            accessToken={accessToken}
+            onBack={() => handleNavigate('dashboard')}
+          />
+        );
+
+      case 'foto-tkm':
+        return (
+          <FotoTkm
+            userName={userName}
+            userId={userId}
+            userCompanyId={effectiveCompanyId}
+            accessToken={accessToken}
+            onBack={() => handleNavigate('dashboard')}
+          />
+        );
       
       case 'super-admin':
         if (!isSuperAdminFlag) {

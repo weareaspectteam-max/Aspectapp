@@ -15,6 +15,23 @@
 
 import * as kv from "./kv_store.tsx";
 
+// ── Loopback HTTP bağlantı sıfırlamalarına karşı retry helper ───────────────
+async function kvRetry<T>(op: () => Promise<T>, attempts = 3, baseMs = 300): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 1; i <= attempts; i++) {
+    try { return await op(); } catch (err) {
+      lastErr = err;
+      const msg = String(err);
+      const transient = msg.includes("connection reset") || msg.includes("Connection reset") ||
+        msg.includes("connection error") || msg.includes("SendRequest") ||
+        msg.includes("broken pipe") || msg.includes("ECONNRESET");
+      if (!transient || i === attempts) throw err;
+      await new Promise(r => setTimeout(r, baseMs * Math.pow(2, i - 1)));
+    }
+  }
+  throw lastErr;
+}
+
 // Desteklenen şirketler
 export const VALID_COMPANIES = ["aspect", "frame", "tetra"] as const;
 export type CompanyId = (typeof VALID_COMPANIES)[number] | string;
@@ -66,12 +83,12 @@ export const companyKvFor = (companyId: CompanyId) => {
 
     /** Prefix ile çoklu okuma — aspect için legacy + prefixed MERGE */
     async getByPrefix(prefix: string): Promise<any[]> {
-      const vals = await kv.getByPrefix(p(prefix));
+      const vals = await kvRetry(() => kv.getByPrefix(p(prefix)));
       if (!isAspect) return vals || [];
 
       // Aspect: her zaman iki seti birleştir (yeni prefix'li + eski legacy)
       // Böylece yeni kayıt eklense bile eski veriler kaybolmaz.
-      const legacyVals = await kv.getByPrefix(prefix);
+      const legacyVals = await kvRetry(() => kv.getByPrefix(prefix));
       if (!legacyVals || legacyVals.length === 0) return vals || [];
       if (!vals || vals.length === 0) return legacyVals;
 
@@ -141,7 +158,7 @@ export const migrateLegacyToAspect = async (
   for (const prefix of prefixesToMigrate) {
     try {
       // prefix'siz legacy kayıtları getir
-      const legacyItems: any[] = await kv.getByPrefix(prefix) || [];
+      const legacyItems: any[] = await kvRetry(() => kv.getByPrefix(prefix)) || [];
 
       for (const item of legacyItems) {
         try {
@@ -150,8 +167,8 @@ export const migrateLegacyToAspect = async (
           // Orijinal key'i bilmiyoruz; item._kvKey veya id üzerinden key'i yeniden oluşturuyoruz
           // Strateji: aspect: prefix'li getByPrefix çalıştır, hangi key'ler eksik bul
           // Basit: aspect:prefix altında yok ise yaz
-          const srcItems: any[] = await kv.getByPrefix(prefix) || [];
-          const dstItems: any[] = await kv.getByPrefix(`aspect:${prefix}`) || [];
+          const srcItems: any[] = await kvRetry(() => kv.getByPrefix(prefix)) || [];
+          const dstItems: any[] = await kvRetry(() => kv.getByPrefix(`aspect:${prefix}`)) || [];
 
           // KV'nin id alanı varsa eşleştir
           const dstIds = new Set(dstItems.map((d: any) => d?.id || d?.key).filter(Boolean));

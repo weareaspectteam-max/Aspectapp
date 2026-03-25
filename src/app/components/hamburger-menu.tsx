@@ -12,7 +12,7 @@ import {
   Cake, User, Settings, LogOut, ChevronRight, Package,
   BarChart2, ClipboardList, CalendarDays, FileBarChart, Wallet, Gamepad2,
   ChevronDown, Crown, Sliders, Brain, Globe, Loader2, Users, DollarSign, TrendingUp,
-  AlertTriangle, Building2, Eye,
+  AlertTriangle, Building2, Eye, Camera,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
@@ -152,6 +152,8 @@ function getSections(
       items: [
         { icon: Gamepad2, label: 'Aspect Runner 🏃', roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('aspect-runner') },
         { icon: Gamepad2, label: 'Aspect Quest 🗺️',  roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('aspect-quest')  },
+        { icon: Camera,   label: 'Fotoğraf XOX 📷',  roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('xox-game')      },
+        { icon: Gamepad2, label: 'Foto TKM 💰',       roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('foto-tkm')      },
       ],
     },
     {

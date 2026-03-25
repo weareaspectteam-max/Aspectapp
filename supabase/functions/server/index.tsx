@@ -5,15 +5,46 @@ import { createClient } from "npm:@supabase/supabase-js";
 import { jwtVerify, decodeJwt } from "npm:jose@5";
 import * as kv from "./kv_store.tsx";
 import { companyKvFor, getCompanyId, migrateLegacyToAspect } from "./company_kv.tsx";
+import { registerKareTkmRoutes } from "./kare_tkm.tsx";
 
 // ── Şirket-bağımlı mekan helper'ı ───────────────────────────────────────────
 // kv.getByPrefix("mekan_") "mekan_ziyaret_*" kayıtlarını da eşleştirir.
 // Gerçek mekan objeleri `name` ve `emoji` alanına sahiptir; ziyaret kayıtları sahip değildir.
 // getMekanlarFor: multi-tenant (companyId prefix'li)
 // getMekanlar: legacy alias — aspect-only context'ler için (Telegram webhook vb.)
+// ── Retry helper — Deno Edge'de loopback HTTP bağlantıları ara sıra "connection reset"
+// hatasıyla kesilir. Bu wrapper, geçici ağ hatalarında üstel geri-çekilmeyle yeniden dener.
+async function retryOp<T>(
+  op: () => Promise<T>,
+  maxAttempts = 3,
+  baseDelayMs = 300,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await op();
+    } catch (err) {
+      lastErr = err;
+      const msg = String(err);
+      const isTransient =
+        msg.includes("connection reset") ||
+        msg.includes("Connection reset") ||
+        msg.includes("connection error") ||
+        msg.includes("SendRequest") ||
+        msg.includes("broken pipe") ||
+        msg.includes("ECONNRESET");
+      if (!isTransient || attempt === maxAttempts) throw err;
+      const delay = baseDelayMs * Math.pow(2, attempt - 1);
+      console.log(`[retryOp] Geçici hata (deneme ${attempt}/${maxAttempts}), ${delay}ms bekliyor: ${msg}`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
 const getMekanlarFor = async (companyId: string): Promise<any[]> => {
   const ckv = companyKvFor(companyId);
-  const all: any[] = await ckv.getByPrefix("mekan_") || [];
+  const all: any[] = await retryOp(() => ckv.getByPrefix("mekan_"), 3, 300) || [];
   return all.filter((m: any) => m && m.name && m.emoji);
 };
 const getMekanlar = (): Promise<any[]> => getMekanlarFor("aspect");
@@ -1678,7 +1709,7 @@ app.put("/make-server-4da0b637/mekanlar/:id", async (c) => {
   }
 });
 
-// ──────────────────────────────────────────
+// ─────────────────────────────────────────��
 // MEKANLAR: Mekan sil
 // DELETE /make-server-4da0b637/mekanlar/:id
 // ──────────────────────────────────────────
@@ -1710,7 +1741,7 @@ app.delete("/make-server-4da0b637/mekanlar/:id", async (c) => {
 // ──────────────────────────────────────────
 // MALİYET YÖNETİMİ: Tüm verileri getir
 // GET /make-server-4da0b637/maliyetler
-// ──────────────────────────────────────────
+// ─────────────���────────────────────────────
 app.get("/make-server-4da0b637/maliyetler", async (c) => {
   try {
     const user = await verifyToken(c);
@@ -7085,7 +7116,7 @@ app.get("/make-server-4da0b637/stok/iptal-bekleyen", async (c) => {
       return c.json({ talepleri: [] });
     }
 
-    const tumTalep: any[] = await kv.getByPrefix("iptal_talep_") || [];
+    const tumTalep: any[] = await retryOp(() => kv.getByPrefix("iptal_talep_"), 3, 400) || [];
     const bekleyen = tumTalep
       .filter((t: any) => t && t.status === "bekliyor")
       .sort((a: any, b: any) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
@@ -7093,7 +7124,17 @@ app.get("/make-server-4da0b637/stok/iptal-bekleyen", async (c) => {
     console.log(`[İptal Bekleyen] ${bekleyen.length} bekleyen talep.`);
     return c.json({ talepleri: bekleyen });
   } catch (err) {
+    const msg = String(err);
+    // Geçici ağ hataları için boş liste döndür — frontend polling'i patlatmasın
+    const isTransient =
+      msg.includes("connection reset") ||
+      msg.includes("connection error") ||
+      msg.includes("SendRequest") ||
+      msg.includes("ECONNRESET");
     console.log("Iptal bekleyen list error:", err);
+    if (isTransient) {
+      return c.json({ talepleri: [], _warning: "Geçici bağlantı hatası, tekrar denenecek." });
+    }
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
@@ -11015,6 +11056,348 @@ app.delete("/make-server-4da0b637/ai/company-key", async (c) => {
 });
 
 // ──────────────────────────────────────────
+// XOX OYUNU — Cross-company multiplayer Tic-tac-toe
+// ──────────────────────────────────────────
+
+const XOX_WIN_LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+
+function xoxCheckWinner(board: string[]): { winner: string | null; line: number[] | null } {
+  for (const line of XOX_WIN_LINES) {
+    const [a, b, c] = line;
+    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+      return { winner: board[a], line };
+    }
+  }
+  if (board.every(cell => cell !== "")) return { winner: "draw", line: null };
+  return { winner: null, line: null };
+}
+
+function xoxGenerateCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+// POST /xox/room/create
+app.post("/make-server-4da0b637/xox/room/create", async (c) => {
+  const user = await verifyToken(c);
+  if (!user) return c.json({ error: "Yetkisiz erişim" }, 401);
+  try {
+    const body = await c.req.json();
+    const type: string = body.type || "open";
+    const password: string = body.password || "";
+    const userName: string = user.user_metadata?.name || user.email || "Anonim";
+    const companyId: string = getCompanyId(user);
+
+    let code = xoxGenerateCode();
+    let existing = await retryOp(() => kv.get(`xox_room_${code}`));
+    let attempts = 0;
+    while (existing && attempts < 10) {
+      code = xoxGenerateCode();
+      existing = await retryOp(() => kv.get(`xox_room_${code}`));
+      attempts++;
+    }
+
+    const now = Date.now();
+    const room = {
+      code, type,
+      password: type === "private" ? password : "",
+      hostId: user.id, hostName: userName, hostCompanyId: companyId,
+      guestId: null, guestName: null, guestCompanyId: null,
+      status: "waiting",
+      board: ["","","","","","","","",""],
+      currentTurn: "X",
+      winner: null, winLine: null,
+      hostScore: 0, guestScore: 0, draws: 0,
+      rematchRequestBy: null,
+      createdAt: now, lastMoveAt: now,
+    };
+
+    await retryOp(() => kv.set(`xox_room_${code}`, room));
+    if (type === "open") {
+      await retryOp(() => kv.set(`xox_open_${code}`, { code, hostName: userName, createdAt: now }));
+    }
+    console.log(`[XOX] Oda oluşturuldu: ${code} (${type}) by ${userName}`);
+    return c.json({ ok: true, code, room });
+  } catch (e) {
+    console.log("[XOX] create room error:", e);
+    return c.json({ error: `Oda oluşturma hatası: ${e}` }, 500);
+  }
+});
+
+// GET /xox/rooms/open
+app.get("/make-server-4da0b637/xox/rooms/open", async (c) => {
+  const user = await verifyToken(c);
+  if (!user) return c.json({ error: "Yetkisiz erişim" }, 401);
+  try {
+    const openMarkers: any[] = await retryOp(() => kv.getByPrefix("xox_open_")) || [];
+    const now = Date.now();
+    const rooms: any[] = [];
+    for (const marker of openMarkers) {
+      if (!marker?.code) continue;
+      if (now - (marker.createdAt || 0) > 10 * 60 * 1000) {
+        await kv.del(`xox_open_${marker.code}`).catch(() => {});
+        continue;
+      }
+      const room: any = await retryOp(() => kv.get(`xox_room_${marker.code}`));
+      if (!room || room.status !== "waiting" || room.hostId === user.id) continue;
+      rooms.push({ code: room.code, hostName: room.hostName, createdAt: room.createdAt });
+    }
+    return c.json({ ok: true, rooms });
+  } catch (e) {
+    console.log("[XOX] open rooms error:", e);
+    return c.json({ error: `Oda listesi hatası: ${e}` }, 500);
+  }
+});
+
+// POST /xox/room/join
+app.post("/make-server-4da0b637/xox/room/join", async (c) => {
+  const user = await verifyToken(c);
+  if (!user) return c.json({ error: "Yetkisiz erişim" }, 401);
+  try {
+    const body = await c.req.json();
+    const code: string = (body.code || "").toUpperCase().trim();
+    const password: string = body.password || "";
+    const userName: string = user.user_metadata?.name || user.email || "Anonim";
+    const companyId: string = getCompanyId(user);
+
+    if (!code) return c.json({ error: "Oda kodu gereklidir" }, 400);
+    const room: any = await retryOp(() => kv.get(`xox_room_${code}`));
+    if (!room) return c.json({ error: "Oda bulunamadı" }, 404);
+    if (room.status !== "waiting") return c.json({ error: "Oda dolu veya oyun bitti" }, 400);
+    if (room.hostId === user.id) return c.json({ error: "Kendi odanıza katılamazsınız" }, 400);
+    if (room.type === "private" && room.password !== password) return c.json({ error: "Şifre yanlış" }, 403);
+
+    const updatedRoom = {
+      ...room,
+      guestId: user.id, guestName: userName, guestCompanyId: companyId,
+      status: "playing", lastMoveAt: Date.now(),
+    };
+    await retryOp(() => kv.set(`xox_room_${code}`, updatedRoom));
+    await kv.del(`xox_open_${code}`).catch(() => {});
+    console.log(`[XOX] ${userName} odaya katıldı: ${code}`);
+    return c.json({ ok: true, room: updatedRoom });
+  } catch (e) {
+    console.log("[XOX] join room error:", e);
+    return c.json({ error: `Odaya katılma hatası: ${e}` }, 500);
+  }
+});
+
+// POST /xox/quickmatch
+app.post("/make-server-4da0b637/xox/quickmatch", async (c) => {
+  const user = await verifyToken(c);
+  if (!user) return c.json({ error: "Yetkisiz erişim" }, 401);
+  try {
+    const userName: string = user.user_metadata?.name || user.email || "Anonim";
+    const companyId: string = getCompanyId(user);
+    const now = Date.now();
+
+    const openMarkers: any[] = await retryOp(() => kv.getByPrefix("xox_open_")) || [];
+    for (const marker of openMarkers) {
+      if (!marker?.code) continue;
+      if (now - (marker.createdAt || 0) > 10 * 60 * 1000) continue;
+      const room: any = await retryOp(() => kv.get(`xox_room_${marker.code}`));
+      if (!room || room.status !== "waiting" || room.hostId === user.id) continue;
+      const updatedRoom = { ...room, guestId: user.id, guestName: userName, guestCompanyId: companyId, status: "playing", lastMoveAt: now };
+      await retryOp(() => kv.set(`xox_room_${room.code}`, updatedRoom));
+      await kv.del(`xox_open_${room.code}`).catch(() => {});
+      console.log(`[XOX] Hızlı eşleşme: ${userName} → ${room.code}`);
+      return c.json({ ok: true, action: "joined", room: updatedRoom });
+    }
+
+    let code = xoxGenerateCode();
+    let existing = await retryOp(() => kv.get(`xox_room_${code}`));
+    let attempts = 0;
+    while (existing && attempts < 10) { code = xoxGenerateCode(); existing = await retryOp(() => kv.get(`xox_room_${code}`)); attempts++; }
+    const room = {
+      code, type: "open", password: "",
+      hostId: user.id, hostName: userName, hostCompanyId: companyId,
+      guestId: null, guestName: null, guestCompanyId: null,
+      status: "waiting", board: ["","","","","","","","",""],
+      currentTurn: "X", winner: null, winLine: null,
+      hostScore: 0, guestScore: 0, draws: 0, rematchRequestBy: null,
+      createdAt: now, lastMoveAt: now,
+    };
+    await retryOp(() => kv.set(`xox_room_${code}`, room));
+    await retryOp(() => kv.set(`xox_open_${code}`, { code, hostName: userName, createdAt: now }));
+    console.log(`[XOX] Hızlı eşleşme: ${userName} yeni oda ${code}`);
+    return c.json({ ok: true, action: "created", room });
+  } catch (e) {
+    console.log("[XOX] quickmatch error:", e);
+    return c.json({ error: `Hızlı eşleşme hatası: ${e}` }, 500);
+  }
+});
+
+// GET /xox/room/:code
+app.get("/make-server-4da0b637/xox/room/:code", async (c) => {
+  const user = await verifyToken(c);
+  if (!user) return c.json({ error: "Yetkisiz erişim" }, 401);
+  try {
+    const code = c.req.param("code").toUpperCase();
+    const room: any = await retryOp(() => kv.get(`xox_room_${code}`));
+    if (!room) return c.json({ error: "Oda bulunamadı" }, 404);
+    const now = Date.now();
+    if (room.status === "playing" && now - room.lastMoveAt > 5 * 60 * 1000) {
+      const updatedRoom = { ...room, status: "finished", winner: "timeout" };
+      await retryOp(() => kv.set(`xox_room_${code}`, updatedRoom));
+      return c.json({ ok: true, room: updatedRoom });
+    }
+    if (room.status === "waiting" && now - room.createdAt > 15 * 60 * 1000) {
+      await kv.del(`xox_room_${code}`).catch(() => {});
+      await kv.del(`xox_open_${code}`).catch(() => {});
+      return c.json({ error: "Oda süresi doldu" }, 404);
+    }
+    return c.json({ ok: true, room });
+  } catch (e) {
+    console.log("[XOX] get room error:", e);
+    return c.json({ error: `Oda bilgisi hatası: ${e}` }, 500);
+  }
+});
+
+// POST /xox/room/:code/move
+app.post("/make-server-4da0b637/xox/room/:code/move", async (c) => {
+  const user = await verifyToken(c);
+  if (!user) return c.json({ error: "Yetkisiz erişim" }, 401);
+  try {
+    const code = c.req.param("code").toUpperCase();
+    const body = await c.req.json();
+    const cellIndex: number = body.cellIndex;
+    if (cellIndex === undefined || cellIndex < 0 || cellIndex > 8) return c.json({ error: "Geçersiz hücre" }, 400);
+
+    const room: any = await retryOp(() => kv.get(`xox_room_${code}`));
+    if (!room) return c.json({ error: "Oda bulunamadı" }, 404);
+    if (room.status !== "playing") return c.json({ error: "Oyun aktif değil" }, 400);
+
+    const isHost = room.hostId === user.id;
+    const isGuest = room.guestId === user.id;
+    if (!isHost && !isGuest) return c.json({ error: "Bu odada oyuncu değilsiniz" }, 403);
+
+    const mySymbol = isHost ? "X" : "O";
+    if (room.currentTurn !== mySymbol) return c.json({ error: "Sıra sizde değil" }, 400);
+    if (room.board[cellIndex] !== "") return c.json({ error: "Hücre dolu" }, 400);
+
+    const newBoard = [...room.board];
+    newBoard[cellIndex] = mySymbol;
+    const { winner, line } = xoxCheckWinner(newBoard);
+    const nextTurn = mySymbol === "X" ? "O" : "X";
+    const now = Date.now();
+
+    let hostScore = room.hostScore || 0;
+    let guestScore = room.guestScore || 0;
+    let draws = room.draws || 0;
+    if (winner === "X") hostScore++;
+    else if (winner === "O") guestScore++;
+    else if (winner === "draw") draws++;
+
+    const updatedRoom = {
+      ...room, board: newBoard,
+      currentTurn: winner ? room.currentTurn : nextTurn,
+      winner: winner || null, winLine: line || null,
+      hostScore, guestScore, draws,
+      status: winner ? "finished" : "playing",
+      lastMoveAt: now, rematchRequestBy: null,
+    };
+    await retryOp(() => kv.set(`xox_room_${code}`, updatedRoom));
+
+    if (winner && winner !== "draw") {
+      const winnerId = winner === "X" ? room.hostId : room.guestId;
+      const winnerName = winner === "X" ? room.hostName : room.guestName;
+      const winnerCompanyId = winner === "X" ? room.hostCompanyId : room.guestCompanyId;
+      const loserId = winner === "X" ? room.guestId : room.hostId;
+      const loserName = winner === "X" ? room.guestName : room.hostName;
+      const loserCompanyId = winner === "X" ? room.guestCompanyId : room.hostCompanyId;
+      const ws: any = (await kv.get(`xox_score_${winnerId}`)) || { wins: 0, losses: 0, draws: 0 };
+      await kv.set(`xox_score_${winnerId}`, { userId: winnerId, userName: winnerName, companyId: winnerCompanyId, wins: (ws.wins || 0) + 1, losses: ws.losses || 0, draws: ws.draws || 0 });
+      const ls: any = (await kv.get(`xox_score_${loserId}`)) || { wins: 0, losses: 0, draws: 0 };
+      await kv.set(`xox_score_${loserId}`, { userId: loserId, userName: loserName, companyId: loserCompanyId, wins: ls.wins || 0, losses: (ls.losses || 0) + 1, draws: ls.draws || 0 });
+    } else if (winner === "draw") {
+      for (const [pid, pname, pcid] of [[room.hostId, room.hostName, room.hostCompanyId],[room.guestId, room.guestName, room.guestCompanyId]] as [string,string,string][]) {
+        if (!pid) continue;
+        const sc: any = (await kv.get(`xox_score_${pid}`)) || { wins: 0, losses: 0, draws: 0 };
+        await kv.set(`xox_score_${pid}`, { userId: pid, userName: pname, companyId: pcid, wins: sc.wins || 0, losses: sc.losses || 0, draws: (sc.draws || 0) + 1 });
+      }
+    }
+    return c.json({ ok: true, room: updatedRoom });
+  } catch (e) {
+    console.log("[XOX] move error:", e);
+    return c.json({ error: `Hamle hatası: ${e}` }, 500);
+  }
+});
+
+// POST /xox/room/:code/rematch
+app.post("/make-server-4da0b637/xox/room/:code/rematch", async (c) => {
+  const user = await verifyToken(c);
+  if (!user) return c.json({ error: "Yetkisiz erişim" }, 401);
+  try {
+    const code = c.req.param("code").toUpperCase();
+    const room: any = await retryOp(() => kv.get(`xox_room_${code}`));
+    if (!room) return c.json({ error: "Oda bulunamadı" }, 404);
+    if (room.status !== "finished") return c.json({ error: "Oyun henüz bitmedi" }, 400);
+    const isHost = room.hostId === user.id;
+    const isGuest = room.guestId === user.id;
+    if (!isHost && !isGuest) return c.json({ error: "Bu odada değilsiniz" }, 403);
+
+    const alreadyRequested = room.rematchRequestBy && room.rematchRequestBy !== user.id;
+    let updatedRoom: any;
+    if (alreadyRequested) {
+      updatedRoom = { ...room, board: ["","","","","","","","",""], currentTurn: room.currentTurn === "X" ? "O" : "X", winner: null, winLine: null, status: "playing", rematchRequestBy: null, lastMoveAt: Date.now() };
+    } else {
+      updatedRoom = { ...room, rematchRequestBy: user.id };
+    }
+    await retryOp(() => kv.set(`xox_room_${code}`, updatedRoom));
+    return c.json({ ok: true, room: updatedRoom });
+  } catch (e) {
+    console.log("[XOX] rematch error:", e);
+    return c.json({ error: `Yeniden oynama hatası: ${e}` }, 500);
+  }
+});
+
+// POST /xox/room/:code/leave
+app.post("/make-server-4da0b637/xox/room/:code/leave", async (c) => {
+  const user = await verifyToken(c);
+  if (!user) return c.json({ error: "Yetkisiz erişim" }, 401);
+  try {
+    const code = c.req.param("code").toUpperCase();
+    await kv.del(`xox_room_${code}`).catch(() => {});
+    await kv.del(`xox_open_${code}`).catch(() => {});
+    console.log(`[XOX] Oda silindi: ${code}`);
+    return c.json({ ok: true });
+  } catch (e) {
+    console.log("[XOX] leave error:", e);
+    return c.json({ error: `Ayrılma hatası: ${e}` }, 500);
+  }
+});
+
+// GET /xox/leaderboard
+app.get("/make-server-4da0b637/xox/leaderboard", async (c) => {
+  const user = await verifyToken(c);
+  if (!user) return c.json({ error: "Yetkisiz erişim" }, 401);
+  try {
+    const myCompanyId = getCompanyId(user);
+    const scores: any[] = await retryOp(() => kv.getByPrefix("xox_score_")) || [];
+    const sorted = scores
+      .filter((s: any) => s && s.userId && (s.wins > 0 || s.losses > 0 || s.draws > 0))
+      .sort((a: any, b: any) => (b.wins || 0) - (a.wins || 0))
+      .slice(0, 50)
+      .map((s: any) => ({
+        userId: s.userId,
+        displayName: s.companyId === myCompanyId ? s.userName : "Gizemli Rakip",
+        companyId: s.companyId,
+        isSameCompany: s.companyId === myCompanyId,
+        wins: s.wins || 0, losses: s.losses || 0, draws: s.draws || 0,
+      }));
+    return c.json({ ok: true, leaderboard: sorted });
+  } catch (e) {
+    console.log("[XOX] leaderboard error:", e);
+    return c.json({ error: `Liderboard hatası: ${e}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+
+// Kare Coin & TKM Oyunu route'larını kaydet
+registerKareTkmRoutes(app, verifyToken);
 
 
 Deno.serve(async (req) => {
