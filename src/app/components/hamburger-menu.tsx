@@ -12,7 +12,7 @@ import {
   Cake, User, Settings, LogOut, ChevronRight, Package,
   BarChart2, ClipboardList, CalendarDays, FileBarChart, Wallet, Gamepad2,
   ChevronDown, Crown, Sliders, Brain, Globe, Loader2, Users, DollarSign, TrendingUp,
-  AlertTriangle, Building2, Eye, ArrowLeftRight,
+  AlertTriangle, Building2, Eye,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
@@ -609,76 +609,11 @@ export function HamburgerMenu({
                         </span>
                         <div className="h-px flex-1 rounded-full" style={{ background: 'linear-gradient(to left, #fbbf2440, transparent)' }} />
                       </div>
-                      <p style={{ fontSize: 10, color: 'rgba(251,191,36,0.55)', margin: '0 4px 10px', lineHeight: 1.5 }}>
-                        Ghost mod — şirket geçişleri kaydedilmez, kapayınca Aspect'e döner.
-                      </p>
-                      {(['aspect', 'frame', 'tetra'] as const).map(cId => {
-                        const isActive = (ghostCompanyId ?? 'aspect') === cId;
-                        const configs: Record<string, { emoji: string; label: string; color: string }> = {
-                          aspect: { emoji: '✦', label: 'Aspect Agency',  color: '#a855f7' },
-                          frame:  { emoji: '🖼', label: 'Frame Studios', color: '#9dd9ea' },
-                          tetra:  { emoji: '🔷', label: 'Tetra Works',   color: '#34d399' },
-                        };
-                        const cfg = configs[cId];
-                        return (
-                          <motion.button
-                            key={cId}
-                            whileTap={{ scale: 0.97 }}
-                            onClick={() => { onSwitchCompany(cId === 'aspect' ? null : cId); onNavigate('dashboard'); close(); }}
-                            className="w-full flex items-center gap-3 rounded-xl mb-1.5"
-                            style={{
-                              padding: '10px 12px',
-                              background: isActive ? `linear-gradient(135deg, ${cfg.color}25, ${cfg.color}12)` : 'rgba(255,255,255,0.04)',
-                              border: isActive ? `1px solid ${cfg.color}55` : '1px solid rgba(255,255,255,0.09)',
-                              boxShadow: isActive ? `0 0 14px ${cfg.color}20` : 'none',
-                              transition: 'all 0.2s',
-                            }}
-                          >
-                            <div style={{
-                              width: 32, height: 32, borderRadius: 10, flexShrink: 0,
-                              background: isActive ? `${cfg.color}30` : 'rgba(255,255,255,0.06)',
-                              border: `1px solid ${isActive ? cfg.color + '50' : 'rgba(255,255,255,0.12)'}`,
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              fontSize: 16, boxShadow: isActive ? `0 0 10px ${cfg.color}40` : 'none',
-                              transition: 'all 0.2s',
-                            }}>
-                              {cfg.emoji}
-                            </div>
-                            <div className="flex-1 min-w-0 text-left">
-                              <p style={{ fontSize: 12, fontWeight: 700, color: isActive ? cfg.color : 'rgba(255,255,255,0.60)', margin: 0 }}>
-                                {cfg.label}
-                              </p>
-                              <p style={{ fontSize: 9, color: isActive ? `${cfg.color}80` : 'rgba(255,255,255,0.25)', marginTop: 1 }}>
-                                {isActive ? '👁 İzleniyor' : 'Geçiş yap'}
-                              </p>
-                            </div>
-                            {isActive
-                              ? <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: cfg.color, boxShadow: `0 0 8px ${cfg.color}` }} />
-                              : <ArrowLeftRight style={{ width: 12, height: 12, color: 'rgba(255,255,255,0.25)', flexShrink: 0 }} />
-                            }
-                          </motion.button>
-                        );
-                      })}
-                      {ghostCompanyId && (
-                        <motion.button
-                          whileTap={{ scale: 0.97 }}
-                          onClick={() => { onSwitchCompany(null); onNavigate('dashboard'); close(); }}
-                          className="w-full flex items-center justify-center gap-2 rounded-xl mt-2"
-                          style={{
-                            padding: '9px', fontSize: 11, fontWeight: 700,
-                            background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.35)',
-                            color: '#fbbf24', cursor: 'pointer',
-                          }}
-                        >
-                          ↩ Aspect'e Dön (Ghost Çık)
-                        </motion.button>
-                      )}
-
                       {/* Şirket Yönetim Paneli butonu */}
                       <motion.button
                         whileTap={{ scale: 0.97 }}
                         onClick={() => { onNavigate('super-admin'); close(); }}
-                        className="w-full flex items-center gap-3 rounded-xl mt-2"
+                        className="w-full flex items-center gap-3 rounded-xl"
                         style={{
                           padding: '11px 12px',
                           background: 'linear-gradient(135deg, rgba(251,191,36,0.18), rgba(245,158,11,0.10))',

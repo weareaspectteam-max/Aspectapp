@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { supabase, SERVER_URL } from '../lib/supabase';
-import { buildHeaders } from '../lib/api';
+import { buildHeaders, appendGhostParam } from '../lib/api';
 
 interface UserManagementProps {
   userName: string;
@@ -102,8 +102,8 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
     setLoading(true); setError('');
     try {
       const headers = buildHeaders(accessToken);
-      // Superadmin ghost modunda company_id query param ile şirketi belirt
-      const url = `${SERVER_URL}/users${userCompanyId !== 'aspect' ? `?company_id=${userCompanyId}` : ''}`;
+      // Ghost mod desteği: appendGhostParam otomatik olarak ?company_id=X ekler
+      const url = appendGhostParam(`${SERVER_URL}/users`);
       const res = await fetch(url, { headers });
       if (!res.ok) { const j = await res.json(); setError(j.error || 'Kullanıcılar yüklenemedi.'); return; }
       const { users: all } = await res.json();
