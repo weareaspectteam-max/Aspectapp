@@ -207,21 +207,40 @@ const createNotification = async (
 };
 
 // ──────────────────────────────────────────
+// TELEGRAM HELPER: Şirkete özel config oku (KV → env fallback)
+// ──────────────────────────────────────────
+const getTelegramConfig = async (companyId: string = "aspect"): Promise<{ token: string; chatId: string } | null> => {
+  try {
+    const ckv = companyKvFor(companyId);
+    const cfg: any = await ckv.get("company_telegram_config");
+    if (cfg?.token && cfg?.chatId) {
+      return { token: cfg.token, chatId: cfg.chatId };
+    }
+  } catch (e) {
+    console.log(`[Telegram] KV config okunamadı (${companyId}):`, e);
+  }
+  // Fallback: env vars (geriye dönük uyumluluk)
+  const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
+  const chatId = Deno.env.get("TELEGRAM_GROUP_CHAT_ID");
+  if (token && chatId) return { token, chatId };
+  return null;
+};
+
+// ──────────────────────────────────────────
 // TELEGRAM HELPER: Gruba mesaj gönder (non-blocking)
 // ──────────────────────────────────────────
-const sendTelegramMessage = async (text: string, parseMode: string = "HTML"): Promise<void> => {
+const sendTelegramMessage = async (text: string, parseMode: string = "HTML", companyId: string = "aspect"): Promise<void> => {
   try {
-    const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
-    const chatId = Deno.env.get("TELEGRAM_GROUP_CHAT_ID");
-    if (!token || !chatId) {
-      console.log("[Telegram] TOKEN veya CHAT_ID eksik — bildirim atlandı.");
+    const cfg = await getTelegramConfig(companyId);
+    if (!cfg) {
+      console.log(`[Telegram] Config eksik (${companyId}) — bildirim atlandı.`);
       return;
     }
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        chat_id: chatId,
+        chat_id: cfg.chatId,
         text,
         parse_mode: parseMode,
       }),
@@ -243,20 +262,20 @@ const sendTelegramMessage = async (text: string, parseMode: string = "HTML"): Pr
 const sendTelegramWithInlineKeyboard = async (
   text: string,
   inlineKeyboard: Array<Array<{ text: string; callback_data: string }>>,
-  parseMode: string = "HTML"
+  parseMode: string = "HTML",
+  companyId: string = "aspect"
 ): Promise<number | null> => {
   try {
-    const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
-    const chatId = Deno.env.get("TELEGRAM_GROUP_CHAT_ID");
-    if (!token || !chatId) {
-      console.log("[Telegram] TOKEN veya CHAT_ID eksik — inline mesaj atlandı.");
+    const cfg = await getTelegramConfig(companyId);
+    if (!cfg) {
+      console.log(`[Telegram] Config eksik (${companyId}) — inline mesaj atlandı.`);
       return null;
     }
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        chat_id: chatId,
+        chat_id: cfg.chatId,
         text,
         parse_mode: parseMode,
         reply_markup: { inline_keyboard: inlineKeyboard },
@@ -396,6 +415,26 @@ const seedInitialCompanies = async () => {
 };
 // Sunucu başlangıcında seed'le (non-blocking)
 seedInitialCompanies().catch(e => console.log("[seed] company profiles error:", e));
+
+// ── Aspect için Telegram config seed: env → KV (idempotent) ──────────────────
+const seedAspectTelegramConfig = async () => {
+  try {
+    const envToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
+    const envChatId = Deno.env.get("TELEGRAM_GROUP_CHAT_ID");
+    if (!envToken || !envChatId) return; // env yoksa seed etme
+    const ckv = companyKvFor("aspect");
+    const existing = await ckv.get("company_telegram_config");
+    if (!existing) {
+      await ckv.set("company_telegram_config", { token: envToken, chatId: envChatId });
+      console.log("[seed] Aspect Telegram config env'den KV'ye yazıldı.");
+    } else {
+      console.log("[seed] Aspect Telegram config zaten KV'de mevcut.");
+    }
+  } catch (e) {
+    console.log("[seed] Aspect Telegram config seed hatası:", e);
+  }
+};
+seedAspectTelegramConfig().catch(e => console.log("[seed] telegram config error:", e));
 
 /** ozgur.demirbas@yandex.com kullanıcısını superadmin yap (idempotent) */
 const bootstrapSuperAdmin = async () => {
@@ -1149,7 +1188,9 @@ app.post("/make-server-4da0b637/telegram/webhook", async (c) => {
         const emoji = isApprove ? "✅" : "❌";
         const durum = isApprove ? "ONAYLANDI" : "REDDEDİLDİ";
         await sendTelegramMessage(
-          `${emoji} <b>Satış iptali ${durum}</b>\n👤 Karar veren: <b>${from}</b>\n📝 Sebep: ${talep.neden || "(belirtilmedi)"}\n🆔 <code>${approvalId}</code>`
+          `${emoji} <b>Satış iptali ${durum}</b>\n👤 Karar veren: <b>${from}</b>\n📝 Sebep: ${talep.neden || "(belirtilmedi)"}\n🆔 <code>${approvalId}</code>`,
+          "HTML",
+          talep?.companyId || "aspect"
         );
         console.log(`[TG Webhook] İptal talebi ${yeniStatus}: ${approvalId} — ${from}`);
       }
@@ -2933,7 +2974,7 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
       const kullanici = user.user_metadata?.full_name || user.email || "Bilinmiyor";
       const saatTR = new Date().toLocaleTimeString("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" });
       const msg = `${mekanEmoji} AÇILIŞ 🟢 ${mekanAdi} ⏰ ${saatTR} 👤 ${kullanici}`;
-      sendTelegramMessage(msg);
+      sendTelegramMessage(msg, "HTML", getCompanyId(user));
     } catch (tgErr) {
       console.log("[Telegram] Açılış bildirimi gönderilemedi:", tgErr);
     }
@@ -3180,7 +3221,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       const kullaniciKap = user.user_metadata?.full_name || user.email || "Bilinmiyor";
       const saatTRKap = new Date().toLocaleTimeString("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" });
       const msgKap = `${mekanEmojiKap} KAPANIŞ 🔴 ${mekanAdiKap} ⏰ ${saatTRKap} 👤 ${kullaniciKap}`;
-      sendTelegramMessage(msgKap);
+      sendTelegramMessage(msgKap, "HTML", getCompanyId(user));
     } catch (tgErr) {
       console.log("[Telegram] Kapanış bildirimi gönderilemedi:", tgErr);
     }
@@ -6833,7 +6874,7 @@ app.delete("/make-server-4da0b637/stok/satis/:mekanId/:tarih/:satisId", async (c
         ].join("\n");
 
         // await ile gönder — edge function kapanmadan önce tamamlansın
-        await sendTelegramMessage(msg);
+        await sendTelegramMessage(msg, "HTML", getCompanyId(user));
       } catch (tgErr) {
         console.log("[Telegram] iptal mesaj hazırlama hatası:", tgErr);
       }
@@ -6904,6 +6945,7 @@ app.post("/make-server-4da0b637/stok/satis-iptal-talep", async (c) => {
       mekanAdi,
       tarih,
       neden,
+      companyId: getCompanyId(user),
       status: "bekliyor",
       requestedAt: new Date().toISOString(),
       requestedBy: user.id,
@@ -6938,7 +6980,7 @@ app.post("/make-server-4da0b637/stok/satis-iptal-talep", async (c) => {
       `📱 <i>Onay veya red için Aspect Operations uygulamasını açın.</i>`,
     ].join("\n");
 
-    await sendTelegramMessage(msg);
+    await sendTelegramMessage(msg, "HTML", getCompanyId(user));
 
     console.log(`[İptal Talep] Oluşturuldu: ${approvalId} | satisId: ${satisId} | talep eden: ${iptalEden}`);
     return c.json({ approvalId, status: "bekliyor" });
@@ -7015,7 +7057,9 @@ app.post("/make-server-4da0b637/stok/satis-iptal-karar/:approvalId", async (c) =
     const emoji = karar === "onaylandi" ? "✅" : "❌";
     const durumLabel = karar === "onaylandi" ? "ONAYLANDI" : "REDDEDİLDİ";
     await sendTelegramMessage(
-      `${emoji} <b>Satış iptali ${durumLabel}</b>\n👤 Karar veren: <b>${resolvedBy}</b> (uygulama içi)\n📝 Sebep: ${talep.neden || "(belirtilmedi)"}\n🆔 <code>${approvalId}</code>`
+      `${emoji} <b>Satış iptali ${durumLabel}</b>\n👤 Karar veren: <b>${resolvedBy}</b> (uygulama içi)\n📝 Sebep: ${talep.neden || "(belirtilmedi)"}\n🆔 <code>${approvalId}</code>`,
+      "HTML",
+      talep?.companyId || getCompanyId(user)
     );
 
     console.log(`[İptal Karar] ✅ İşlendi: ${approvalId} → ${karar} (${resolvedBy})`);
@@ -7180,7 +7224,7 @@ app.delete("/make-server-4da0b637/stok/kare/:mekanId/:tarih/:id", async (c) => {
         `🆔 <code>${id}</code>`,
       ].join("\n");
 
-      await sendTelegramMessage(msg);
+      await sendTelegramMessage(msg, "HTML", getCompanyId(user));
     } catch (tgErr) {
       console.log("[Telegram] kare silme mesaj hatası:", tgErr);
     }
@@ -10405,6 +10449,7 @@ app.post("/make-server-4da0b637/stok/gecikme-bildir", async (c) => {
       tarih,
       queuedAt,      // timestamp (ms)
       gecikmeMs,     // ms cinsinden gecikme
+      companyId: bodyCompanyId,
       // Satış alanları
       items,
       totalPrice,
@@ -10416,6 +10461,7 @@ app.post("/make-server-4da0b637/stok/gecikme-bildir", async (c) => {
       photographerName,
       frameCount,
     } = body;
+    const gecikmeCompanyId: string = bodyCompanyId || "aspect";
 
     const formatTs = (ms: number) => {
       const d = new Date(ms);
@@ -10478,7 +10524,7 @@ app.post("/make-server-4da0b637/stok/gecikme-bildir", async (c) => {
         `  • <b>Kare sayısı:</b> ${frameCount}`;
     }
 
-    await sendTelegramMessage(msg);
+    await sendTelegramMessage(msg, "HTML", gecikmeCompanyId);
     return c.json({ ok: true });
   } catch (err) {
     console.log("gecikme-bildir error:", err);
@@ -10612,16 +10658,16 @@ app.post("/make-server-4da0b637/vardiya/checkin", async (c) => {
     if (isResume) {
       console.log(`[Vardiya] Devam: ${userName} — ${tarih} ${nowTrStr}`);
       const tg = `▶️ <b>Vardiya Devam Etti</b>\n\n👤 <b>${userName}</b> vardiyasına geri döndü.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n🕐 Dönüş saati: <b>${nowTrStr}</b>\n📅 Tarih: ${tarih}\n🔄 Oturum: ${updatedSessions.length}. giriş`;
-      sendTelegramMessage(tg, "HTML").catch(() => {});
+      sendTelegramMessage(tg, "HTML", getCompanyId(user)).catch(() => {});
     } else if (isLate) {
       console.log(`[Vardiya] Check-in (geç): ${userName} — ${tarih} ${plannedStart} → ${lateMin}dk geç`);
       const tg = `⚠️ <b>Geç Giriş Bildirimi</b>\n\n👤 <b>${userName}</b> vardiyasına geç başladı.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n⏰ Planlanan: <b>${plannedStart}</b>\n⏱️ Gecikme: <b>${lateMin} dk</b>\n📅 Tarih: ${tarih}`;
-      sendTelegramMessage(tg, "HTML").catch(() => {});
+      sendTelegramMessage(tg, "HTML", getCompanyId(user)).catch(() => {});
     } else {
       console.log(`[Vardiya] Check-in: ${userName} — ${tarih} ${plannedStart}`);
       const erken = lateMin < 0 ? ` (${Math.abs(lateMin)} dk erken)` : "";
       const tg = `✅ <b>Vardiya Başladı</b>\n\n👤 <b>${userName}</b> vardiyasına başladı.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n⏰ Planlanan: <b>${plannedStart}</b>\n🕐 Giriş saati: <b>${nowTrStr}</b>${erken}\n📅 Tarih: ${tarih}`;
-      sendTelegramMessage(tg, "HTML").catch(() => {});
+      sendTelegramMessage(tg, "HTML", getCompanyId(user)).catch(() => {});
     }
 
     return c.json({ success: true, data, isLate: !isResume && isLate, lateMin: (!isResume && isLate) ? lateMin : 0, isResume });
@@ -10703,7 +10749,7 @@ app.post("/make-server-4da0b637/vardiya/checkout", async (c) => {
       await ckv.set(`paused_${userId}_${tarih}`, pausedData);
       console.log(`[Vardiya] Geçici Çıkış: ${userName} — ${tarih} ${outTrStr}`);
       const tg = `⏸️ <b>Geçici Çıkış</b>\n\n👤 <b>${userName}</b> kısa süreliğine vardiyasından ayrıldı.\n📍 ${locIcon} ${loc}\n🕐 Ayrılış: <b>${outTrStr}</b>\n⏱️ Şimdiye kadar: <b>${sureStr}</b>\n📅 Tarih: ${tarih}\n💡 Devam etmek için tekrar giriş yapabilir.`;
-      sendTelegramMessage(tg, "HTML").catch(() => {});
+      sendTelegramMessage(tg, "HTML", getCompanyId(user)).catch(() => {});
       return c.json({ success: true, erken: true, totalWorkedMin });
     } else {
       // Final çıkış: checkout_ yaz, paused_ temizle
@@ -10713,7 +10759,7 @@ app.post("/make-server-4da0b637/vardiya/checkout", async (c) => {
       console.log(`[Vardiya] Final Çıkış: ${userName} — ${tarih} ${outTrStr}`);
       const sessionNote = updatedSessions.length > 1 ? `\n🔄 Oturum sayısı: <b>${updatedSessions.length}</b>` : "";
       const tg = `🔴 <b>Vardiya Bitti</b>\n\n👤 <b>${userName}</b> vardiyasını tamamladı.\n📍 ${locIcon} ${loc}\n⏰ Planlanan bitiş: <b>${plannedEndStr}</b>\n🕐 Çıkış saati: <b>${outTrStr}</b>\n⏱️ Toplam çalışılan: <b>${sureStr}</b>${lateMinOut > 0 ? `\n⚠️ Geç giriş: <b>${lateMinOut} dk</b>` : ""}${sessionNote}\n📅 Tarih: ${tarih}`;
-      sendTelegramMessage(tg, "HTML").catch(() => {});
+      sendTelegramMessage(tg, "HTML", getCompanyId(user)).catch(() => {});
       return c.json({ success: true, data });
     }
   } catch (err) {
@@ -10741,7 +10787,7 @@ app.post("/make-server-4da0b637/vardiya/gec-bildir", async (c) => {
     await ckv.set(`lateNotice_${userId}_${tarih}`, data);
     const reasonEmoji = reason === "Trafik" ? "🚗" : reason === "Ulaşım" ? "🚌" : "💬";
     const telegramText = `⚠️ <b>Geç Kalma Bildirimi</b>\n\n👤 <b>${userName}</b> geç kalacağını bildirdi.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n⏰ Planlanan giriş: <b>${plannedStart || "?"}</b>\n⏱️ Tahmini gecikme: <b>${delayMin || "?"} dk</b>\n${reasonEmoji} Sebep: <b>${reason || "Belirtilmedi"}</b>\n📅 Tarih: ${tarih}`;
-    await sendTelegramMessage(telegramText, "HTML");
+    await sendTelegramMessage(telegramText, "HTML", getCompanyId(user));
     console.log(`[Vardiya] Geç bildirim: ${userName} — ${delayMin}dk, sebep: ${reason}`);
     return c.json({ success: true, alreadySent: false, data });
   } catch (err) {
@@ -10802,6 +10848,104 @@ app.get("/make-server-4da0b637/vardiya/istatistikler", async (c) => {
   } catch (err) {
     console.log("vardiya/istatistikler error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// Şirkete özel Telegram Konfigürasyonu
+// GET    /make-server-4da0b637/telegram/company-config  → { hasConfig, chatId }
+// POST   /make-server-4da0b637/telegram/company-config  → { ok: true }
+// DELETE /make-server-4da0b637/telegram/company-config  → { ok: true }
+// POST   /make-server-4da0b637/telegram/company-config/test → test mesajı gönder
+// Sadece yonetici rolü erişebilir; token hiçbir zaman frontend'e dönmez.
+// ══════════════════════════════════════════
+
+app.get("/make-server-4da0b637/telegram/company-config", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role as string;
+    if (role !== "yonetici") return c.json({ error: "Sadece yönetici erişebilir." }, 403);
+    const ckv = companyKvFor(getCompanyId(user));
+    const cfg: any = await ckv.get("company_telegram_config");
+    return c.json({ hasConfig: !!(cfg?.token && cfg?.chatId), chatId: cfg?.chatId || null });
+  } catch (e) {
+    console.log("[telegram/company-config GET] Hata:", e);
+    return c.json({ error: `Sunucu hatası: ${e}` }, 500);
+  }
+});
+
+app.post("/make-server-4da0b637/telegram/company-config", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role as string;
+    if (role !== "yonetici") return c.json({ error: "Sadece yönetici erişebilir." }, 403);
+    const body = await c.req.json();
+    const { token, chatId } = body;
+    if (!token || typeof token !== "string" || !token.startsWith("bot") && !token.includes(":")) {
+      // Token format: "1234567890:ABCDefgh..."
+      if (!token || typeof token !== "string" || token.trim().length < 10) {
+        return c.json({ error: "Geçersiz Bot Token formatı." }, 400);
+      }
+    }
+    if (!chatId || typeof chatId !== "string" || chatId.trim().length < 3) {
+      return c.json({ error: "Geçersiz Chat ID." }, 400);
+    }
+    const companyId = getCompanyId(user);
+    const ckv = companyKvFor(companyId);
+    await ckv.set("company_telegram_config", { token: token.trim(), chatId: chatId.trim() });
+    console.log(`[telegram/company-config POST] ${companyId} şirketi için Telegram config kaydedildi.`);
+    return c.json({ ok: true });
+  } catch (e) {
+    console.log("[telegram/company-config POST] Hata:", e);
+    return c.json({ error: `Sunucu hatası: ${e}` }, 500);
+  }
+});
+
+app.delete("/make-server-4da0b637/telegram/company-config", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role as string;
+    if (role !== "yonetici") return c.json({ error: "Sadece yönetici erişebilir." }, 403);
+    const companyId = getCompanyId(user);
+    const ckv = companyKvFor(companyId);
+    await ckv.del("company_telegram_config");
+    console.log(`[telegram/company-config DELETE] ${companyId} şirketi için Telegram config silindi.`);
+    return c.json({ ok: true });
+  } catch (e) {
+    console.log("[telegram/company-config DELETE] Hata:", e);
+    return c.json({ error: `Sunucu hatası: ${e}` }, 500);
+  }
+});
+
+app.post("/make-server-4da0b637/telegram/company-config/test", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role as string;
+    if (role !== "yonetici") return c.json({ error: "Sadece yönetici erişebilir." }, 403);
+    const companyId = getCompanyId(user);
+    const cfg = await getTelegramConfig(companyId);
+    if (!cfg) return c.json({ error: "Önce Telegram konfigürasyonu kaydedin." }, 400);
+    const senderName = user.user_metadata?.full_name || user.email || "Yönetici";
+    const testMsg = `✅ <b>Telegram Bağlantısı Başarılı!</b>\n\n🏢 <b>Şirket:</b> ${companyId.toUpperCase()}\n👤 <b>Test eden:</b> ${senderName}\n🕐 <b>Saat:</b> ${new Date().toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" })}\n\n<i>Bu bir test mesajıdır. Aspect Operations uygulamasından gönderildi.</i>`;
+    const res = await fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: cfg.chatId, text: testMsg, parse_mode: "HTML" }),
+    });
+    const result = await res.json();
+    if (!result.ok) {
+      console.log("[telegram/test] Telegram API hatası:", JSON.stringify(result));
+      return c.json({ error: `Telegram API hatası: ${result.description || "Bilinmiyor"}` }, 400);
+    }
+    console.log(`[telegram/test] ${companyId} için test mesajı gönderildi: ${result.result?.message_id}`);
+    return c.json({ ok: true, messageId: result.result?.message_id });
+  } catch (e) {
+    console.log("[telegram/company-config/test] Hata:", e);
+    return c.json({ error: `Sunucu hatası: ${e}` }, 500);
   }
 });
 

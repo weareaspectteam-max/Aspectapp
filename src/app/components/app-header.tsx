@@ -134,7 +134,13 @@ export function AppHeader({
   onSwitchCompany,
 }: AppHeaderProps) {
   const isDash    = !activeTab || activeTab === 'dashboard' || activeTab === 'home';
-  const pageLabel = PAGE_LABELS[activeTab] ?? 'Dashboard';
+  const rawLabel  = PAGE_LABELS[activeTab] ?? 'Dashboard';
+  // AI sayfalarında şirkete göre dinamik isim
+  const isAiPage  = activeTab === 'aspect-ai' || activeTab === 'aspect-ai-page';
+  const companyAiLabel = effectiveCompanyId
+    ? `${effectiveCompanyId.charAt(0).toUpperCase()}${effectiveCompanyId.slice(1)} AI`
+    : 'AI';
+  const pageLabel = isAiPage ? companyAiLabel : rawLabel;
   const pageColor = PAGE_COLORS[activeTab] ?? ROLE_COLORS[userRole] ?? '#a855f7';
   const roleColor = ROLE_COLORS[userRole]  ?? '#a855f7';
   const roleTitle = ROLE_TITLES[userRole]  ?? 'Kullanıcı';

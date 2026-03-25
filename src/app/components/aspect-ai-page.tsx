@@ -4145,7 +4145,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
           {/* Title */}
           <div className="flex flex-col">
             <span className="text-[15px] font-bold text-white leading-tight">
-              {companyId === 'frame' ? 'Frame AI' : companyId === 'tetra' ? 'Tetra AI' : 'Aspect AI'}
+              {companyId ? `${companyId.charAt(0).toUpperCase()}${companyId.slice(1)} AI` : 'Aspect AI'}
             </span>
             {useOpenAI && (
               <span style={{ fontSize: 9, color: '#a78bfa', fontWeight: 600, letterSpacing: '0.04em' }}>

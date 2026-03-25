@@ -271,6 +271,16 @@ export function HamburgerMenu({
   const [companyKeyDeleting, setCompanyKeyDeleting] = useState(false);
   const [companyKeyMsg, setCompanyKeyMsg]     = useState<{type: 'ok'|'err'; text: string} | null>(null);
 
+  /* ── Telegram Config state ── */
+  const [tgHasConfig, setTgHasConfig]         = useState(false);
+  const [tgChatIdDisplay, setTgChatIdDisplay] = useState<string | null>(null);
+  const [tgTokenInput, setTgTokenInput]       = useState('');
+  const [tgChatIdInput, setTgChatIdInput]     = useState('');
+  const [tgSaving, setTgSaving]               = useState(false);
+  const [tgDeleting, setTgDeleting]           = useState(false);
+  const [tgTesting, setTgTesting]             = useState(false);
+  const [tgMsg, setTgMsg]                     = useState<{type: 'ok'|'err'; text: string} | null>(null);
+
   const sections  = getSections(userRole, onNavigate, onLogout, close, activeTab, effectiveCompanyId);
   const roleColor = ROLE_COLORS[userRole] ?? '#a855f7';
   const roleTitle = ROLE_TITLES[userRole] ?? '';
@@ -284,9 +294,10 @@ export function HamburgerMenu({
     if (!isOpen || !isYonetici || settingsLoaded) return;
     authHeaders().then(async headers => {
       try {
-        const [toggleData, keyData] = await Promise.all([
+        const [toggleData, keyData, tgData] = await Promise.all([
           fetch(`${API_BASE}/ai/toggle-settings`, { headers }).then(r => r.ok ? r.json() : null),
           fetch(`${API_BASE}/ai/company-key`, { headers }).then(r => r.ok ? r.json() : null),
+          fetch(`${API_BASE}/telegram/company-config`, { headers }).then(r => r.ok ? r.json() : null),
         ]);
         if (toggleData) {
           setAiPersonal(toggleData.ai_personal_yonetici !== false);
@@ -297,6 +308,10 @@ export function HamburgerMenu({
         }
         if (keyData) {
           setCompanyKeyHas(!!keyData.hasKey);
+        }
+        if (tgData) {
+          setTgHasConfig(!!tgData.hasConfig);
+          setTgChatIdDisplay(tgData.chatId || null);
         }
       } catch (e) {
         console.error('Ayarlar yüklenirken hata:', e);
@@ -385,6 +400,86 @@ export function HamburgerMenu({
       setCompanyKeyMsg({ type: 'err', text: 'Bağlantı hatası.' });
     } finally {
       setCompanyKeyDeleting(false);
+    }
+  };
+
+  /* ── Telegram Config handler'ları ── */
+  const handleSaveTgConfig = async () => {
+    const token = tgTokenInput.trim();
+    const chatId = tgChatIdInput.trim();
+    if (!token || token.length < 10) {
+      setTgMsg({ type: 'err', text: 'Bot Token gereklidir (örn: 1234567890:ABCDef...)' });
+      return;
+    }
+    if (!chatId || chatId.length < 3) {
+      setTgMsg({ type: 'err', text: 'Chat ID gereklidir (örn: -1001234567890)' });
+      return;
+    }
+    setTgSaving(true);
+    setTgMsg(null);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${API_BASE}/telegram/company-config`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ token, chatId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setTgHasConfig(true);
+        setTgChatIdDisplay(chatId);
+        setTgTokenInput('');
+        setTgChatIdInput('');
+        setTgMsg({ type: 'ok', text: 'Telegram konfigürasyonu kaydedildi ✅' });
+      } else {
+        setTgMsg({ type: 'err', text: data.error || 'Kaydetme hatası.' });
+      }
+    } catch (e) {
+      setTgMsg({ type: 'err', text: 'Bağlantı hatası.' });
+    } finally {
+      setTgSaving(false);
+    }
+  };
+
+  const handleDeleteTgConfig = async () => {
+    setTgDeleting(true);
+    setTgMsg(null);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${API_BASE}/telegram/company-config`, { method: 'DELETE', headers });
+      const data = await res.json();
+      if (data.ok) {
+        setTgHasConfig(false);
+        setTgChatIdDisplay(null);
+        setTgTokenInput('');
+        setTgChatIdInput('');
+        setTgMsg({ type: 'ok', text: 'Telegram konfigürasyonu silindi.' });
+      } else {
+        setTgMsg({ type: 'err', text: data.error || 'Silme hatası.' });
+      }
+    } catch (e) {
+      setTgMsg({ type: 'err', text: 'Bağlantı hatası.' });
+    } finally {
+      setTgDeleting(false);
+    }
+  };
+
+  const handleTestTgConfig = async () => {
+    setTgTesting(true);
+    setTgMsg(null);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${API_BASE}/telegram/company-config/test`, { method: 'POST', headers });
+      const data = await res.json();
+      if (data.ok) {
+        setTgMsg({ type: 'ok', text: 'Test mesajı gönderildi! Telegram kanalınızı kontrol edin 📨' });
+      } else {
+        setTgMsg({ type: 'err', text: data.error || 'Test başarısız.' });
+      }
+    } catch (e) {
+      setTgMsg({ type: 'err', text: 'Bağlantı hatası.' });
+    } finally {
+      setTgTesting(false);
     }
   };
 
@@ -982,6 +1077,148 @@ export function HamburgerMenu({
                                           fontSize: 10, color: companyKeyMsg.type === 'ok' ? '#86efac' : '#fca5a5',
                                         }}>
                                           {companyKeyMsg.text}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* ── Telegram Bağlantısı Bölümü ── */}
+                                    <div style={{
+                                      marginTop: 10,
+                                      borderRadius: 14,
+                                      background: 'rgba(255,255,255,0.04)',
+                                      border: '1px solid rgba(29,161,242,0.25)',
+                                      padding: '12px 12px 10px',
+                                    }}>
+                                      {/* Başlık */}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+                                        <div style={{
+                                          width: 26, height: 26, borderRadius: 8,
+                                          background: 'rgba(29,161,242,0.18)',
+                                          border: '1px solid rgba(29,161,242,0.3)',
+                                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                          fontSize: 13,
+                                        }}>✈️</div>
+                                        <div style={{ flex: 1 }}>
+                                          <div style={{ fontSize: 12, fontWeight: 600, color: '#7dd3fc' }}>Telegram Bağlantısı</div>
+                                          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>
+                                            Bildirimler bu şirkete özel kanala gönderilir.
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Durum rozeti */}
+                                      <div style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                                        background: tgHasConfig ? 'rgba(34,197,94,0.12)' : 'rgba(255,255,255,0.06)',
+                                        border: `1px solid ${tgHasConfig ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.12)'}`,
+                                        borderRadius: 20, padding: '3px 10px', marginBottom: 10,
+                                      }}>
+                                        <div style={{
+                                          width: 6, height: 6, borderRadius: '50%',
+                                          background: tgHasConfig ? '#22c55e' : '#6b7280',
+                                          boxShadow: tgHasConfig ? '0 0 6px #22c55e' : 'none',
+                                        }} />
+                                        <span style={{ fontSize: 10, color: tgHasConfig ? '#86efac' : 'rgba(255,255,255,0.4)', fontWeight: 600 }}>
+                                          {tgHasConfig
+                                            ? `Bağlı${tgChatIdDisplay ? ` · ${tgChatIdDisplay}` : ''}`
+                                            : 'Bağlı Değil'}
+                                        </span>
+                                      </div>
+
+                                      {/* Input alanları */}
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                        <input
+                                          type="password"
+                                          placeholder="Bot Token (1234567:ABCDef...)"
+                                          value={tgTokenInput}
+                                          onChange={e => { setTgTokenInput(e.target.value); setTgMsg(null); }}
+                                          style={{
+                                            width: '100%', borderRadius: 10, border: '1px solid rgba(29,161,242,0.3)',
+                                            background: 'rgba(0,0,0,0.25)', color: '#fff',
+                                            padding: '8px 10px', fontSize: 11, outline: 'none',
+                                            fontFamily: 'monospace', boxSizing: 'border-box',
+                                          }}
+                                        />
+                                        <input
+                                          type="text"
+                                          placeholder="Chat ID (örn: -1001234567890)"
+                                          value={tgChatIdInput}
+                                          onChange={e => { setTgChatIdInput(e.target.value); setTgMsg(null); }}
+                                          style={{
+                                            width: '100%', borderRadius: 10, border: '1px solid rgba(29,161,242,0.3)',
+                                            background: 'rgba(0,0,0,0.25)', color: '#fff',
+                                            padding: '8px 10px', fontSize: 11, outline: 'none',
+                                            fontFamily: 'monospace', boxSizing: 'border-box',
+                                          }}
+                                        />
+                                        <button
+                                          onClick={handleSaveTgConfig}
+                                          disabled={tgSaving || !tgTokenInput.trim() || !tgChatIdInput.trim()}
+                                          style={{
+                                            width: '100%', borderRadius: 10, border: '1px solid rgba(29,161,242,0.4)',
+                                            background: tgSaving || !tgTokenInput.trim() || !tgChatIdInput.trim()
+                                              ? 'rgba(29,161,242,0.08)' : 'rgba(29,161,242,0.25)',
+                                            color: '#7dd3fc', padding: '9px 12px', fontSize: 12,
+                                            fontWeight: 700, cursor: tgSaving || !tgTokenInput.trim() || !tgChatIdInput.trim() ? 'not-allowed' : 'pointer',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                                          }}
+                                        >
+                                          {tgSaving
+                                            ? <><Loader2 style={{ width: 12, height: 12 }} className="animate-spin" /> Kaydediliyor...</>
+                                            : '💾 Kaydet'
+                                          }
+                                        </button>
+                                      </div>
+
+                                      {/* Test + Sil butonları (config varsa) */}
+                                      {tgHasConfig && (
+                                        <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
+                                          <button
+                                            onClick={handleTestTgConfig}
+                                            disabled={tgTesting}
+                                            style={{
+                                              flex: 1, borderRadius: 10,
+                                              border: '1px solid rgba(29,161,242,0.3)',
+                                              background: 'rgba(29,161,242,0.12)',
+                                              color: '#7dd3fc', padding: '7px', fontSize: 11,
+                                              fontWeight: 600, cursor: tgTesting ? 'not-allowed' : 'pointer',
+                                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                                            }}
+                                          >
+                                            {tgTesting
+                                              ? <><Loader2 style={{ width: 11, height: 11 }} className="animate-spin" /> Test...</>
+                                              : '📨 Test Et'
+                                            }
+                                          </button>
+                                          <button
+                                            onClick={handleDeleteTgConfig}
+                                            disabled={tgDeleting}
+                                            style={{
+                                              flex: 1, borderRadius: 10,
+                                              border: '1px solid rgba(239,68,68,0.25)',
+                                              background: 'rgba(239,68,68,0.07)',
+                                              color: '#f87171', padding: '7px', fontSize: 11,
+                                              fontWeight: 600, cursor: tgDeleting ? 'not-allowed' : 'pointer',
+                                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                                            }}
+                                          >
+                                            {tgDeleting
+                                              ? <><Loader2 style={{ width: 11, height: 11 }} className="animate-spin" /> Siliniyor...</>
+                                              : '🗑️ Sil'
+                                            }
+                                          </button>
+                                        </div>
+                                      )}
+
+                                      {/* Mesaj */}
+                                      {tgMsg && (
+                                        <div style={{
+                                          marginTop: 7, borderRadius: 8, padding: '6px 10px',
+                                          background: tgMsg.type === 'ok' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                                          border: `1px solid ${tgMsg.type === 'ok' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                                          fontSize: 10, color: tgMsg.type === 'ok' ? '#86efac' : '#fca5a5',
+                                        }}>
+                                          {tgMsg.text}
                                         </div>
                                       )}
                                     </div>
