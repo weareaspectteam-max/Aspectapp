@@ -10805,17 +10805,20 @@ app.get("/make-server-4da0b637/vardiya/istatistikler", async (c) => {
     if (!["yonetici", "ust-mudur", "mudur", "operasyon", "idari"].includes(callerRole)) {
       return c.json({ error: "Yetki yok." }, 403);
     }
+    const callerCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(callerCompanyId);
     const { searchParams } = new URL(c.req.url);
     const ay = searchParams.get("ay") || new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 7);
     const [checkins, checkouts, lateNotices] = await Promise.all([
-      kv.getByPrefix("checkin_"),
-      kv.getByPrefix("checkout_"),
-      kv.getByPrefix("lateNotice_"),
+      ckv.getByPrefix("checkin_"),
+      ckv.getByPrefix("checkout_"),
+      ckv.getByPrefix("lateNotice_"),
     ]);
     const sbAdmin = getAdminClient();
     const { data: { users: allUsers } } = await sbAdmin.auth.admin.listUsers({ perPage: 1000 });
     const personeller = (allUsers || []).filter((u: any) =>
-      ["personel", "operasyon", "idari"].includes(u.user_metadata?.role)
+      ["personel", "operasyon", "idari"].includes(u.user_metadata?.role) &&
+      getCompanyId(u) === callerCompanyId
     );
     const stats = personeller.map((u: any) => {
       const uid = u.id;

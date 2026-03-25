@@ -263,13 +263,7 @@ export function Login({ onLogin }: LoginProps) {
                 boxShadow: '0 0 24px rgba(168,85,247,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
               }}
             >
-              <motion.span
-                style={{ fontSize: 22, lineHeight: 1 }}
-                animate={{ rotate: [0, 8, -8, 0] }}
-                transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-              >
-                ✦
-              </motion.span>
+              <Camera style={{ width: 26, height: 26, color: '#d4b5f7' }} strokeWidth={1.5} />
               {/* Glow halkası */}
               <motion.div
                 className="absolute inset-0 rounded-2xl"
