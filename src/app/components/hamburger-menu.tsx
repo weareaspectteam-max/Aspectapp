@@ -4,7 +4,7 @@
  * yonetici rolü için altta "YÖNETİCİ AYARLARI" accordion bölümü gösterilir.
  */
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, Home, Zap, Activity, MapPin, RotateCcw,
@@ -252,6 +252,25 @@ export function HamburgerMenu({
 }: HamburgerMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const close = () => setIsOpen(false);
+
+  /* ── Logo easter egg (6x tap → super-admin) ── */
+  const [logoTapCount, setLogoTapCount] = useState(0);
+  const logoTapTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleLogoTap = () => {
+    if (!isSuperAdmin) return;
+    const next = logoTapCount + 1;
+    if (next >= 6) {
+      setLogoTapCount(0);
+      if (logoTapTimer.current) clearTimeout(logoTapTimer.current);
+      onNavigate('super-admin');
+      close();
+      return;
+    }
+    setLogoTapCount(next);
+    if (logoTapTimer.current) clearTimeout(logoTapTimer.current);
+    logoTapTimer.current = setTimeout(() => setLogoTapCount(0), 2000);
+  };
 
   /* ── Admin section state ── */
   const [adminOpen, setAdminOpen]             = useState(false);
@@ -546,7 +565,14 @@ export function HamburgerMenu({
                     <div className="flex items-center gap-2">
                       <div
                         className="w-6 h-6 rounded-lg flex items-center justify-center"
-                        style={{ background: 'linear-gradient(135deg, #7c3aed, #a855f7)' }}
+                        onClick={handleLogoTap}
+                        style={{
+                          background: logoTapCount > 0
+                            ? `linear-gradient(135deg, #fbbf24, #f59e0b)`
+                            : 'linear-gradient(135deg, #7c3aed, #a855f7)',
+                          cursor: isSuperAdmin ? 'pointer' : 'default',
+                          transition: 'background 0.2s',
+                        }}
                       >
                         <span style={{ fontSize: 11 }}>✦</span>
                       </div>
@@ -751,49 +777,7 @@ export function HamburgerMenu({
                     </div>
                   ))}
 
-                  {/* ── SÜPER YÖNETİM — sadece superadmin görür, gizli bölüm ── */}
-                  {isSuperAdmin && onSwitchCompany && (
-                    <div style={{
-                      background: 'linear-gradient(135deg, rgba(251,191,36,0.10), rgba(251,191,36,0.04))',
-                      border: '1px solid rgba(251,191,36,0.35)',
-                      borderLeft: '3px solid rgba(251,191,36,0.80)',
-                      borderRadius: 14,
-                      padding: '10px 8px 10px',
-                    }}>
-                      <div className="flex items-center gap-2 px-1 mb-3">
-                        <div className="h-px flex-1 rounded-full" style={{ background: 'linear-gradient(to right, #fbbf2440, transparent)' }} />
-                        <span className="font-black tracking-widest flex-shrink-0" style={{
-                          fontSize: 9, color: '#fbbf24', letterSpacing: '0.15em',
-                          background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.40)',
-                          borderRadius: 20, padding: '2px 8px', boxShadow: '0 0 10px rgba(251,191,36,0.25)',
-                        }}>
-                          ⚡ SÜPER YÖNETİM
-                        </span>
-                        <div className="h-px flex-1 rounded-full" style={{ background: 'linear-gradient(to left, #fbbf2440, transparent)' }} />
-                      </div>
-                      {/* Şirket Yönetim Paneli butonu */}
-                      <motion.button
-                        whileTap={{ scale: 0.97 }}
-                        onClick={() => { onNavigate('super-admin'); close(); }}
-                        className="w-full flex items-center gap-3 rounded-xl"
-                        style={{
-                          padding: '11px 12px',
-                          background: 'linear-gradient(135deg, rgba(251,191,36,0.18), rgba(245,158,11,0.10))',
-                          border: '1px solid rgba(251,191,36,0.50)',
-                          boxShadow: '0 0 16px rgba(251,191,36,0.15)',
-                        }}
-                      >
-                        <div style={{ width: 30, height: 30, borderRadius: 10, flexShrink: 0, background: 'rgba(251,191,36,0.22)', border: '1px solid rgba(251,191,36,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>
-                          🏢
-                        </div>
-                        <div className="flex-1 text-left">
-                          <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: '#fbbf24' }}>Şirket Yönetim Paneli</p>
-                          <p style={{ margin: 0, fontSize: 9, color: 'rgba(251,191,36,0.55)' }}>Şirket oluştur, kullanıcı ekle</p>
-                        </div>
-                        <Globe style={{ width: 14, height: 14, color: 'rgba(251,191,36,0.60)', flexShrink: 0 }} />
-                      </motion.button>
-                    </div>
-                  )}
+                  {/* ── SÜPER YÖNETİM — sol üstteki ✦ logoya 6x tıklanınca açılır ── */}
 
                   {/* ── YÖNETİCİ PANELİ — en alta, HESAP'ın üstü ── */}
                   {showAdminPanel && (
