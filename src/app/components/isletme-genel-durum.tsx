@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 import { getToken, buildHeaders, appendGhostParam } from '../lib/api';
 
 // ─── Types ────────────────────────────────

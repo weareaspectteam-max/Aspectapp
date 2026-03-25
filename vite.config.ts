@@ -11,10 +11,15 @@ export default defineConfig({
     tailwindcss(),
   ],
   resolve: {
-    alias: {
+    alias: [
       // Alias @ to the src directory
-      '@': path.resolve(__dirname, './src'),
-    },
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+      // Regex alias: /utils/... → <root>/utils/...
+      {
+        find: /^\/utils\//,
+        replacement: path.resolve(__dirname, './utils') + '/',
+      },
+    ],
   },
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.

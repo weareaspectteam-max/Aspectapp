@@ -14,7 +14,7 @@ import { supabase } from './lib/supabase';
 import { setAuthToken } from './lib/api';
 import { setGhostCompanyId as setGhostCompanyIdInApi } from './lib/api';
 import { clearUserQueue, clearUserFrameQueue } from './lib/offline-queue';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from './lib/supabase-info';
 import { Login } from './components/login';
 import { NewBottomNav } from './components/new-bottom-nav';
 import { AdminDashboard } from './components/admin-dashboard';
@@ -130,7 +130,6 @@ function MainApp() {
       try {
         const { authHeaders } = await import('./lib/api');
         const headers = await authHeaders();
-        const { projectId } = await import('/utils/supabase/info');
         const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
         const [chRes, dmRes] = await Promise.allSettled([
           fetch(`${SERVER}/mesajlar/kanallar`, { headers }),

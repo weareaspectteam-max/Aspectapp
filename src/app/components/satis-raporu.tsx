@@ -3,7 +3,7 @@ import {
   ArrowLeft, RefreshCw, Loader2, TrendingUp, ShoppingBag,
   Users, MapPin, BarChart3, CreditCard, ChevronDown, Calendar,
 } from 'lucide-react';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 import { buildHeaders, getToken, appendGhostParam } from '../lib/api';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,

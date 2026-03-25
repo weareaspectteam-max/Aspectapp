@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { ChevronLeft, Volume2, VolumeX, Trophy, RotateCcw, Heart, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId, publicAnonKey } from '../lib/supabase-info';
 
 // ─────────────────────────── QUEST SKOR API ──────────────────────────────────
 interface QuestScoreEntry { sira: number; isim: string; skor: number; seviye: number; seviyeAdi: string; tarih: string; }

@@ -11,7 +11,7 @@
  */
 
 import { supabase } from './supabase';
-import { publicAnonKey } from '/utils/supabase/info';
+import { publicAnonKey } from './supabase-info';
 
 /**
  * Modül-düzeyinde token cache.

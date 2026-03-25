@@ -4,7 +4,7 @@ import { MapPin, Clock, Navigation, CheckCircle2, Lock, ArrowLeft, Zap, Loader2,
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { localDateStr, toLocalDateStr } from '../lib/date';
 import { authHeaders } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 
 const API_BASE_PS = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 

@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, Trophy, Play, RotateCcw, Star } from 'lucide-react';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId, publicAnonKey } from '../lib/supabase-info';
 import type { UserRole } from './login';
 
 // ─────────────────────────── PROPS ───────────────────────────────────────────

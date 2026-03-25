@@ -10,7 +10,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { buildHeaders, getToken } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 const POLL_INTERVAL = 5000;

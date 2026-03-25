@@ -7,7 +7,7 @@ import {
 
 import { CurrencyWidget } from './currency-widget';
 import { authHeaders } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 

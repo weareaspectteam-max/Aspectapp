@@ -18,7 +18,7 @@ import {
   X, Search, RefreshCw, Plus, Trash2,
 } from 'lucide-react';
 import { authHeaders } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 import type { UserRole } from './login';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;

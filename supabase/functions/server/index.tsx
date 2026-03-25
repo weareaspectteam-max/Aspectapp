@@ -593,6 +593,256 @@ app.get("/make-server-4da0b637/superadmin/companies/:id/users", async (c) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════════
+// BAŞVURU SİSTEMİ (Applications)
+// ══════════════════════════════════════════════════════════════════
+
+// POST /superadmin/applications — PUBLIC, başvuruyu KV'ye kaydet (auth gerekmez)
+app.post("/make-server-4da0b637/superadmin/applications", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { companyName, companyCode, description, contactEmail, contactPhone,
+            adminName, adminEmail, adminPhone, adminPassword } = body;
+
+    if (!companyName?.trim()) return c.json({ error: "Şirket adı zorunludur." }, 400);
+    if (!companyCode?.trim()) return c.json({ error: "Şirket kodu zorunludur." }, 400);
+    if (!contactEmail?.trim()) return c.json({ error: "İletişim e-postası zorunludur." }, 400);
+    if (!adminName?.trim()) return c.json({ error: "Yönetici adı zorunludur." }, 400);
+    if (!adminEmail?.trim()) return c.json({ error: "Yönetici e-postası zorunludur." }, 400);
+    if (!adminPassword || adminPassword.length < 6) return c.json({ error: "Yönetici şifresi en az 6 karakter olmalıdır." }, 400);
+
+    const code = companyCode.toLowerCase().replace(/[^a-z0-9-]/g, "");
+    if (code.length < 3) return c.json({ error: "Şirket kodu en az 3 karakter olmalıdır." }, 400);
+
+    const existing = await kv.get(`company_profile_${code}`);
+    if (existing) return c.json({ error: `'${code}' kodu ile zaten bir şirket mevcut.` }, 409);
+
+    const id = crypto.randomUUID();
+    const application = {
+      id,
+      companyName: companyName.trim(),
+      companyCode: code,
+      description: description?.trim() || "",
+      contactEmail: contactEmail.toLowerCase().trim(),
+      contactPhone: contactPhone?.trim() || "",
+      adminName: adminName.trim(),
+      adminEmail: adminEmail.toLowerCase().trim(),
+      adminPhone: adminPhone?.trim() || "",
+      adminPassword, // geçici; onayda Supabase Auth'a aktarılır, sonra temizlenir
+      submittedAt: new Date().toISOString(),
+      status: "pending",
+    };
+
+    await kv.set(`application_${id}`, application);
+    console.log(`[applications] Yeni başvuru: ${code} — ${companyName}`);
+    return c.json({ success: true, id, message: "Başvurunuz alındı. Superadmin onayı bekleniyor." });
+  } catch (err) {
+    console.log("[applications POST] error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// GET /superadmin/applications — superadmin: tüm başvuruları listele
+app.get("/make-server-4da0b637/superadmin/applications", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user || user.user_metadata?.originalRole !== "superadmin")
+      return c.json({ error: "Yetkisiz erişim." }, 403);
+
+    const all: any[] = await kv.getByPrefix("application_") || [];
+    const sorted = all
+      .filter((a: any) => a && a.id)
+      .sort((a: any, b: any) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+
+    // Şifreyi asla döndürme
+    const safe = sorted.map(({ adminPassword: _pw, ...rest }: any) => rest);
+    return c.json({ applications: safe });
+  } catch (err) {
+    console.log("[applications GET] error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /superadmin/applications/:id/approve — Onayla: şirket + yönetici oluştur
+app.post("/make-server-4da0b637/superadmin/applications/:id/approve", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user || user.user_metadata?.originalRole !== "superadmin")
+      return c.json({ error: "Yetkisiz erişim." }, 403);
+
+    const appId = c.req.param("id");
+    const application: any = await kv.get(`application_${appId}`);
+    if (!application) return c.json({ error: "Başvuru bulunamadı." }, 404);
+    if (application.status !== "pending") return c.json({ error: "Bu başvuru zaten işlenmiş." }, 400);
+
+    const { companyName, companyCode, description,
+            adminName, adminEmail, adminPhone, adminPassword } = application;
+
+    // 1. Şirket profili oluştur
+    const existingCompany = await kv.get(`company_profile_${companyCode}`);
+    if (existingCompany) return c.json({ error: `'${companyCode}' kodu ile şirket zaten mevcut.` }, 409);
+
+    const profile = {
+      id: companyCode,
+      name: companyName,
+      emoji: "🏢",
+      color: "#a855f7",
+      description: description || `${companyName} şirketi`,
+      status: "active",
+      createdAt: new Date().toISOString(),
+      createdBy: "application",
+      applicationId: appId,
+    };
+    await kv.set(`company_profile_${companyCode}`, profile);
+
+    // 2. Yönetici hesabını Supabase Auth'ta oluştur
+    const supabase = getAdminClient();
+    const { data, error: createErr } = await supabase.auth.admin.createUser({
+      email: adminEmail,
+      password: adminPassword,
+      user_metadata: {
+        full_name: adminName,
+        role: "yonetici",
+        phone: adminPhone || "",
+        company_id: companyCode,
+      },
+      email_confirm: true,
+    });
+
+    if (createErr) {
+      await kv.del(`company_profile_${companyCode}`).catch(() => {});
+      if (createErr.message.includes("already registered"))
+        return c.json({ error: `Yönetici e-postası (${adminEmail}) zaten kayıtlı.` }, 400);
+      return c.json({ error: `Kullanıcı oluşturulamadı: ${createErr.message}` }, 400);
+    }
+
+    // 3. Başvuruyu güncelle (şifreyi temizle)
+    await kv.set(`application_${appId}`, {
+      ...application,
+      adminPassword: undefined,
+      status: "approved",
+      approvedAt: new Date().toISOString(),
+      approvedBy: user.email,
+      createdUserId: data.user?.id,
+    });
+
+    console.log(`[applications] ✅ Onaylandı: ${companyCode} — Yönetici: ${adminEmail}`);
+    return c.json({
+      success: true,
+      company: profile,
+      admin: { id: data.user?.id, email: adminEmail, name: adminName },
+      message: `${companyName} şirketi ve yönetici hesabı oluşturuldu.`,
+    });
+  } catch (err) {
+    console.log("[applications/approve] error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /superadmin/applications/:id/reject — Reddet
+app.post("/make-server-4da0b637/superadmin/applications/:id/reject", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user || user.user_metadata?.originalRole !== "superadmin")
+      return c.json({ error: "Yetkisiz erişim." }, 403);
+
+    const appId = c.req.param("id");
+    const application: any = await kv.get(`application_${appId}`);
+    if (!application) return c.json({ error: "Başvuru bulunamadı." }, 404);
+    if (application.status !== "pending") return c.json({ error: "Bu başvuru zaten işlenmiş." }, 400);
+
+    await kv.set(`application_${appId}`, {
+      ...application,
+      adminPassword: undefined,
+      status: "rejected",
+      rejectedAt: new Date().toISOString(),
+      rejectedBy: user.email,
+    });
+
+    console.log(`[applications] ❌ Reddedildi: ${application.companyCode}`);
+    return c.json({ success: true, message: "Başvuru reddedildi." });
+  } catch (err) {
+    console.log("[applications/reject] error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// DELETE /superadmin/applications/:id — Başvuruyu sil
+app.delete("/make-server-4da0b637/superadmin/applications/:id", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user || user.user_metadata?.originalRole !== "superadmin")
+      return c.json({ error: "Yetkisiz erişim." }, 403);
+
+    const appId = c.req.param("id");
+    const application: any = await kv.get(`application_${appId}`);
+    if (!application) return c.json({ error: "Başvuru bulunamadı." }, 404);
+
+    await kv.del(`application_${appId}`);
+    console.log(`[applications] 🗑️ Silindi: ${appId}`);
+    return c.json({ success: true, message: "Başvuru silindi." });
+  } catch (err) {
+    console.log("[applications/delete] error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// DELETE /superadmin/companies/:id — Şirketi ve TÜM verisini kalıcı olarak sil
+app.delete("/make-server-4da0b637/superadmin/companies/:id", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user || user.user_metadata?.originalRole !== "superadmin")
+      return c.json({ error: "Yetkisiz erişim." }, 403);
+
+    const companyId = c.req.param("id").toLowerCase();
+    const profile = await kv.get(`company_profile_${companyId}`);
+    if (!profile) return c.json({ error: "Şirket bulunamadı." }, 404);
+
+    const supabase = getAdminClient();
+    let deletedUsers = 0;
+
+    // 1. Şirkete ait tüm kullanıcıları Supabase Auth'tan sil
+    const { data: { users: allUsers }, error: listErr } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+    if (!listErr) {
+      const companyUsers = (allUsers || []).filter((u: any) =>
+        (u.user_metadata?.company_id || "aspect") === companyId
+      );
+      for (const u of companyUsers) {
+        const { error: delErr } = await supabase.auth.admin.deleteUser(u.id);
+        if (!delErr) deletedUsers++;
+        else console.log(`[companies/delete] kullanıcı silinemedi ${u.email}: ${delErr.message}`);
+      }
+    }
+
+    // 2. KV'deki tüm şirket-prefix'li anahtarları sil (companyId:* pattern)
+    await supabase
+      .from("kv_store_4da0b637")
+      .delete()
+      .like("key", `${companyId}:%`);
+
+    // 3. Şirket profilini sil
+    await kv.del(`company_profile_${companyId}`);
+
+    // 4. Bu şirkete ait başvuruları temizle
+    const allApps: any[] = await kv.getByPrefix("application_") || [];
+    for (const app of allApps) {
+      if (app?.companyCode === companyId) {
+        await kv.del(`application_${app.id}`).catch(() => {});
+      }
+    }
+
+    console.log(`[companies/delete] ✅ Silindi: ${companyId} — ${deletedUsers} kullanıcı`);
+    return c.json({
+      success: true,
+      message: `${profile.name} şirketi ve tüm verisi kalıcı olarak silindi.`,
+      deletedUsers,
+    });
+  } catch (err) {
+    console.log("[companies/delete] error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 // ── ONE-TIME: ozgur.demirbas@yandex.com → superadmin yap ──────────────────
 app.post("/make-server-4da0b637/bootstrap/make-superadmin", async (c) => {
   try {

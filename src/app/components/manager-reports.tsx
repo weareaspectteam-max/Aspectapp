@@ -7,7 +7,7 @@ import { StaffInterviews } from './staff-interviews';
 import { WeeklyMonthlyReports } from './weekly-monthly-reports';
 import { UserRole } from './login';
 import { getToken, buildHeaders, appendGhostParam } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 

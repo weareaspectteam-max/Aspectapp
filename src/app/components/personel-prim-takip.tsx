@@ -6,7 +6,7 @@ import {
   Wallet, Star, Award, Users, User,
 } from 'lucide-react';
 import { getToken, buildHeaders } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 

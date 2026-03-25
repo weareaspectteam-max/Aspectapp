@@ -402,7 +402,6 @@ export function CompanyApplicationPage() {
                 Bu hesap şirketinizin birincil yöneticisidir;{' '}
                 <span style={{ color: '#ffd4a3', fontWeight: 600 }}>rolü sonradan değiştirilemez</span> ve sistem genelinde{' '}
                 <span style={{ color: '#ffd4a3', fontWeight: 600 }}>yalnızca bir yönetici hesabı</span> tanımlanabilir.
-                Diğer çalışanlara üst müdür, müdür veya operasyon gibi roller atanabilir.
               </p>
             </div>
           </div>
@@ -416,7 +415,7 @@ export function CompanyApplicationPage() {
                 type="text"
                 value={adminName}
                 onChange={e => setAdminName(e.target.value)}
-                placeholder="Ahmet Yılmaz"
+                placeholder="Ad Soyad"
                 style={inputStyle}
                 disabled={loading}
                 autoComplete="name"

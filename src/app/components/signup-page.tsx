@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Lock, Eye, EyeOff, User, Phone, CheckCircle2, AlertCircle, Camera, ArrowLeft } from 'lucide-react';
 import { SERVER_URL } from '../lib/supabase';
 import { buildHeaders } from '../lib/api';
-import { publicAnonKey, projectId as pid } from '/utils/supabase/info';
+import { publicAnonKey, projectId as pid } from '../lib/supabase-info';
 
 // ── Statik fallback şirketler (KV yüklenmeden önce) ──────────────────────
 const FALLBACK_COMPANIES: Record<string, { name: string; emoji: string; color: string; gradient: string; border: string }> = {

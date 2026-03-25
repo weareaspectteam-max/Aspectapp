@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Cake, Calendar, ArrowLeft, User, Gift, PartyPopper, Loader2 } from 'lucide-react';
 import { authHeaders } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 
 const SERVER_URL = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 

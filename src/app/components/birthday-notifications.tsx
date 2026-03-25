@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Cake, X, PartyPopper } from 'lucide-react';
 import { authHeaders } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 
 const SERVER_URL = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 const DISMISSED_KEY = 'aspect_dismissed_birthday_notifs';

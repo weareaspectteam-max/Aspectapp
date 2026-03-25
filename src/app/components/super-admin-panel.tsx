@@ -8,11 +8,11 @@ import {
   Plus, Users, ChevronRight, X,
   Loader2, CheckCircle, Eye, EyeOff,
   RefreshCw, UserPlus, Edit3, ArrowLeft, Shield, Globe,
-  Building2, Clock, CheckCircle2, XCircle, Ghost,
+  Building2, Clock, CheckCircle2, XCircle, Ghost, Trash2, AlertTriangle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { authHeaders } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -41,12 +41,16 @@ interface CompanyApplication {
   id: string;
   companyName: string;
   companyCode: string;
-  sector: string;
   description: string;
   contactEmail: string;
   contactPhone: string;
+  adminName: string;
+  adminEmail: string;
+  adminPhone: string;
   submittedAt: string;
   status: 'pending' | 'approved' | 'rejected';
+  approvedAt?: string;
+  rejectedAt?: string;
 }
 
 interface Props {
@@ -228,11 +232,14 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompan
   const [appActionLoading, setAppActionLoading] = useState<string | null>(null);
 
   // Modal'lar
-  const [showCreate,     setShowCreate]     = useState(false);
-  const [showEdit,       setShowEdit]       = useState(false);
-  const [showAddUser,    setShowAddUser]    = useState(false);
-  const [showUsers,      setShowUsers]      = useState(false);
-  const [showMigrate,    setShowMigrate]    = useState(false);
+  const [showCreate,        setShowCreate]        = useState(false);
+  const [showEdit,          setShowEdit]          = useState(false);
+  const [showAddUser,       setShowAddUser]       = useState(false);
+  const [showUsers,         setShowUsers]         = useState(false);
+  const [showMigrate,       setShowMigrate]       = useState(false);
+  const [showDeleteCompany, setShowDeleteCompany] = useState(false);
+  const [deleteCompanyLoading, setDeleteCompanyLoading] = useState(false);
+  const [confirmDeleteText, setConfirmDeleteText] = useState('');
 
   // Şirket kullanıcıları
   const [companyUsers,   setCompanyUsers]   = useState<CompanyUser[]>([]);
@@ -311,6 +318,57 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompan
       showToast('⚠️ ' + e.message, false);
     } finally {
       setAppActionLoading(null);
+    }
+  };
+
+  /* ── Başvuru sil ── */
+  const handleDeleteApplication = async (appId: string) => {
+    setAppActionLoading(appId + 'delete');
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${SERVER}/superadmin/applications/${appId}`, {
+        method: 'DELETE',
+        headers,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('🗑️ Başvuru silindi.');
+        loadApplications();
+      } else {
+        showToast('⚠️ ' + (data.error || 'Silinemedi'), false);
+      }
+    } catch (e: any) {
+      showToast('⚠️ ' + e.message, false);
+    } finally {
+      setAppActionLoading(null);
+    }
+  };
+
+  /* ── Şirketi tamamen sil ── */
+  const handleDeleteCompany = async () => {
+    if (!selected) return;
+    setDeleteCompanyLoading(true);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${SERVER}/superadmin/companies/${selected.id}`, {
+        method: 'DELETE',
+        headers,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`🗑️ ${selected.name} silindi. ${data.deletedUsers} kullanıcı kaldırıldı.`);
+        setShowDeleteCompany(false);
+        setConfirmDeleteText('');
+        setView('list');
+        setSelected(null);
+        loadCompanies();
+      } else {
+        showToast('⚠️ ' + (data.error || 'Silinemedi'), false);
+      }
+    } catch (e: any) {
+      showToast('⚠️ ' + e.message, false);
+    } finally {
+      setDeleteCompanyLoading(false);
     }
   };
 
@@ -785,16 +843,17 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompan
                   {app.description && (
                     <p style={{ margin: '0 0 8px', fontSize: 12, color: 'rgba(255,255,255,0.55)', lineHeight: 1.5 }}>{app.description}</p>
                   )}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: isPending ? 12 : 0 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 12 }}>
                     {app.contactEmail && <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>📧 {app.contactEmail}</p>}
                     {app.contactPhone && <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>📞 {app.contactPhone}</p>}
+                    {app.adminName && <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>👑 Yönetici: {app.adminName} ({app.adminEmail})</p>}
                     <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.30)' }}>
                       🕐 {new Date(app.submittedAt).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </div>
 
-                  {isPending && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {isPending ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 40px', gap: 8 }}>
                       <button
                         onClick={() => handleApplicationAction(app.id, 'approve')}
                         disabled={!!appActionLoading}
@@ -810,6 +869,24 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompan
                       >
                         {appActionLoading === app.id + 'reject' ? <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" /> : <XCircle style={{ width: 13, height: 13 }} />}
                         Reddet
+                      </button>
+                      <button
+                        onClick={() => { if (window.confirm('Bu başvuruyu kalıcı olarak silmek istediğinize emin misiniz?')) handleDeleteApplication(app.id); }}
+                        disabled={!!appActionLoading}
+                        style={{ padding: '10px', borderRadius: 10, cursor: 'pointer', background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: appActionLoading === app.id + 'delete' ? 0.6 : 1 }}
+                      >
+                        {appActionLoading === app.id + 'delete' ? <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" /> : <Trash2 style={{ width: 13, height: 13 }} />}
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => { if (window.confirm('Bu başvuruyu kalıcı olarak silmek istediğinize emin misiniz?')) handleDeleteApplication(app.id); }}
+                        disabled={!!appActionLoading}
+                        style={{ padding: '8px 14px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 11, background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171', display: 'flex', alignItems: 'center', gap: 5, opacity: appActionLoading === app.id + 'delete' ? 0.6 : 1 }}
+                      >
+                        {appActionLoading === app.id + 'delete' ? <Loader2 style={{ width: 11, height: 11 }} className="animate-spin" /> : <Trash2 style={{ width: 11, height: 11 }} />}
+                        Sil
                       </button>
                     </div>
                   )}
@@ -923,6 +1000,26 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompan
           }}>
             <Edit3 style={{ width: 14, height: 14 }} /> Şirket Ayarlarını Düzenle
           </button>
+
+          {/* ── Tehlike Bölgesi ── */}
+          <div style={{ marginTop: 8, padding: '14px 16px', borderRadius: 14, background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.22)' }}>
+            <p style={{ margin: '0 0 4px', fontSize: 11, fontWeight: 800, color: 'rgba(239,68,68,0.70)', letterSpacing: '0.08em' }}>
+              ⚠️ TEHLİKE BÖLGESİ
+            </p>
+            <p style={{ margin: '0 0 10px', fontSize: 11, color: 'rgba(255,255,255,0.40)', lineHeight: 1.5 }}>
+              Şirketi sildiğinizde tüm kullanıcılar, mekanlar, primler ve şirkete ait tüm veriler <strong style={{ color: '#f87171' }}>kalıcı olarak</strong> silinir. Bu işlem geri alınamaz.
+            </p>
+            <button
+              onClick={() => { setConfirmDeleteText(''); setShowDeleteCompany(true); }}
+              style={{
+                width: '100%', padding: '11px', borderRadius: 11, cursor: 'pointer', fontWeight: 700, fontSize: 12,
+                background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.40)',
+                color: '#f87171', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+              }}
+            >
+              <Trash2 style={{ width: 14, height: 14 }} /> Şirketi Kalıcı Olarak Sil
+            </button>
+          </div>
         </div>
 
         {/* Kullanıcı listesi (inline) */}
@@ -1031,6 +1128,59 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompan
         {showAddUser && selected && (
           <Modal title="Kullanıcı Oluştur" onClose={() => setShowAddUser(false)} accentColor={selected.color}>
             <AddUserForm company={selected} onClose={() => setShowAddUser(false)} />
+          </Modal>
+        )}
+        {showDeleteCompany && selected && (
+          <Modal title="Şirketi Sil" onClose={() => { setShowDeleteCompany(false); setConfirmDeleteText(''); }} accentColor="#ef4444">
+            <div style={{ marginBottom: 16, padding: '14px', borderRadius: 14, background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.30)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <AlertTriangle style={{ width: 20, height: 20, color: '#f87171', flexShrink: 0 }} />
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#f87171' }}>Bu işlem geri alınamaz!</p>
+              </div>
+              <p style={{ margin: 0, fontSize: 12, color: 'rgba(255,255,255,0.60)', lineHeight: 1.6 }}>
+                <strong style={{ color: '#fff' }}>{selected.name}</strong> şirketine ait şunlar kalıcı olarak silinecek:
+              </p>
+              <ul style={{ margin: '8px 0 0', padding: '0 0 0 16px', fontSize: 11, color: 'rgba(255,255,255,0.50)', lineHeight: 2 }}>
+                <li>Tüm kullanıcı hesapları (<strong style={{ color: '#fbbf24' }}>{selected.userCount} kullanıcı</strong>)</li>
+                <li>Tüm mekan, prim, satış ve operasyon verileri</li>
+                <li>Şirket profili ve tüm KV kayıtları</li>
+              </ul>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.50)', fontWeight: 700, letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>
+                ONAYLAMAK İÇİN ŞİRKET KODUNU GİRİN: <span style={{ color: '#f87171' }}>{selected.id}</span>
+              </label>
+              <input
+                type="text"
+                value={confirmDeleteText}
+                onChange={e => setConfirmDeleteText(e.target.value)}
+                placeholder={selected.id}
+                style={{
+                  width: '100%', padding: '11px 13px', borderRadius: 12, fontSize: 14,
+                  background: 'rgba(239,68,68,0.08)', border: `1px solid ${confirmDeleteText === selected.id ? 'rgba(239,68,68,0.60)' : 'rgba(255,255,255,0.12)'}`,
+                  color: '#fff', outline: 'none', boxSizing: 'border-box', fontFamily: 'monospace',
+                }}
+              />
+            </div>
+            <button
+              onClick={handleDeleteCompany}
+              disabled={confirmDeleteText !== selected.id || deleteCompanyLoading}
+              style={{
+                width: '100%', padding: '13px', borderRadius: 12, cursor: confirmDeleteText !== selected.id ? 'not-allowed' : 'pointer',
+                fontWeight: 700, fontSize: 13,
+                background: confirmDeleteText === selected.id ? 'rgba(239,68,68,0.25)' : 'rgba(255,255,255,0.04)',
+                border: confirmDeleteText === selected.id ? '1px solid rgba(239,68,68,0.55)' : '1px solid rgba(255,255,255,0.08)',
+                color: confirmDeleteText === selected.id ? '#f87171' : 'rgba(255,255,255,0.25)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                opacity: deleteCompanyLoading ? 0.7 : 1,
+                transition: 'all 0.2s',
+              }}
+            >
+              {deleteCompanyLoading
+                ? <><Loader2 style={{ width: 14, height: 14 }} className="animate-spin" /> Siliniyor…</>
+                : <><Trash2 style={{ width: 14, height: 14 }} /> Şirketi Kalıcı Olarak Sil</>
+              }
+            </button>
           </Modal>
         )}
         {showMigrate && (

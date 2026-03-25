@@ -4,7 +4,7 @@ import {
   MapPin, TrendingDown, TrendingUp, Users, ShieldAlert,
   ChevronDown, ChevronUp, Info, Tag, BarChart2, Percent,
 } from 'lucide-react';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 import { buildHeaders, getToken, appendGhostParam } from '../lib/api';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;

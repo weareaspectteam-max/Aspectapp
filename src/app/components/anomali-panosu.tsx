@@ -4,7 +4,7 @@ import {
   ChevronDown, ChevronUp, Search, Filter, Calendar, MapPin,
   TrendingUp, ShieldAlert, Info,
 } from 'lucide-react';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 import { buildHeaders, getToken, appendGhostParam } from '../lib/api';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;

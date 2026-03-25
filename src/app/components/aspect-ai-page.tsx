@@ -7,7 +7,7 @@ import {
   Brain, MessageSquare, Loader2, Trash2, Settings, Mic,
 } from 'lucide-react';
 import { authHeaders, getToken } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 import type { VardiyaSatis } from '../services/stock-service';
 import { getLeaveRequests, saveLeaveRequest, deleteLeaveRequest, getDailyOnLeave, getStaffMembers, getLocations, getTasks, saveTask, updateTask, type LeaveRequest, type Location, type StaffMember, type Task } from '../services/rotation-service';
 import { AspectAISettings } from './aspect-ai-settings';

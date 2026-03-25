@@ -13,7 +13,7 @@ import {
   type StokSayim, type StokGunluk, type StokEkleme, type PrinterKapanis, type VardiyaSatis, type KareKayit,
 } from '../services/stock-service';
 import { buildHeaders, authHeaders, getToken } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 import { bizDateStr } from '../lib/date';
 import {
   enqueue as offlineEnqueue,

@@ -9,7 +9,7 @@ import {
   Clock, AlertTriangle, CheckCircle2, Bell, Users, TrendingUp,
 } from 'lucide-react';
 import { buildHeaders, getToken, appendGhostParam } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 import type { UserRole } from './login';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;

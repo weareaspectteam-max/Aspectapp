@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, Wifi, Camera, ShoppingBag, MapPin, ChevronDown, ChevronUp, TrendingUp, Clock, AlertCircle, Maximize2, Minimize2 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { authHeaders } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

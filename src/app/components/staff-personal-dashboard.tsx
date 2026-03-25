@@ -9,7 +9,7 @@ import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import { CurrencyWidget } from './currency-widget';
 import { getUserQueue, getUserFrameQueue } from '../lib/offline-queue';
 import { buildHeaders, getToken } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 import { ShiftCheckInCard } from './shift-checkin-card';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;

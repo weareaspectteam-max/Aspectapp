@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Edit2, Trash2, Save, ChevronRight, Plus, RefreshCw, Loader2, Users, ChevronDown, Check, ArrowRight } from 'lucide-react';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 import { getToken, buildHeaders, appendGhostParam } from '../lib/api';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;

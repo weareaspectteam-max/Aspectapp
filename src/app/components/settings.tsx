@@ -3,7 +3,7 @@ import { Camera, Mail, Lock, User, Save, Eye, EyeOff, Shield, Bell, CheckCircle,
 
 import { NewBottomNav } from './new-bottom-nav';
 import { authHeaders } from '../lib/api';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { projectId, publicAnonKey } from '../lib/supabase-info';
 
 const SERVER_URL = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 

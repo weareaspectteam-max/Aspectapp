@@ -1,0 +1,4 @@
+// Supabase project credentials – single source of truth
+export const projectId = "grijlpmpvrafxbzpuzvw";
+export const publicAnonKey =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdyaWpscG1wdnJhZnhienB1enZ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNzUxNTQsImV4cCI6MjA4ODc1MTE1NH0.OHoc1fppdX20uFWXS_Ek93nse5jA5nGEW3mJz8VXpgo";

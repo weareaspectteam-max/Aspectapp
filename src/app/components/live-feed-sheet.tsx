@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, useMotionValue, useDragControls } from 'motion/react';
 import { X, RefreshCw, ShoppingBag, Camera, TrendingUp, Clock } from 'lucide-react';
 import { authHeaders } from '../lib/api';
-import { projectId } from '/utils/supabase/info';
+import { projectId } from '../lib/supabase-info';
 
 const BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 

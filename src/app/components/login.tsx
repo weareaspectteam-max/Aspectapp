@@ -3,7 +3,7 @@ import { Mail, Lock, Eye, EyeOff, Camera, User, UserPlus, LogIn, Phone, AlertCir
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase, SERVER_URL } from '../lib/supabase';
 import { buildHeaders } from '../lib/api';
-import { publicAnonKey } from '/utils/supabase/info';
+import { publicAnonKey } from '../lib/supabase-info';
 
 export type UserRole = 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen' | 'superadmin';
 
