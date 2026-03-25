@@ -1504,8 +1504,8 @@ app.get("/make-server-4da0b637/users", async (c) => {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
 
-    // Superadmin — isteğe bağlı company_id query parametresiyle farklı şirketi izleyebilir
-    const isSuperAdmin = callerRole === "superadmin";
+    // Superadmin ghost mod: originalRole kontrol et (callerRole yonetici'ye normalize edilmiş)
+    const isSuperAdmin = callerUser.user_metadata?.originalRole === "superadmin";
     const requestedCompanyId = c.req.query("company_id");
     const callerCompanyId = isSuperAdmin && requestedCompanyId
       ? requestedCompanyId
@@ -1593,7 +1593,11 @@ app.get("/make-server-4da0b637/mekanlar", async (c) => {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
 
-    const cId     = getCompanyId(user);
+    // Superadmin ghost mod: originalRole kontrol et (callerRole yonetici'ye normalize edilmiş)
+    const isSuperAdminCaller = user.user_metadata?.originalRole === "superadmin";
+    const requestedCId = c.req.query("company_id");
+    const cId = (isSuperAdminCaller && requestedCId) ? requestedCId : getCompanyId(user);
+
     const mekanlar = await getMekanlarFor(cId);
     const sorted   = mekanlar.sort((a: any, b: any) =>
       new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -1753,7 +1757,11 @@ app.get("/make-server-4da0b637/maliyetler", async (c) => {
       return c.json({ error: "Bu işlem için yetkiniz yok." }, 403);
     }
 
-    const ckv = companyKvFor(getCompanyId(user));
+    // Superadmin ghost mod: originalRole kontrol et (callerRole yonetici'ye normalize edilmiş)
+    const isSuperAdminMaliyet = user.user_metadata?.originalRole === "superadmin";
+    const requestedCIdMaliyet = c.req.query("company_id");
+    const cIdMaliyet = (isSuperAdminMaliyet && requestedCIdMaliyet) ? requestedCIdMaliyet : getCompanyId(user);
+    const ckv = companyKvFor(cIdMaliyet);
     const exchangeRates = await ckv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20, isAuto: false };
     const albums = await ckv.get("cost_albums") || [
       { size: 3,  tamBoy: 25, yarimBoy: 20, currency: "TRY" },
@@ -3654,15 +3662,22 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
     // İş günü tarihi (05:00 TR kırılımlı)
     const today = bizDateTR();
 
-    // Mekan haritası
-    const mekanlarList = await getMekanlar();
+    // Superadmin ghost mod: originalRole kontrol et (callerRole yonetici'ye normalize edilmiş)
+    const isSuperAdminDash = user.user_metadata?.originalRole === "superadmin";
+    const requestedCompanyIdDash = c.req.query("company_id");
+    const effectiveCompanyId = (isSuperAdminDash && requestedCompanyIdDash)
+      ? requestedCompanyIdDash
+      : getCompanyId(user);
+
+    // Mekan haritası — efektif şirkete göre
+    const mekanlarList = await getMekanlarFor(effectiveCompanyId);
     const mekanMap: Record<string, any> = {};
     for (const m of (mekanlarList || [])) {
       mekanMap[m.id] = m;
     }
 
-    // Bugünkü stok kayıtları
-    const ckv = companyKvFor(getCompanyId(user));
+    // Bugünkü stok kayıtları — efektif şirkete göre
+    const ckv = companyKvFor(effectiveCompanyId);
     const tumKayitlar = await ckv.getByPrefix("stok_gunluk_");
     const bugunKayitlar = (tumKayitlar || []).filter((k: any) => k.tarih === today);
 
@@ -7832,17 +7847,18 @@ app.get("/make-server-4da0b637/mesajlar/kanallar", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role || "personel";
-    const canSeeMekan = ["yonetici", "ust-mudur"].includes(role);
+    const canSeeMekan = ["yonetici", "ust-mudur", "superadmin"].includes(role);
+    const companyId = getCompanyId(user);
 
     const STATIC_CHANNELS = [
       { id: "general",  name: "general",  type: "channel", isAdminOnly: false, deletable: false },
       { id: "rotasyon", name: "rotasyon", type: "channel", isAdminOnly: false, deletable: false },
     ];
 
-    // Mekan kanalları — sadece yonetici + ust-mudur
+    // Mekan kanalları — sadece yonetici + ust-mudur + superadmin, kendi şirketine göre
     let mekanChannels: any[] = [];
     if (canSeeMekan) {
-      const mekanlar: any[] = await getMekanlar();
+      const mekanlar: any[] = await getMekanlarFor(companyId);
       mekanChannels = mekanlar.map((m: any) => ({
         id: `mekan_${m.id}`, name: m.name, type: "project", emoji: m.emoji || "📍",
         isAdminOnly: true, deletable: false,
@@ -8368,7 +8384,7 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
 // LEADERBOARD QUOTES: Podyum mesajı kaydet
 // PUT /make-server-4da0b637/leaderboard/quotes
 // Body: { periodKey, quote }
-// ──────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────��─────────────
 app.put("/make-server-4da0b637/leaderboard/quotes", async (c) => {
   try {
     const user = await verifyToken(c);
