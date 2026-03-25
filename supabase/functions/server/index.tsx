@@ -379,9 +379,18 @@ const seedInitialCompanies = async () => {
     { id: "tetra",  name: "Tetra Works",    emoji: "🔷", color: "#34d399", description: "Tetra operasyon birimi",                   status: "active" },
   ];
   for (const c of defaults) {
+    // Tombstone varsa bu şirket kasıtlı silindi — yeniden oluşturma
+    const tombstone = await kv.get(`company_tombstone_${c.id}`);
+    if (tombstone) {
+      console.log(`[seed] ${c.id} tombstone var, atlanıyor.`);
+      continue;
+    }
     const existing = await kv.get(`company_profile_${c.id}`);
     if (!existing) {
       await kv.set(`company_profile_${c.id}`, { ...c, createdAt: new Date().toISOString(), createdBy: "system" });
+    } else {
+      // Her zaman status ve temel alanları güncelle — kayıt var ama eksik olabilir
+      await kv.set(`company_profile_${c.id}`, { ...c, ...existing, status: existing.status ?? "active", id: c.id });
     }
   }
 };
@@ -590,6 +599,30 @@ app.get("/make-server-4da0b637/superadmin/companies/:id/users", async (c) => {
   } catch (err) {
     console.log("[superadmin/company-users] error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ── PUBLIC: Şirket kodu doğrulama (kayıt formu için, token gerekmez) ──
+app.get("/make-server-4da0b637/public/validate-company/:code", async (c) => {
+  try {
+    const code = c.req.param("code").toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!code || code.length < 2) return c.json({ valid: false, reason: "too_short" });
+
+    // Tombstone varsa şirket silindi
+    const tombstone = await kv.get(`company_tombstone_${code}`);
+    if (tombstone) return c.json({ valid: false, reason: "not_found" });
+
+    const profile = await kv.get(`company_profile_${code}`);
+    if (!profile) return c.json({ valid: false, reason: "not_found" });
+    if (profile.status === "suspended") return c.json({ valid: false, reason: "suspended", name: profile.name });
+
+    return c.json({
+      valid: true,
+      company: { id: profile.id, name: profile.name, emoji: profile.emoji, color: profile.color },
+    });
+  } catch (err) {
+    console.log("[public/validate-company] error:", err);
+    return c.json({ valid: false, reason: "error" }, 500);
   }
 });
 
@@ -822,6 +855,8 @@ app.delete("/make-server-4da0b637/superadmin/companies/:id", async (c) => {
 
     // 3. Şirket profilini sil
     await kv.del(`company_profile_${companyId}`);
+    // Varsayılan şirketlerin seed'de yeniden oluşturulmaması için tombstone bırak
+    await kv.set(`company_tombstone_${companyId}`, { deletedAt: new Date().toISOString() });
 
     // 4. Bu şirkete ait başvuruları temizle
     const allApps: any[] = await kv.getByPrefix("application_") || [];
@@ -1170,14 +1205,20 @@ app.post("/make-server-4da0b637/auth/signup", async (c) => {
     // Şirket doğrulama — KV'deki tüm şirket profillerini kabul et (dinamik)
     let resolvedCompanyId = "aspect"; // varsayılan: aspect (eski kayıtlar için geriye dönük uyumluluk)
     if (company_id) {
-      const cid = company_id.toLowerCase();
+      const cid = company_id.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+      // Tombstone kontrolü — kasıtlı silinmiş şirket
+      const tombstone = await kv.get(`company_tombstone_${cid}`);
+      if (tombstone) {
+        return c.json({ error: "Geçersiz şirket kodu. Lütfen doğru kodu girdiğinizden emin olun." }, 400);
+      }
       const companyProfile = await kv.get(`company_profile_${cid}`);
-      if (companyProfile && companyProfile.status !== "suspended") {
+      if (companyProfile && companyProfile.status === "suspended") {
+        return c.json({ error: "Bu şirket hesabı askıya alınmış. Yöneticinizle iletişime geçin." }, 403);
+      }
+      if (companyProfile) {
         resolvedCompanyId = cid;
-      } else if (!companyProfile) {
-        // KV'de yok — eski hardcoded fallback
-        const HARDCODED = ["aspect", "frame", "tetra"];
-        if (HARDCODED.includes(cid)) resolvedCompanyId = cid;
+      } else {
+        return c.json({ error: "Geçersiz şirket kodu. Lütfen doğru kodu girdiğinizden emin olun." }, 400);
       }
     }
 
@@ -1543,7 +1584,7 @@ app.post("/make-server-4da0b637/mekanlar", async (c) => {
   }
 });
 
-// ──────────────────────────────────────────
+// ────────────────────��─────────────────────
 // MEKANLAR: Mekan güncelle
 // PUT /make-server-4da0b637/mekanlar/:id
 // ──────────────────────────────────────────

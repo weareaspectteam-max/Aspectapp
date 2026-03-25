@@ -53,21 +53,21 @@ export function Login({ onLogin }: LoginProps) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`${SERVER_URL}/superadmin/companies`, {
+        const res = await fetch(`${SERVER_URL}/public/validate-company/${encodeURIComponent(code)}`, {
           headers: { Authorization: `Bearer ${publicAnonKey}` },
         });
         if (!res.ok) { setCompanyValidation('idle'); return; }
         const data = await res.json();
-        const found = (data.companies || []).find((c: any) => c.id === code);
-        if (!found) {
-          setCompanyValidation('invalid');
-          setCompanyInfo(null);
-        } else if (found.status === 'suspended') {
-          setCompanyValidation('suspended');
+        if (!data.valid) {
+          if (data.reason === 'suspended') {
+            setCompanyValidation('suspended');
+          } else {
+            setCompanyValidation('invalid');
+          }
           setCompanyInfo(null);
         } else {
           setCompanyValidation('valid');
-          setCompanyInfo({ name: found.name, emoji: found.emoji || '🏢', color: found.color || '#a855f7' });
+          setCompanyInfo({ name: data.company.name, emoji: data.company.emoji || '🏢', color: data.company.color || '#a855f7' });
         }
       } catch {
         setCompanyValidation('idle');
