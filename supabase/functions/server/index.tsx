@@ -594,7 +594,7 @@ app.get("/make-server-4da0b637/superadmin/companies/:id/users", async (c) => {
 });
 
 // ══════════════════════════════════════════════════════════════════
-// BAŞVURU SİSTEMİ (Applications)
+// BAŞVURU SİSTEMİ (Applications) — v2 approve/reject/delete aktif
 // ══════════════════════════════════════════════════════════════════
 
 // POST /superadmin/applications — PUBLIC, başvuruyu KV'ye kaydet (auth gerekmez)
