@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { Mail, Lock, Eye, EyeOff, Camera, User, UserPlus, LogIn, Phone, Calendar, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Mail, Lock, Eye, EyeOff, Camera, User, UserPlus, LogIn, Phone, AlertCircle, CheckCircle2, Building2, ExternalLink, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase, SERVER_URL } from '../lib/supabase';
 import { buildHeaders } from '../lib/api';
+import { publicAnonKey } from '/utils/supabase/info';
 
 export type UserRole = 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen' | 'superadmin';
 
@@ -26,13 +27,55 @@ export function Login({ onLogin }: LoginProps) {
   const [signUpPhone, setSignUpPhone] = useState('');
   const [signUpPassword, setSignUpPassword] = useState('');
   const [signUpPasswordConfirm, setSignUpPasswordConfirm] = useState('');
+  const [signUpCompanyCode, setSignUpCompanyCode] = useState('');
   const [showSignUpPassword, setShowSignUpPassword] = useState(false);
   const [showSignUpPasswordConfirm, setShowSignUpPasswordConfirm] = useState(false);
+
+  // Şirket kodu doğrulama state
+  const [companyValidation, setCompanyValidation] = useState<'idle' | 'checking' | 'valid' | 'invalid' | 'suspended'>('idle');
+  const [companyInfo, setCompanyInfo] = useState<{ name: string; emoji: string; color: string } | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // State
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // ─── Şirket kodu gerçek zamanlı doğrulama ──────────────────────────
+  useEffect(() => {
+    const code = signUpCompanyCode.trim().toLowerCase();
+    if (!code) { setCompanyValidation('idle'); setCompanyInfo(null); return; }
+    if (code.length < 2) { setCompanyValidation('idle'); setCompanyInfo(null); return; }
+
+    setCompanyValidation('checking');
+    setCompanyInfo(null);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`${SERVER_URL}/superadmin/companies`, {
+          headers: { Authorization: `Bearer ${publicAnonKey}` },
+        });
+        if (!res.ok) { setCompanyValidation('idle'); return; }
+        const data = await res.json();
+        const found = (data.companies || []).find((c: any) => c.id === code);
+        if (!found) {
+          setCompanyValidation('invalid');
+          setCompanyInfo(null);
+        } else if (found.status === 'suspended') {
+          setCompanyValidation('suspended');
+          setCompanyInfo(null);
+        } else {
+          setCompanyValidation('valid');
+          setCompanyInfo({ name: found.name, emoji: found.emoji || '🏢', color: found.color || '#a855f7' });
+        }
+      } catch {
+        setCompanyValidation('idle');
+      }
+    }, 500);
+
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [signUpCompanyCode]);
 
   // ─── SIGN IN ───────────────────────────────────
   const handleSignIn = async () => {
@@ -99,6 +142,11 @@ export function Login({ onLogin }: LoginProps) {
     if (!signUpEmail.trim()) { setError('E-posta zorunludur.'); return; }
     if (signUpPassword.length < 6) { setError('Şifre en az 6 karakter olmalı.'); return; }
     if (signUpPassword !== signUpPasswordConfirm) { setError('Şifreler eşleşmiyor.'); return; }
+    if (!signUpCompanyCode.trim()) { setError('Şirket Kodu zorunludur.'); return; }
+    if (companyValidation === 'checking') { setError('Şirket kodu doğrulanıyor, lütfen bekleyin.'); return; }
+    if (companyValidation === 'invalid') { setError('Geçersiz şirket kodu. Yöneticinizden doğru kodu alın.'); return; }
+    if (companyValidation === 'suspended') { setError('Bu şirket hesabı askıya alınmıştır. Yöneticinizle iletişime geçin.'); return; }
+    if (companyValidation !== 'valid') { setError('Lütfen geçerli bir şirket kodu girin.'); return; }
 
     setLoading(true);
     try {
@@ -110,6 +158,7 @@ export function Login({ onLogin }: LoginProps) {
           password: signUpPassword,
           full_name: signUpName.trim(),
           phone: signUpPhone.trim(),
+          company_id: signUpCompanyCode.toLowerCase().trim(),
         }),
       });
 
@@ -520,6 +569,118 @@ export function Login({ onLogin }: LoginProps) {
                   </div>
                 </div>
 
+                {/* Şirket Kodu */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">
+                    Şirket Kodu
+                  </label>
+                  <div className="relative group">
+                    <div
+                      className="absolute inset-0 rounded-2xl opacity-0 group-focus-within:opacity-100 blur-sm transition-opacity"
+                      style={{
+                        background: companyValidation === 'valid'
+                          ? 'linear-gradient(to right, #34d399, #9dd9ea)'
+                          : companyValidation === 'invalid' || companyValidation === 'suspended'
+                          ? 'linear-gradient(to right, #ef4444, #f87171)'
+                          : 'linear-gradient(to right, #d4b5f7, #9dd9ea)',
+                      }}
+                    />
+                    <div className="relative flex items-center">
+                      <div
+                        className="absolute left-4 transition-colors"
+                        style={{
+                          color: companyValidation === 'valid' ? '#34d399'
+                            : companyValidation === 'invalid' || companyValidation === 'suspended' ? '#f87171'
+                            : 'rgba(156,163,175,1)',
+                        }}
+                      >
+                        <Building2 className="w-5 h-5" />
+                      </div>
+                      <input
+                        type="text"
+                        value={signUpCompanyCode}
+                        onChange={(e) => setSignUpCompanyCode(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                        onKeyPress={handleKeyPress}
+                        placeholder="Yöneticinizden aldığınız kod"
+                        className="w-full pl-12 pr-12 py-4 bg-black/40 backdrop-blur-sm border rounded-2xl text-white placeholder:text-gray-500 focus:outline-none transition-all"
+                        style={{
+                          borderColor: companyValidation === 'valid' ? 'rgba(52,211,153,0.50)'
+                            : companyValidation === 'invalid' || companyValidation === 'suspended' ? 'rgba(239,68,68,0.50)'
+                            : 'rgba(255,255,255,0.10)',
+                          fontFamily: signUpCompanyCode ? 'monospace' : 'inherit',
+                        }}
+                        disabled={loading}
+                        autoComplete="off"
+                        autoCapitalize="none"
+                      />
+                      {/* Sağ ikon: doğrulama durumu */}
+                      <div className="absolute right-4 transition-all">
+                        {companyValidation === 'checking' && (
+                          <Loader2 className="w-5 h-5 text-[#d4b5f7] animate-spin" />
+                        )}
+                        {companyValidation === 'valid' && (
+                          <CheckCircle2 className="w-5 h-5 text-green-400" />
+                        )}
+                        {(companyValidation === 'invalid' || companyValidation === 'suspended') && (
+                          <AlertCircle className="w-5 h-5 text-red-400" />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Doğrulama geri bildirimi */}
+                  <AnimatePresence mode="wait">
+                    {companyValidation === 'valid' && companyInfo && (
+                      <motion.div
+                        key="valid"
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        className="flex items-center gap-2 mt-2 ml-1"
+                      >
+                        <span style={{ fontSize: 16 }}>{companyInfo.emoji}</span>
+                        <span className="text-xs font-semibold" style={{ color: companyInfo.color }}>
+                          {companyInfo.name}
+                        </span>
+                        <span className="text-xs text-green-400">— Geçerli şirket ✓</span>
+                      </motion.div>
+                    )}
+                    {companyValidation === 'invalid' && (
+                      <motion.p
+                        key="invalid"
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        className="text-xs text-red-400 mt-2 ml-1"
+                      >
+                        Bu kod sistemde kayıtlı değil. Yöneticinize danışın.
+                      </motion.p>
+                    )}
+                    {companyValidation === 'suspended' && (
+                      <motion.p
+                        key="suspended"
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        className="text-xs text-red-400 mt-2 ml-1"
+                      >
+                        Bu şirket hesabı askıya alınmış.
+                      </motion.p>
+                    )}
+                    {companyValidation === 'idle' && !signUpCompanyCode && (
+                      <motion.p
+                        key="hint"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="text-xs text-gray-500 mt-1.5 ml-1"
+                      >
+                        Şirketinizin size verdiği özel erişim kodunu girin.
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
+                </div>
+
                 {/* Info Note */}
                 <div className="flex items-start gap-3 bg-[#9dd9ea]/10 border border-[#9dd9ea]/20 rounded-2xl p-4">
                   <AlertCircle className="w-4 h-4 text-[#9dd9ea] shrink-0 mt-0.5" />
@@ -568,6 +729,24 @@ export function Login({ onLogin }: LoginProps) {
           transition={{ delay: 0.5, duration: 0.8 }}
           className="mt-8 text-center space-y-4"
         >
+          {/* Şirket Başvurusu linki */}
+          <motion.a
+            href="/apply"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="flex items-center justify-center gap-2 w-full py-3 rounded-2xl text-sm font-semibold transition-all"
+            style={{
+              background: 'rgba(167,199,231,0.08)',
+              border: '1px solid rgba(167,199,231,0.20)',
+              color: '#a7c7e7',
+              textDecoration: 'none',
+            }}
+          >
+            <Building2 className="w-4 h-4" />
+            Şirketinizi sisteme eklemek ister misiniz?
+            <ExternalLink className="w-3 h-3 opacity-60" />
+          </motion.a>
+
           <div className="flex items-center justify-center gap-2 text-sm">
             <Camera className="w-4 h-4 text-[#ffd4a3]" />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#9dd9ea] to-[#ffd4a3] font-bold">

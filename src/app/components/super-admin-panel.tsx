@@ -1,14 +1,6 @@
 /**
  * SuperAdminPanel — Multi-tenant şirket yönetimi
  * Sadece superadmin rolü erişebilir.
- *
- * Özellikler:
- *   - Şirket listesi (kullanıcı sayısı, durum, renk, emoji)
- *   - Yeni şirket oluştur
- *   - Şirket düzenle (isim, emoji, renk, açıklama, durum)
- *   - Şirket için kullanıcı oluştur (herhangi bir rol)
- *   - Şirketteki kullanıcıları listele
- *   - Legacy veri migration tetikleyici
  */
 
 import { useState, useEffect } from 'react';
@@ -16,6 +8,7 @@ import {
   Plus, Users, ChevronRight, X,
   Loader2, CheckCircle, Eye, EyeOff,
   RefreshCw, UserPlus, Edit3, ArrowLeft, Shield, Globe,
+  Building2, Clock, CheckCircle2, XCircle, Ghost,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { authHeaders } from '../lib/api';
@@ -44,10 +37,23 @@ interface CompanyUser {
   last_sign_in: string;
 }
 
+interface CompanyApplication {
+  id: string;
+  companyName: string;
+  companyCode: string;
+  sector: string;
+  description: string;
+  contactEmail: string;
+  contactPhone: string;
+  submittedAt: string;
+  status: 'pending' | 'approved' | 'rejected';
+}
+
 interface Props {
   userName: string;
   onNavigate: (tab: string) => void;
   onLogout: () => void;
+  onSwitchCompany?: (companyId: string | null) => void;
 }
 
 /* ─── Rol etiketleri ─── */
@@ -153,7 +159,6 @@ function Modal({ title, onClose, children, accentColor = '#a855f7' }: {
           maxHeight: '90vh', overflowY: 'auto',
         }}
       >
-        {/* Modal başlık */}
         <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 8, height: 28, borderRadius: 4, background: accentColor, boxShadow: `0 0 12px ${accentColor}70` }} />
           <p style={{ flex: 1, fontSize: 16, fontWeight: 700, color: '#fff', margin: 0 }}>{title}</p>
@@ -205,7 +210,7 @@ function Btn({ label, color = '#a855f7', onClick, loading = false, icon, seconda
 /* ══════════════════════════════════════════════════════════
    ANA BİLEŞEN
    ══════════════════════════════════════════════════════════ */
-export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
+export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompany }: Props) {
   const [companies,  setCompanies]  = useState<Company[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState('');
@@ -213,6 +218,14 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
   // Görünüm
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [selected, setSelected] = useState<Company | null>(null);
+
+  // Panel sekme
+  const [panelTab, setPanelTab] = useState<'companies' | 'applications'>('companies');
+
+  // Başvurular
+  const [applications, setApplications] = useState<CompanyApplication[]>([]);
+  const [appsLoading, setAppsLoading] = useState(false);
+  const [appActionLoading, setAppActionLoading] = useState<string | null>(null);
 
   // Modal'lar
   const [showCreate,     setShowCreate]     = useState(false);
@@ -236,7 +249,7 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
     setTimeout(() => setToast(null), 3500);
   };
 
-  /* ── Yükle ── */
+  /* ── Şirketleri yükle ── */
   const loadCompanies = async () => {
     setLoading(true);
     setError('');
@@ -253,7 +266,53 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
     }
   };
 
+  /* ── Başvuruları yükle ── */
+  const loadApplications = async () => {
+    setAppsLoading(true);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${SERVER}/superadmin/applications`, { headers });
+      const data = await res.json();
+      if (res.ok) {
+        setApplications(data.applications || []);
+      } else {
+        setApplications([]);
+      }
+    } catch (_) {
+      setApplications([]);
+    } finally {
+      setAppsLoading(false);
+    }
+  };
+
   useEffect(() => { loadCompanies(); }, []);
+  useEffect(() => {
+    if (panelTab === 'applications') loadApplications();
+  }, [panelTab]);
+
+  /* ── Başvuru onayla / reddet ── */
+  const handleApplicationAction = async (appId: string, action: 'approve' | 'reject') => {
+    setAppActionLoading(appId + action);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${SERVER}/superadmin/applications/${appId}/${action}`, {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(action === 'approve' ? '✅ Başvuru onaylandı, şirket oluşturuldu!' : '❌ Başvuru reddedildi.');
+        loadApplications();
+        if (action === 'approve') loadCompanies();
+      } else {
+        showToast('⚠️ ' + (data.error || 'İşlem başarısız'), false);
+      }
+    } catch (e: any) {
+      showToast('⚠️ ' + e.message, false);
+    } finally {
+      setAppActionLoading(null);
+    }
+  };
 
   /* ── Şirket kullanıcılarını yükle ── */
   const loadCompanyUsers = async (companyId: string) => {
@@ -314,16 +373,13 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
         <Field label="ŞİRKET ADI" value={name} onChange={setName} placeholder="Örnek Şirket A.Ş." />
 
         <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>
-            EMOJİ
-          </label>
+          <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>EMOJİ</label>
           <div style={{ display: 'flex', gap: 8 }}>
             {['🏢','✦','🖼','🔷','📸','🎯','⭐','🌟','💎','🏆'].map(e => (
               <button key={e} onClick={() => setEmoji(e)}
                 style={{ width: 36, height: 36, fontSize: 18, borderRadius: 10, cursor: 'pointer',
                   background: emoji === e ? 'rgba(168,85,247,0.25)' : 'rgba(255,255,255,0.06)',
-                  border: emoji === e ? '1px solid #a855f7' : '1px solid rgba(255,255,255,0.12)',
-                }}>
+                  border: emoji === e ? '1px solid #a855f7' : '1px solid rgba(255,255,255,0.12)' }}>
                 {e}
               </button>
             ))}
@@ -331,17 +387,13 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>
-            TEMA RENGİ
-          </label>
+          <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>TEMA RENGİ</label>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {PRESET_COLORS.map(c => (
               <button key={c} onClick={() => setColor(c)}
                 style={{ width: 28, height: 28, borderRadius: '50%', background: c, cursor: 'pointer',
                   border: color === c ? '2px solid #fff' : '2px solid transparent',
-                  boxShadow: color === c ? `0 0 10px ${c}` : 'none',
-                }}>
-              </button>
+                  boxShadow: color === c ? `0 0 10px ${c}` : 'none' }} />
             ))}
           </div>
         </div>
@@ -353,7 +405,6 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
             <p style={{ fontSize: 12, color: '#f87171', margin: 0 }}>⚠️ {err}</p>
           </div>
         )}
-
         <Btn label={saving ? 'Oluşturuluyor…' : 'Şirketi Oluştur'} color={color} onClick={save} loading={saving}
           icon={<Plus style={{ width: 14, height: 14 }} />} />
       </>
@@ -384,7 +435,6 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
         if (!res.ok) throw new Error(data.error);
         showToast(`✅ ${name} güncellendi!`);
         await loadCompanies();
-        // selected'ı güncelle
         setSelected(prev => prev ? { ...prev, name, emoji, color, description: desc, status } : prev);
         onClose();
       } catch (e: any) {
@@ -399,16 +449,13 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
         <Field label="ŞİRKET ADI" value={name} onChange={setName} />
 
         <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>
-            EMOJİ
-          </label>
+          <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>EMOJİ</label>
           <div style={{ display: 'flex', gap: 8 }}>
             {['🏢','✦','🖼','🔷','📸','🎯','⭐','🌟','💎','🏆'].map(e => (
               <button key={e} onClick={() => setEmoji(e)}
                 style={{ width: 36, height: 36, fontSize: 18, borderRadius: 10, cursor: 'pointer',
                   background: emoji === e ? 'rgba(168,85,247,0.25)' : 'rgba(255,255,255,0.06)',
-                  border: emoji === e ? `1px solid ${color}` : '1px solid rgba(255,255,255,0.12)',
-                }}>
+                  border: emoji === e ? `1px solid ${color}` : '1px solid rgba(255,255,255,0.12)' }}>
                 {e}
               </button>
             ))}
@@ -416,28 +463,21 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>
-            TEMA RENGİ
-          </label>
+          <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>TEMA RENGİ</label>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {PRESET_COLORS.map(c => (
               <button key={c} onClick={() => setColor(c)}
                 style={{ width: 28, height: 28, borderRadius: '50%', background: c, cursor: 'pointer',
                   border: color === c ? '2px solid #fff' : '2px solid transparent',
-                  boxShadow: color === c ? `0 0 10px ${c}` : 'none',
-                }}>
-              </button>
+                  boxShadow: color === c ? `0 0 10px ${c}` : 'none' }} />
             ))}
           </div>
         </div>
 
         <Field label="AÇIKLAMA" value={desc} onChange={setDesc} />
 
-        {/* Durum */}
         <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>
-            DURUM
-          </label>
+          <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>DURUM</label>
           <div style={{ display: 'flex', gap: 8 }}>
             {(['active', 'suspended'] as const).map(s => (
               <button key={s} onClick={() => setStatus(s)}
@@ -504,7 +544,6 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
 
     return (
       <>
-        {/* Şirket rozeti */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, padding: '10px 13px', borderRadius: 12, background: `${company.color}12`, border: `1px solid ${company.color}30` }}>
           <span style={{ fontSize: 22 }}>{company.emoji}</span>
           <div>
@@ -513,7 +552,6 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
           </div>
         </div>
 
-        {/* Rol seçimi */}
         <div style={{ marginBottom: 14 }}>
           <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>ROL</label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -536,10 +574,9 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
           </div>
         </div>
 
-        <Field label="AD SOYAD" value={name}     onChange={setName}  placeholder="Ali Veli" />
-        <Field label="E-POSTA"  value={email}    onChange={setEmail} placeholder="ali@sirket.com" />
+        <Field label="AD SOYAD" value={name}  onChange={setName}  placeholder="Ali Veli" />
+        <Field label="E-POSTA"  value={email} onChange={setEmail} placeholder="ali@sirket.com" />
 
-        {/* Şifre */}
         <div style={{ marginBottom: 12 }}>
           <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>ŞİFRE</label>
           <div style={{ position: 'relative' }}>
@@ -572,7 +609,7 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
   }
 
   /* ─────────────────────────────────────────── */
-  /* ŞİRKET LİSTESİ (ana görünüm)              */
+  /* ŞİRKET LİSTESİ + SEKMELER                 */
   /* ─────────────────────────────────────────── */
   const renderList = () => (
     <div style={{ paddingBottom: 100 }}>
@@ -591,8 +628,8 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
         {/* Özet istatistik */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 16 }}>
           {[
-            { label: 'Şirket',  val: companies.length,                                        color: '#fbbf24' },
-            { label: 'Aktif',   val: companies.filter(c => c.status === 'active').length,     color: '#34d399' },
+            { label: 'Şirket',    val: companies.length, color: '#fbbf24' },
+            { label: 'Aktif',     val: companies.filter(c => c.status === 'active').length, color: '#34d399' },
             { label: 'Kullanıcı', val: companies.reduce((s, c) => s + (c.userCount || 0), 0), color: '#9dd9ea' },
           ].map(s => (
             <div key={s.label} style={{ ...glassCard(s.color), padding: '12px 10px', textAlign: 'center' }}>
@@ -603,98 +640,191 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
         </div>
       </div>
 
-      {/* Yeni Şirket Butonu */}
+      {/* ── Sekmeler ── */}
       <div style={{ padding: '0 20px 12px' }}>
-        <button
-          onClick={() => setShowCreate(true)}
-          style={{
-            width: '100%', padding: '13px', borderRadius: 14, cursor: 'pointer', fontWeight: 700, fontSize: 14,
-            background: 'linear-gradient(135deg, rgba(251,191,36,0.25), rgba(245,158,11,0.15))',
-            border: '1px solid rgba(251,191,36,0.45)',
-            color: '#fbbf24', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            boxShadow: '0 4px 20px rgba(251,191,36,0.20)',
-          }}>
-          <Plus style={{ width: 16, height: 16 }} />
-          Yeni Şirket Oluştur
-        </button>
-      </div>
-
-      {/* Liste */}
-      <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
-            <Loader2 style={{ width: 28, height: 28, color: '#fbbf24' }} className="animate-spin" />
-          </div>
-        ) : error ? (
-          <div style={{ ...glassCard('#ef4444'), padding: 16 }}>
-            <p style={{ margin: 0, fontSize: 13, color: '#f87171' }}>⚠️ {error}</p>
-          </div>
-        ) : companies.map(company => (
-          <motion.div
-            key={company.id}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => openDetail(company)}
+        <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 14, padding: 4, gap: 4 }}>
+          <button
+            onClick={() => setPanelTab('companies')}
             style={{
-              ...glassCard(company.color),
-              padding: '14px 16px',
-              cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 12,
-              transition: 'all 0.2s',
+              flex: 1, padding: '9px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 12,
+              background: panelTab === 'companies' ? 'linear-gradient(135deg, rgba(251,191,36,0.30), rgba(245,158,11,0.20))' : 'transparent',
+              border: panelTab === 'companies' ? '1px solid rgba(251,191,36,0.45)' : '1px solid transparent',
+              color: panelTab === 'companies' ? '#fbbf24' : 'rgba(255,255,255,0.45)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             }}
           >
-            {/* Emoji ikonu */}
-            <div style={{
-              width: 44, height: 44, borderRadius: 14, flexShrink: 0,
-              background: `${company.color}20`, border: `1px solid ${company.color}40`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 22, boxShadow: `0 0 12px ${company.color}25`,
-            }}>
-              {company.emoji}
-            </div>
-
-            {/* Bilgiler */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{company.name}</p>
-                {company.status === 'suspended' && (
-                  <span style={{ fontSize: 9, fontWeight: 700, color: '#f87171', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.30)', borderRadius: 6, padding: '1px 5px' }}>
-                    ASKIDA
-                  </span>
-                )}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
-                <span style={{ fontSize: 10, color: company.color, fontWeight: 600, background: `${company.color}15`, borderRadius: 6, padding: '1px 6px', border: `1px solid ${company.color}30` }}>
-                  {company.id}
-                </span>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.40)' }}>
-                  👥 {company.userCount} kullanıcı
-                </span>
-              </div>
-              {company.description && (
-                <p style={{ margin: '3px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.40)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {company.description}
-                </p>
-              )}
-            </div>
-
-            <ChevronRight style={{ width: 16, height: 16, color: `${company.color}60`, flexShrink: 0 }} />
-          </motion.div>
-        ))}
+            <Building2 style={{ width: 13, height: 13 }} />
+            Şirketler
+          </button>
+          <button
+            onClick={() => setPanelTab('applications')}
+            style={{
+              flex: 1, padding: '9px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 12,
+              background: panelTab === 'applications' ? 'linear-gradient(135deg, rgba(167,199,231,0.30), rgba(167,199,231,0.15))' : 'transparent',
+              border: panelTab === 'applications' ? '1px solid rgba(167,199,231,0.45)' : '1px solid transparent',
+              color: panelTab === 'applications' ? '#a7c7e7' : 'rgba(255,255,255,0.45)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              position: 'relative',
+            }}
+          >
+            <Clock style={{ width: 13, height: 13 }} />
+            Başvurular
+            {applications.filter(a => a.status === 'pending').length > 0 && (
+              <span style={{
+                position: 'absolute', top: 5, right: 8,
+                minWidth: 16, height: 16, borderRadius: 8,
+                background: '#ef4444', color: '#fff',
+                fontSize: 9, fontWeight: 800,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px',
+              }}>
+                {applications.filter(a => a.status === 'pending').length}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
-      {/* Migration tetikleyici */}
-      <div style={{ padding: '16px 20px 0' }}>
-        <button
-          onClick={() => setShowMigrate(true)}
-          style={{
-            width: '100%', padding: '11px', borderRadius: 12, cursor: 'pointer', fontWeight: 600, fontSize: 12,
-            background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.10)',
-            color: 'rgba(255,255,255,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-          }}>
-          <RefreshCw style={{ width: 13, height: 13 }} />
-          Legacy Data Migration (Aspect → aspect: prefix)
-        </button>
-      </div>
+      {/* ── Şirketler ── */}
+      {panelTab === 'companies' && (
+        <>
+          <div style={{ padding: '0 20px 12px' }}>
+            <button
+              onClick={() => setShowCreate(true)}
+              style={{
+                width: '100%', padding: '13px', borderRadius: 14, cursor: 'pointer', fontWeight: 700, fontSize: 14,
+                background: 'linear-gradient(135deg, rgba(251,191,36,0.25), rgba(245,158,11,0.15))',
+                border: '1px solid rgba(251,191,36,0.45)',
+                color: '#fbbf24', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                boxShadow: '0 4px 20px rgba(251,191,36,0.20)',
+              }}>
+              <Plus style={{ width: 16, height: 16 }} />
+              Yeni Şirket Oluştur
+            </button>
+          </div>
+
+          <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {loading ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+                <Loader2 style={{ width: 28, height: 28, color: '#fbbf24' }} className="animate-spin" />
+              </div>
+            ) : error ? (
+              <div style={{ ...glassCard('#ef4444'), padding: 16 }}>
+                <p style={{ margin: 0, fontSize: 13, color: '#f87171' }}>⚠️ {error}</p>
+              </div>
+            ) : companies.map(company => (
+              <motion.div
+                key={company.id}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => openDetail(company)}
+                style={{ ...glassCard(company.color), padding: '14px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}
+              >
+                <div style={{ width: 44, height: 44, borderRadius: 14, flexShrink: 0, background: `${company.color}20`, border: `1px solid ${company.color}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, boxShadow: `0 0 12px ${company.color}25` }}>
+                  {company.emoji}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{company.name}</p>
+                    {company.status === 'suspended' && (
+                      <span style={{ fontSize: 9, fontWeight: 700, color: '#f87171', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.30)', borderRadius: 6, padding: '1px 5px' }}>ASKIDA</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
+                    <span style={{ fontSize: 10, color: company.color, fontWeight: 600, background: `${company.color}15`, borderRadius: 6, padding: '1px 6px', border: `1px solid ${company.color}30` }}>{company.id}</span>
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.40)' }}>👥 {company.userCount} kullanıcı</span>
+                  </div>
+                  {company.description && (
+                    <p style={{ margin: '3px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.40)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{company.description}</p>
+                  )}
+                </div>
+                <ChevronRight style={{ width: 16, height: 16, color: `${company.color}60`, flexShrink: 0 }} />
+              </motion.div>
+            ))}
+          </div>
+
+
+        </>
+      )}
+
+      {/* ── Başvurular ── */}
+      {panelTab === 'applications' && (
+        <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {appsLoading ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+              <Loader2 style={{ width: 24, height: 24, color: '#a7c7e7' }} className="animate-spin" />
+            </div>
+          ) : applications.length === 0 ? (
+            <div style={{ ...glass(), padding: 28, textAlign: 'center', marginTop: 8 }}>
+              <p style={{ margin: 0, fontSize: 30 }}>📋</p>
+              <p style={{ margin: '10px 0 4px', fontSize: 14, fontWeight: 700, color: '#fff' }}>Bekleyen Başvuru Yok</p>
+              <p style={{ margin: 0, fontSize: 12, color: 'rgba(255,255,255,0.40)' }}>
+                Şirketler <span style={{ color: '#a7c7e7' }}>/apply</span> sayfasından başvuru yapabilir.
+              </p>
+            </div>
+          ) : (
+            applications.map(app => {
+              const isPending = app.status === 'pending';
+              const statusColor = isPending ? '#fbbf24' : app.status === 'approved' ? '#34d399' : '#ef4444';
+              const statusLabel = isPending ? 'Bekliyor' : app.status === 'approved' ? 'Onaylandı' : 'Reddedildi';
+              return (
+                <motion.div key={app.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ ...glassCard(statusColor), padding: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#fff' }}>{app.companyName}</p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#a7c7e7', background: 'rgba(167,199,231,0.15)', border: '1px solid rgba(167,199,231,0.30)', borderRadius: 6, padding: '1px 7px' }}>
+                          Kod: {app.companyCode}
+                        </span>
+                        {app.sector && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>{app.sector}</span>}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 9, fontWeight: 800, color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}35`, borderRadius: 6, padding: '3px 8px', flexShrink: 0 }}>
+                      {statusLabel}
+                    </span>
+                  </div>
+
+                  {app.description && (
+                    <p style={{ margin: '0 0 8px', fontSize: 12, color: 'rgba(255,255,255,0.55)', lineHeight: 1.5 }}>{app.description}</p>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: isPending ? 12 : 0 }}>
+                    {app.contactEmail && <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>📧 {app.contactEmail}</p>}
+                    {app.contactPhone && <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>📞 {app.contactPhone}</p>}
+                    <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,0.30)' }}>
+                      🕐 {new Date(app.submittedAt).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+
+                  {isPending && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <button
+                        onClick={() => handleApplicationAction(app.id, 'approve')}
+                        disabled={!!appActionLoading}
+                        style={{ padding: '10px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 12, background: 'rgba(52,211,153,0.18)', border: '1px solid rgba(52,211,153,0.45)', color: '#34d399', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, opacity: appActionLoading === app.id + 'approve' ? 0.6 : 1 }}
+                      >
+                        {appActionLoading === app.id + 'approve' ? <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" /> : <CheckCircle2 style={{ width: 13, height: 13 }} />}
+                        Onayla
+                      </button>
+                      <button
+                        onClick={() => handleApplicationAction(app.id, 'reject')}
+                        disabled={!!appActionLoading}
+                        style={{ padding: '10px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 12, background: 'rgba(239,68,68,0.13)', border: '1px solid rgba(239,68,68,0.35)', color: '#f87171', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, opacity: appActionLoading === app.id + 'reject' ? 0.6 : 1 }}
+                      >
+                        {appActionLoading === app.id + 'reject' ? <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" /> : <XCircle style={{ width: 13, height: 13 }} />}
+                        Reddet
+                      </button>
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })
+          )}
+
+          <button onClick={loadApplications}
+            style={{ width: '100%', padding: '11px', borderRadius: 12, cursor: 'pointer', fontWeight: 600, fontSize: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.10)', color: 'rgba(255,255,255,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}>
+            <RefreshCw style={{ width: 13, height: 13 }} />
+            Yenile
+          </button>
+        </div>
+      )}
     </div>
   );
 
@@ -725,8 +855,8 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
           <div style={{ ...glassCard(c.color), padding: '16px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
               {[
-                { label: 'Kullanıcı',   val: c.userCount || 0,   icon: '👥', color: c.color   },
-                { label: 'Durum',       val: c.status === 'active' ? 'Aktif' : 'Askıda', icon: c.status === 'active' ? '✅' : '🔴', color: c.status === 'active' ? '#34d399' : '#ef4444' },
+                { label: 'Kullanıcı',   val: c.userCount || 0, icon: '👥', color: c.color },
+                { label: 'Durum', val: c.status === 'active' ? 'Aktif' : 'Askıda', icon: c.status === 'active' ? '✅' : '🔴', color: c.status === 'active' ? '#34d399' : '#ef4444' },
                 { label: 'Oluşturulma', val: c.createdAt ? new Date(c.createdAt).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: '2-digit' }) : '—', icon: '📅', color: 'rgba(255,255,255,0.5)' },
               ].map(s => (
                 <div key={s.label} style={{ textAlign: 'center' }}>
@@ -746,6 +876,27 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
 
         {/* Aksiyon butonları */}
         <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* ── Ghost Mod Butonu ── */}
+          {onSwitchCompany && (
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={() => {
+                onSwitchCompany(c.id);
+                onNavigate('dashboard');
+              }}
+              style={{
+                width: '100%', padding: '14px', borderRadius: 14, cursor: 'pointer', fontWeight: 700, fontSize: 13,
+                background: 'linear-gradient(135deg, rgba(251,191,36,0.22), rgba(245,158,11,0.12))',
+                border: '1px solid rgba(251,191,36,0.55)',
+                color: '#fbbf24', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                boxShadow: '0 4px 18px rgba(251,191,36,0.20)',
+              }}
+            >
+              <Ghost style={{ width: 16, height: 16 }} />
+              Bu Şirkete Geç (Ghost Mod)
+            </motion.button>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <button onClick={() => setShowAddUser(true)} style={{
               padding: '12px', borderRadius: 12, cursor: 'pointer', fontWeight: 700, fontSize: 12,
@@ -755,7 +906,7 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
             }}>
               <UserPlus style={{ width: 14, height: 14 }} /> Kullanıcı Ekle
             </button>
-            <button onClick={() => { setShowUsers(true); }} style={{
+            <button onClick={() => setShowUsers(true)} style={{
               padding: '12px', borderRadius: 12, cursor: 'pointer', fontWeight: 700, fontSize: 12,
               background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
               color: 'rgba(255,255,255,0.70)',
@@ -872,19 +1023,16 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
             <CreateCompanyForm onClose={() => setShowCreate(false)} />
           </Modal>
         )}
-
         {showEdit && selected && (
           <Modal title="Şirket Düzenle" onClose={() => setShowEdit(false)} accentColor={selected.color}>
             <EditCompanyForm company={selected} onClose={() => setShowEdit(false)} />
           </Modal>
         )}
-
         {showAddUser && selected && (
           <Modal title="Kullanıcı Oluştur" onClose={() => setShowAddUser(false)} accentColor={selected.color}>
             <AddUserForm company={selected} onClose={() => setShowAddUser(false)} />
           </Modal>
         )}
-
         {showMigrate && (
           <Modal title="Legacy Migration" onClose={() => setShowMigrate(false)} accentColor="#f59e0b">
             <div style={{ marginBottom: 16 }}>
@@ -898,13 +1046,9 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout }: Props) {
             </div>
             {migrateResult && (
               <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(52,211,153,0.10)', border: '1px solid rgba(52,211,153,0.30)', marginBottom: 14 }}>
-                <p style={{ margin: 0, fontSize: 12, color: '#34d399', fontWeight: 700 }}>
-                  ✅ {migrateResult.message}
-                </p>
+                <p style={{ margin: 0, fontSize: 12, color: '#34d399', fontWeight: 700 }}>✅ {migrateResult.message}</p>
                 {migrateResult.errors?.length > 0 && (
-                  <p style={{ margin: '6px 0 0', fontSize: 11, color: '#f87171' }}>
-                    ⚠️ {migrateResult.errors.length} hata — console'a bakın
-                  </p>
+                  <p style={{ margin: '6px 0 0', fontSize: 11, color: '#f87171' }}>⚠️ {migrateResult.errors.length} hata — console'a bakın</p>
                 )}
               </div>
             )}

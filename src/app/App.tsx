@@ -1,5 +1,6 @@
 import { RouterProvider, createBrowserRouter } from 'react-router';
 import { SignupPage } from './components/signup-page';
+import { CompanyApplicationPage } from './components/company-application-page';
 import HeaderBarDemo from './components/header-bar-demo';
 import { KotaProgressDemo } from './components/kota-progress-demo';
 import { PrimTakip } from './components/prim-takip';
@@ -76,6 +77,10 @@ const router = createBrowserRouter([
   {
     path: '/signup/:companyId',
     Component: SignupPage,
+  },
+  {
+    path: '/apply',
+    Component: CompanyApplicationPage,
   },
   {
     path: '/*',
@@ -979,6 +984,7 @@ function MainApp() {
             userName={userName}
             onNavigate={handleNavigate}
             onLogout={handleLogout}
+            onSwitchCompany={handleSwitchCompany}
           />
         );
 
