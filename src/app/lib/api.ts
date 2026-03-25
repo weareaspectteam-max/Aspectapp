@@ -78,13 +78,26 @@ export const setAuthToken = (token: string) => {
 };
 
 /**
- * Güncel access token'ı döndürür — üç katmanlı fallback:
- *  1. supabase.auth.getSession() → her zaman taze, auto-refresh destekli
- *  2. _cachedToken              → login sonrası senkron olarak set edilir
- *  3. sessionStorage            → HMR modül sıfırlanmasına karşı kalıcı yedek
+ * Güncel access token'ı döndürür — dört katmanlı fallback:
+ *  1. _cachedToken              → login sonrası senkron olarak set edilir (en hızlı)
+ *  2. sessionStorage            → HMR modül sıfırlanmasına karşı kalıcı yedek (sync)
+ *  3. supabase.auth.getSession() → her zaman taze, auto-refresh destekli (async)
+ *  4. supabase.auth.refreshSession() → session expired / henüz yüklenmedi durumu (async)
  */
 export const getToken = async (): Promise<string> => {
-  // 1. Supabase session — taze + otomatik yenileme
+  // 1. Bellekteki cache — en hızlı yol
+  if (_cachedToken) return _cachedToken;
+
+  // 2. sessionStorage — sync fallback (HMR / modül sıfırlanması sonrası)
+  try {
+    const stored = sessionStorage.getItem(SS_KEY);
+    if (stored) {
+      _cachedToken = stored;
+      return stored;
+    }
+  } catch {}
+
+  // 3. Supabase session — auth henüz initialize edilmemişse null dönebilir
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.access_token) {
@@ -92,17 +105,16 @@ export const getToken = async (): Promise<string> => {
       try { sessionStorage.setItem(SS_KEY, session.access_token); } catch {}
       return session.access_token;
     }
-  } catch {
-    // getSession hata verirse sonraki adıma geç
-  }
+  } catch {}
 
-  // 2. Bellekteki cache
-  if (_cachedToken) return _cachedToken;
-
-  // 3. sessionStorage yedek (HMR sonrası modül sıfırlanmasına dayanır)
+  // 4. Force refresh — session expired veya henüz yüklenmedi durumu için son çare
   try {
-    const stored = sessionStorage.getItem(SS_KEY);
-    if (stored) return stored;
+    const { data: { session } } = await supabase.auth.refreshSession();
+    if (session?.access_token) {
+      _cachedToken = session.access_token;
+      try { sessionStorage.setItem(SS_KEY, session.access_token); } catch {}
+      return session.access_token;
+    }
   } catch {}
 
   console.warn('[api] getToken: token bulunamadı — X-Access-Token gönderilmeyecek.');

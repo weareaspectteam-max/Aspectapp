@@ -247,7 +247,7 @@ export function AppHeader({
               backgroundClip:       'text',
             }}
           >
-            ASPECT
+            {effectiveCompanyId.toUpperCase()}
           </span>
         </div>
 

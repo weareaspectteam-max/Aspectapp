@@ -665,24 +665,6 @@ function MainApp() {
       
       case 'aspect-ai':
       case 'aspect-ai-page':
-        // Aspect AI yalnızca Aspect şirketine özel; diğer şirketlerde erişilemez
-        if (effectiveCompanyId !== 'aspect') {
-          return (
-            <div className="flex items-center justify-center min-h-[60vh] px-8 text-center">
-              <div style={{
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(157,217,234,0.20)',
-                backdropFilter: 'blur(20px)',
-                borderRadius: 20,
-                padding: 32,
-              }}>
-                <div className="text-4xl mb-4">🔒</div>
-                <p className="text-white font-bold text-lg mb-2">Aspect AI</p>
-                <p className="text-white/40 text-sm">Bu modül yalnızca Aspect Agency şirketine özeldir.</p>
-              </div>
-            </div>
-          );
-        }
         return (
           <AspectAIPage 
             userRole={userRole}
@@ -690,6 +672,7 @@ function MainApp() {
             userId={userId}
             userAvatar={userAvatar}
             accessToken={accessToken}
+            companyId={effectiveCompanyId}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />

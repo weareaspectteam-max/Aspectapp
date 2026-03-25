@@ -86,15 +86,9 @@ interface NewBottomNavProps {
 
 export function NewBottomNav({ activeTab, onTabChange, onNavigate, userRole, unreadMessages = 0, effectiveCompanyId = 'aspect' }: NewBottomNavProps) {
   const handleNav  = onNavigate || onTabChange || (() => {});
-  const isAspect   = effectiveCompanyId === 'aspect';
-  // Aspect AI yalnızca Aspect şirketinde görünür; diğer şirketlerde leaderboard ile değiştirilir
+  // AI tab'ı bekleyen hariç tüm rollerde ve tüm şirketlerde gösterilir
   const rawTabs    = ROLE_TABS[userRole] ?? ROLE_TABS['personel'];
-  const tabs       = isAspect
-    ? rawTabs
-    : rawTabs.map(t => t.key === 'aspect-ai'
-        ? { key: 'leaderboard', icon: Trophy, color: '#fbbf24' }
-        : t
-      );
+  const tabs       = rawTabs;
 
   return (
     <div

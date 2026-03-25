@@ -93,8 +93,9 @@ function getSections(
   const mgmt: UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','superadmin'];
   const ops:  UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','superadmin'];
 
-  // Aspect AI yalnızca aspect şirketinde görünür
-  const isAspect = companyId === 'aspect';
+  // Aspect AI artık tüm şirketlerde görünür — isAspect kısıtı kaldırıldı
+  const aiLabel = companyId === 'frame' ? 'Frame AI' : companyId === 'tetra' ? 'Tetra AI' : 'Aspect AI';
+  const nonBekleyen: UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','personel','superadmin'];
 
   const sections: Section[] = [
     {
@@ -115,7 +116,7 @@ function getSections(
         { icon: Home,          label: 'Dashboard',        roles: all,  action: () => go('dashboard')   },
         { icon: MessageCircle, label: 'Mesajlar',          roles: all,  action: () => go('messaging')   },
         { icon: Trophy,        label: 'Liderlik Tablosu',  roles: all,  action: () => go('leaderboard') },
-        ...(isAspect ? [{ icon: Sparkles as IconComp, label: 'Aspect AI', roles: all as UserRole[], action: () => go('aspect-ai') } as MenuItem] : [] as MenuItem[]),
+        { icon: Sparkles as IconComp, label: aiLabel, roles: nonBekleyen as UserRole[], action: () => go('aspect-ai') } as MenuItem,
         { icon: GraduationCap, label: 'Akademi',           roles: all,  action: () => go('academy')     },
       ],
     },
@@ -263,6 +264,13 @@ export function HamburgerMenu({
   const [toggleLoading, setToggleLoading]     = useState<string | null>(null);
   const [settingsLoaded, setSettingsLoaded]   = useState(false);
 
+  /* ── OpenAI Key state ── */
+  const [companyKeyHas, setCompanyKeyHas]     = useState(false);
+  const [companyKeyInput, setCompanyKeyInput] = useState('');
+  const [companyKeySaving, setCompanyKeySaving] = useState(false);
+  const [companyKeyDeleting, setCompanyKeyDeleting] = useState(false);
+  const [companyKeyMsg, setCompanyKeyMsg]     = useState<{type: 'ok'|'err'; text: string} | null>(null);
+
   const sections  = getSections(userRole, onNavigate, onLogout, close, activeTab, effectiveCompanyId);
   const roleColor = ROLE_COLORS[userRole] ?? '#a855f7';
   const roleTitle = ROLE_TITLES[userRole] ?? '';
@@ -274,21 +282,28 @@ export function HamburgerMenu({
   /* ── Ayarları yükle (menü açılınca, yonetici ise) ── */
   useEffect(() => {
     if (!isOpen || !isYonetici || settingsLoaded) return;
-    authHeaders().then(headers =>
-      fetch(`${API_BASE}/ai/toggle-settings`, { headers })
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (data) {
-            setAiPersonal(data.ai_personal_yonetici !== false);
-            setAiYonetim(data.ai_yonetim_enabled !== false);
-            setAiIdari(data.ai_idari_enabled !== false);
-            setAiPersonel(data.ai_personel_enabled !== false);
-            setAiOperasyon(data.ai_operasyon_enabled !== false);
-          }
-          setSettingsLoaded(true);
-        })
-        .catch(() => setSettingsLoaded(true))
-    ).catch(() => {});
+    authHeaders().then(async headers => {
+      try {
+        const [toggleData, keyData] = await Promise.all([
+          fetch(`${API_BASE}/ai/toggle-settings`, { headers }).then(r => r.ok ? r.json() : null),
+          fetch(`${API_BASE}/ai/company-key`, { headers }).then(r => r.ok ? r.json() : null),
+        ]);
+        if (toggleData) {
+          setAiPersonal(toggleData.ai_personal_yonetici !== false);
+          setAiYonetim(toggleData.ai_yonetim_enabled !== false);
+          setAiIdari(toggleData.ai_idari_enabled !== false);
+          setAiPersonel(toggleData.ai_personel_enabled !== false);
+          setAiOperasyon(toggleData.ai_operasyon_enabled !== false);
+        }
+        if (keyData) {
+          setCompanyKeyHas(!!keyData.hasKey);
+        }
+      } catch (e) {
+        console.error('Ayarlar yüklenirken hata:', e);
+      } finally {
+        setSettingsLoaded(true);
+      }
+    }).catch(() => setSettingsLoaded(true));
   }, [isOpen, isYonetici, settingsLoaded]);
 
   /* ── Toggle handler factory ── */
@@ -320,6 +335,58 @@ export function HamburgerMenu({
   const handleToggleIdari     = makeToggle('ai_idari_enabled',      aiIdari,     setAiIdari);
   const handleTogglePersonel  = makeToggle('ai_personel_enabled',   aiPersonel,  setAiPersonel);
   const handleToggleOperasyon = makeToggle('ai_operasyon_enabled',  aiOperasyon, setAiOperasyon);
+
+  /* ── OpenAI Key handler'ları ── */
+  const handleSaveCompanyKey = async () => {
+    const trimmed = companyKeyInput.trim();
+    if (!trimmed.startsWith('sk-')) {
+      setCompanyKeyMsg({ type: 'err', text: "Key 'sk-' ile başlamalıdır." });
+      return;
+    }
+    setCompanyKeySaving(true);
+    setCompanyKeyMsg(null);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${API_BASE}/ai/company-key`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ apiKey: trimmed }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setCompanyKeyHas(true);
+        setCompanyKeyInput('');
+        setCompanyKeyMsg({ type: 'ok', text: 'OpenAI key başarıyla kaydedildi ✅' });
+      } else {
+        setCompanyKeyMsg({ type: 'err', text: data.error || 'Kaydetme hatası.' });
+      }
+    } catch (e) {
+      setCompanyKeyMsg({ type: 'err', text: 'Bağlantı hatası.' });
+    } finally {
+      setCompanyKeySaving(false);
+    }
+  };
+
+  const handleDeleteCompanyKey = async () => {
+    setCompanyKeyDeleting(true);
+    setCompanyKeyMsg(null);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${API_BASE}/ai/company-key`, { method: 'DELETE', headers });
+      const data = await res.json();
+      if (data.ok) {
+        setCompanyKeyHas(false);
+        setCompanyKeyInput('');
+        setCompanyKeyMsg({ type: 'ok', text: 'Key silindi. AI artık ücretsiz KV motorunu kullanır.' });
+      } else {
+        setCompanyKeyMsg({ type: 'err', text: data.error || 'Silme hatası.' });
+      }
+    } catch (e) {
+      setCompanyKeyMsg({ type: 'err', text: 'Bağlantı hatası.' });
+    } finally {
+      setCompanyKeyDeleting(false);
+    }
+  };
 
   return (
     <>
@@ -392,7 +459,7 @@ export function HamburgerMenu({
                         className="font-black tracking-widest uppercase"
                         style={{ fontSize: 10, color: '#a78bfa', letterSpacing: '0.18em' }}
                       >
-                        Aspect Ops
+                        {effectiveCompanyId.toUpperCase()}
                       </span>
                     </div>
                     <button
@@ -809,6 +876,115 @@ export function HamburgerMenu({
                                     <AiToggleRow label="AI — İdari İçin" desc="İdari görevliler" enabled={aiIdari} loading={toggleLoading === 'ai_idari_enabled'} color="#60a5fa" onToggle={handleToggleIdari} />
                                     <AiToggleRow label="AI — Personel İçin" desc="Personel rolü" enabled={aiPersonel} loading={toggleLoading === 'ai_personel_enabled'} color="#34d399" onToggle={handleTogglePersonel} />
                                     <AiToggleRow label="AI — Operasyon İçin" desc="Operasyon rolü" enabled={aiOperasyon} loading={toggleLoading === 'ai_operasyon_enabled'} color="#fb923c" onToggle={handleToggleOperasyon} />
+
+                                    {/* ── OpenAI API Key Bölümü ── */}
+                                    <div style={{
+                                      marginTop: 10,
+                                      borderRadius: 14,
+                                      background: 'rgba(255,255,255,0.04)',
+                                      border: '1px solid rgba(139,92,246,0.25)',
+                                      padding: '12px 12px 10px',
+                                    }}>
+                                      {/* Başlık */}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+                                        <div style={{
+                                          width: 26, height: 26, borderRadius: 8,
+                                          background: 'rgba(139,92,246,0.18)',
+                                          border: '1px solid rgba(139,92,246,0.3)',
+                                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                          fontSize: 13,
+                                        }}>🔑</div>
+                                        <div style={{ flex: 1 }}>
+                                          <div style={{ fontSize: 12, fontWeight: 600, color: '#d4b5f7' }}>OpenAI API Key</div>
+                                          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>
+                                            Key girilirse gerçek GPT-4o-mini kullanılır. Girilmezse ücretsiz KV motoru çalışır.
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Durum rozeti */}
+                                      <div style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                                        background: companyKeyHas ? 'rgba(34,197,94,0.12)' : 'rgba(255,255,255,0.06)',
+                                        border: `1px solid ${companyKeyHas ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.12)'}`,
+                                        borderRadius: 20, padding: '3px 10px', marginBottom: 10,
+                                      }}>
+                                        <div style={{
+                                          width: 6, height: 6, borderRadius: '50%',
+                                          background: companyKeyHas ? '#22c55e' : '#6b7280',
+                                          boxShadow: companyKeyHas ? '0 0 6px #22c55e' : 'none',
+                                        }} />
+                                        <span style={{ fontSize: 10, color: companyKeyHas ? '#86efac' : 'rgba(255,255,255,0.4)', fontWeight: 600 }}>
+                                          {companyKeyHas ? 'Key Kayıtlı — OpenAI Aktif' : 'Key Yok — Ücretsiz KV Motoru'}
+                                        </span>
+                                      </div>
+
+                                      {/* Input + Kaydet — dikey layout */}
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                                        <input
+                                          type="password"
+                                          placeholder="sk-proj-..."
+                                          value={companyKeyInput}
+                                          onChange={e => { setCompanyKeyInput(e.target.value); setCompanyKeyMsg(null); }}
+                                          style={{
+                                            width: '100%', borderRadius: 10, border: '1px solid rgba(139,92,246,0.3)',
+                                            background: 'rgba(0,0,0,0.25)', color: '#fff',
+                                            padding: '8px 10px', fontSize: 11, outline: 'none',
+                                            fontFamily: 'monospace', boxSizing: 'border-box',
+                                          }}
+                                        />
+                                        <button
+                                          onClick={handleSaveCompanyKey}
+                                          disabled={companyKeySaving || !companyKeyInput.trim()}
+                                          style={{
+                                            width: '100%', borderRadius: 10, border: '1px solid rgba(139,92,246,0.4)',
+                                            background: companyKeySaving || !companyKeyInput.trim()
+                                              ? 'rgba(139,92,246,0.1)' : 'rgba(139,92,246,0.3)',
+                                            color: '#d4b5f7', padding: '9px 12px', fontSize: 12,
+                                            fontWeight: 700, cursor: companyKeySaving || !companyKeyInput.trim() ? 'not-allowed' : 'pointer',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                                          }}
+                                        >
+                                          {companyKeySaving
+                                            ? <><Loader2 style={{ width: 12, height: 12 }} className="animate-spin" /> Kaydediliyor...</>
+                                            : '💾 Kaydet'
+                                          }
+                                        </button>
+                                      </div>
+
+                                      {/* Sil butonu (key varsa) */}
+                                      {companyKeyHas && (
+                                        <button
+                                          onClick={handleDeleteCompanyKey}
+                                          disabled={companyKeyDeleting}
+                                          style={{
+                                            marginTop: 7, width: '100%', borderRadius: 10,
+                                            border: '1px solid rgba(239,68,68,0.25)',
+                                            background: 'rgba(239,68,68,0.07)',
+                                            color: '#f87171', padding: '7px', fontSize: 11,
+                                            fontWeight: 600, cursor: companyKeyDeleting ? 'not-allowed' : 'pointer',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                                          }}
+                                        >
+                                          {companyKeyDeleting
+                                            ? <><Loader2 style={{ width: 11, height: 11 }} className="animate-spin" /> Siliniyor...</>
+                                            : '🗑️ Key\'i Sil ve KV Moduna Dön'
+                                          }
+                                        </button>
+                                      )}
+
+                                      {/* Mesaj */}
+                                      {companyKeyMsg && (
+                                        <div style={{
+                                          marginTop: 7, borderRadius: 8, padding: '6px 10px',
+                                          background: companyKeyMsg.type === 'ok' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                                          border: `1px solid ${companyKeyMsg.type === 'ok' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                                          fontSize: 10, color: companyKeyMsg.type === 'ok' ? '#86efac' : '#fca5a5',
+                                        }}>
+                                          {companyKeyMsg.text}
+                                        </div>
+                                      )}
+                                    </div>
                                   </SubAccordion>
                                 )}
 
@@ -889,7 +1065,7 @@ export function HamburgerMenu({
                   style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
                 >
                   <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.08em' }}>
-                    ASPECT OPERATIONS
+                    {effectiveCompanyId.toUpperCase()} OPERATIONS
                   </span>
                   <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.15)' }}>
                     v2.0

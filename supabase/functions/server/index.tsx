@@ -5826,7 +5826,7 @@ app.get("/make-server-4da0b637/ai/ozet", async (c) => {
     const isAdmin = ["yonetici", "ust-mudur", "mudur", "idari", "operasyon"].includes(callerRole);
 
     // Mekanlar
-    const mekanlarList = await getMekanlar();
+    const mekanlarList = await getMekanlarFor(getCompanyId(user));
     const mekanMap: Record<string, any> = {};
     for (const m of mekanlarList) mekanMap[m.id] = m;
 
@@ -8703,12 +8703,19 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
 
-    // Body'yi önce parse et — userRole toggle kararı için gerekli
+    // Body'yi parse et — rol ve kullanıcı adı JWT'den alınır, body'den ALINMAZ (güvenlik)
     const body = await c.req.json();
-    const { messages, userRole, userName, systemContext, ozet } = body;
+    const { messages, systemContext, ozet } = body;
 
-    // Toggle durumunu belirle — her rol için ayrı KV anahtarı
-    const ckv = companyKvFor(getCompanyId(user));
+    // Rol ve isim JWT'den — body'den gelen userRole/userName güvenlik açığı oluşturur, ignore edilir
+    const userRole = (user.user_metadata?.role as string) || "";
+    const userName = user.user_metadata?.full_name || user.email || "Kullanıcı";
+
+    console.log(`[AI Chat] Kullanıcı: ${userName} | JWT rol: ${userRole} | body.userRole (yoksayıldı): ${body.userRole ?? "yok"}`);
+
+    // Toggle durumunu belirle — her rol için ayrı KV anahtarı (rol JWT'den, güvenli)
+    const userCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(userCompanyId);
     let useOpenAI = false;
     if (userRole === "yonetici") {
       const personalKey = `ai_personal_yonetici_${user.id}`;
@@ -8735,9 +8742,10 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       return c.json({ use_kv: true }, 200);
     }
 
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    // Şirkete özel OpenAI key — env key hiç kullanılmaz
+    const apiKey = await ckv.get("company_openai_key") as string | null;
     if (!apiKey) {
-      console.log("[AI Chat] OPENAI_API_KEY eksik, KV moduna düşülüyor.");
+      console.log(`[AI Chat] ${userCompanyId} şirketi için OpenAI key girilmemiş, KV moduna geçiliyor.`);
       return c.json({ use_kv: true }, 200);
     }
 
@@ -8857,7 +8865,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Mekan detayları (kira, sayfa tipi, fotoğraf fiyatı) ──
       let mekanDetayStr = "  Veri yok.";
       try {
-        const mekanlarDetay: any[] = await getMekanlar();
+        const mekanlarDetay: any[] = await getMekanlarFor(userCompanyId);
         if (mekanlarDetay.length > 0) {
           // Döviz kurları (birim maliyet için)
           const mekanExRates: any = await ckv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
@@ -8906,7 +8914,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Albüm fiyat listesi (mekan bazlı photoPrice × kare) ──
       let albumFiyatStr = "  Veri yok.";
       try {
-        const mekanlarFiyat: any[] = await getMekanlar();
+        const mekanlarFiyat: any[] = await getMekanlarFor(userCompanyId);
         const fiyatliMekanlar = mekanlarFiyat.filter((m: any) => m.id && m.name && Number(m.photoPrice) > 0);
         if (fiyatliMekanlar.length > 0) {
           albumFiyatStr = fiyatliMekanlar
@@ -8980,7 +8988,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
           const tumBugunKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
           const bugunKayitlar = tumBugunKayitlar.filter((k: any) => k.tarih === bugunStr && k.vardiyaToplam);
           if (bugunKayitlar.length > 0) {
-            const mekanlarBugun: any[] = await getMekanlar();
+            const mekanlarBugun: any[] = await getMekanlarFor(userCompanyId);
             const mekanMapBugun: Record<string, any> = {};
             for (const m of mekanlarBugun) mekanMapBugun[m.id] = m;
             const satirlar = bugunKayitlar.map((k: any) => {
@@ -9080,7 +9088,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       const tumStokByKey: Record<string, number> = {};
       try {
         const tumGunlukAI: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
-        const mekanlarAI: any[] = await getMekanlar();
+        const mekanlarAI: any[] = await getMekanlarFor(userCompanyId);
         // Her mekan için en son kapanış stoğunu (yoksa açılış stoğunu) bul
         const mekanSonStok: Record<string, { tarih: string; stok: Record<string, number>; tip: string }> = {};
         for (const kayit of tumGunlukAI) {
@@ -9242,7 +9250,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       let mekanGunlukGecmisStr = "";
       try {
         const tumGunlukKayitlarGecmis: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
-        const mekanlarGecmis: any[] = await getMekanlar();
+        const mekanlarGecmis: any[] = await getMekanlarFor(userCompanyId);
         const mekanMapGecmis: Record<string, any> = {};
         for (const m of mekanlarGecmis) mekanMapGecmis[m.id] = m;
 
@@ -10794,6 +10802,68 @@ app.get("/make-server-4da0b637/vardiya/istatistikler", async (c) => {
   } catch (err) {
     console.log("vardiya/istatistikler error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// Şirkete özel OpenAI API Key yönetimi
+// GET    /make-server-4da0b637/ai/company-key  → { hasKey: bool }
+// POST   /make-server-4da0b637/ai/company-key  → { ok: true }
+// DELETE /make-server-4da0b637/ai/company-key  → { ok: true }
+// Sadece yonetici rolü erişebilir; key hiçbir zaman frontend'e dönmez.
+// ══════════════════════════════════════════
+
+app.get("/make-server-4da0b637/ai/company-key", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role as string;
+    if (role !== "yonetici") return c.json({ error: "Sadece yönetici erişebilir." }, 403);
+    const ckv = companyKvFor(getCompanyId(user));
+    const existingKey = await ckv.get("company_openai_key");
+    return c.json({ hasKey: !!existingKey });
+  } catch (e) {
+    console.log("[company-key GET] Hata:", e);
+    return c.json({ error: `Sunucu hatası: ${e}` }, 500);
+  }
+});
+
+app.post("/make-server-4da0b637/ai/company-key", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role as string;
+    if (role !== "yonetici") return c.json({ error: "Sadece yönetici erişebilir." }, 403);
+    const body = await c.req.json();
+    const { apiKey } = body;
+    if (!apiKey || typeof apiKey !== "string" || !apiKey.startsWith("sk-")) {
+      return c.json({ error: "Geçersiz API key. 'sk-' ile başlamalıdır." }, 400);
+    }
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set("company_openai_key", apiKey.trim());
+    const companyId = getCompanyId(user);
+    console.log(`[company-key POST] ${companyId} şirketi için OpenAI key kaydedildi.`);
+    return c.json({ ok: true });
+  } catch (e) {
+    console.log("[company-key POST] Hata:", e);
+    return c.json({ error: `Sunucu hatası: ${e}` }, 500);
+  }
+});
+
+app.delete("/make-server-4da0b637/ai/company-key", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role as string;
+    if (role !== "yonetici") return c.json({ error: "Sadece yönetici erişebilir." }, 403);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del("company_openai_key");
+    const companyId = getCompanyId(user);
+    console.log(`[company-key DELETE] ${companyId} şirketi için OpenAI key silindi.`);
+    return c.json({ ok: true });
+  } catch (e) {
+    console.log("[company-key DELETE] Hata:", e);
+    return c.json({ error: `Sunucu hatası: ${e}` }, 500);
   }
 });
 

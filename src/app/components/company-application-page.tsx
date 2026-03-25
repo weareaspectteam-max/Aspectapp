@@ -561,7 +561,7 @@ export function CompanyApplicationPage() {
 
         {/* Alt not */}
         <p className="text-center text-xs mt-6" style={{ color: 'rgba(255,255,255,0.25)' }}>
-          © 2025 <span style={{ color: '#9dd9ea' }}>Aspect Operations</span> — Profesyonel Fotoğrafçılık Yönetimi
+          © 2025 <span style={{ color: '#9dd9ea' }}>Operasyon Paneli</span> — Profesyonel Fotoğrafçılık Yönetimi
         </p>
       </div>
     </div>

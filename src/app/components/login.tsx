@@ -264,15 +264,10 @@ export function Login({ onLogin }: LoginProps) {
             transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
           >
             <div className="absolute inset-0 blur-3xl bg-gradient-to-r from-[#9dd9ea]/50 via-transparent to-[#ffd4a3]/50 scale-150" />
-            <span className="relative text-5xl font-black tracking-[0.25em] text-white drop-shadow-2xl">ASPECT</span>
-            <motion.div
-              className="absolute inset-0 border-2 border-[#9dd9ea]/30 rounded-full"
-              style={{ width: '120%', height: '120%', top: '-10%', left: '-10%' }}
-              animate={{ rotate: 360 }}
-              transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
-            >
-              <div className="absolute top-0 left-1/2 w-2 h-2 bg-[#9dd9ea] rounded-full -translate-x-1/2" />
-            </motion.div>
+            <div className="relative flex flex-col items-center leading-none drop-shadow-2xl">
+              <span className="text-5xl font-black tracking-[0.25em] text-white">Operasyon</span>
+              <span className="text-5xl font-black tracking-[0.25em] text-white" style={{ marginTop: 2 }}>Paneli</span>
+            </div>
           </motion.div>
 
           <motion.p
@@ -754,7 +749,7 @@ export function Login({ onLogin }: LoginProps) {
             </span>
           </div>
           <p className="text-xs text-gray-500">
-            © 2025 <span className="text-[#9dd9ea] font-semibold">Aspect Operations</span>
+            © 2025 <span className="text-[#9dd9ea] font-semibold">Operasyon Paneli</span>
           </p>
         </motion.div>
       </div>

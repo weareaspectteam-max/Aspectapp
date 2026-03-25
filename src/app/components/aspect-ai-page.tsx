@@ -101,6 +101,7 @@ interface AspectAIProps {
   userId?: string;
   userAvatar?: string;
   accessToken?: string;
+  companyId?: string;
   onLogout?: () => void;
   onNavigate?: (tab: string) => void;
 }
@@ -3034,7 +3035,7 @@ function MekanDetayCard({ data }: { data: MekanDetayData }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', userId = '', userAvatar = '👤', accessToken = '', onLogout, onNavigate }: AspectAIProps) {
+export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', userId = '', userAvatar = '👤', accessToken = '', companyId = 'aspect', onLogout, onNavigate }: AspectAIProps) {
   // KV'den yüklenmiş config override — başlangıçta kod sabit config'i kullanır,
   // sunucudan gelince otomatik override edilir
   const [serverConfig, setServerConfig] = useState<Record<string, RoleConfig> | null>(null);
@@ -4143,7 +4144,9 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
           </div>
           {/* Title */}
           <div className="flex flex-col">
-            <span className="text-[15px] font-bold text-white leading-tight">Aspect AI</span>
+            <span className="text-[15px] font-bold text-white leading-tight">
+              {companyId === 'frame' ? 'Frame AI' : companyId === 'tetra' ? 'Tetra AI' : 'Aspect AI'}
+            </span>
             {useOpenAI && (
               <span style={{ fontSize: 9, color: '#a78bfa', fontWeight: 600, letterSpacing: '0.04em' }}>
                 ✦ GPT-4o mini
