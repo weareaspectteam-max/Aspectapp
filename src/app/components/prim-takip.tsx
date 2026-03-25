@@ -6,7 +6,7 @@ import {
   Calendar, AlertCircle, CheckCircle2, User, Users,
   Banknote, X, TrendingUp, Undo2, Trash2, Settings2, Save,
 } from 'lucide-react';
-import { getToken, buildHeaders } from '../lib/api';
+import { getToken, buildHeaders, appendGhostParam } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -209,7 +209,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
     setCarpanlarLoading(true);
     try {
       const token = await getToken();
-      const res = await fetch(`${API_BASE}/kidem/carpanlar`, { headers: buildHeaders(token) });
+      const res = await fetch(appendGhostParam(`${API_BASE}/kidem/carpanlar`), { headers: buildHeaders(token) });
       const data = await res.json();
       if (res.ok && data.carpanlar) {
         setCarpanlar(data.carpanlar);
@@ -264,7 +264,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
     setError('');
     try {
       const token = await getToken();
-      const res = await fetch(`${API_BASE}/primler/rapor?ay=${seciliAy}`, {
+      const res = await fetch(appendGhostParam(`${API_BASE}/primler/rapor?ay=${seciliAy}`), {
         headers: buildHeaders(token),
       });
       const data = await res.json();

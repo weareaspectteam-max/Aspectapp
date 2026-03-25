@@ -8,7 +8,7 @@ import {
   ArrowLeft, RefreshCw, Loader2, ChevronLeft, ChevronRight,
   Clock, AlertTriangle, CheckCircle2, Bell, Users, TrendingUp,
 } from 'lucide-react';
-import { buildHeaders, getToken } from '../lib/api';
+import { buildHeaders, getToken, appendGhostParam } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 import type { UserRole } from './login';
 
@@ -104,7 +104,7 @@ export function VardiyaIstatistikleri({ userName, userRole, accessToken, onNavig
     setError('');
     try {
       const token = accessToken || await getToken();
-      const res = await fetch(`${API_BASE}/vardiya/istatistikler?ay=${ay}`, {
+      const res = await fetch(appendGhostParam(`${API_BASE}/vardiya/istatistikler?ay=${ay}`), {
         headers: buildHeaders(token),
       });
       const data = await res.json();
@@ -356,7 +356,7 @@ export function VardiyaIstatistikleri({ userName, userRole, accessToken, onNavig
                       </div>
                     </div>
 
-                    {/* Alt satır: tamamlanma barı + ek bilgi */}
+                    {/* Alt sat��r: tamamlanma barı + ek bilgi */}
                     {p.toplamVardiya > 0 && (
                       <div style={{ marginTop: 10 }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>

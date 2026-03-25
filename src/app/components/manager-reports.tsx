@@ -6,7 +6,7 @@ import { LocationVisits } from './location-visits';
 import { StaffInterviews } from './staff-interviews';
 import { WeeklyMonthlyReports } from './weekly-monthly-reports';
 import { UserRole } from './login';
-import { getToken, buildHeaders } from '../lib/api';
+import { getToken, buildHeaders, appendGhostParam } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -272,7 +272,7 @@ function PerformanceTab({ accessToken = '' }: { accessToken?: string }) {
     const load = async () => {
       try {
         const h = buildHeaders(await getToken());
-        const res = await fetch(`${API_BASE}/ziyaretler`, { headers: h });
+        const res = await fetch(appendGhostParam(`${API_BASE}/ziyaretler`), { headers: h });
         if (res.ok) { const d = await res.json(); setVisits(d.ziyaretler || []); }
       } catch (e) { console.log('PerformanceTab fetch error:', e); }
       finally { setIsLoading(false); }

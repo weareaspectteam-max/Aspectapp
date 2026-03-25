@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { MapPin, Plus, Trash2, Edit2, X, Save, ArrowLeft, RefreshCw, AlertCircle, CheckCircle, ChevronDown } from 'lucide-react';
 import { projectId } from '/utils/supabase/info';
-import { buildHeaders } from '../lib/api';
+import { buildHeaders, appendGhostParam } from '../lib/api';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -132,7 +132,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
       const hasToken = !!(headers['X-Access-Token']);
       console.log('[MekanMgmt] Token mevcut:', hasToken, '| accessToken uzunluğu:', accessToken?.length ?? 0, '| Endpoint:', `${API_BASE}/mekanlar`);
 
-      const res = await fetch(`${API_BASE}/mekanlar`, { headers });
+      const res = await fetch(appendGhostParam(`${API_BASE}/mekanlar`), { headers });
       let data: any = {};
       try { data = await res.json(); } catch { data = {}; }
 
@@ -176,7 +176,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
 
   const loadKidemCarpanlar = async () => {
     try {
-      const res = await fetch(`${API_BASE}/kidem/carpanlar`, { headers: buildHeaders(accessToken) });
+      const res = await fetch(appendGhostParam(`${API_BASE}/kidem/carpanlar`), { headers: buildHeaders(accessToken) });
       if (!res.ok) return;
       const data = await res.json();
       if (data.carpanlar) setKidemCarpanlar(data.carpanlar);
@@ -189,7 +189,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   const loadAvailablePapers = async () => {
     setPapersLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/maliyetler`, { headers: buildHeaders(accessToken) });
+      const res = await fetch(appendGhostParam(`${API_BASE}/maliyetler`), { headers: buildHeaders(accessToken) });
       if (!res.ok) return;
       const data = await res.json();
       const papers: { id: string; name: string }[] = (data.papers || []).map((p: any) => ({

@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronUp, Info, Tag, BarChart2, Percent,
 } from 'lucide-react';
 import { projectId } from '/utils/supabase/info';
-import { buildHeaders, getToken } from '../lib/api';
+import { buildHeaders, getToken, appendGhostParam } from '../lib/api';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -89,7 +89,7 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
       const token = accessToken || await getToken();
       const params = new URLSearchParams();
       if (mekanFiltre) params.set('mekanId', mekanFiltre);
-      const res = await fetch(`${API_BASE}/personel/indirim-istatistik?${params}`, {
+      const res = await fetch(appendGhostParam(`${API_BASE}/personel/indirim-istatistik?${params}`), {
         headers: buildHeaders(token),
       });
       const data = await res.json();

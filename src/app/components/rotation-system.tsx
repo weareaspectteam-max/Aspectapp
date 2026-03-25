@@ -384,12 +384,23 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
 
   const handleRemoveTask = async (taskId: string) => {
     if (confirm('Bu görevi silmek istediğinize emin misiniz?')) {
-      await deleteTask(taskId, accessToken);
-      refreshTasks();
-
-      setNotificationMessage('Görev silindi 🗑️');
-      setShowSuccessNotification(true);
-      setTimeout(() => setShowSuccessNotification(false), 3000);
+      // Optimistik silme: görev anında listeden çıkar
+      setTasks(prev => prev.filter(t => t.id !== taskId));
+      try {
+        await deleteTask(taskId, accessToken);
+        setNotificationMessage('Görev silindi 🗑️');
+        setShowSuccessNotification(true);
+        setTimeout(() => setShowSuccessNotification(false), 3000);
+        // Sunucuyla senkronize et (arka planda)
+        refreshTasks();
+      } catch (err: any) {
+        console.error('[handleRemoveTask] deleteTask hatası:', err);
+        // Silme başarısız → görevi geri yükle
+        refreshTasks();
+        setNotificationMessage(`Görev silinemedi ❌ ${err?.message || ''}`);
+        setShowSuccessNotification(true);
+        setTimeout(() => setShowSuccessNotification(false), 4000);
+      }
     }
   };
 
@@ -1593,28 +1604,18 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
 
             {/* Aktif rotasyonlar üstte — İzinli+Beklemede sonra — Geçmiş Rotasyonlar en altta */}
             {(() => {
-              const todayStr = localDateStr();
-              const now = new Date();
-              const currentTime = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
-
               const yesterday = new Date();
               yesterday.setDate(yesterday.getDate() - 1);
               yesterday.setHours(0, 0, 0, 0);
 
               const isTaskPast = (task: Task): boolean => {
+                // Sadece TARİH karşılaştırması kullan.
+                // Saat karşılaştırması kaldırıldı: bugün oluşturulan/gönderilen rotasyonlar
+                // endTime geçmiş olsa bile "Aktif Rotasyonlar" bölümünde kalır.
+                // Bir görev yalnızca tarihi bugünden önceyse "Geçmiş Rotasyon" sayılır.
                 const td = new Date(task.date); td.setHours(0,0,0,0);
                 const tod = new Date(); tod.setHours(0,0,0,0);
-                if (td < tod) return true;
-                if (task.date === todayStr && task.endTime) {
-                  // Gece geçen vardiya: endTime < startTime (örn. 18:00-02:00)
-                  // Bitiş ertesi günün sabahına sarkıyor → bugün asla geçmiş sayılmaz
-                  const isOvernight = task.startTime && task.endTime < task.startTime;
-                  if (isOvernight) return false;
-                  // "00:00" gece yarısı = ertesi günün başı → asla bugün geçmiş sayılmaz
-                  const endNorm = task.endTime === '00:00' ? '24:00' : task.endTime;
-                  if (endNorm < currentTime) return true;
-                }
-                return false;
+                return td < tod;
               };
 
               const allSent = tasks.filter(t =>

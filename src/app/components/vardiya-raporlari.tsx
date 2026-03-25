@@ -13,7 +13,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
-import { getToken } from '../lib/api';
+import { getToken, appendGhostParam } from '../lib/api';
 import { bizDateStr } from '../lib/date';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -851,7 +851,7 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
       if (bit) params.set('bitis', bit);
       if (mkId) params.set('mekanId', mkId);
 
-      const res = await fetch(`${API_BASE}/vardiya/raporlar?${params.toString()}`, {
+      const res = await fetch(appendGhostParam(`${API_BASE}/vardiya/raporlar?${params.toString()}`), {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${publicAnonKey}`,

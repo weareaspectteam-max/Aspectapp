@@ -5,7 +5,7 @@ import {
   TrendingUp, ShieldAlert, Info,
 } from 'lucide-react';
 import { projectId } from '/utils/supabase/info';
-import { buildHeaders, getToken } from '../lib/api';
+import { buildHeaders, getToken, appendGhostParam } from '../lib/api';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -127,7 +127,7 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
       const token = accessToken || await getToken();
       const params = new URLSearchParams({ baslangic, bitis });
       if (mekanFiltre) params.set('mekanId', mekanFiltre);
-      const res = await fetch(`${API_BASE}/personel/anomali-puanlar?${params}`, {
+      const res = await fetch(appendGhostParam(`${API_BASE}/personel/anomali-puanlar?${params}`), {
         headers: buildHeaders(token),
       });
       const data = await res.json();

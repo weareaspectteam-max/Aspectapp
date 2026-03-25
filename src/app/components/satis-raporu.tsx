@@ -4,7 +4,7 @@ import {
   Users, MapPin, BarChart3, CreditCard, ChevronDown, Calendar,
 } from 'lucide-react';
 import { projectId } from '/utils/supabase/info';
-import { buildHeaders, getToken } from '../lib/api';
+import { buildHeaders, getToken, appendGhostParam } from '../lib/api';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts';
@@ -169,7 +169,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
       try {
         const token = accessToken || await getToken();
         const h = buildHeaders(token);
-        const res = await fetch(`${API_BASE}/mekanlar`, { headers: h });
+        const res = await fetch(appendGhostParam(`${API_BASE}/mekanlar`), { headers: h });
         if (res.ok) {
           const d = await res.json();
           setMekanlar(d.mekanlar || []);

@@ -55,9 +55,13 @@ export const companyKvFor = (companyId: CompanyId) => {
       return kv.set(p(key), val);
     },
 
-    /** Tekil silme — prefix'li anahtarı sil */
+    /** Tekil silme — prefix'li anahtarı sil; aspect için legacy anahtarı da sil */
     async del(key: string): Promise<void> {
-      return kv.del(p(key));
+      await kv.del(p(key));
+      if (isAspect) {
+        // Legacy anahtarı da sil (migration öncesi kaydedilmiş olabilir; key yoksa no-op)
+        await kv.del(key).catch(() => {/* sessizce geç */});
+      }
     },
 
     /** Prefix ile çoklu okuma — aspect için legacy + prefixed MERGE */
@@ -111,9 +115,12 @@ export const companyKvFor = (companyId: CompanyId) => {
       return kv.mset(entries.map(([k, v]) => [p(k), v]));
     },
 
-    /** Çoklu silme — prefix'li anahtarları sil */
+    /** Çoklu silme — prefix'li anahtarları sil; aspect için legacy anahtarları da sil */
     async mdel(keys: string[]): Promise<void> {
-      return kv.mdel(keys.map(k => p(k)));
+      await kv.mdel(keys.map(k => p(k)));
+      if (isAspect) {
+        await kv.mdel(keys).catch(() => {/* sessizce geç */});
+      }
     },
   };
 };

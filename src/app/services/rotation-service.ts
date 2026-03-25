@@ -197,18 +197,19 @@ export const updateMultipleTasks = async (
 };
 
 export const deleteTask = async (taskId: string, token?: string): Promise<void> => {
-  try {
-    const headers = token ? buildHeaders(token) : await authHeaders();
-    const res = await fetch(`${API_BASE}/rotasyon/gorevler/${taskId}`, {
-      method: 'DELETE',
-      headers,
-    });
-    if (!res.ok) {
+  const headers = token ? buildHeaders(token) : await authHeaders();
+  const res = await fetch(`${API_BASE}/rotasyon/gorevler/${taskId}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
       const err = await res.json();
-      console.error('deleteTask error:', err);
-    }
-  } catch (error) {
-    console.error('Error deleting task:', error);
+      message = err?.error || message;
+    } catch {}
+    console.error('deleteTask error:', message);
+    throw new Error(message);
   }
 };
 

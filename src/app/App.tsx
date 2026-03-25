@@ -11,6 +11,7 @@ import { AppHeader } from './components/app-header';
 import { AspectLogo } from './components/aspect-logo';
 import { supabase } from './lib/supabase';
 import { setAuthToken } from './lib/api';
+import { setGhostCompanyId as setGhostCompanyIdInApi } from './lib/api';
 import { clearUserQueue, clearUserFrameQueue } from './lib/offline-queue';
 import { projectId } from '/utils/supabase/info';
 import { Login } from './components/login';
@@ -97,6 +98,7 @@ function MainApp() {
   const [isSuperAdminFlag, setIsSuperAdminFlag] = useState(false); // ← Gerçek superadmin mi? (userRole 'yonetici'ye normalize edilse bile)
   const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('');
+  const [contentKey, setContentKey] = useState(0); // ← Şirket geçişinde zorla remount
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [shiftSetupCompleted, setShiftSetupCompleted] = useState(false);
   const [shiftSetupData, setShiftSetupData] = useState<ShiftSetupData | null>(null);
@@ -389,7 +391,12 @@ function MainApp() {
   const isSuperAdmin = isSuperAdminFlag;
   // Ghost modda görüntülenen şirket; null = kendi şirketi (aspect)
   const effectiveCompanyId = ghostCompanyId ?? userCompanyId;
-  const handleSwitchCompany = (cId: string | null) => setGhostCompanyId(cId);
+  const handleSwitchCompany = (cId: string | null) => {
+    setGhostCompanyId(cId);
+    setGhostCompanyIdInApi(cId);          // API header'ına da yaz
+    setActiveTab('dashboard');            // Dashboard'a git
+    setContentKey(prev => prev + 1);      // Bileşen ağacını remount et → veri yenilenir
+  };
 
   // Rol bazlı yetki kontrolleri (superadmin tüm yönetici işlemlerini yapabilir)
   const isManagerRole = ['yonetici', 'ust-mudur', 'mudur', 'superadmin'].includes(userRole);
@@ -1062,7 +1069,7 @@ function MainApp() {
               </span>
             </div>
             <button
-              onClick={() => setGhostCompanyId(null)}
+              onClick={() => handleSwitchCompany(null)}
               style={{
                 fontSize: 9, fontWeight: 700, color: '#fbbf24',
                 background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.40)',
@@ -1103,11 +1110,14 @@ function MainApp() {
         />
 
         {/* Main Content */}
-        <main className={
-          (activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock || showEkstraIs || showOzelIs))
-            ? `${isSuperAdmin && ghostCompanyId ? 'pt-[82px]' : 'pt-[60px]'} pb-24`
-            : ''
-        }>
+        <main
+          key={contentKey}
+          className={
+            (activeTab === 'quick-sales' || !(showShiftChoice || showShiftSetup || showShiftEnd || showCurrentStock || showEkstraIs || showOzelIs))
+              ? `${isSuperAdmin && ghostCompanyId ? 'pt-[82px]' : 'pt-[60px]'} pb-24`
+              : ''
+          }
+        >
           {renderContent()}
         </main>
 

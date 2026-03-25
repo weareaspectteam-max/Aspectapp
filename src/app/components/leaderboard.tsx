@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { projectId } from '/utils/supabase/info';
-import { buildHeaders, getToken } from '../lib/api';
+import { buildHeaders, getToken, appendGhostParam } from '../lib/api';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -221,7 +221,7 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
       const pk = getPeriodKey(period);
       const params = new URLSearchParams({ baslangic, bitis, periodKey: pk });
       if (mekanFilter) params.set('mekanId', mekanFilter);
-      const res = await fetch(`${API_BASE}/leaderboard/performans?${params}`, { headers: buildHeaders(token) });
+      const res = await fetch(appendGhostParam(`${API_BASE}/leaderboard/performans?${params}`), { headers: buildHeaders(token) });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Veri yüklenemedi.'); return; }
       setPersoneller(data.personeller || []);

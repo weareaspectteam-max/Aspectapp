@@ -2020,8 +2020,16 @@ app.get("/make-server-4da0b637/rotasyon/personel", async (c) => {
       'operasyon': '👨‍🔧', 'personel': '👤', 'idari': '👩‍💻',
     };
 
+    // ── Şirket izolasyonu: sadece aynı şirketin personelini döndür ──
+    // company_id olmayan legacy kullanıcılar → aspect'e ait sayılır
+    const companyId = getCompanyId(user);
+
     const staffMembers = users
-      .filter(u => u.user_metadata?.role && u.user_metadata.role !== 'bekleyen')
+      .filter(u => {
+        const userCompany = u.user_metadata?.company_id || "aspect";
+        if (userCompany !== companyId) return false;
+        return u.user_metadata?.role && u.user_metadata.role !== 'bekleyen';
+      })
       .map(u => ({
         id: u.id,
         name: u.user_metadata?.full_name || u.email || 'İsimsiz',
@@ -2030,6 +2038,7 @@ app.get("/make-server-4da0b637/rotasyon/personel", async (c) => {
         status: 'active',
       }));
 
+    console.log(`[rotasyon/personel] company=${companyId} → ${staffMembers.length} personel`);
     return c.json({ staffMembers });
   } catch (err) {
     console.log("Get rotasyon personel error:", err);
@@ -2174,15 +2183,21 @@ app.delete("/make-server-4da0b637/rotasyon/gorevler/:id", async (c) => {
       return c.json({ error: "Görev silme yetkisi yok." }, 403);
     }
     const { id } = c.req.param();
-    const ckv = companyKvFor(getCompanyId(user));
+    const companyId = getCompanyId(user);
+    const ckv = companyKvFor(companyId);
     let existingTask = await ckv.get(`rotation_task_${id}`);
     // Fallback: tüm görevler arasında ara (legacy anahtar uyumsuzluğu koruması)
     if (!existingTask) {
       const allTasks: any[] = await ckv.getByPrefix("rotation_task_").catch(() => []);
       existingTask = allTasks.find((t: any) => t?.id === id) ?? null;
     }
+    // Hem prefix'li hem legacy anahtarı sil (company_kv.del artık her ikisini de siler)
     await ckv.del(`rotation_task_${id}`);
-    console.log(`Görev silindi: ${id} by ${user.id}`);
+    // Ekstra güvence: aspect için global legacy anahtarını da doğrudan sil
+    if (companyId === "aspect") {
+      await kv.del(`rotation_task_${id}`).catch(() => {});
+    }
+    console.log(`Görev silindi: ${id} by ${user.id} (company: ${companyId})`);
 
     // Eski personellere bildirim gönder
     if (existingTask && Array.isArray(existingTask.personnel) && existingTask.personnel.length > 0) {
@@ -5470,7 +5485,7 @@ app.post("/make-server-4da0b637/ozel-is/baslat", async (c) => {
 // ÖZEL İŞ: Tamamla
 // POST /make-server-4da0b637/ozel-is/tamamla
 // Body: { taskId, tarih, tamamlamaNot?, fotografUrl? }
-// ──────────────────────────────────────────
+// ───────────��──────────────────────────────
 app.post("/make-server-4da0b637/ozel-is/tamamla", async (c) => {
   try {
     const user = await verifyToken(c);

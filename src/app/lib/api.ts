@@ -19,6 +19,48 @@ import { publicAnonKey } from '/utils/supabase/info';
  */
 let _cachedToken = '';
 
+/**
+ * Superadmin ghost modu için aktif şirket.
+ * null = kendi şirketi (ghost mod kapalı).
+ * App.tsx her ghost geçişinde setGhostCompanyId() ile günceller.
+ */
+let _ghostCompanyId: string | null = null;
+
+export const setGhostCompanyId = (id: string | null) => {
+  _ghostCompanyId = id;
+};
+
+export const getGhostCompanyId = () => _ghostCompanyId;
+
+/**
+ * Ghost modda aktif şirketin query string parametresini döndürür.
+ * Ghost mod aktif değilse boş string döner.
+ * Kullanım: fetch(`${API_BASE}/endpoint${ghostParams()}`, { headers })
+ * Ekstra parametre de birleştirilebilir: ghostParams({ date: '2024-01-01' })
+ */
+export const ghostParams = (extra?: Record<string, string>): string => {
+  const params: Record<string, string> = { ...(extra || {}) };
+  if (_ghostCompanyId) params['company_id'] = _ghostCompanyId;
+  const qs = new URLSearchParams(params).toString();
+  return qs ? `?${qs}` : '';
+};
+
+/**
+ * Verilen URL'e ghost company_id parametresini akıllıca ekler.
+ * - URL'de zaten `?` varsa `&company_id=X` ekler
+ * - URL'de `?` yoksa `?company_id=X` ekler
+ * - Ghost mod aktif değilse URL'yi olduğu gibi döndürür
+ *
+ * Kullanım:
+ *   fetch(appendGhostParam(`${API_BASE}/mekanlar`), { headers })
+ *   fetch(appendGhostParam(`${API_BASE}/endpoint?${params}`), { headers })
+ */
+export const appendGhostParam = (url: string): string => {
+  if (!_ghostCompanyId) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}company_id=${encodeURIComponent(_ghostCompanyId)}`;
+};
+
 /** sessionStorage anahtarı — HMR sonrası modül sıfırlanmasına karşı kalıcı yedek */
 const SS_KEY = 'aspect_access_token';
 
@@ -80,6 +122,7 @@ export const buildHeaders = (userToken?: string): Record<string, string> => {
   if (userToken) {
     headers['X-Access-Token'] = userToken;
   }
+  // X-Ghost-Company CORS uyumluluğu için query param olarak kullanılır, header'a eklenmez
   return headers;
 };
 

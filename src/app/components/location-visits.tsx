@@ -4,7 +4,7 @@ import {
   XCircle, Plus, Filter, Search, User, ArrowLeft, ChevronRight, 
   TrendingUp, Award, FileText, X, Edit2, Trash2, Loader2
 } from 'lucide-react';
-import { getToken, buildHeaders } from '../lib/api';
+import { getToken, buildHeaders, appendGhostParam } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -128,8 +128,8 @@ export function LocationVisits({
     try {
       const h = await getAuthHeaders();
       const [visitsRes, mekanRes] = await Promise.all([
-        fetch(`${API_BASE}/ziyaretler`, { headers: h }),
-        fetch(`${API_BASE}/mekanlar`, { headers: h }),
+        fetch(appendGhostParam(`${API_BASE}/ziyaretler`), { headers: h }),
+        fetch(appendGhostParam(`${API_BASE}/mekanlar`), { headers: h }),
       ]);
       if (visitsRes.ok) {
         const d = await visitsRes.json();

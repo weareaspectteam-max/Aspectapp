@@ -624,7 +624,7 @@ export function HamburgerMenu({
                           <motion.button
                             key={cId}
                             whileTap={{ scale: 0.97 }}
-                            onClick={() => { onSwitchCompany(cId === 'aspect' ? null : cId); close(); }}
+                            onClick={() => { onSwitchCompany(cId === 'aspect' ? null : cId); onNavigate('dashboard'); close(); }}
                             className="w-full flex items-center gap-3 rounded-xl mb-1.5"
                             style={{
                               padding: '10px 12px',
@@ -662,7 +662,7 @@ export function HamburgerMenu({
                       {ghostCompanyId && (
                         <motion.button
                           whileTap={{ scale: 0.97 }}
-                          onClick={() => { onSwitchCompany(null); close(); }}
+                          onClick={() => { onSwitchCompany(null); onNavigate('dashboard'); close(); }}
                           className="w-full flex items-center justify-center gap-2 rounded-xl mt-2"
                           style={{
                             padding: '9px', fontSize: 11, fontWeight: 700,

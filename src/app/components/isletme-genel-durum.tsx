@@ -7,7 +7,7 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { projectId } from '/utils/supabase/info';
-import { getToken, buildHeaders } from '../lib/api';
+import { getToken, buildHeaders, appendGhostParam } from '../lib/api';
 
 // ─── Types ────────────────────────────────
 interface Expense {
@@ -213,10 +213,10 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
     try {
       const h = await getAuthHeaders();
       const [giderRes, usersRes, maliyetRes, mekanRes] = await Promise.all([
-        fetch(`${API_BASE}/isletme/giderler`, { headers: h }),
-        fetch(`${API_BASE}/auth/kullanicilar`, { headers: h }),
-        fetch(`${API_BASE}/maliyetler`, { headers: h }),
-        fetch(`${API_BASE}/mekanlar`, { headers: h }),
+        fetch(appendGhostParam(`${API_BASE}/isletme/giderler`), { headers: h }),
+        fetch(appendGhostParam(`${API_BASE}/auth/kullanicilar`), { headers: h }),
+        fetch(appendGhostParam(`${API_BASE}/maliyetler`), { headers: h }),
+        fetch(appendGhostParam(`${API_BASE}/mekanlar`), { headers: h }),
       ]);
       if (giderRes.ok) {
         const d = await giderRes.json();

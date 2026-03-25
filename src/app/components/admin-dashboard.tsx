@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { StaffPerformanceList } from './staff-performance-list';
 import { CurrencyWidget } from './currency-widget';
-import { getToken, buildHeaders } from '../lib/api';
+import { getToken, buildHeaders, ghostParams } from '../lib/api';
 import { projectId } from '/utils/supabase/info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -270,27 +270,44 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [showPerformanceList, setShowPerformanceList] = useState(false);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (signal?: AbortSignal) => {
     try {
       setLoading(true);
       setError(null);
-      // accessToken prop öncelikli — session hazır olmasa bile çalışır
-      const token = accessToken || await getToken();
-      if (!token) {
-        console.warn('[AdminDashboard] token yok, 2sn bekleyip tekrar denenecek');
-        await new Promise(r => setTimeout(r, 2000));
-        const retryToken = await getToken();
-        if (!retryToken) throw new Error('Oturum bilgisi alınamadı. Lütfen tekrar giriş yapın.');
+
+      // Token al — yoksa kısa bekleme + retry
+      let finalToken = accessToken || await getToken();
+      if (!finalToken) {
+        await new Promise(r => setTimeout(r, 1500));
+        finalToken = await getToken();
+        if (!finalToken) throw new Error('Oturum bilgisi alınamadı. Lütfen tekrar giriş yapın.');
       }
-      const finalToken = accessToken || await getToken();
-      const res = await fetch(`${API_BASE}/manager/dashboard-summary`, {
-        headers: buildHeaders(finalToken),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Sunucu hatası');
-      setData(json);
-      setLastRefresh(new Date());
+
+      // Retry mantığı: en fazla 3 deneme, 1s / 2s bekleme
+      let lastErr: Error | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (signal?.aborted) return; // Bileşen unmount oldu, dur
+        if (attempt > 0) await new Promise(r => setTimeout(r, attempt * 1000));
+        try {
+          const res = await fetch(`${API_BASE}/manager/dashboard-summary${ghostParams()}`, {
+            headers: buildHeaders(finalToken),
+            signal,
+          });
+          if (signal?.aborted) return;
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || `Sunucu hatası (${res.status})`);
+          setData(json);
+          setLastRefresh(new Date());
+          setError(null);
+          return; // Başarılı
+        } catch (e: any) {
+          if (e?.name === 'AbortError') return; // İptal — hata gösterme
+          lastErr = e;
+        }
+      }
+      throw lastErr ?? new Error('Veri alınamadı');
     } catch (err: any) {
+      if (err?.name === 'AbortError') return; // İptal — hata gösterme
       console.error('AdminDashboard fetch error:', err);
       setError(err.message || 'Veri alınamadı');
     } finally {
@@ -299,9 +316,13 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
   }, [accessToken]);
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 120_000);
-    return () => clearInterval(interval);
+    const controller = new AbortController();
+    fetchData(controller.signal);
+    const interval = setInterval(() => fetchData(controller.signal), 120_000);
+    return () => {
+      controller.abort(); // Unmount veya dep değişimi → uçuşta olan isteği iptal et
+      clearInterval(interval);
+    };
   }, [fetchData]);
 
   const isLoading  = loading && !data;

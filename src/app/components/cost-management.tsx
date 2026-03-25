@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Edit2, Trash2, Save, ChevronRight, Plus, RefreshCw, Loader2, Users, ChevronDown, Check, ArrowRight } from 'lucide-react';
 import { projectId } from '/utils/supabase/info';
-import { getToken, buildHeaders } from '../lib/api';
+import { getToken, buildHeaders, appendGhostParam } from '../lib/api';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -186,9 +186,9 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
       const token = await getToken();
       const freshHeaders = buildHeaders(token);
       const [costRes, mekanRes, usersRes] = await Promise.all([
-        fetch(`${API_BASE}/maliyetler`, { headers: freshHeaders }),
-        fetch(`${API_BASE}/mekanlar`, { headers: freshHeaders }),
-        fetch(`${API_BASE}/auth/kullanicilar`, { headers: freshHeaders }),
+        fetch(appendGhostParam(`${API_BASE}/maliyetler`), { headers: freshHeaders }),
+        fetch(appendGhostParam(`${API_BASE}/mekanlar`), { headers: freshHeaders }),
+        fetch(appendGhostParam(`${API_BASE}/auth/kullanicilar`), { headers: freshHeaders }),
       ]);
 
       if (!costRes.ok) {
