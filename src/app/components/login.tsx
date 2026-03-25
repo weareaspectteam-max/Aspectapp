@@ -615,7 +615,7 @@ export function Login({ onLogin }: LoginProps) {
             </span>
           </div>
           <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>
-            © 2025 <span style={{ color: '#9dd9ea' }}>Aspect Operations</span>
+            © 2025 <span style={{ color: '#9dd9ea' }}>Operasyon Paneli</span>
           </p>
         </motion.div>
       </div>
