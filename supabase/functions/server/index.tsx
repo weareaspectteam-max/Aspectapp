@@ -5159,18 +5159,38 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
       return c.json({ basarili: true });
     }
 
-    const kvKey = `stok_gunluk_${mekanId}_${today}`;
-    const kayit: any = await ckv.get(kvKey) || { mekanId, tarih: today };
-    // Hem acilis hem kapanish'e yaz; böylece hiç vardiya açılmamış
-    // mekanlarda da stok görünür ve fallback mantığı çalışır.
-    kayit.acilis = { ...(kayit.acilis || {}), ...stokObj };
-    kayit.acilisYapildi = true;
-    kayit.kapanish = { ...(kayit.kapanish || {}), ...stokObj };
-    kayit.kapanisYapildi = true;
+    // Doğru kaydı bul: bugün varsa bugünkü, yoksa son kapanış kaydı
+    // Yeni kayıt OLUŞTURULMAZ — mekanı açık/kapalı gibi göstermemek için
+    const todayKey = `stok_gunluk_${mekanId}_${today}`;
+    let kvKey = todayKey;
+    let kayit: any = await ckv.get(todayKey);
+    let aktifField: string;
+
+    if (kayit) {
+      // Bugün kayıt var — vardiya açıksa acilis, kapandıysa kapanish
+      aktifField = kayit.kapanisYapildi ? "kapanish" : "acilis";
+    } else {
+      // Bugün kayıt yok → en son kapanış kaydını bul
+      const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+      const mekanKayitlari = tumKayitlar
+        .filter((k: any) => k.mekanId === mekanId && k.kapanisYapildi && k.kapanish)
+        .sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
+      if (mekanKayitlari.length > 0) {
+        kayit = mekanKayitlari[0];
+        kvKey = `stok_gunluk_${mekanId}_${kayit.tarih}`;
+        aktifField = "kapanish";
+      } else {
+        // Hiç kayıt yok — bugüne yönetici kaydı oluştur (acilisYapildi set edilmez)
+        kayit = { mekanId, tarih: today };
+        aktifField = "acilis";
+      }
+    }
+
+    kayit[aktifField] = { ...(kayit[aktifField] || {}), ...stokObj };
     kayit.yoneticiGuncelleme = new Date().toISOString();
     await ckv.set(kvKey, kayit);
 
-    console.log(`Mekan stok güncellendi: mekan=${mekanId}, kullanıcı=${user.user_metadata?.full_name}`);
+    console.log(`Mekan stok güncellendi: mekan=${mekanId}, alan=${aktifField}, key=${kvKey}, kullanıcı=${user.user_metadata?.full_name}`);
     return c.json({ basarili: true });
   } catch (err) {
     console.log("Stok mekan güncelle error:", err);
@@ -5207,14 +5227,35 @@ app.post("/make-server-4da0b637/stok/mekan/sifirla", async (c) => {
     }
 
     const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
-    const kvKey = `stok_gunluk_${mekanId}_${today}`;
-    const kayit: any = await ckv.get(kvKey) || { mekanId, tarih: today };
-    kayit.acilis = { ...(kayit.acilis || {}), ...sifirStok };
-    kayit.acilisYapildi = true;
-    kayit.yoneticiSifirlama = new Date().toISOString();
-    await ckv.set(kvKey, kayit);
 
-    console.log(`Mekan stok sıfırlandı: mekan=${mekanId}, kullanıcı=${user.user_metadata?.full_name}`);
+    // Transfer ile aynı mantık: mevcut kaydı bul, uygun alana yaz, yeni kayıt açma
+    const todaySKey = `stok_gunluk_${mekanId}_${today}`;
+    let sKvKey = todaySKey;
+    let sKayit: any = await ckv.get(todaySKey);
+    let sAktifField: string;
+
+    if (sKayit) {
+      sAktifField = sKayit.kapanisYapildi ? "kapanish" : "acilis";
+    } else {
+      const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+      const mekanKayitlari = tumKayitlar
+        .filter((k: any) => k.mekanId === mekanId && k.kapanisYapildi && k.kapanish)
+        .sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
+      if (mekanKayitlari.length > 0) {
+        sKayit = mekanKayitlari[0];
+        sKvKey = `stok_gunluk_${mekanId}_${sKayit.tarih}`;
+        sAktifField = "kapanish";
+      } else {
+        sKayit = { mekanId, tarih: today };
+        sAktifField = "acilis";
+      }
+    }
+
+    sKayit[sAktifField] = { ...(sKayit[sAktifField] || {}), ...sifirStok };
+    sKayit.yoneticiSifirlama = new Date().toISOString();
+    await ckv.set(sKvKey, sKayit);
+
+    console.log(`Mekan stok sıfırlandı: mekan=${mekanId}, alan=${sAktifField}, key=${sKvKey}, kullanıcı=${user.user_metadata?.full_name}`);
     return c.json({ basarili: true });
   } catch (err) {
     console.log("Stok mekan sıfırla error:", err);
@@ -5254,28 +5295,39 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
     const ckv = companyKvFor(getCompanyId(user));
 
     // Helper: mekan stok oku (bugün veya fallback)
+    // ÖNEMLİ: Fallback durumunda fallback kaydının kendi tarihli key'i döndürülür,
+    // bugünün key'i DEĞİL — böylece transfer yazarken yeni kayıt oluşturulmaz (mekan açılmaz).
     const getMekanStok = async (mekanId: string) => {
-      const kvKey = `stok_gunluk_${mekanId}_${today}`;
-      const kayit: any = await ckv.get(kvKey);
+      const todayKey = `stok_gunluk_${mekanId}_${today}`;
+      const kayit: any = await ckv.get(todayKey);
       if (kayit) {
+        // Bugün kayıt var — vardiya açık mı kapandı mı?
         const aktifField = kayit.kapanisYapildi ? "kapanish" : "acilis";
         const aktif = kayit[aktifField] || {};
-        return { kayit, kvKey, aktif, alan_deger: Number(aktif[alan]) || 0, aktifField };
+        return { kayit, kvKey: todayKey, aktif, alan_deger: Number(aktif[alan]) || 0, aktifField };
       }
-      // Fallback: en son kapanış kaydı
+      // Bugün kayıt yok → en son kapanış kaydını bul ve onun key'ini kullan
       const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
       const mekanKayitlari = tumKayitlar
         .filter((k: any) => k.mekanId === mekanId && k.kapanisYapildi && k.kapanish)
         .sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
-      const fallbackAktif = mekanKayitlari[0]?.kapanish || {};
-      return { kayit: null, kvKey, aktif: fallbackAktif, alan_deger: Number(fallbackAktif[alan]) || 0, aktifField: "acilis" };
+      if (mekanKayitlari.length > 0) {
+        const fallbackKayit = mekanKayitlari[0];
+        // Fallback kaydının gerçek tarihli key'ini oluştur (bugün değil)
+        const fallbackKey = `stok_gunluk_${mekanId}_${fallbackKayit.tarih}`;
+        const fallbackAktif = fallbackKayit.kapanish || {};
+        return { kayit: fallbackKayit, kvKey: fallbackKey, aktif: fallbackAktif, alan_deger: Number(fallbackAktif[alan]) || 0, aktifField: "kapanish" };
+      }
+      // Hiç kayıt yok → boş döndür (yazma aşamasında yeni kayıt oluşturulur ama açılış sayılmaz)
+      return { kayit: null, kvKey: todayKey, aktif: {}, alan_deger: 0, aktifField: "acilis" };
     };
 
     // Helper: mekan stok yaz
+    // ÖNEMLİ: Transfer işleminde acilisYapildi set edilmez — mekan açılmış gibi gösterilmemeli.
     const setMekanStok = async (mekanId: string, kvKey: string, kayit: any, aktifField: string, aktif: any, yeniDeger: number) => {
       const yeniKayit: any = kayit ? { ...kayit } : { mekanId, tarih: today };
       yeniKayit[aktifField] = { ...aktif, [alan]: yeniDeger };
-      if (aktifField === "acilis") yeniKayit.acilisYapildi = true;
+      // acilisYapildi KASITLI OLARAK set edilmiyor — transfer mekanı açmamalı
       yeniKayit.stokTransferGuncelleme = new Date().toISOString();
       await ckv.set(kvKey, yeniKayit);
     };
@@ -6116,7 +6168,7 @@ app.get("/make-server-4da0b637/ai/ozet", async (c) => {
       };
     });
 
-    // Personel sıralaması — iskonto oranı dahil, tüm personel (slice yok)
+    // Personel sıralaması — iskonto oran�� dahil, tüm personel (slice yok)
     const personelSiralama = Object.values(personelCiro)
       .map((p: any) => ({
         ...p,
@@ -6704,6 +6756,69 @@ app.get("/make-server-4da0b637/personel/anomali-puanlar", async (c) => {
     });
   } catch (err) {
     console.log("Personel anomali-puanlar error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// PERSONEL: Anomali Sıfırla (yalnızca yönetici)
+// POST /make-server-4da0b637/personel/anomali-sifirla
+// Body: { baslangic?: string, bitis?: string }
+// Eşleşen stok_gunluk_ kayıtlarındaki anomali alanlarını temizler
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/personel/anomali-sifirla", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role;
+    if (role !== "yonetici") {
+      return c.json({ error: "Bu işlemi yalnızca yönetici yapabilir." }, 403);
+    }
+
+    const body = await c.req.json().catch(() => ({}));
+    const baslangic: string = body.baslangic || "";
+    const bitis:     string = body.bitis     || "";
+
+    const ckv = companyKvFor(getCompanyId(user));
+    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+
+    const ANOMALI_ALANLARI = [
+      "acilisAnomali",
+      "kapanisAnomali",
+      "acilisYaziciAnomali",
+      "kapanisYaziciAnomali",
+      "acilisAnomaliNeden",
+      "kapanisAnomaliNeden",
+    ];
+
+    let sifirlanenSayisi = 0;
+    for (const kayit of tumKayitlar) {
+      if (!kayit.mekanId || !kayit.tarih) continue;
+      if (baslangic && kayit.tarih < baslangic) continue;
+      if (bitis     && kayit.tarih > bitis)     continue;
+
+      const anomaliVar = ANOMALI_ALANLARI.some(alan => {
+        const v = kayit[alan];
+        if (!v) return false;
+        if (typeof v === "object" && !Array.isArray(v)) return Object.keys(v).length > 0;
+        if (Array.isArray(v)) return v.length > 0;
+        return !!v;
+      });
+      if (!anomaliVar) continue;
+
+      for (const alan of ANOMALI_ALANLARI) delete kayit[alan];
+      kayit.anomaliSifirlamaTarihi = new Date().toISOString();
+      kayit.anomaliSifirlayanKullanici = user.user_metadata?.full_name || user.email;
+
+      const kvKey = `stok_gunluk_${kayit.mekanId}_${kayit.tarih}`;
+      await ckv.set(kvKey, kayit);
+      sifirlanenSayisi++;
+    }
+
+    console.log(`Anomali sıfırlama: ${sifirlanenSayisi} kayıt temizlendi, kullanıcı=${user.user_metadata?.full_name}`);
+    return c.json({ basarili: true, sifirlanenSayisi });
+  } catch (err) {
+    console.log("Anomali sıfırla error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
@@ -8717,7 +8832,7 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
   }
 });
 
-// ──────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────��──────────────
 // VARDİYA SİL — DELETE /make-server-4da0b637/vardiya/sil
 // Body: { mekanId, tarih }  |  Auth: yalnizca yonetici
 // ──────────────────────────────────────────────────────────────

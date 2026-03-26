@@ -1404,10 +1404,6 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
       {/* Header */}
       <div className="bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-b border-white/10 px-4 pt-3 pb-3">
         <div className="flex items-center gap-3">
-          <button onClick={() => onNavigate('business-panel')}
-            className="w-9 h-9 rounded-xl bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-transform">
-            <ArrowLeft className="w-4 h-4 text-white/70" />
-          </button>
           <div className="flex-1">
             <h1 className="text-base font-bold text-white">Stok Dağılımı</h1>
             <div className="text-[10px] text-white/30 flex items-center gap-1 mt-0.5">

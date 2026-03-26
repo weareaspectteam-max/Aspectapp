@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, RefreshCw, Loader2, AlertTriangle, Users,
   ChevronDown, ChevronUp, Search, Filter, Calendar, MapPin,
-  TrendingUp, ShieldAlert, Info,
+  TrendingUp, ShieldAlert, Info, Trash2,
 } from 'lucide-react';
 import { projectId } from '../lib/supabase-info';
 import { buildHeaders, getToken, appendGhostParam } from '../lib/api';
@@ -105,6 +105,12 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
   const [acikKart, setAcikKart] = useState<string | null>(null);
   const [showFiltre, setShowFiltre] = useState(false);
 
+  /* ─── Anomali sıfırla state ─── */
+  const [showSifirlaModal, setShowSifirlaModal] = useState(false);
+  const [sifirlaYukleniyor, setSifirlaYukleniyor] = useState(false);
+  const [sifirlaHata, setSifirlaHata] = useState('');
+  const [sifirlaBasarili, setSifirlaBasarili] = useState('');
+
   /* ─── Tarih aralığı hesaplama ─── */
   const applyFilterKey = (key: typeof filterKey) => {
     const now = new Date();
@@ -143,6 +149,31 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
   }, [accessToken, baslangic, bitis, mekanFiltre]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  /* ─── Anomali sıfırlama ─── */
+  const handleAnomaliSifirla = async () => {
+    setSifirlaYukleniyor(true);
+    setSifirlaHata('');
+    setSifirlaBasarili('');
+    try {
+      const token = accessToken || await getToken();
+      const res = await fetch(appendGhostParam(`${API_BASE}/personel/anomali-sifirla`), {
+        method: 'POST',
+        headers: { ...buildHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({}), // tüm tarihler
+      });
+      const data = await res.json();
+      if (!res.ok) { setSifirlaHata(data.error || 'Sıfırlama başarısız.'); return; }
+      setSifirlaBasarili(`${data.sifirlanenSayisi} kayıttaki anomali temizlendi.`);
+      setShowSifirlaModal(false);
+      await fetchData();
+    } catch (e) {
+      setSifirlaHata('Sunucuya ulaşılamadı.');
+      console.error('Anomali sıfırla error:', e);
+    } finally {
+      setSifirlaYukleniyor(false);
+    }
+  };
 
   /* ─── Filtrelenmiş liste ─── */
   const filtrelenmis = puanlar.filter(p =>
@@ -190,6 +221,16 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
               : <RefreshCw className="w-5 h-5 text-white" />
             }
           </button>
+          {userRole === 'yonetici' && (
+            <button
+              onClick={() => { setSifirlaHata(''); setSifirlaBasarili(''); setShowSifirlaModal(true); }}
+              className="p-2 rounded-xl active:scale-95 transition-all"
+              style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)' }}
+              title="Anomali Sıfırla"
+            >
+              <Trash2 className="w-5 h-5 text-red-400" />
+            </button>
+          )}
           <button
             onClick={() => setShowFiltre(v => !v)}
             className={`p-2 rounded-xl transition-all active:scale-95 ${showFiltre ? 'bg-violet-600/60 border border-violet-400/40' : 'bg-white/10'}`}
@@ -457,6 +498,72 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
         )}
 
       </div>
+
+      {/* ─── Başarı Banner ─── */}
+      {sifirlaBasarili && (
+        <div
+          className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl flex items-center gap-2 text-sm font-semibold text-green-300 shadow-xl"
+          style={{ background: 'rgba(16,185,129,0.18)', border: '1px solid rgba(16,185,129,0.4)', backdropFilter: 'blur(16px)', whiteSpace: 'nowrap' }}
+        >
+          <AlertTriangle className="w-4 h-4 text-green-400" />
+          {sifirlaBasarili}
+        </div>
+      )}
+
+      {/* ─── Anomali Sıfırla Onay Modalı ─── */}
+      {showSifirlaModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center pb-8 px-4"
+          style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}>
+          <div className="w-full max-w-sm rounded-3xl p-6 space-y-5"
+            style={{ background: 'rgba(15,8,35,0.97)', border: '1px solid rgba(239,68,68,0.35)', backdropFilter: 'blur(24px)' }}>
+
+            {/* İkon + Başlık */}
+            <div className="flex flex-col items-center text-center gap-2">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-1"
+                style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)' }}>
+                <Trash2 className="w-7 h-7 text-red-400" />
+              </div>
+              <h2 className="text-lg font-bold text-white">Tüm Anomali Kayıtlarını Sıfırla</h2>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Tüm tarihlerdeki <span className="text-red-300 font-semibold">açılış</span> ve <span className="text-red-300 font-semibold">kapanış anomalileri</span> kalıcı olarak silinecek.
+                Personel puanları sıfırlanacak. Bu işlem geri alınamaz.
+              </p>
+            </div>
+
+            {/* Hata */}
+            {sifirlaHata && (
+              <div className="rounded-xl px-4 py-3 text-sm text-red-300 flex items-center gap-2"
+                style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)' }}>
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {sifirlaHata}
+              </div>
+            )}
+
+            {/* Butonlar */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowSifirlaModal(false)}
+                disabled={sifirlaYukleniyor}
+                className="flex-1 py-3 rounded-2xl text-sm font-semibold text-gray-300 active:scale-95 transition-all"
+                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleAnomaliSifirla}
+                disabled={sifirlaYukleniyor}
+                className="flex-1 py-3 rounded-2xl text-sm font-bold text-white active:scale-95 transition-all flex items-center justify-center gap-2"
+                style={{ background: sifirlaYukleniyor ? 'rgba(239,68,68,0.3)' : 'rgba(239,68,68,0.7)', border: '1px solid rgba(239,68,68,0.5)' }}
+              >
+                {sifirlaYukleniyor
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Sıfırlanıyor...</>
+                  : <><Trash2 className="w-4 h-4" /> Evet, Sıfırla</>
+                }
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
