@@ -50,6 +50,10 @@ interface YaziciSayac {
   kullanilanBaski: number;
   cikisAdedi: number;
   satilanFotograf: number;
+  kagitTipiAdi?: string | null;
+  kapasitePerTakim?: number;
+  birimMaliyet?: number;
+  yaziciMaliyet?: number;
 }
 
 interface Anomali {
@@ -788,7 +792,20 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
                 <div className="space-y-2 mb-3">
                   {v.yazicilar.map((y, i) => (
                     <div key={i} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(255,255,255,0.07)' }}>
-                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: 700, marginBottom: 8 }}>{y.ad}</p>
+                      <div className="flex items-center justify-between mb-2">
+                        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: 700 }}>{y.ad}</p>
+                        {y.kagitTipiAdi && (
+                          <span style={{ fontSize: 9, color: '#9dd9ea', background: 'rgba(157,217,234,0.12)', border: '1px solid rgba(157,217,234,0.25)', borderRadius: 6, padding: '2px 6px', fontWeight: 700 }}>
+                            🗂️ {y.kagitTipiAdi}
+                          </span>
+                        )}
+                      </div>
+                      {/* Kapasite bilgisi (kağıt tipi bağlıysa) */}
+                      {y.kapasitePerTakim && y.kapasitePerTakim > 0 ? (
+                        <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', marginBottom: 8 }}>
+                          {y.kapasitePerTakim} baskı/takım · {v.printType === 'yarim' ? `${y.kapasitePerTakim * 2} kare/takım (yarım)` : `${y.kapasitePerTakim} kare/takım (tam)`}
+                        </p>
+                      ) : null}
                       <div className="grid grid-cols-3 gap-2">
                         <div>
                           <p style={labelStyle}>Açılış Sayacı</p>
@@ -817,6 +834,13 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
                         </div>
                         <span style={{ fontSize: 14, fontWeight: 900, color: '#9dd9ea' }}>{y.cikisAdedi.toLocaleString('tr-TR')} kare</span>
                       </div>
+                      {/* Per-printer baskı maliyeti (yeni field varsa göster) */}
+                      {y.yaziciMaliyet != null && y.yaziciMaliyet > 0 && (
+                        <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: 10, color: 'rgba(248,113,113,0.7)' }}>Bu yazıcı baskı maliyeti</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#f87171' }}>-₺{Math.round(y.yaziciMaliyet).toLocaleString('tr-TR')}</span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

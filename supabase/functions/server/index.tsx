@@ -2850,6 +2850,7 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
       model: yazici.model || '',
       serialNumber: yazici.serialNumber || '',
       status: yazici.status || 'working',
+      kagitTipiId: yazici.kagitTipiId || null,
       ribonMevcut: (yazici.ribonMevcut !== undefined && yazici.ribonMevcut !== null)
         ? Number(yazici.ribonMevcut)
         : null,
@@ -3124,66 +3125,81 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
 
     // ── Vardiya Baskı & Maliyet Hesaplamaları ──
     const mekan = await ckv.get(`mekan_${mekanId}`);
+    // printType mekan bazlı kalır — yarım/tam kağıt çıkış çarpanı
     const printType: string = mekan?.printType || "yarim"; // "tam" | "yarim"
-    const paperTypeId: string | null = mekan?.paperType || null;
-
-    let paper: any = null;
-    if (paperTypeId) {
-      // Önce doğrudan ID ile ara
-      paper = await ckv.get(`cost_paper_${paperTypeId}`);
-      // Bulunamazsa tüm kağıtlar içinde isim veya id ile eşleştir (eski kayıtlar isim saklıyor olabilir)
-      if (!paper) {
-        const allPapers: any[] = await ckv.getByPrefix("cost_paper_").catch(() => []) || [];
-        paper = allPapers.find((p: any) => p.id === paperTypeId || p.name === paperTypeId) || null;
-        if (paper) console.log(`Kağıt fallback (isim eşleşmesi): "${paperTypeId}" → "${paper.name}" (${paper.id})`);
-      }
-    }
-
-    // setsPerBox veya pcsPerBox eksik/sıfırsa güvenli varsayılan kullan
-    const safePcsPerBox = Number(paper?.pcsPerBox) || 1;
-    const safeSetsPerBox = Number(paper?.setsPerBox) || 1;
-    const kapasitePerTakim = paper ? (safePcsPerBox / safeSetsPerBox) : 0;
-
-    // Kur dönüşümü: kağıt para birimi → TL
-    const exchangeRates = await ckv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
-    const paperCurrency: string = paper?.currency || "TRY";
-    const kurCarpani = paperCurrency === "TRY" ? 1
-      : paperCurrency === "EUR" ? Number(exchangeRates.EUR) || 35.50
-      : paperCurrency === "USD" ? Number(exchangeRates.USD) || 32.80
-      : paperCurrency === "GBP" ? Number(exchangeRates.GBP) || 41.20
-      : 1;
-
-    // birimMaliyet TL cinsinden: (boxPrice / pcsPerBox) × kur
-    const birimMaliyetTam = paper
-      ? (Number(paper.boxPrice) / safePcsPerBox) * kurCarpani
-      : 0;
-    // carpan: yarım kağıtta 1 baskı → 2 fotoğraf çıkışı
     const carpan = printType === "tam" ? 1 : 2;
 
-    // Her yazıcı için hesapla
-    const enrichedPrinterData = (printerData || []).map((pr: any) => {
+    // Kur dönüşümü için exchange rates (tek seferlik çek)
+    const exchangeRates: any = await ckv.get("cost_exchange_rates") || { EUR: 35.50, USD: 32.80, GBP: 41.20 };
+
+    // Tüm kağıtları tek seferlik çek — her yazıcı kendi kagitTipiId'sine göre kullanacak
+    const allPapers: any[] = await ckv.getByPrefix("cost_paper_").catch(() => []) || [];
+
+    // Helper: kağıt ID'sinden paper objesini bul (isim fallback dahil)
+    const findPaper = (kagitTipiId: string | null | undefined): any | null => {
+      if (!kagitTipiId) return null;
+      return allPapers.find((p: any) => p.id === kagitTipiId || p.name === kagitTipiId) || null;
+    };
+
+    // Helper: para birimi → kur çarpanı
+    const getKur = (currency: string): number => {
+      if (currency === "EUR") return Number(exchangeRates.EUR) || 35.50;
+      if (currency === "USD") return Number(exchangeRates.USD) || 32.80;
+      if (currency === "GBP") return Number(exchangeRates.GBP) || 41.20;
+      return 1;
+    };
+
+    // Her yazıcı için kendi kagitTipiId'sini kullanarak ayrı ayrı hesapla
+    const enrichedPrinterData = await Promise.all((printerData || []).map(async (pr: any) => {
       const acilisSayac = Number(pr.startCounter) || 0;
       const kapanisSayac = Number(pr.endCounter) || 0;
       const degisimAdedi = Number(pr.ribonDegisim) || 0;
       const iadeFotograf = Number(pr.iadeFotograf) || 0;
 
-      // kullanilanBaskı: açılış + (değişim × kapasite) - kapanış
+      // Yazıcının ekipman kaydından kagitTipiId'yi al
+      const ekipmanKaydi: any = await ckv.get(pr.ekipmanId || pr.id).catch(() => null);
+      const kagitTipiId: string | null = ekipmanKaydi?.kagitTipiId || pr.kagitTipiId || null;
+      const yaziciPaper = findPaper(kagitTipiId);
+
+      if (yaziciPaper) {
+        console.log(`Yazıcı ${pr.ekipmanId || pr.id}: kağıt="${yaziciPaper.name}" pcs=${yaziciPaper.pcsPerBox} sets=${yaziciPaper.setsPerBox}`);
+      }
+
+      // Bu yazıcının kağıdına göre kapasite ve maliyet hesabı
+      const safePcsPerBox = Number(yaziciPaper?.pcsPerBox) || 1;
+      const safeSetsPerBox = Number(yaziciPaper?.setsPerBox) || 1;
+      // kapasitePerTakim: 1 ribon değişiminde kaç fiziksel baskı yapılabilir
+      const kapasitePerTakim = yaziciPaper ? (safePcsPerBox / safeSetsPerBox) : 0;
+
+      const paperCur: string = yaziciPaper?.currency || "TRY";
+      const kurCarpani = getKur(paperCur);
+      // birimMaliyet TL/baskı: (boxPrice / pcsPerBox) × kur
+      const birimMaliyetTam = yaziciPaper
+        ? (Number(yaziciPaper.boxPrice) / safePcsPerBox) * kurCarpani
+        : 0;
+
+      // kullanilanBaskı: açılış + (değişim × kapasitePerTakim) - kapanış
       const kullanilanBaskı = Math.max(
         0, acilisSayac + (degisimAdedi * kapasitePerTakim) - kapanisSayac
       );
-      // stokDusum: fiziksel kağıt düşümü — tam/yarım fark etmez
+      // stokDusum: fiziksel kağıt düşümü (tam/yarım fark etmez — fiziksel sayı)
       const stokDusum = kullanilanBaskı;
-      // cikisAdedi: müşteriye çıkan fotoğraf adedi (istatistik)
+      // cikisAdedi: müşteriye çıkan fotoğraf adedi — mekan printType çarpanı uygulanır
       const cikisAdedi = Math.round(kullanilanBaskı * carpan);
       // satılanFotograf: iade çıkarılınca net satış
       const satılanFotograf = Math.max(0, cikisAdedi - iadeFotograf);
-      // toplamMaliyet: kullanilanBaskı × birimMaliyetTam(TL) — kur dönüşümü dahil, tam/yarım fark etmez
+      // toplamMaliyet: bu yazıcının kendi kağıdına göre TL maliyet
       const toplamMaliyet = birimMaliyetTam > 0
         ? parseFloat((kullanilanBaskı * birimMaliyetTam).toFixed(4))
         : 0;
 
       return {
         ...pr,
+        kagitTipiId,
+        kagitTipiAdi: yaziciPaper?.name || null,
+        kapasitePerTakim,
+        birimMaliyet: parseFloat(birimMaliyetTam.toFixed(4)),
+        paperCurrency: paperCur,
         iadeFotograf,
         kullanilanBaskı,
         stokDusum,
@@ -3191,25 +3207,29 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
         satılanFotograf,
         toplamMaliyet,
       };
-    });
+    }));
 
-    // Vardiya genel toplamları
+    // Vardiya genel toplamları (multi-printer, multi-paper)
+    const toplamMaliyet = parseFloat(
+      enrichedPrinterData.reduce((s: number, p: any) => s + (p.toplamMaliyet || 0), 0).toFixed(4)
+    );
+    // paperName: birden fazla kağıt varsa virgülle ayır, tekil ise tek ad
+    const kagitAdlari = [...new Set(enrichedPrinterData.map((p: any) => p.kagitTipiAdi).filter(Boolean))];
     const vardiyaToplam = {
       toplamKullanilanBaskı: enrichedPrinterData.reduce((s: number, p: any) => s + (p.kullanilanBaskı || 0), 0),
       toplamStokDusum: enrichedPrinterData.reduce((s: number, p: any) => s + (p.stokDusum || 0), 0),
       toplamCikisAdedi: enrichedPrinterData.reduce((s: number, p: any) => s + (p.cikisAdedi || 0), 0),
       toplamIadeFotograf: enrichedPrinterData.reduce((s: number, p: any) => s + (p.iadeFotograf || 0), 0),
       toplamSatılanFotograf: enrichedPrinterData.reduce((s: number, p: any) => s + (p.satılanFotograf || 0), 0),
-      toplamMaliyet: parseFloat(
-        enrichedPrinterData.reduce((s: number, p: any) => s + (p.toplamMaliyet || 0), 0).toFixed(4)
-      ),
+      toplamMaliyet,
       printType,
       carpan,
-      paperName: paper?.name || null,
-      paperCurrency,
-      kurCarpani: parseFloat(kurCarpani.toFixed(4)),
-      birimMaliyetOrijinal: paper ? parseFloat((Number(paper.boxPrice) / Number(paper.pcsPerBox)).toFixed(6)) : 0,
-      birimMaliyet: birimMaliyetTam > 0 ? parseFloat(birimMaliyetTam.toFixed(4)) : 0,
+      // Geriye dönük uyumluluk için paperName (birden fazlaysa virgülle)
+      paperName: kagitAdlari.join(', ') || null,
+      paperCurrency: "TRY", // Kur dönüşümü yapılmış, sonuç her zaman TRY
+      kurCarpani: 1,        // Her yazıcı kendi kuru ile hesaplandı
+      birimMaliyetOrijinal: 0,
+      birimMaliyet: 0,
       currency: "TRY",
     };
 
@@ -3289,7 +3309,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       }
     }
 
-    console.log(`Stok kapanışı: ${mekanId} / ${tarih} by ${user.id} | paperType="${paperTypeId}" paper="${paper?.name || 'YOK'}" birimMaliyet=${birimMaliyetTam.toFixed(4)} | baskı: ${vardiyaToplam.toplamKullanilanBaskı} | satılan: ${vardiyaToplam.toplamSatılanFotograf} | maliyet: ${vardiyaToplam.toplamMaliyet} ${vardiyaToplam.currency} | bitisAnomali: ${kapanisYaziciAnomali ? `fark=${kapanisYaziciAnomali.fark}` : 'yok'}`);
+    console.log(`Stok kapanışı: ${mekanId} / ${tarih} by ${user.id} | kagitlar="${vardiyaToplam.paperName || 'YOK'}" | baskı: ${vardiyaToplam.toplamKullanilanBaskı} | cikis: ${vardiyaToplam.toplamCikisAdedi} | satılan: ${vardiyaToplam.toplamSatılanFotograf} | maliyet: ${vardiyaToplam.toplamMaliyet} TRY | bitisAnomali: ${kapanisYaziciAnomali ? `fark=${kapanisYaziciAnomali.fark}` : 'yok'}`);
     return c.json({ kayit, anomali, beklenen, kapanisYaziciAnomali });
   } catch (err) {
     console.log("Post stok kapanis error:", err);
@@ -7542,6 +7562,9 @@ app.post("/make-server-4da0b637/malzeme/ekle", async (c) => {
       imagePath: body.imagePath || undefined,
       assignedTo: undefined,
       assignedToId: undefined,
+      // Yazıcıya özgü alanlar
+      ribonMevcut: category === 'printer' && body.ribonMevcut !== undefined ? Number(body.ribonMevcut) : undefined,
+      kagitTipiId: category === 'printer' && body.kagitTipiId ? body.kagitTipiId : undefined,
       olusturulmaTarihi: new Date().toISOString(),
       olusturanId: user.id,
       olusturanAdi: user.user_metadata?.full_name || user.email,
@@ -8573,6 +8596,10 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
           kullanilanBaski,
           cikisAdedi,
           satilanFotograf,
+          kagitTipiAdi: pr.kagitTipiAdi || null,
+          kapasitePerTakim: pr.kapasitePerTakim || 0,
+          birimMaliyet: pr.birimMaliyet || 0,
+          yaziciMaliyet: pr.toplamMaliyet || 0,
         };
       });
 

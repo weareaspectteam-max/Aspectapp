@@ -40,6 +40,7 @@ interface Equipment {
   guncellemeTarihi?: string;
   // Yazıcıya özgü alanlar
   ribonMevcut?: number;        // şu an içinde kaç ribon takımı var (manuel giriş)
+  kagitTipiId?: string;        // Maliyet Yönetimi'ndeki kağıt ID'si
 }
 
 interface Mekan {
@@ -47,6 +48,15 @@ interface Mekan {
   name: string;
   emoji: string;
   color?: string;
+}
+
+interface PaperCost {
+  id: string;
+  name: string;
+  boxPrice: number;
+  currency: string;
+  pcsPerBox: number;
+  setsPerBox: number;
 }
 
 interface Kullanici {
@@ -92,6 +102,7 @@ const BOŞ_FORM = {
   flashId:      '',
   notes:        '',
   ribonMevcut:  '',
+  kagitTipiId:  '',
 };
 
 // ─── Yardımcılar ──────────────────────────────────────────────────────────────
@@ -187,6 +198,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
   const [liste, setListe]             = useState<Equipment[]>([]);
   const [kullanicilar, setKullanicilar] = useState<Kullanici[]>([]);
   const [mekanlar, setMekanlar]       = useState<Mekan[]>([]);
+  const [papers, setPapers]           = useState<PaperCost[]>([]);
   const [yukleniyor, setYukleniyor]   = useState(false);
   const [hataVar, setHataVar]         = useState(false);
   const [toast, setToast]             = useState<{ mesaj: string; tip: 'basarili' | 'hata' } | null>(null);
@@ -235,17 +247,20 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
     setHataVar(false);
     try {
       const h = await authHeaders();
-      const [listeRes, kulRes, mekRes] = await Promise.all([
+      const [listeRes, kulRes, mekRes, maliyetRes] = await Promise.all([
         fetch(`${API_BASE}/malzeme/liste`,    { headers: h }),
         fetch(`${API_BASE}/auth/kullanicilar`, { headers: h }),
         fetch(`${API_BASE}/mekanlar`,          { headers: h }),
+        fetch(`${API_BASE}/maliyetler`,          { headers: h }),
       ]);
-      const listeJson = await listeRes.json();
-      const kulJson   = await kulRes.json();
-      const mekJson   = await mekRes.json();
+      const listeJson   = await listeRes.json();
+      const kulJson     = await kulRes.json();
+      const mekJson     = await mekRes.json();
+      const maliyetJson = await maliyetRes.json().catch(() => ({}));
       if (listeJson.ekipmanlar) setListe(listeJson.ekipmanlar);
       if (kulJson.kullanicilar) setKullanicilar(kulJson.kullanicilar);
       if (mekJson.mekanlar)     setMekanlar(mekJson.mekanlar);
+      if (maliyetJson.papers)   setPapers((maliyetJson.papers as PaperCost[]).filter(p => p.pcsPerBox && p.setsPerBox));
     } catch (err) {
       console.error('[EquipmentPage] Veri yüklenemedi:', err);
       setHataVar(true);
@@ -322,6 +337,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
       flashId:      eq.flashId || '',
       notes:        eq.notes || '',
       ribonMevcut:  eq.ribonMevcut !== undefined ? String(eq.ribonMevcut) : '',
+      kagitTipiId:  eq.kagitTipiId || '',
     });
     setGecmisForm(eq.gecmis || []);
     setGecmisAcik(false);
@@ -424,9 +440,11 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
         notes:        form.notes || undefined,
         gecmis:       gecmisForm,
         imagePath,
-        // Yazıcıya özgü alan
+        // Yazıcıya özgü alanlar
         ribonMevcut: form.category === 'printer' && form.ribonMevcut !== ''
           ? Number(form.ribonMevcut) : undefined,
+        kagitTipiId: form.category === 'printer' && form.kagitTipiId
+          ? form.kagitTipiId : undefined,
         ...(duzenleHedef ? { id: duzenleHedef.id } : {}),
       };
 
@@ -811,6 +829,28 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                         );
                       })()}
 
+                      {/* Yazıcı: Kağıt Tipi bilgisi */}
+                      {eq.category === 'printer' && (() => {
+                        const paper = eq.kagitTipiId ? papers.find(p => p.id === eq.kagitTipiId) : null;
+                        if (!paper) return null;
+                        const kapasite = Math.round(Number(paper.pcsPerBox) / Number(paper.setsPerBox));
+                        return (
+                          <div className="rounded-xl bg-[#9dd9ea]/8 border border-[#9dd9ea]/20 px-3 py-2.5 mb-3">
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <span className="text-[11px]">🗂️</span>
+                              <p className="text-[10px] font-bold text-[#9dd9ea]/70 uppercase tracking-wider">Kağıt Tipi</p>
+                            </div>
+                            <p className="text-sm font-bold text-[#9dd9ea]">{paper.name}</p>
+                            <p className="text-[10px] text-white/30 mt-1">
+                              {paper.pcsPerBox} adet / {paper.setsPerBox} takım · <span className="text-[#9dd9ea]/60">{kapasite} baskı/takım</span>
+                            </p>
+                            <p className="text-[10px] text-white/25 mt-0.5">
+                              Tam boy: {kapasite} kare/takım · Yarım boy: {kapasite * 2} kare/takım
+                            </p>
+                          </div>
+                        );
+                      })()}
+
                       {/* Yazıcı: Ribon & Sayaç bilgisi */}
                       {eq.category === 'printer' && (
                         <div className="rounded-xl bg-[#d4b5f7]/8 border border-[#d4b5f7]/20 px-3 py-2.5 mb-3">
@@ -1149,6 +1189,64 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                 </div>
               )}
 
+              {/* Yazıcıya özgü: Kağıt Tipi */}
+              {form.category === 'printer' && (
+                <div className="rounded-2xl border border-[#9dd9ea]/25 bg-[#9dd9ea]/8 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🗂️</span>
+                    <label className="text-[11px] font-semibold text-[#9dd9ea]/80 uppercase tracking-wider">
+                      Kağıt Tipi
+                    </label>
+                  </div>
+                  <p className="text-[10px] text-white/30 -mt-1">
+                    Maliyet Yönetimi'ndeki fotoğraf kağıdı kaydıyla eşleştirin. Baskı maliyeti ve çıkış adedi bu kağıdın verilerine göre hesaplanır.
+                  </p>
+                  {papers.length === 0 ? (
+                    <div className="rounded-xl bg-amber-500/8 border border-amber-500/20 px-3 py-3 flex items-center gap-2">
+                      <span className="text-sm">⚠️</span>
+                      <p className="text-xs text-amber-300">Maliyet Yönetimi'nde henüz fotoğraf kağıdı tanımlanmamış.</p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Kağıt yok seçeneği */}
+                      <button
+                        onClick={() => setForm(f => ({ ...f, kagitTipiId: '' }))}
+                        className={`w-full px-3 py-2.5 rounded-xl border text-left flex items-center gap-2.5 mb-1.5 transition-all ${
+                          form.kagitTipiId === '' ? 'border-[#9dd9ea]/50 bg-[#9dd9ea]/15' : 'border-white/8 bg-white/4 active:bg-white/8'
+                        }`}
+                      >
+                        <span className="text-lg w-7 text-center shrink-0">🚫</span>
+                        <span className={`text-sm font-semibold ${form.kagitTipiId === '' ? 'text-[#9dd9ea]' : 'text-white/50'}`}>Kağıt tipi yok</span>
+                        {form.kagitTipiId === '' && <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#9dd9ea]/30 border border-[#9dd9ea]/40 text-[#9dd9ea]">✓</span>}
+                      </button>
+                      <div className="space-y-1.5">
+                        {papers.map(p => {
+                          const kapasite = Math.round(Number(p.pcsPerBox) / Number(p.setsPerBox));
+                          const selected = form.kagitTipiId === p.id;
+                          return (
+                            <button key={p.id}
+                              onClick={() => setForm(f => ({ ...f, kagitTipiId: p.id }))}
+                              className={`w-full px-3 py-2.5 rounded-xl border text-left flex items-start gap-2.5 transition-all ${
+                                selected ? 'border-[#9dd9ea]/50 bg-[#9dd9ea]/10' : 'border-white/8 bg-white/4 active:bg-white/8'
+                              }`}
+                            >
+                              <span className="text-lg w-7 text-center shrink-0 mt-0.5">🖨️</span>
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-sm font-semibold ${selected ? 'text-[#9dd9ea]' : 'text-white/70'}`}>{p.name}</p>
+                                <p className="text-[10px] text-white/30 mt-0.5">
+                                  {p.pcsPerBox} adet / {p.setsPerBox} takım · {kapasite} baskı/takım · {p.currency} {Number(p.boxPrice).toLocaleString('tr-TR')}
+                                </p>
+                              </div>
+                              {selected && <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#9dd9ea]/30 border border-[#9dd9ea]/40 text-[#9dd9ea] shrink-0">✓</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* Yazıcıya özgü: İçindeki Ribon */}
               {form.category === 'printer' && (
                 <div className="rounded-2xl border border-[#d4b5f7]/25 bg-[#d4b5f7]/8 p-4 space-y-3">
@@ -1170,7 +1268,6 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                     placeholder="0"
                     className="w-full h-11 rounded-xl bg-[#d4b5f7]/10 border border-[#d4b5f7]/25 text-white text-center text-lg font-bold px-3 outline-none focus:border-[#d4b5f7]/60 placeholder-white/20"
                   />
-
                 </div>
               )}
 

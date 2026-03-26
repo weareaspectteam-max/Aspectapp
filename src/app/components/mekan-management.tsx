@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { MapPin, Plus, Trash2, Edit2, X, Save, ArrowLeft, RefreshCw, AlertCircle, CheckCircle, ChevronDown } from 'lucide-react';
+import { MapPin, Plus, Trash2, Edit2, X, Save, ArrowLeft, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
 import { projectId } from '../lib/supabase-info';
 import { buildHeaders, appendGhostParam } from '../lib/api';
 
@@ -22,7 +22,6 @@ export interface Location {
   dailyCostPercentage: number;
   profitPercentage: number;
   photoPrice: number;
-  paperType?: string;
   printType?: 'tam' | 'yarim';
   workingHours?: {
     start: string;
@@ -67,10 +66,6 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
 
-  // Kağıt tipleri (maliyet yönetiminden)
-  const [availablePapers, setAvailablePapers] = useState<{ id: string; name: string }[]>([]);
-  const [papersLoading, setPapersLoading] = useState(false);
-
   // Form states
   const [formName, setFormName] = useState('');
   const [formEmoji, setFormEmoji] = useState('📍');
@@ -79,7 +74,6 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   const [formYearlyRent, setFormYearlyRent] = useState('0');
   const [formDailyCost, setFormDailyCost] = useState('0');
   const [formProfit, setFormProfit] = useState('0');
-  const [formPaperType, setFormPaperType] = useState('');
   const [formPrintType, setFormPrintType] = useState<'tam' | 'yarim'>('yarim');
   const [formWorkingHoursStart, setFormWorkingHoursStart] = useState('09:00');
   const [formWorkingHoursEnd, setFormWorkingHoursEnd] = useState('18:00');
@@ -167,7 +161,6 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   useEffect(() => {
     if (hasAccess) {
       loadMekanlar();
-      loadAvailablePapers();
       if (canViewKidem) loadKidemCarpanlar();
     } else {
       setLoading(false);
@@ -185,24 +178,6 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     }
   };
 
-  // ─── Kağıt tiplerini maliyet yönetiminden yükle ─────────────
-  const loadAvailablePapers = async () => {
-    setPapersLoading(true);
-    try {
-      const res = await fetch(appendGhostParam(`${API_BASE}/maliyetler`), { headers: buildHeaders(accessToken) });
-      if (!res.ok) return;
-      const data = await res.json();
-      const papers: { id: string; name: string }[] = (data.papers || []).map((p: any) => ({
-        id: p.id,
-        name: p.name,
-      }));
-      setAvailablePapers(papers);
-    } catch (err) {
-      console.error('loadAvailablePapers error:', err);
-    } finally {
-      setPapersLoading(false);
-    }
-  };
 
   // ─── Mekan ekle ─────────────────────────────────────────────
   const handleAddLocation = async () => {
@@ -220,7 +195,6 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           yearlyRent: parseFloat(formYearlyRent) || 0,
           dailyCostPercentage: parseFloat(formDailyCost) || 0,
           profitPercentage: parseFloat(formProfit) || 0,
-          paperType: formPaperType,
           printType: formPrintType,
           workingHours: { start: formWorkingHoursStart, end: formWorkingHoursEnd },
           kotaKademeleri: formKotaKademeleri,
@@ -255,7 +229,6 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           yearlyRent: parseFloat(formYearlyRent) || 0,
           dailyCostPercentage: parseFloat(formDailyCost) || 0,
           profitPercentage: parseFloat(formProfit) || 0,
-          paperType: formPaperType,
           printType: formPrintType,
           workingHours: { start: formWorkingHoursStart, end: formWorkingHoursEnd },
           kotaKademeleri: formKotaKademeleri,
@@ -326,12 +299,6 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     setFormYearlyRent((location.yearlyRent ?? 0).toString());
     setFormDailyCost((location.dailyCostPercentage ?? 0).toString());
     setFormProfit((location.profitPercentage ?? 0).toString());
-    // Eski kayıtlar paperType'ı isim olarak saklıyor olabilir → ID'ye normalize et
-    const rawPaperType = location.paperType || '';
-    const resolvedPaperId = availablePapers.find(p => p.id === rawPaperType)?.id
-                         || availablePapers.find(p => p.name === rawPaperType)?.id
-                         || rawPaperType;
-    setFormPaperType(resolvedPaperId);
     setFormPrintType(location.printType || 'yarim');
     setFormWorkingHoursStart(location.workingHours?.start || '09:00');
     setFormWorkingHoursEnd(location.workingHours?.end || '18:00');
@@ -349,7 +316,6 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     setFormYearlyRent('0');
     setFormDailyCost('0');
     setFormProfit('0');
-    setFormPaperType('');
     setFormPrintType('yarim');
     setFormWorkingHoursStart('09:00');
     setFormWorkingHoursEnd('18:00');
@@ -518,66 +484,17 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                 />
               </div>
 
-              {/* Fotoğraf Fiyatı ve Kağıt Tipi */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm font-semibold text-gray-300 mb-2 block">💰 1 Fotoğraf Fiyatı (₺)</label>
-                  <input
-                    type="number"
-                    value={formPhotoPrice}
-                    onChange={(e) => setFormPhotoPrice(e.target.value)}
-                    className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-pink-400 transition-all"
-                    placeholder="200"
-                  />
-                  <p className="text-xs text-gray-400 mt-1">Albüm fiyatları bu değere göre</p>
-                </div>
-
-                <div>
-                  <label className="text-sm font-semibold text-gray-300 mb-2 block">📄 Kağıt Tipi</label>
-                  <div className="relative">
-                    {papersLoading ? (
-                      <div className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-gray-400 flex items-center gap-2">
-                        <div className="w-3 h-3 border-2 border-gray-400/30 border-t-gray-400 rounded-full animate-spin" />
-                        <span className="text-sm">Yükleniyor...</span>
-                      </div>
-                    ) : availablePapers.length > 0 ? (
-                      <>
-                        <select
-                          value={formPaperType}
-                          onChange={(e) => setFormPaperType(e.target.value)}
-                          className="w-full px-4 py-3 pr-8 bg-white/10 border-2 border-white/20 rounded-xl text-white focus:outline-none focus:border-pink-400 transition-all appearance-none cursor-pointer"
-                          style={{ colorScheme: 'dark' }}
-                        >
-                          <option value="" className="bg-[#3a3a4e] text-gray-400">— Seçiniz —</option>
-                          {availablePapers.map((p) => (
-                            <option key={p.id} value={p.id} className="bg-[#3a3a4e] text-white">
-                              {p.name}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      </>
-                    ) : (
-                      <div className="w-full px-4 py-3 bg-white/10 border-2 border-amber-500/40 rounded-xl text-amber-300 text-xs flex items-center gap-2">
-                        <span>⚠️</span>
-                        <span>Önce Maliyet Yönetimi'nde kağıt tipi ekleyin</span>
-                      </div>
-                    )}
-                  </div>
-                  {formPaperType && (
-                    <button
-                      onClick={() => setFormPaperType('')}
-                      className="mt-1 text-xs text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1"
-                    >
-                      <X className="w-3 h-3" /> Seçimi temizle
-                    </button>
-                  )}
-                  <p className="text-xs text-gray-400 mt-1">
-                    {availablePapers.length > 0
-                      ? `${availablePapers.length} kağıt tipi mevcut`
-                      : 'Kullanılan kağıt tipi'}
-                  </p>
-                </div>
+              {/* Fotoğraf Fiyatı */}
+              <div>
+                <label className="text-sm font-semibold text-gray-300 mb-2 block">💰 1 Fotoğraf Fiyatı (₺)</label>
+                <input
+                  type="number"
+                  value={formPhotoPrice}
+                  onChange={(e) => setFormPhotoPrice(e.target.value)}
+                  className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-pink-400 transition-all"
+                  placeholder="200"
+                />
+                <p className="text-xs text-gray-400 mt-1">Albüm fiyatları bu değere göre</p>
               </div>
 
               {/* Baskı Tipi */}
@@ -1079,9 +996,6 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                             {location.printType && (
                               <span className="text-amber-300">
                                 🖨️ {location.printType === 'tam' ? 'Tam Boy' : 'Yarım Boy'}
-                                {location.paperType
-                                  ? ` · ${availablePapers.find(p => p.id === location.paperType)?.name || location.paperType}`
-                                  : ''}
                               </span>
                             )}
                             {/* Kota özeti */}

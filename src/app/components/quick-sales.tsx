@@ -1,3 +1,4 @@
+// quick-sales v2 — global iade, per-printer kaldirildi
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Send, Clock, ShoppingCart, X, Plus, Trash2, Tag, XCircle, CheckCircle, ArrowLeft, AlertCircle, Camera, ChevronRight, UserPlus, Package, Printer, Grid3x3, Film, AlertTriangle, TrendingDown, TrendingUp, Maximize2, Minimize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -179,6 +180,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     serialNumber: string;
     startCounter: string;
     beklenenStartCounter: number | null;
+    kagitTipiId?: string | null;
   }>>([]);
   const [printerEndCounters, setPrinterEndCounters] = useState<Record<string, string>>({});
   // ribonMevcut artık ayrı alan değil — endCounter değeri ribonMevcut olarak kullanılır
@@ -197,7 +199,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [kapanisAnomaliNeden, setKapanisAnomaliNeden] = useState('');
   const [kapanisYaziciAnomali, setKapanisYaziciAnomali] = useState<{ netSatilan: number; satisToplam: number; fark: number } | null>(null);
   const [printerRibbonChanges, setPrinterRibbonChanges] = useState<Record<string, string>>({});
-  const [printerIadePhotos, setPrinterIadePhotos] = useState<Record<string, string>>({});
+  const [globalIadePhotos, setGlobalIadePhotos] = useState<string>(''); // tek alan — yazıcı başına değil
   const [showClosingCount, setShowClosingCount] = useState(false);
   const [showDamagedAlbums, setShowDamagedAlbums] = useState(false);
   const [closingCount, setClosingCount] = useState<{ shelfEnd: Record<string, number>; damagedAlbums: Record<string, number> }>({
@@ -209,13 +211,12 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [shiftEndDone, setShiftEndDone] = useState(false);
 
   // ── MEKAN kağıt ayarları ──
-  const [mekanKapasite, setMekanKapasite] = useState(0);         // pcsPerBox / setsPerBox
   const [mekanPrintType, setMekanPrintType] = useState<'tam' | 'yarim'>('yarim');
+  const [mekanPrintTypeLoaded, setMekanPrintTypeLoaded] = useState(false); // mekan bulundu mu?
   const [mekanCurrency, setMekanCurrency] = useState('TRY');
   const [mekanPhotoPrice, setMekanPhotoPrice] = useState(200);   // mekan bazlı 1 fotoğraf fiyatı
-  // ── Manuel fallback (kapasite alınamadığında kullanıcı girer) ──
+  // ── Manuel fallback (printType alınamadığında kullanıcı girer) ──
   const [availablePapers, setAvailablePapers] = useState<any[]>([]);
-  const [manualPaperId, setManualPaperId] = useState<string>('');
   const [manualPrintType, setManualPrintType] = useState<'tam' | 'yarim'>('yarim');
 
   // ── REYON state ──
@@ -628,20 +629,15 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
           if (mekan) {
             realMekanId = mekan.id;
             if (mekan.photoPrice && mekan.photoPrice > 0) setMekanPhotoPrice(mekan.photoPrice);
-            setMekanPrintType(mekan.printType === 'tam' ? 'tam' : 'yarim');
+            const pt = mekan.printType === 'tam' ? 'tam' : 'yarim';
+            setMekanPrintType(pt);
+            setMekanPrintTypeLoaded(true);
+            // Kağıt bilgisi artık yazıcıdan geliyor — sadece availablePapers yükle
             const paperRes = await fetch(`${API_BASE_QS}/maliyetler`, { headers: hdr });
             if (paperRes.ok) {
               const { papers } = await paperRes.json();
               const allPapers = (papers || []).filter((p: any) => p.pcsPerBox && p.setsPerBox);
               setAvailablePapers(allPapers);
-              if (mekan.paperType) {
-                const paper = allPapers.find((p: any) => p.id === mekan.paperType)
-                           || allPapers.find((p: any) => p.name === mekan.paperType);
-                if (paper) {
-                  setMekanKapasite(Number(paper.pcsPerBox) / Number(paper.setsPerBox));
-                  setMekanCurrency(paper.currency || 'TRY');
-                }
-              }
             }
           }
         }
@@ -686,6 +682,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
           model: y.model || '',
           serialNumber: y.serialNumber || '',
           startCounter: '',
+          kagitTipiId: y.kagitTipiId || null,
           beklenenStartCounter: (y.ribonMevcut !== null && y.ribonMevcut !== undefined)
             ? Number(y.ribonMevcut)
             : null,
@@ -711,6 +708,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
               model: y.model || '',
               serialNumber: y.serialNumber || '',
               startCounter: String(y.startCounter || ''),
+              kagitTipiId: ekipmanRec?.kagitTipiId || y.kagitTipiId || null,
               beklenenStartCounter: ekipmanRec?.ribonMevcut !== undefined && ekipmanRec?.ribonMevcut !== null
                 ? Number(ekipmanRec.ribonMevcut)
                 : null,
@@ -741,7 +739,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
             }
             setPrinterEndCounters(endCounters);
             setPrinterRibbonChanges(ribonChanges);
-            setPrinterIadePhotos(iadePhotos);
+            // Global iade: daha önce kaydedildiyse ilk yazıcıdan al (geriye dönük uyum)
+            const firstIade = Object.values(iadePhotos).find(v => Number(v) > 0);
+            if (firstIade) setGlobalIadePhotos(firstIade);
           }
         }
       } else {
@@ -1197,8 +1197,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     setPrinterEndCounters(p => ({ ...p, [ekipmanId]: val }));
   const updatePrinterRibbon = (ekipmanId: string, val: string) =>
     setPrinterRibbonChanges(p => ({ ...p, [ekipmanId]: val }));
-  const updatePrinterIade = (ekipmanId: string, val: string) =>
-    setPrinterIadePhotos(p => ({ ...p, [ekipmanId]: val }));
+  // (per-printer iade kaldırıldı — globalIadePhotos kullanılıyor)
   const handleTeamPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1217,14 +1216,22 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     return result;
   };
 
-  // ── Efektif kapasite & print type (mekan verisinden veya manuel girişten) ──
-  const manualPaperObj = availablePapers.find(p => p.id === manualPaperId);
-  const manualKapasite = manualPaperObj
-    ? Number(manualPaperObj.pcsPerBox) / Number(manualPaperObj.setsPerBox)
-    : 0;
-  const effectiveKapasite = mekanKapasite > 0 ? mekanKapasite : manualKapasite;
-  const effectivePrintType = mekanKapasite > 0 ? mekanPrintType : manualPrintType;
-  const needsManualInput = mekanKapasite === 0; // mekan'dan veri alınamadı
+  // ── Efektif kapasite & print type ──
+  // printType → mekan'dan; kapasite → her yazıcının kendi kagitTipiId'sinden
+  const effectiveKapasite = 0; // artık global kapasite yok — her yazıcı kendi kağıdını kullanır
+  const effectivePrintType = mekanPrintTypeLoaded ? mekanPrintType : manualPrintType;
+  const needsManualInput = !mekanPrintTypeLoaded; // sadece mekan bulunamadığında
+
+  // Net satılan fotoğraf adedi — JSX içinde block-body arrow fn kullanmamak için burada hesaplanıyor
+  const netSatilanAdet = Math.max(0, printers.reduce((sum, pr) => {
+    const s = Number(pr.startCounter) || 0;
+    const e = Number(printerEndCounters[pr.ekipmanId] || 0);
+    const r = Number(printerRibbonChanges[pr.ekipmanId] || 0);
+    const pObjNet = pr.kagitTipiId ? availablePapers.find((p: any) => p.id === pr.kagitTipiId) : null;
+    const kapNet = pObjNet ? Number(pObjNet.pcsPerBox) / Number(pObjNet.setsPerBox) : 0;
+    const kb = kapNet > 0 ? Math.max(0, s + r * kapNet - e) : Math.max(0, s - e);
+    return sum + Math.round(kb * (effectivePrintType === 'tam' ? 1 : 2));
+  }, 0) - Number(globalIadePhotos));
 
   // ── Satışlardan albüm düşümü — backend stok/kapanis ile tutarlı ──
   const kapanisSatisAlbumDusum = useMemo(() => {
@@ -1331,7 +1338,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         })));
         setPrinterEndCounters({});
         setPrinterRibbonChanges({});
-        setPrinterIadePhotos({});
+        setGlobalIadePhotos('');
         setYaziciAcilisAnomali([]);
         setReyonAcik(false);
         setReyonKapanisSayim(bosStok());
@@ -1407,7 +1414,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     }
 
     // Yazıcı verilerini topla (ekipmanId bağlantılı, ribonMevcut dahil)
-    const printerData = printers.map(pr => ({
+    const globalIade = Number(globalIadePhotos) || 0;
+    const printerData = printers.map((pr, idx) => ({
       id: pr.ekipmanId,
       ekipmanId: pr.ekipmanId,
       label: pr.label,
@@ -1417,7 +1425,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       startCounter: Number(pr.startCounter) || 0,
       endCounter: Number(printerEndCounters[pr.ekipmanId] || 0),
       ribonDegisim: Number(printerRibbonChanges[pr.ekipmanId] || 0),
-      iadeFotograf: Number(printerIadePhotos[pr.ekipmanId] || 0),
+      // Global iade ilk yazıcıya atanır (backend toplamIadeFotograf için)
+      iadeFotograf: idx === 0 ? globalIade : 0,
       ribonMevcut: Number(printerEndCounters[pr.ekipmanId] || 0),
     }));
 
@@ -2617,38 +2626,10 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                       <p className="text-[10px] text-amber-300 font-medium">
-                        Mekan'dan kağıt bilgisi alınamadı — lütfen aşağıdan manuel seçin
+                        Mekan ayarları yüklenemedi — baskı modunu manuel seçin
                       </p>
                     </div>
-                    {/* Kağıt tipi seçici */}
-                    {availablePapers.length > 0 ? (
-                      <div>
-                        <p className="text-[10px] text-gray-400 mb-1.5 font-semibold uppercase tracking-wide">Kağıt Tipi</p>
-                        <div className="flex flex-wrap gap-2">
-                          {availablePapers.map(p => {
-                            const kap = Number(p.pcsPerBox) / Number(p.setsPerBox);
-                            const selected = manualPaperId === p.id;
-                            return (
-                              <button
-                                key={p.id}
-                                onClick={() => setManualPaperId(p.id)}
-                                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
-                                  selected
-                                    ? 'bg-amber-400/20 border-amber-400/60 text-amber-300'
-                                    : 'bg-white/5 border-white/15 text-gray-400 active:scale-95'
-                                }`}
-                              >
-                                {p.name || p.id}
-                                <span className="ml-1 text-[10px] opacity-70">({kap}/tkm)</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-[10px] text-gray-500">Tanımlı kağıt tipi yok — Maliyet Yönetimi'nden ekleyin</p>
-                    )}
-                    {/* Tam / Yarım seçici */}
+                    {/* Sadece Tam / Yarım seçici — kağıt tipi yazıcıdan geliyor */}
                     <div>
                       <p className="text-[10px] text-gray-400 mb-1.5 font-semibold uppercase tracking-wide">Kağıt Modu</p>
                       <div className="flex gap-2">
@@ -2667,13 +2648,6 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                         ))}
                       </div>
                     </div>
-                    {/* Seçim özeti */}
-                    {manualPaperId && (
-                      <div className="bg-amber-400/10 border border-amber-400/20 rounded-xl px-3 py-1.5 flex items-center justify-between">
-                        <span className="text-[10px] text-amber-300">Kapasite</span>
-                        <span className="text-xs font-black text-amber-200">{manualKapasite}/takım • {manualPrintType === 'tam' ? 'Tam' : 'Yarım'}</span>
-                      </div>
-                    )}
                   </div>
                 )}
                 <div className="space-y-3">
@@ -2681,14 +2655,19 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     const start = Number(printer.startCounter) || 0;
                     const end = Number(printerEndCounters[printer.ekipmanId] || 0);
                     const ribbonCount = Number(printerRibbonChanges[printer.ekipmanId] || 0);
-                    const iade = Number(printerIadePhotos[printer.ekipmanId] || 0);
+                    // Per-printer kapasite: önce kendi kagitTipiId'sinden bak, fallback: mekan/global kapasite
+                    const yaziciPaperObj = printer.kagitTipiId
+                      ? availablePapers.find((p: any) => p.id === printer.kagitTipiId)
+                      : null;
+                    const yaziciKapasite = yaziciPaperObj
+                      ? Number(yaziciPaperObj.pcsPerBox) / Number(yaziciPaperObj.setsPerBox)
+                      : effectiveKapasite;
                     // Canlı hesaplama: kullanilanBaskı = açılış + degisim×kapasite - kapanış
-                    const kullanilanBaskı = effectiveKapasite > 0
-                      ? Math.max(0, start + (ribbonCount * effectiveKapasite) - end)
+                    const kullanilanBaskı = yaziciKapasite > 0
+                      ? Math.max(0, start + (ribbonCount * yaziciKapasite) - end)
                       : Math.max(0, start - end);
                     const carpan = effectivePrintType === 'tam' ? 1 : 2;
                     const cikisAdedi = Math.round(kullanilanBaskı * carpan);
-                    const satılan = Math.max(0, cikisAdedi - iade);
                     const hasEndInput = !!printerEndCounters[printer.ekipmanId] && start > 0;
                     return (
                       <div key={printer.ekipmanId} className="bg-black/30 border border-white/10 rounded-xl p-3 space-y-3">
@@ -2742,39 +2721,15 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                           )}
                         </div>
 
-                        {/* İade Fotoğraf */}
-                        <div>
-                          <p className="text-xs text-gray-400 mb-1.5 flex items-center gap-1.5">
-                            <span className="text-[#ffb3ba]">↩️</span>
-                            <span>İade Fotoğraf Adedi</span>
-                            <span className="text-gray-600 text-[10px]">(isteğe bağlı)</span>
-                          </p>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            value={printerIadePhotos[printer.ekipmanId] || ''}
-                            onChange={e => updatePrinterIade(printer.ekipmanId, e.target.value)}
-                            placeholder="0"
-                            disabled={shiftEndDone}
-                            className="w-full px-3 py-2.5 bg-[#ffb3ba]/10 border border-[#ffb3ba]/20 rounded-lg text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#ffb3ba]/40 text-center font-bold text-lg disabled:opacity-60"
-                          />
-                          {iade > 0 && (
-                            <div className="flex items-center justify-between bg-[#ffb3ba]/10 border border-[#ffb3ba]/20 rounded-lg px-3 py-1.5 mt-1.5">
-                              <span className="text-xs text-gray-400">İade:</span>
-                              <span className="text-sm font-black text-[#ffb3ba]">−{iade} adet</span>
-                            </div>
-                          )}
-                        </div>
-
                         {/* ── Canlı Hesaplama Özeti ── */}
                         {hasEndInput && (
                           <div className="bg-gradient-to-br from-[#a8e6cf]/10 to-[#8dd9b8]/5 border border-[#a8e6cf]/25 rounded-xl p-3">
                             <p className="text-[10px] text-[#a8e6cf]/70 font-semibold mb-2 uppercase tracking-wide">Vardiya Hesabı</p>
                             <div className="space-y-1.5">
-                              {/* Formül satırı */}
-                              {effectiveKapasite > 0 && (
+                              {yaziciKapasite > 0 && (
                                 <div className="text-[10px] text-gray-500 bg-black/20 rounded-lg px-2 py-1 font-mono">
-                                  {start} + {ribbonCount}×{effectiveKapasite} − {end} = <span className="text-[#ffd4a3] font-bold">{kullanilanBaskı}</span> baskı
+                                  {start} + {ribbonCount}×{yaziciKapasite} − {end} = <span className="text-[#ffd4a3] font-bold">{kullanilanBaskı}</span> baskı
+                                  {yaziciPaperObj && <span className="ml-1 text-[#9dd9ea]/60">({yaziciPaperObj.name})</span>}
                                 </div>
                               )}
                               <div className="flex items-center justify-between">
@@ -2788,16 +2743,6 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                                 </span>
                                 <span className="text-sm font-black text-[#9dd9ea]">{cikisAdedi}</span>
                               </div>
-                              {iade > 0 && (
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs text-gray-400">İade düşüldü</span>
-                                  <span className="text-sm font-black text-[#ffb3ba]">−{iade}</span>
-                                </div>
-                              )}
-                              <div className="flex items-center justify-between border-t border-white/10 pt-1.5 mt-1">
-                                <span className="text-xs font-bold text-white">Net Satılan</span>
-                                <span className="text-base font-black text-[#a8e6cf]">{satılan} 📸</span>
-                              </div>
                             </div>
                           </div>
                         )}
@@ -2805,6 +2750,30 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     );
                   })}
                 </div>
+
+                {/* ── Global İade Fotoğraf Alanı ── */}
+                {printers.length > 0 && (
+                  <div className="mt-3 bg-[#ffb3ba]/8 border border-[#ffb3ba]/20 rounded-xl p-4">
+                    <p className="text-xs text-gray-300 mb-2 flex items-center gap-1.5 font-semibold">
+                      <span>↩️</span>
+                      <span>İade Fotoğraf Adedi</span>
+                      <span className="text-gray-500 text-[10px] font-normal">(isteğe bağlı — tüm yazıcılar toplam)</span>
+                    </p>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={globalIadePhotos}
+                      onChange={e => setGlobalIadePhotos(e.target.value)}
+                      placeholder="0"
+                      disabled={shiftEndDone}
+                      className="w-full px-3 py-2.5 bg-[#ffb3ba]/10 border border-[#ffb3ba]/20 rounded-lg text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#ffb3ba]/40 text-center font-bold text-lg disabled:opacity-60"
+                    />
+                    {Number(globalIadePhotos) > 0 && (
+                      <p className="text-xs text-[#ffb3ba] mt-1.5 text-center">−{globalIadePhotos} adet net satıştan düşülecek</p>
+                    )}
+                  </div>
+                )}
+
                 {printers.length > 1 && (
                   <div className="mt-3 space-y-2">
                     <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 flex items-center justify-between">
@@ -2814,8 +2783,10 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                           const s = Number(pr.startCounter) || 0;
                           const e = Number(printerEndCounters[pr.ekipmanId] || 0);
                           const r = Number(printerRibbonChanges[pr.ekipmanId] || 0);
-                          return sum + (effectiveKapasite > 0
-                            ? Math.max(0, s + r * effectiveKapasite - e)
+                          const pObj = pr.kagitTipiId ? availablePapers.find((p: any) => p.id === pr.kagitTipiId) : null;
+                          const kap = pObj ? Number(pObj.pcsPerBox) / Number(pObj.setsPerBox) : effectiveKapasite;
+                          return sum + (kap > 0
+                            ? Math.max(0, s + r * kap - e)
                             : Math.max(0, s - e));
                         }, 0)} adet
                       </span>
@@ -2829,8 +2800,10 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                           const s = Number(pr.startCounter) || 0;
                           const e = Number(printerEndCounters[pr.ekipmanId] || 0);
                           const r = Number(printerRibbonChanges[pr.ekipmanId] || 0);
-                          const kb = effectiveKapasite > 0
-                            ? Math.max(0, s + r * effectiveKapasite - e)
+                          const pObj = pr.kagitTipiId ? availablePapers.find((p: any) => p.id === pr.kagitTipiId) : null;
+                          const kap = pObj ? Number(pObj.pcsPerBox) / Number(pObj.setsPerBox) : effectiveKapasite;
+                          const kb = kap > 0
+                            ? Math.max(0, s + r * kap - e)
                             : Math.max(0, s - e);
                           return sum + Math.round(kb * (effectivePrintType === 'tam' ? 1 : 2));
                         }, 0)} adet
@@ -2844,11 +2817,11 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                         </span>
                       </div>
                     )}
-                    {printers.some(pr => Number(printerIadePhotos[pr.ekipmanId] || 0) > 0) && (
+                    {Number(globalIadePhotos) > 0 && (
                       <div className="bg-[#ffb3ba]/10 border border-[#ffb3ba]/20 rounded-xl px-4 py-2.5 flex items-center justify-between">
-                        <span className="text-xs text-gray-400">Toplam iade fotoğraf:</span>
+                        <span className="text-xs text-gray-400">İade fotoğraf:</span>
                         <span className="text-sm font-black text-[#ffb3ba]">
-                          −{printers.reduce((sum, pr) => sum + Number(printerIadePhotos[pr.ekipmanId] || 0), 0)} adet
+                          −{Number(globalIadePhotos)} adet
                         </span>
                       </div>
                     )}
@@ -2863,17 +2836,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     <div className="bg-gradient-to-r from-[#a8e6cf]/15 to-[#8dd9b8]/10 border border-[#a8e6cf]/30 rounded-xl px-4 py-2.5 flex items-center justify-between">
                       <span className="text-xs font-bold text-white">Net Satılan 📸</span>
                       <span className="text-sm font-black text-[#a8e6cf]">
-                        {printers.reduce((sum, pr) => {
-                          const s = Number(pr.startCounter) || 0;
-                          const e = Number(printerEndCounters[pr.ekipmanId] || 0);
-                          const r = Number(printerRibbonChanges[pr.ekipmanId] || 0);
-                          const ia = Number(printerIadePhotos[pr.ekipmanId] || 0);
-                          const kb = effectiveKapasite > 0
-                            ? Math.max(0, s + r * effectiveKapasite - e)
-                            : Math.max(0, s - e);
-                          const cikis = Math.round(kb * (effectivePrintType === 'tam' ? 1 : 2));
-                          return sum + Math.max(0, cikis - ia);
-                        }, 0)} adet
+                        {netSatilanAdet} adet
                       </span>
                     </div>
                   </div>
