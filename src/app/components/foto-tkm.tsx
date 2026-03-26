@@ -147,8 +147,13 @@ export function FotoTkm({ userName, userId, userCompanyId, accessToken, onBack }
   const [scoresTab, setScoresTab]   = useState<'rich' | 'tkm'>('rich');
   const [lbLoading, setLbLoading]   = useState(false);
 
-  const pollRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  // gameView'ın her zaman güncel halini interval closure'larında okumak için ref
+  const gameViewRef = useRef<GameView>(gameView);
+
+  // gameView her değiştiğinde ref'i güncelle — interval closure'lar hep güncel değeri okur
+  useEffect(() => { gameViewRef.current = gameView; }, [gameView]);
 
   // ── Init ────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -197,13 +202,14 @@ export function FotoTkm({ userName, userId, userCompanyId, accessToken, onBack }
             clearPoll();
             loadWallet(); // balance güncelle
           }
-          if (d.room.status === 'choosing' && gameView === 'multi-wait') {
+          // gameView closure tuzağından kaçınmak için gameViewRef kullan
+          if (d.room.status === 'choosing' && gameViewRef.current === 'multi-wait') {
             setGameView('multi-play');
           }
         }
       } catch (e) { console.warn('[TKM] poll:', e); }
     }, 2000);
-  }, [gameView]);
+  }, []); // gameView dependency'si kaldırıldı — ref üzerinden okunuyor
 
   const showMsg = (type: 'ok' | 'err', text: string) => {
     setMsg({ type, text });

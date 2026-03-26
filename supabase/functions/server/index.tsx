@@ -419,7 +419,7 @@ app.post("/make-server-4da0b637/admin/migrate-legacy", async (c) => {
 // SUPERADMIN — Şirket Yönetimi (Multi-Tenant)
 // Sadece role === 'superadmin' erişebilir.
 // Şirket profilleri global KV'de company_profile_{id} anahtarıyla tutulur.
-// ══════════════════════════════════════════════════════════════════
+// ═══��══════════════════════════════════════════════════════════════
 
 /** Tüm şirket profillerini getir (başlangıç 3 şirketi dahil) */
 const seedInitialCompanies = async () => {
@@ -467,31 +467,38 @@ const seedAspectTelegramConfig = async () => {
 };
 seedAspectTelegramConfig().catch(e => console.log("[seed] telegram config error:", e));
 
-/** ozgur.demirbas@yandex.com kullanıcısını superadmin yap (idempotent) */
-const bootstrapSuperAdmin = async () => {
+/** ozgur.demirbas@yandex.com kullanıcısını superadmin yap — on-demand endpoint üzerinden tetiklenir */
+const doBootstrapSuperAdmin = async (): Promise<{ ok: boolean; message: string }> => {
   const TARGET_EMAIL = "ozgur.demirbas@yandex.com";
-  try {
-    const supabase = getAdminClient();
-    const { data: { users }, error } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-    if (error) { console.log("[bootstrap-sa] listUsers error:", error.message); return; }
-    const target = users?.find((u: any) => u.email === TARGET_EMAIL);
-    if (!target) { console.log(`[bootstrap-sa] ${TARGET_EMAIL} henüz kayıtlı değil, atlanıyor.`); return; }
-    if (target.user_metadata?.role === "superadmin") { console.log(`[bootstrap-sa] ${TARGET_EMAIL} zaten superadmin.`); return; }
-    const { error: updateErr } = await supabase.auth.admin.updateUserById(target.id, {
-      user_metadata: {
-        ...target.user_metadata,
-        role: "superadmin",
-        company_id: target.user_metadata?.company_id || "aspect",
-        full_name: target.user_metadata?.full_name || "Özgür Demirbaş",
-      },
-    });
-    if (updateErr) { console.log(`[bootstrap-sa] güncelleme hatası: ${updateErr.message}`); return; }
-    console.log(`[bootstrap-sa] ✅ ${TARGET_EMAIL} → superadmin yapıldı!`);
-  } catch (e) {
-    console.log("[bootstrap-sa] beklenmeyen hata:", e);
-  }
+  const supabase = getAdminClient();
+  // listUsers yerine getUserByEmail: tek kayıt, çok daha hafif çağrı
+  const { data: { user: target }, error } = await supabase.auth.admin.getUserByEmail(TARGET_EMAIL);
+  if (error) throw new Error(`getUserByEmail hatası: ${error.message}`);
+  if (!target) return { ok: false, message: `${TARGET_EMAIL} henüz kayıtlı değil.` };
+  if (target.user_metadata?.role === "superadmin") return { ok: true, message: `${TARGET_EMAIL} zaten superadmin.` };
+  const { error: updateErr } = await supabase.auth.admin.updateUserById(target.id, {
+    user_metadata: {
+      ...target.user_metadata,
+      role: "superadmin",
+      company_id: target.user_metadata?.company_id || "aspect",
+      full_name: target.user_metadata?.full_name || "Özgür Demirbaş",
+    },
+  });
+  if (updateErr) throw new Error(`updateUserById hatası: ${updateErr.message}`);
+  return { ok: true, message: `✅ ${TARGET_EMAIL} → superadmin yapıldı!` };
 };
-bootstrapSuperAdmin().catch(e => console.log("[bootstrap-sa] error:", e));
+
+// POST /auth/bootstrap-superadmin — isteğe bağlı tetiklenebilir (login sonrası frontend çağırır)
+app.post("/make-server-4da0b637/auth/bootstrap-superadmin", async (c) => {
+  try {
+    const result = await doBootstrapSuperAdmin();
+    console.log("[bootstrap-sa]", result.message);
+    return c.json(result);
+  } catch (e) {
+    console.log("[bootstrap-sa] hata:", e);
+    return c.json({ ok: false, message: String(e) }, 500);
+  }
+});
 
 // GET /superadmin/companies — tüm şirketleri listele
 app.get("/make-server-4da0b637/superadmin/companies", async (c) => {
@@ -2778,7 +2785,7 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
     const { mekanId, tarih } = c.req.param();
     const bugunRaw = await ckv.get(`stok_gunluk_${mekanId}_${tarih}`);
 
-    // ── Baskı maliyeti kur düzeltmesi ──
+    // ── Baskı maliyeti kur düzeltmesi ��─
     // Eski kayıtlarda toplamMaliyet yabancı para birimi cinsinden TL gibi kaydedilmiş olabilir.
     // GET sırasında on-the-fly kur uygulanarak doğru TL değeri hesaplanır.
     let bugun = bugunRaw;
@@ -3206,7 +3213,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       currency: "TRY",
     };
 
-    // ── Bitiş Sayacı Anomali Tespiti ─────────────────────────────────────────
+    // ── Bitiş Sayacı Anomali Tespiti ─────────────────────────────���───────────
     // Yazıcıların net satılan toplamı vs satış kayıtlarındaki fotoğraf toplamı
     const netSatilanToplam = vardiyaToplam.toplamSatılanFotograf;
     let satisFotografToplam = 0;
@@ -5414,7 +5421,7 @@ app.get("/make-server-4da0b637/ekstra-is/kaynaklar", async (c) => {
       ribonTakim: Number(depoStok.ribon) || 0,
     };
 
-    // ── Tüm yazıcıları getir (ekipman kaydından) ──────────────────────────
+    // ── Tüm yazıcıları getir (ekipman kaydından) ─────────────────���────────
     const tumEkipmanlarEkstra: any[] = await ckv.getByPrefix("ekipman_") || [];
     const tumYazicilar = tumEkipmanlarEkstra.filter((eq: any) =>
       eq.category === 'printer' && eq.status !== 'broken'
@@ -7391,12 +7398,21 @@ app.get("/make-server-4da0b637/auth/kullanicilar", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
+    const companyId = getCompanyId(user);
+
     const supabase = getAdminClient();
     const { data, error } = await supabase.auth.admin.listUsers({ perPage: 200 });
     if (error) throw new Error(error.message);
 
     const aktifler = (data.users || [])
-      .filter((u: any) => u.user_metadata?.role && u.user_metadata.role !== "bekleyen")
+      .filter((u: any) => {
+        const uCompany = (u.user_metadata?.company_id || "aspect").toLowerCase();
+        return (
+          uCompany === companyId &&
+          u.user_metadata?.role &&
+          u.user_metadata.role !== "bekleyen"
+        );
+      })
       .map((u: any) => ({
         id: u.id,
         ad: u.user_metadata?.full_name || u.email,
@@ -8512,7 +8528,7 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
         const tutar = Number(satis.finalPrice) || 0;
         const pm = String(satis.paymentMethod || "").toLowerCase();
         if (pm.includes("iban") || pm.includes("havale") || pm.includes("transfer")) pMap[pid].ibanTL += tutar;
-        else if (pm.includes("kredi") || pm.includes("kart")) pMap[pid].krediTL += tutar;
+        else if (pm.includes("kredi") || pm.includes("kart") || pm.includes("card")) pMap[pid].krediTL += tutar;
         else pMap[pid].nakitTL += tutar;
         for (const item of (satis.items || [])) {
           const ua = item.product || "Diger";
@@ -8540,12 +8556,25 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
           .sort((a: any, b: any) => b.toplamTL - a.toplamTL),
       }));
 
-      const yazicilar = (kayit.printerData || []).map((pr: any) => ({
-        ad: pr.ad || pr.label || "Yazici",
-        baslangic: Number(pr.baslangicSayac ?? pr.startCounter) || 0,
-        bitis: Number(pr.bitisSayac ?? pr.endCounter) || 0,
-        netBasilan: Number(pr.netBasilan) || 0,
-      }));
+      const yazicilar = (kayit.printerData || []).map((pr: any) => {
+        const baslangic = Number(pr.baslangicSayac ?? pr.startCounter) || 0;
+        const bitis = Number(pr.bitisSayac ?? pr.endCounter) || 0;
+        const ribonDegisim = Number(pr.ribonDegisim) || 0;
+        const iadeFotograf = Number(pr.iadeFotograf) || 0;
+        const kullanilanBaski = Number(pr["kullanilanBaskı"] ?? pr.kullanilanBaski) || 0;
+        const cikisAdedi = Number(pr.cikisAdedi) || 0;
+        const satilanFotograf = Number(pr["satılanFotograf"] ?? pr.satilanFotograf) || 0;
+        return {
+          ad: pr.ad || pr.label || "Yazici",
+          baslangic,
+          bitis,
+          ribonDegisim,
+          iadeFotograf,
+          kullanilanBaski,
+          cikisAdedi,
+          satilanFotograf,
+        };
+      });
 
       const anomaliler: any[] = [];
       const acA = kayit.acilisAnomali || {};
@@ -8625,6 +8654,7 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
         baskiMaliyeti: Math.round(baskiMaliyeti),
         baskiPaperName,
         kotaKademeleri: mekan.kotaKademeleri || [],
+        mekanGunlukKira: Math.round((Number(mekan.yearlyRent) || 0) / 365),
         primBilgi: (() => {
           const kkList: any[] = mekan.kotaKademeleri || [];
           if (kkList.length === 0) return null;

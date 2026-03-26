@@ -1460,7 +1460,7 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
                       {systemUsers.length === 0 ? (
                         <div className="px-4 py-6 text-center text-gray-400 text-sm">Kullanıcı bulunamadı</div>
                       ) : (
-                        systemUsers.map((user) => {
+                        systemUsers.filter(u => !['superadmin', 'yonetici'].includes(u.rol)).map((user) => {
                           const isSelected = salaryForm.userId === user.id;
                           const hasExistingSalary = salaries.some(s => s.userId === user.id && (!editingSalary || s.id !== editingSalary.id));
                           return (

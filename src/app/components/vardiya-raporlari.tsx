@@ -8,8 +8,11 @@ import {
   ArrowLeft, ChevronRight, Users, Printer, TrendingUp, Package,
   CreditCard, Banknote, Wallet, AlertTriangle, Camera, RefreshCw,
   SlidersHorizontal, ChevronUp, ChevronDown, Loader2, AlertCircle,
-  Trash2, Trophy,
+  Trash2, Trophy, FileSpreadsheet, FileText, PrinterIcon,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
 import { projectId, publicAnonKey } from '../lib/supabase-info';
@@ -42,7 +45,11 @@ interface YaziciSayac {
   ad: string;
   baslangic: number;
   bitis: number;
-  netBasilan: number;
+  ribonDegisim: number;
+  iadeFotograf: number;
+  kullanilanBaski: number;
+  cikisAdedi: number;
+  satilanFotograf: number;
 }
 
 interface Anomali {
@@ -76,6 +83,7 @@ interface VardiyaKayit {
   albumMaliyeti: number;
   baskiMaliyeti: number;
   baskiPaperName: string | null;
+  mekanGunlukKira: number;
   kotaKademeleri?: any[];
   primBilgi?: {
     kademeIndex: number;
@@ -400,6 +408,183 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
     return Object.entries(map).sort((a, b) => b[1] - a[1])[0] ?? ['—', 0];
   }, [v.albumler]);
 
+  /* ───── Export helpers ───── */
+  const dosyaAdi = `${v.mekan.replace(/\s+/g, '_')}_${v.tarih}`;
+
+  // Türkçe → ASCII (PDF font uyumu için)
+  function tr(s: string) {
+    return s
+      .replace(/ğ/g,'g').replace(/Ğ/g,'G')
+      .replace(/ü/g,'u').replace(/Ü/g,'U')
+      .replace(/ş/g,'s').replace(/Ş/g,'S')
+      .replace(/ı/g,'i').replace(/İ/g,'I')
+      .replace(/ö/g,'o').replace(/Ö/g,'O')
+      .replace(/ç/g,'c').replace(/Ç/g,'C');
+  }
+
+  function handleExcel() {
+    const toplamPrim = v.primBilgi?.toplamPrim || 0;
+    const toplamMaliyet = v.albumMaliyeti + v.baskiMaliyeti + toplamPrim + v.mekanGunlukKira;
+    const brutKar = v.toplamCiro - toplamMaliyet;
+
+    /* Sayfa 1 — Genel Özet */
+    const ozet = [
+      ['Alan', 'Değer'],
+      ['Mekan', v.mekan],
+      ['Tarih', v.tarih],
+      ['Açılış', v.acilisSaat],
+      ['Kapanış', v.kapanisSaat],
+      ['Print Tipi', v.printType === 'yarim' ? 'Yarım Boy' : v.printType === 'tam' ? 'Tam Boy' : '-'],
+      [],
+      ['CIRO & MALİYET', ''],
+      ['Toplam Ciro (₺)', v.toplamCiro],
+      ['  Nakit (₺)', v.nakitToplamTL],
+      ['  IBAN (₺)', v.ibanToplamTL],
+      ['  Kredi (₺)', v.krediToplamTL],
+      ['Toplam İskonto (₺)', v.toplamIskonto],
+      ['Albüm Maliyeti (₺)', v.albumMaliyeti],
+      ['Baskı Maliyeti (₺)', v.baskiMaliyeti],
+      ['Prim Toplamı (₺)', toplamPrim],
+      ['Mekan Kirası (₺)', v.mekanGunlukKira],
+      ['Toplam Maliyet (₺)', toplamMaliyet],
+      ['Brüt Kâr (₺)', brutKar],
+      [],
+      ['STOK', ''],
+      ['Stok Açılış', v.stokBaslangic],
+      ['Stok Kapanış', v.stokBitis],
+    ];
+
+    /* Sayfa 2 — Personel */
+    const personelBaslik = ['Ad', 'Kare', 'Nakit (₺)', 'IBAN (₺)', 'Kredi (₺)', 'Toplam (₺)', 'İskonto (₺)'];
+    const personelRows = v.personeller.map(p => {
+      const satirToplam = p.satirlar.reduce((s, sr) => s + sr.toplamTL, 0);
+      const iskonto = Math.round(satirToplam - p.toplamTL);
+      return [p.ad, p.kare, p.nakitTL, p.ibanTL, p.krediTL, p.toplamTL, iskonto];
+    });
+
+    /* Sayfa 3 — Yazıcı */
+    const yaziciBaslik = ['Yazıcı', 'Açılış', 'Kapanış', 'Kullanılan Baskı', 'Çıkış Adedi (kare)', 'Ribon Değişimi'];
+    const yaziciRows = v.yazicilar.map(y => [y.ad, y.baslangic, y.bitis, y.kullanilanBaski, y.cikisAdedi, y.ribonDegisim]);
+
+    /* Sayfa 4 — Albüm */
+    const albumRows = Object.entries(v.albumler).map(([urun, adet]) => [urun, adet]);
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ozet), 'Ozet');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([personelBaslik, ...personelRows]), 'Personel');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([yaziciBaslik, ...yaziciRows]), 'Yazicilar');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Urun', 'Adet'], ...albumRows]), 'Album');
+    XLSX.writeFile(wb, `${dosyaAdi}.xlsx`);
+  }
+
+  function handlePDF() {
+    const toplamPrim = v.primBilgi?.toplamPrim || 0;
+    const toplamMaliyet = v.albumMaliyeti + v.baskiMaliyeti + toplamPrim + v.mekanGunlukKira;
+    const brutKar = v.toplamCiro - toplamMaliyet;
+
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const aksan = [100, 180, 220] as [number, number, number];
+    const koyu  = [15, 8, 35]  as [number, number, number];
+
+    // Başlık bandı
+    doc.setFillColor(...koyu);
+    doc.rect(0, 0, 210, 28, 'F');
+    doc.setFontSize(16);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.text(tr(`${v.mekan} — Vardiya Raporu`), 14, 12);
+    doc.setFontSize(9);
+    doc.setTextColor(180, 180, 200);
+    doc.setFont('helvetica', 'normal');
+    doc.text(tr(`Tarih: ${v.tarih}   Acilis: ${v.acilisSaat}   Kapanis: ${v.kapanisSaat}   Print: ${v.printType === 'yarim' ? 'Yarim Boy' : 'Tam Boy'}`), 14, 20);
+
+    let y = 34;
+
+    // Ciro & Maliyet
+    autoTable(doc, {
+      startY: y,
+      head: [[tr('Alan'), tr('Tutar')]],
+      body: [
+        [tr('Toplam Ciro'), `${Math.round(v.toplamCiro).toLocaleString('tr-TR')} TL`],
+        [tr('  Nakit'), `${Math.round(v.nakitToplamTL).toLocaleString('tr-TR')} TL`],
+        [tr('  IBAN'), `${Math.round(v.ibanToplamTL).toLocaleString('tr-TR')} TL`],
+        [tr('  Kredi'), `${Math.round(v.krediToplamTL).toLocaleString('tr-TR')} TL`],
+        [tr('Toplam Iskonto'), `${Math.round(v.toplamIskonto).toLocaleString('tr-TR')} TL`],
+        [tr('Album Maliyeti'), `${Math.round(v.albumMaliyeti).toLocaleString('tr-TR')} TL`],
+        [tr('Baski Maliyeti'), `${Math.round(v.baskiMaliyeti).toLocaleString('tr-TR')} TL`],
+        [tr('Prim Toplami'), `${Math.round(toplamPrim).toLocaleString('tr-TR')} TL`],
+        [tr('Mekan Kirasi'), `${Math.round(v.mekanGunlukKira).toLocaleString('tr-TR')} TL`],
+        [tr('Toplam Maliyet'), `${Math.round(toplamMaliyet).toLocaleString('tr-TR')} TL`],
+        [tr('Brut Kar'), `${Math.round(brutKar).toLocaleString('tr-TR')} TL`],
+      ],
+      headStyles: { fillColor: aksan, textColor: [255,255,255], fontStyle: 'bold', fontSize: 9 },
+      bodyStyles: { fontSize: 9, textColor: [40, 30, 60] },
+      alternateRowStyles: { fillColor: [240, 235, 255] },
+      margin: { left: 14, right: 14 },
+    });
+
+    // @ts-ignore
+    y = (doc as any).lastAutoTable?.finalY + 8 || y + 80;
+
+    // Personel tablosu
+    if (v.personeller.length > 0) {
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...koyu);
+      doc.text(tr('Personel Detayi'), 14, y);
+      y += 4;
+      autoTable(doc, {
+        startY: y,
+        head: [[tr('Ad'), tr('Kare'), tr('Nakit'), tr('IBAN'), tr('Kredi'), tr('Toplam'), tr('Iskonto')]],
+        body: v.personeller.map(p => {
+          const st = p.satirlar.reduce((s, sr) => s + sr.toplamTL, 0);
+          const isk = Math.round(st - p.toplamTL);
+          return [
+            tr(p.ad), p.kare,
+            `${Math.round(p.nakitTL).toLocaleString('tr-TR')} TL`,
+            `${Math.round(p.ibanTL).toLocaleString('tr-TR')} TL`,
+            `${Math.round(p.krediTL).toLocaleString('tr-TR')} TL`,
+            `${Math.round(p.toplamTL).toLocaleString('tr-TR')} TL`,
+            isk > 0 ? `${isk.toLocaleString('tr-TR')} TL` : '—',
+          ];
+        }),
+        headStyles: { fillColor: [120, 80, 200], textColor: [255,255,255], fontStyle: 'bold', fontSize: 8 },
+        bodyStyles: { fontSize: 8, textColor: [40, 30, 60] },
+        alternateRowStyles: { fillColor: [245, 240, 255] },
+        margin: { left: 14, right: 14 },
+      });
+      // @ts-ignore
+      y = (doc as any).lastAutoTable?.finalY + 8 || y + 40;
+    }
+
+    // Yazıcı tablosu
+    if (v.yazicilar.length > 0) {
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...koyu);
+      doc.text(tr('Yazici Sayaclari'), 14, y);
+      y += 4;
+      autoTable(doc, {
+        startY: y,
+        head: [[tr('Yazici'), tr('Acilis'), tr('Kapanis'), tr('Kullanilan Baski'), tr('Cikis (kare)'), tr('Ribon')]],
+        body: v.yazicilar.map(y2 => [
+          tr(y2.ad), y2.baslangic, y2.bitis, y2.kullanilanBaski, y2.cikisAdedi,
+          y2.ribonDegisim > 0 ? `${y2.ribonDegisim} takim` : '—',
+        ]),
+        headStyles: { fillColor: aksan, textColor: [255,255,255], fontStyle: 'bold', fontSize: 8 },
+        bodyStyles: { fontSize: 8, textColor: [40, 30, 60] },
+        alternateRowStyles: { fillColor: [235, 248, 255] },
+        margin: { left: 14, right: 14 },
+      });
+    }
+
+    doc.save(`${dosyaAdi}.pdf`);
+  }
+
+  function handleYazdir() {
+    window.print();
+  }
+
   const toplamSatisAdet = useMemo(() =>
     v.personeller.reduce((s, p) => s + p.satirlar.reduce((ss, sr) => ss + sr.adet, 0), 0),
   [v.personeller]);
@@ -452,22 +637,353 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
         </div>
       )}
 
-      {/* Özet metrikler */}
-      <div className="grid grid-cols-2 gap-2 mb-3">
-        {[
-          { label: 'Toplam Kare', val: `${v.toplamKare}`, color: '#818cf8' },
-          { label: 'İptal Satış', val: `${v.toplamIade}`, color: '#f87171' },
-          { label: 'En Çok Satan', val: `${enCokSatan[0]} ×${enCokSatan[1]}`, color: '#fbbf24' },
-          { label: 'Ort. Sepet', val: tl(ortalamaSepet), color: '#34d399' },
-        ].map(m => (
-          <div key={m.label} style={{ ...sectionStyle, padding: '10px 12px', marginBottom: 0 }}>
-            <p style={labelStyle}>{m.label}</p>
-            <p style={{ ...valStyle, color: m.color }}>{m.val}</p>
+      {/* ── Vardiya Ciro & Kâr/Zarar ── */}
+      {(() => {
+        const toplamPrim = v.primBilgi?.toplamPrim || 0;
+        const toplamMaliyet = v.albumMaliyeti + v.baskiMaliyeti + toplamPrim + v.mekanGunlukKira;
+        const brutKar = v.toplamCiro - toplamMaliyet;
+        return (
+          <div style={{ ...sectionStyle, background: 'rgba(52,211,153,0.04)', border: '1px solid rgba(52,211,153,0.14)' }}>
+            <p style={labelStyle}>
+              <TrendingUp style={{ width: 10, height: 10, display: 'inline', marginRight: 4 }} />
+              Vardiya Ciro & Kâr/Zarar
+            </p>
+
+            {/* Nakit / IBAN / Kredi */}
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {[
+                { label: 'Nakit', val: v.nakitToplamTL, color: '#34d399', Icon: Banknote   },
+                { label: 'IBAN',  val: v.ibanToplamTL,  color: '#60a5fa', Icon: Wallet     },
+                { label: 'Kredi', val: v.krediToplamTL, color: '#f472b6', Icon: CreditCard },
+              ].map(t => (
+                <div key={t.label} style={{ background: `${t.color}10`, borderRadius: 12, padding: '10px 12px', border: `1px solid ${t.color}20` }}>
+                  <div className="flex items-center gap-1 mb-1.5">
+                    <t.Icon style={{ width: 10, height: 10, color: t.color }} />
+                    <span style={{ fontSize: 9, color: t.color, fontWeight: 700 }}>{t.label}</span>
+                  </div>
+                  <p style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.9)' }}>{tl(t.val)}</p>
+                </div>
+              ))}
+            </div>
+
+            {v.toplamIskonto > 0 && (
+              <div className="flex items-center justify-between px-1 mb-2">
+                <span style={{ fontSize: 11, color: 'rgba(251,146,60,0.7)' }}>Toplam İskonto</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#fb923c' }}>-{tl(v.toplamIskonto)}</span>
+              </div>
+            )}
+
+            <div style={{ background: 'rgba(52,211,153,0.08)', borderRadius: 10, padding: '10px 14px', border: '1px solid rgba(52,211,153,0.2)', marginBottom: 8 }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Banknote style={{ width: 13, height: 13, color: '#34d399' }} />
+                  <span style={{ fontSize: 11, color: '#34d399', fontWeight: 700 }}>Teslim Edilecek Nakit</span>
+                </div>
+                <p style={{ fontSize: 15, fontWeight: 800, color: '#34d399' }}>{tl(v.nakitToplamTL)}</p>
+              </div>
+              <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>Kredi kartı ve IBAN hariç</p>
+            </div>
+
+            <div className="flex items-center justify-between px-1">
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Genel Toplam</span>
+              <span style={{ fontSize: 16, fontWeight: 900, color: '#a78bfa' }}>{tl(v.toplamCiro)}</span>
+            </div>
+
+            {/* ── Maliyet & Kâr/Zarar özeti ── */}
+            {toplamMaliyet > 0 && (
+              <>
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', margin: '12px 0 10px' }} />
+                <div className="space-y-2">
+                  {v.albumMaliyeti > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>Albüm Maliyeti</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#f87171' }}>-{tl(v.albumMaliyeti)}</span>
+                    </div>
+                  )}
+                  {v.baskiMaliyeti > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>Baskı Maliyeti</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#f87171' }}>-{tl(v.baskiMaliyeti)}</span>
+                    </div>
+                  )}
+                  {toplamPrim > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>Prim Hakedişi</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>-{tl(toplamPrim)}</span>
+                    </div>
+                  )}
+                  {v.mekanGunlukKira > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>Mekan Kirası (günlük)</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#ffd4a3' }}>-{tl(v.mekanGunlukKira)}</span>
+                    </div>
+                  )}
+                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', fontWeight: 700 }}>Toplam Maliyet</span>
+                    <span style={{ fontSize: 15, fontWeight: 900, color: '#f87171' }}>{tl(toplamMaliyet)}</span>
+                  </div>
+                  {v.toplamCiro > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', fontWeight: 700 }}>Brüt Kâr (ürün bazlı)</span>
+                      <span style={{ fontSize: 15, fontWeight: 900, color: brutKar >= 0 ? '#34d399' : '#f87171' }}>{tl(brutKar)}</span>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
-        ))}
+        );
+      })()}
+
+      {/* ── BLOK 1: Albüm ── */}
+      <div style={sectionStyle}>
+        <p style={labelStyle}>
+          <Package style={{ width: 10, height: 10, display: 'inline', marginRight: 4 }} />
+          Albüm
+        </p>
+
+        {Object.keys(v.albumler).length > 0 ? (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {Object.entries(v.albumler).map(([urun, adet]) => (
+              <div key={urun} style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 10, padding: '6px 12px', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>{urun}</span>
+                <span style={{ fontSize: 14, fontWeight: 800, color: 'rgba(255,255,255,0.9)' }}>×{adet}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 10 }}>Albüm satışı yok</p>
+        )}
+
+        <div className="flex items-center justify-between">
+          <div>
+            <p style={labelStyle}>Albüm Maliyeti</p>
+            <p style={{ ...valStyle, color: '#f87171' }}>{tl(v.albumMaliyeti)}</p>
+          </div>
+          {v.printType && (
+            <span style={{
+              fontSize: 10, padding: '3px 10px', borderRadius: 20,
+              background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.28)',
+              color: '#a78bfa', fontWeight: 700,
+            }}>
+              {v.printType === 'tam' ? 'Tam Boy' : 'Yarım Boy'}
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Personel Detayı */}
+      {/* ── BLOK 2: Baskı Maliyet (Yazıcı Sayaçları + Baskı özeti) ── */}
+      <div style={sectionStyle}>
+        <p style={labelStyle}>
+          <Printer style={{ width: 10, height: 10, display: 'inline', marginRight: 4 }} />
+          Baskı Maliyet
+        </p>
+        {(() => {
+          const kullanilanBaskiToplam = v.yazicilar.reduce((s, y) => s + y.kullanilanBaski, 0);
+          const cikisAdediToplam = v.yazicilar.reduce((s, y) => s + y.cikisAdedi, 0);
+          return (
+            <>
+              {/* Yazıcı sayaç kartları */}
+              {v.yazicilar.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {v.yazicilar.map((y, i) => (
+                    <div key={i} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(255,255,255,0.07)' }}>
+                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: 700, marginBottom: 8 }}>{y.ad}</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <p style={labelStyle}>Açılış Sayacı</p>
+                          <p style={{ ...valStyle, fontSize: 13 }}>{y.baslangic.toLocaleString('tr-TR')}</p>
+                        </div>
+                        <div>
+                          <p style={labelStyle}>Kapanış Sayacı</p>
+                          <p style={{ ...valStyle, fontSize: 13 }}>{y.bitis.toLocaleString('tr-TR')}</p>
+                        </div>
+                        <div>
+                          <p style={labelStyle}>Ribon Değişimi</p>
+                          <p style={{ ...valStyle, fontSize: 13, color: y.ribonDegisim > 0 ? '#fbbf24' : 'rgba(255,255,255,0.55)' }}>
+                            {y.ribonDegisim > 0 ? `${y.ribonDegisim} takım` : '—'}
+                          </p>
+                        </div>
+                      </div>
+                      {/* Toplam basılan fotoğraf: cikisAdedi çıkan kare sayısı; etiket printType'a göre dinamik */}
+                      <div style={{ marginTop: 8, background: 'rgba(157,217,234,0.08)', border: '1px solid rgba(157,217,234,0.18)', borderRadius: 8, padding: '7px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                          <span style={{ fontSize: 10, color: 'rgba(157,217,234,0.7)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Toplam Basılan Fotoğraf</span>
+                          {v.printType && (
+                            <span style={{ fontSize: 9, color: 'rgba(157,217,234,0.45)', fontWeight: 600 }}>
+                              {v.printType === 'yarim' ? 'Yarım Boy' : 'Tam Boy'}
+                            </span>
+                          )}
+                        </div>
+                        <span style={{ fontSize: 14, fontWeight: 900, color: '#9dd9ea' }}>{y.cikisAdedi.toLocaleString('tr-TR')} kare</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Ayırıcı */}
+              <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', marginBottom: 12 }} />
+
+              {/* Özet grid: 3 kolon — kullanilanBaski (fiziksel tam boy kağıt), kağıt tipi, personel çekimi */}
+              {(() => {
+                const personelKareToplam = v.personeller.reduce((s, p) => s + p.kare, 0);
+                return (
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div style={{ background: 'rgba(157,217,234,0.07)', borderRadius: 10, padding: '10px 10px', border: '1px solid rgba(157,217,234,0.15)' }}>
+                      <p style={labelStyle}>Kullanılan Baskı</p>
+                      <p style={{ ...valStyle, color: '#9dd9ea' }}>{kullanilanBaskiToplam.toLocaleString('tr-TR')}</p>
+                      <p style={{ fontSize: 9, color: 'rgba(157,217,234,0.5)', marginTop: 2 }}>Tam Boy Baskı</p>
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '10px 10px', border: '1px solid rgba(255,255,255,0.07)' }}>
+                      <p style={labelStyle}>Kağıt Tipi</p>
+                      <p style={{ ...valStyle, fontSize: 12 }}>{v.baskiPaperName || '—'}</p>
+                    </div>
+                    <div style={{ background: 'rgba(167,199,231,0.07)', borderRadius: 10, padding: '10px 10px', border: '1px solid rgba(167,199,231,0.15)' }}>
+                      <p style={labelStyle}>Personel Çekimi</p>
+                      <p style={{ ...valStyle, color: '#a7c7e7' }}>{personelKareToplam.toLocaleString('tr-TR')}</p>
+                      <p style={{ fontSize: 9, color: 'rgba(167,199,231,0.5)', marginTop: 2 }}>kare</p>
+                    </div>
+                  </div>
+                );
+              })()}
+              <div className="flex items-center justify-between px-1">
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Baskı Maliyeti</span>
+                <span style={{ fontSize: 14, fontWeight: 800, color: '#f87171' }}>{tl(v.baskiMaliyeti)}</span>
+              </div>
+            </>
+          );
+        })()}
+      </div>
+
+      {/* ── BLOK 3: Prim ── */}
+      {(v.personeller.length > 0 || (v.kotaKademeleri || []).length > 0) && (() => {
+        const KADEME_COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399', '#f87171', '#fb923c'];
+        const kkList = v.kotaKademeleri || [];
+        const pb = v.primBilgi;
+        const hasPrim = !!pb;
+        const kisiBasiPrim = pb ? pb.topKademePrim : 0;
+        const toplamPrim = pb ? pb.toplamPrim : 0;
+        const kotaDurumlari = kkList.map((k: any, i: number) => ({
+          index: i, hedef: k.hedef,
+          reached: v.toplamCiro >= k.hedef,
+          color: KADEME_COLORS[Math.min(i, 5)],
+        }));
+        const ilkKota = kkList[0];
+        const ilkFark = ilkKota ? (ilkKota.hedef - v.toplamCiro) : 0;
+        return (
+          <div style={{
+            ...sectionStyle,
+            background: hasPrim ? 'rgba(167,139,250,0.07)' : 'rgba(255,255,255,0.04)',
+            border: hasPrim ? '1px solid rgba(167,139,250,0.22)' : '1px solid rgba(255,255,255,0.08)',
+          }}>
+            {/* Başlık */}
+            <div className="flex items-center gap-2 mb-3">
+              <Trophy style={{ width: 10, height: 10, color: hasPrim ? '#a78bfa' : 'rgba(255,255,255,0.3)' }} />
+              <span style={{ fontSize: 10, fontWeight: 700, color: hasPrim ? '#a78bfa' : 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const, letterSpacing: '0.08em' }}>
+                Prim{hasPrim ? ' — 🏆 Kazanıldı!' : ''}
+              </span>
+            </div>
+
+            {/* Personel listesi — her zaman */}
+            {v.personeller.length > 0 && (
+              <div style={{
+                background: 'rgba(255,255,255,0.03)', borderRadius: 10,
+                padding: '8px 10px', border: '1px solid rgba(255,255,255,0.06)',
+                marginBottom: 10,
+              }}>
+                <div className="space-y-2">
+                  {v.personeller.map(p => (
+                    <div key={p.id} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div style={{
+                          width: 26, height: 26, borderRadius: 8,
+                          background: hasPrim ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.06)',
+                          border: hasPrim ? '1px solid rgba(167,139,250,0.28)' : '1px solid rgba(255,255,255,0.1)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13,
+                        }}>
+                          {p.avatar}
+                        </div>
+                        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)', fontWeight: 600 }}>{p.ad}</span>
+                      </div>
+                      {hasPrim
+                        ? <span style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa' }}>{tl(kisiBasiPrim)}</span>
+                        : <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontWeight: 600 }}>—</span>
+                      }
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Prim VAR → kota durumları */}
+            {hasPrim && kkList.length > 0 && (
+              <div className="space-y-1.5" style={{ marginBottom: 10 }}>
+                {kotaDurumlari.map(k => (
+                  <div key={k.index} className="flex items-center justify-between">
+                    {k.reached ? (
+                      <>
+                        <div className="flex items-center gap-1.5">
+                          <span style={{ fontSize: 13, color: k.color, fontWeight: 900 }}>✓</span>
+                          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)', fontWeight: 600 }}>{k.index + 1}. Kota Aşıldı</span>
+                        </div>
+                        <span style={{ fontSize: 10, color: k.color, fontWeight: 700 }}>{tl(k.hedef)}</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-1.5">
+                          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', fontWeight: 900 }}>○</span>
+                          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 600 }}>
+                            {k.index + 1}. Kotaya {tl(k.hedef - v.toplamCiro)} kaldı
+                          </span>
+                        </div>
+                        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontWeight: 600 }}>{tl(k.hedef)}</span>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Prim VAR → toplam */}
+            {hasPrim && (
+              <div style={{ borderTop: '1px solid rgba(167,139,250,0.15)', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>Toplam Prim Hakedişi</span>
+                <span style={{ fontSize: 16, fontWeight: 900, color: '#a78bfa' }}>{tl(toplamPrim)}</span>
+              </div>
+            )}
+
+            {/* Prim YOK → ilk kotaya kalan */}
+            {!hasPrim && ilkKota && ilkFark > 0 && (
+              <div className="flex items-center gap-2">
+                <Trophy style={{ width: 12, height: 12, color: 'rgba(255,255,255,0.2)' }} />
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
+                  1. Prim kotasına {tl(ilkFark)} eksik kaldı
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── BLOK 4: Mekan Kirası ── */}
+      {v.mekanGunlukKira > 0 && (
+        <div style={sectionStyle}>
+          <p style={labelStyle}>
+            <Banknote style={{ width: 10, height: 10, display: 'inline', marginRight: 4 }} />
+            Mekan Kirası
+          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>Günlük Kira</p>
+              <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>Yıllık kira / 365 gün</p>
+            </div>
+            <p style={{ fontSize: 18, fontWeight: 900, color: '#ffd4a3' }}>{tl(v.mekanGunlukKira)}<span style={{ fontSize: 10, fontWeight: 500, color: 'rgba(255,212,163,0.5)', marginLeft: 3 }}>/gün</span></p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Personel Detayı ── */}
       {v.personeller.length > 0 && (
         <div style={sectionStyle}>
           <p style={labelStyle}>
@@ -487,16 +1003,28 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
                   </div>
                   <div className="text-right">
                     <p style={{ fontSize: 14, fontWeight: 800, color: '#a78bfa' }}>{tl(p.toplamTL)}</p>
-                    <p style={{ fontSize: 10, color: '#34d399', fontWeight: 600 }}>Nakit: {tl(p.nakitTL)}</p>
+                    {(() => {
+                      const satirToplam = p.satirlar.reduce((s, sr) => s + sr.toplamTL, 0);
+                      const iskonto = Math.round(satirToplam - p.toplamTL);
+                      const isktPct = satirToplam > 0 ? Math.round((iskonto / satirToplam) * 100) : 0;
+                      if (iskonto > 0) {
+                        return (
+                          <p style={{ fontSize: 10, color: '#fb923c', fontWeight: 700 }}>
+                            -{tl(iskonto)} <span style={{ opacity: 0.7 }}>(%{isktPct})</span>
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                 </div>
 
                 {/* Ödeme dağılımı */}
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   {[
-                    { label: 'Nakit',  val: p.nakitTL, color: '#34d399', Icon: Banknote   },
-                    { label: 'IBAN',   val: p.ibanTL,  color: '#60a5fa', Icon: Wallet     },
-                    { label: 'Kredi',  val: p.krediTL, color: '#f472b6', Icon: CreditCard },
+                    { label: 'Nakit', val: p.nakitTL, color: '#34d399', Icon: Banknote   },
+                    { label: 'IBAN',  val: p.ibanTL,  color: '#60a5fa', Icon: Wallet     },
+                    { label: 'Kredi', val: p.krediTL, color: '#f472b6', Icon: CreditCard },
                   ].map(od => (
                     <div key={od.label} style={{ background: `${od.color}10`, borderRadius: 10, padding: '8px 10px', border: `1px solid ${od.color}20` }}>
                       <div className="flex items-center gap-1 mb-1.5">
@@ -531,272 +1059,62 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
         </div>
       )}
 
-      {/* Toplam Ciro */}
-      <div style={sectionStyle}>
-        <p style={labelStyle}>
-          <TrendingUp style={{ width: 10, height: 10, display: 'inline', marginRight: 4 }} />
-          Vardiya Toplam Ciro
+      {/* ── Export Butonları ── */}
+      <div style={{ marginTop: 6, marginBottom: 24 }}>
+        <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10, textAlign: 'center' }}>
+          Dışa Aktar
         </p>
-        <div className="grid grid-cols-3 gap-2 mb-3">
-          {[
-            { label: 'Nakit',  val: v.nakitToplamTL, color: '#34d399', Icon: Banknote   },
-            { label: 'IBAN',   val: v.ibanToplamTL,  color: '#60a5fa', Icon: Wallet     },
-            { label: 'Kredi',  val: v.krediToplamTL, color: '#f472b6', Icon: CreditCard },
-          ].map(t => (
-            <div key={t.label} style={{ background: `${t.color}10`, borderRadius: 12, padding: '10px 12px', border: `1px solid ${t.color}20` }}>
-              <div className="flex items-center gap-1 mb-1.5">
-                <t.Icon style={{ width: 10, height: 10, color: t.color }} />
-                <span style={{ fontSize: 9, color: t.color, fontWeight: 700 }}>{t.label}</span>
-              </div>
-              <p style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.9)' }}>{tl(t.val)}</p>
+        <div className="grid grid-cols-3 gap-3">
+          {/* Yazdır */}
+          <button
+            onClick={handleYazdir}
+            className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all active:scale-95"
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              backdropFilter: 'blur(12px)',
+            }}
+          >
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.08)' }}>
+              <PrinterIcon style={{ width: 18, height: 18, color: 'rgba(255,255,255,0.7)' }} />
             </div>
-          ))}
-        </div>
-        {v.toplamIskonto > 0 && (
-          <div className="flex items-center justify-between px-1 mb-2">
-            <span style={{ fontSize: 11, color: 'rgba(251,146,60,0.7)' }}>Toplam İskonto</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#fb923c' }}>-{tl(v.toplamIskonto)}</span>
-          </div>
-        )}
-        <div style={{ background: 'rgba(52,211,153,0.08)', borderRadius: 10, padding: '10px 14px', border: '1px solid rgba(52,211,153,0.2)', marginBottom: 8 }}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Banknote style={{ width: 13, height: 13, color: '#34d399' }} />
-              <span style={{ fontSize: 11, color: '#34d399', fontWeight: 700 }}>Teslim Edilecek Nakit</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.6)' }}>Yazdır</span>
+          </button>
+
+          {/* Excel */}
+          <button
+            onClick={handleExcel}
+            className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all active:scale-95"
+            style={{
+              background: 'rgba(52,211,153,0.08)',
+              border: '1px solid rgba(52,211,153,0.2)',
+              backdropFilter: 'blur(12px)',
+            }}
+          >
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(52,211,153,0.12)' }}>
+              <FileSpreadsheet style={{ width: 18, height: 18, color: '#34d399' }} />
             </div>
-            <p style={{ fontSize: 15, fontWeight: 800, color: '#34d399' }}>{tl(v.nakitToplamTL)}</p>
-          </div>
-          <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>Kredi kartı ve IBAN hariç</p>
-        </div>
-        <div className="flex items-center justify-between px-1">
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Genel Toplam</span>
-          <span style={{ fontSize: 16, fontWeight: 900, color: '#a78bfa' }}>{tl(v.toplamCiro)}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#34d399' }}>Excel</span>
+          </button>
+
+          {/* PDF */}
+          <button
+            onClick={handlePDF}
+            className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all active:scale-95"
+            style={{
+              background: 'rgba(248,113,113,0.08)',
+              border: '1px solid rgba(248,113,113,0.2)',
+              backdropFilter: 'blur(12px)',
+            }}
+          >
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(248,113,113,0.12)' }}>
+              <FileText style={{ width: 18, height: 18, color: '#f87171' }} />
+            </div>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#f87171' }}>PDF</span>
+          </button>
         </div>
       </div>
 
-      {/* Albüm & Baskı */}
-      <div style={sectionStyle}>
-        <p style={labelStyle}>
-          <Package style={{ width: 10, height: 10, display: 'inline', marginRight: 4 }} />
-          Albüm & Baskı Özeti
-        </p>
-
-        {Object.keys(v.albumler).length > 0 ? (
-          <div className="flex flex-wrap gap-2 mb-3">
-            {Object.entries(v.albumler).map(([urun, adet]) => (
-              <div key={urun} style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 10, padding: '8px 12px', border: '1px solid rgba(255,255,255,0.1)', textAlign: 'center' }}>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 2 }}>{urun}</p>
-                <p style={{ fontSize: 16, fontWeight: 800, color: 'rgba(255,255,255,0.9)' }}>{adet}</p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>Albüm satışı yok</p>
-        )}
-
-        <div className="grid grid-cols-3 gap-2">
-          <div>
-            <p style={labelStyle}>Albüm Maliyeti</p>
-            <p style={{ ...valStyle, color: '#f87171' }}>{tl(v.albumMaliyeti)}</p>
-            {v.printType && (
-              <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>{v.printType === 'tam' ? 'Tam Boy' : 'Yarım Boy'}</p>
-            )}
-          </div>
-          <div>
-            <p style={labelStyle}>Baskı Maliyeti</p>
-            <p style={{ ...valStyle, color: '#f87171' }}>{tl(v.baskiMaliyeti)}</p>
-            {v.baskiPaperName && (
-              <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>{v.baskiPaperName}</p>
-            )}
-          </div>
-          <div>
-            <p style={labelStyle}>Stok Baş→Son</p>
-            <p style={{ ...valStyle, color: '#60a5fa' }}>{v.stokBaslangic}→{v.stokBitis}</p>
-          </div>
-        </div>
-
-        {(v.albumMaliyeti > 0 || v.baskiMaliyeti > 0) && (
-          <div className="mt-3 flex items-center justify-between px-1">
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Toplam Maliyet</span>
-            <span style={{ fontSize: 14, fontWeight: 800, color: '#f87171' }}>{tl(v.albumMaliyeti + v.baskiMaliyeti)}</span>
-          </div>
-        )}
-
-        {v.toplamCiro > 0 && (v.albumMaliyeti > 0 || v.baskiMaliyeti > 0) && (
-          <div className="mt-2 flex items-center justify-between px-1">
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Brüt Kâr (ürün bazlı)</span>
-            <span style={{ fontSize: 14, fontWeight: 800, color: '#34d399' }}>
-              {tl(v.toplamCiro - v.albumMaliyeti - v.baskiMaliyeti)}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Yazıcı Sayaçları */}
-      {v.yazicilar.length > 0 && (
-        <div style={sectionStyle}>
-          <p style={labelStyle}>
-            <Printer style={{ width: 10, height: 10, display: 'inline', marginRight: 4 }} />
-            Yazıcı Sayaçları
-          </p>
-          <div className="space-y-2">
-            {v.yazicilar.map((y, i) => (
-              <div key={i} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(255,255,255,0.07)' }}>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: 700, marginBottom: 6 }}>{y.ad}</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { label: 'Açılış Sayacı', val: y.baslangic.toLocaleString('tr-TR') },
-                    { label: 'Kapanış Sayacı', val: y.bitis.toLocaleString('tr-TR') },
-                    { label: 'Net Basılan', val: `${y.netBasilan} kare` },
-                  ].map(s => (
-                    <div key={s.label}>
-                      <p style={labelStyle}>{s.label}</p>
-                      <p style={{ ...valStyle, fontSize: 12 }}>{s.val}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Prim Özeti ── */}
-      {v.primBilgi && (() => {
-        const pb = v.primBilgi!;
-        const KADEME_COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399', '#f87171', '#fb923c'];
-        const KADEME_EMOJIS = ['🥉', '🥈', '🥇', '🏅', '💎', '👑'];
-        const KADEME_LABELS = ['1. Kademe', '2. Kademe', '3. Kademe', '4. Kademe', '5. Kademe', '6. Kademe'];
-        const idx = Math.min(pb.kademeIndex, 5);
-        const color = KADEME_COLORS[idx];
-        const emoji = KADEME_EMOJIS[idx];
-        const label = KADEME_LABELS[idx];
-
-        // Personel isimleri: v.personeller varsa oradan al
-        const personelIsimleri: string[] = (v.personeller || []).map((p: any) => p.ad).filter(Boolean);
-
-        return (
-          <div style={{
-            background: `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)`,
-            border: `1px solid ${color}40`,
-            borderRadius: 14, padding: '14px 16px', marginBottom: 10,
-          }}>
-            {/* Başlık */}
-            <div className="flex items-center gap-2 mb-3">
-              <div style={{
-                width: 32, height: 32, borderRadius: 10,
-                background: `${color}22`, border: `1px solid ${color}44`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 16, flexShrink: 0,
-              }}>{emoji}</div>
-              <div className="flex-1">
-                <p style={{ fontSize: 13, fontWeight: 800, color: 'white' }}>
-                  🏆 Prim Kazanıldı!
-                </p>
-                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
-                  {label} · Hedef {tl(pb.kademeHedef)} geçildi
-                </p>
-              </div>
-              <div style={{
-                padding: '3px 8px', borderRadius: 8,
-                background: `${color}25`, border: `1px solid ${color}50`,
-              }}>
-                <span style={{ fontSize: 14, fontWeight: 900, color }}>{tl(pb.toplamPrim)}</span>
-              </div>
-            </div>
-
-            {/* Detay satırları */}
-            <div className="grid grid-cols-3 gap-2 mb-2">
-              <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '8px 10px', border: '1px solid rgba(255,255,255,0.07)' }}>
-                <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Kişi Başı</p>
-                <p style={{ fontSize: 13, fontWeight: 800, color }}>{tl(pb.topKademePrim)}</p>
-              </div>
-              <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '8px 10px', border: '1px solid rgba(255,255,255,0.07)' }}>
-                <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Personel</p>
-                <p style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.85)' }}>
-                  {pb.personelSayisi} kişi{pb.coklu ? ' 👥' : ' 👤'}
-                </p>
-              </div>
-              <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '8px 10px', border: '1px solid rgba(255,255,255,0.07)' }}>
-                <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>Kademe</p>
-                <p style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.85)' }}>
-                  {pb.toplamKademe}/{(v.kotaKademeleri || []).length}
-                </p>
-              </div>
-            </div>
-
-            {/* Kişi bazlı prim listesi */}
-            {personelIsimleri.length > 0 && (
-              <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: '8px 10px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: 8 }}>
-                <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>
-                  Kişi Bazlı Kazanım
-                </p>
-                <div className="space-y-1.5">
-                  {personelIsimleri.map((ad, i) => (
-                    <div key={i} className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <div style={{
-                          width: 20, height: 20, borderRadius: 6,
-                          background: `${color}18`, border: `1px solid ${color}30`,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 9, fontWeight: 800, color,
-                        }}>
-                          {ad.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
-                        </div>
-                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 600 }}>{ad}</span>
-                      </div>
-                      <span style={{ fontSize: 11, fontWeight: 800, color }}>{tl(pb.topKademePrim)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Progress bar: kaç kota geçildi */}
-            {(v.kotaKademeleri || []).length > 0 && (
-              <div className="mt-1">
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {(v.kotaKademeleri || []).map((k: any, i: number) => {
-                    const reached = v.toplamCiro >= k.hedef;
-                    const kColor = KADEME_COLORS[Math.min(i, 5)];
-                    return (
-                      <div key={i} style={{ flex: 1, height: 4, borderRadius: 4, background: reached ? kColor : 'rgba(255,255,255,0.1)', boxShadow: reached ? `0 0 6px ${kColor}80` : 'none' }} />
-                    );
-                  })}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-                  {(v.kotaKademeleri || []).map((k: any, i: number) => (
-                    <span key={i} style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', fontWeight: 600 }}>
-                      {k.hedef >= 1000 ? `${(k.hedef / 1000).toFixed(0)}B` : k.hedef}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* Prim yoksa ama kota varsa minimal bilgi */}
-      {!v.primBilgi && (v.kotaKademeleri || []).length > 0 && (() => {
-        const kkList = v.kotaKademeleri || [];
-        const ilk = kkList[0];
-        const fark = ilk.hedef - v.toplamCiro;
-        if (fark <= 0) return null;
-        return (
-          <div style={{
-            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
-            borderRadius: 14, padding: '12px 14px', marginBottom: 10,
-          }}>
-            <div className="flex items-center gap-2">
-              <Trophy style={{ width: 14, height: 14, color: 'rgba(255,255,255,0.25)' }} />
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
-                1. Prim kotasına {tl(fark)} eksik kaldı
-              </p>
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }

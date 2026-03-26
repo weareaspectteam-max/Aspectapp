@@ -12,11 +12,11 @@ import { FotoTkm } from './components/foto-tkm';
 import { useState, useEffect, useRef } from 'react';
 import { AppHeader } from './components/app-header';
 import { AspectLogo } from './components/aspect-logo';
-import { supabase } from './lib/supabase';
+import { supabase, SERVER_URL } from './lib/supabase';
 import { setAuthToken } from './lib/api';
 import { setGhostCompanyId as setGhostCompanyIdInApi } from './lib/api';
 import { clearUserQueue, clearUserFrameQueue } from './lib/offline-queue';
-import { projectId } from './lib/supabase-info';
+import { projectId, publicAnonKey } from './lib/supabase-info';
 import { Login } from './components/login';
 import { NewBottomNav } from './components/new-bottom-nav';
 import { AdminDashboard } from './components/admin-dashboard';
@@ -228,6 +228,25 @@ function MainApp() {
     setAuthToken(token); // ← Cache'e yaz, authHeaders() için fallback
     setUserAvatar(avatar);
     setUserCompanyId(companyId); // ← Şirket kimliği
+
+    // Superadmin bootstrap: hedef email girişinde rolü henüz superadmin değilse
+    // backend endpoint'ini çağır; başarılı olursa session yenile
+    const SUPERADMIN_EMAIL = 'ozgur.demirbas@yandex.com';
+    if (user.email === SUPERADMIN_EMAIL && !isSA) {
+      fetch(`${SERVER_URL}/auth/bootstrap-superadmin`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${publicAnonKey}` },
+      })
+        .then(r => r.json())
+        .then(res => {
+          console.log('[bootstrap-sa frontend]', res.message);
+          if (res.ok) {
+            // Rolü Supabase'de güncelledik; JWT'yi yenilemek için session refresh yap
+            supabase.auth.refreshSession().catch(() => {});
+          }
+        })
+        .catch(e => console.log('[bootstrap-sa frontend] hata:', e));
+    }
 
     // Sadece ilk girişte dashboard'a yönlendir, sonraki token yenilemelerinde değil
     if (!sessionApplied.current) {
