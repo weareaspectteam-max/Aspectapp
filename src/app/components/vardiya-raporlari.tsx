@@ -39,6 +39,7 @@ interface PersonelSatis {
   krediTL: number;
   toplamTL: number;
   satirlar: UrunSatir[];
+  gunlukMaas?: number;
 }
 
 interface YaziciSayac {
@@ -87,6 +88,7 @@ interface VardiyaKayit {
   albumMaliyeti: number;
   baskiMaliyeti: number;
   baskiPaperName: string | null;
+  personelMaasGideri?: number;
   mekanGunlukKira: number;
   kotaKademeleri?: any[];
   primBilgi?: {
@@ -336,26 +338,29 @@ function OzetKart({
             {formatTarih(v.tarih)} · {v.acilisSaat}–{v.kapanisSaat}
           </p>
 
-          {/* Satır 3: personel kare chip'leri */}
-          {v.personeller.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {v.personeller.map(p => (
-                <div key={p.id} className="flex items-center gap-1 px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(129,140,248,0.1)', border: '1px solid rgba(129,140,248,0.2)' }}>
-                  <span style={{ fontSize: 9 }}>{p.avatar}</span>
-                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
-                    {p.ad.split(' ')[0]}
-                  </span>
-                  {p.kare > 0 && (
-                    <>
-                      <Camera style={{ width: 8, height: 8, color: '#818cf8' }} />
-                      <span style={{ fontSize: 9, color: '#818cf8', fontWeight: 700 }}>{p.kare}</span>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          {/* Satır 3: personel chip'leri — mekan katkısı */}
+          {v.personeller.length > 0 && (() => {
+            const toplamKare = v.personeller.reduce((s, pp) => s + pp.kare, 0);
+            return (
+              <div className="flex flex-wrap gap-1.5">
+                {v.personeller.map(p => {
+                  const ciroYuzde = v.toplamCiro > 0 ? (p.toplamTL / v.toplamCiro) * 100 : 0;
+                  const kareYuzde = toplamKare > 0 ? (p.kare / toplamKare) * 100 : 0;
+                  const mekanKatkisi = Math.round(ciroYuzde * 0.60 + kareYuzde * 0.40);
+                  return (
+                    <div key={p.id} className="flex items-center gap-1 px-2 py-0.5 rounded-full"
+                      style={{ background: 'rgba(129,140,248,0.1)', border: '1px solid rgba(129,140,248,0.2)' }}>
+                      <span style={{ fontSize: 9 }}>{p.avatar}</span>
+                      <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
+                        {p.ad.split(' ')[0]}
+                      </span>
+                      <span style={{ fontSize: 9, color: '#818cf8', fontWeight: 700 }}>%{mekanKatkisi}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Sağ: iskonto (üstte) + ciro + nakit */}
@@ -428,7 +433,7 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
 
   function handleExcel() {
     const toplamPrim = v.primBilgi?.toplamPrim || 0;
-    const toplamMaliyet = v.albumMaliyeti + v.baskiMaliyeti + toplamPrim + v.mekanGunlukKira;
+    const toplamMaliyet = v.albumMaliyeti + v.baskiMaliyeti + toplamPrim + v.mekanGunlukKira + (v.personelMaasGideri || 0);
     const brutKar = v.toplamCiro - toplamMaliyet;
 
     /* Sayfa 1 — Genel Özet */
@@ -483,7 +488,7 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
 
   function handlePDF() {
     const toplamPrim = v.primBilgi?.toplamPrim || 0;
-    const toplamMaliyet = v.albumMaliyeti + v.baskiMaliyeti + toplamPrim + v.mekanGunlukKira;
+    const toplamMaliyet = v.albumMaliyeti + v.baskiMaliyeti + toplamPrim + v.mekanGunlukKira + (v.personelMaasGideri || 0);
     const brutKar = v.toplamCiro - toplamMaliyet;
 
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
@@ -644,7 +649,8 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
       {/* ── Vardiya Ciro & Kâr/Zarar ── */}
       {(() => {
         const toplamPrim = v.primBilgi?.toplamPrim || 0;
-        const toplamMaliyet = v.albumMaliyeti + v.baskiMaliyeti + toplamPrim + v.mekanGunlukKira;
+        const personelMaas = v.personelMaasGideri || 0;
+        const toplamMaliyet = v.albumMaliyeti + v.baskiMaliyeti + toplamPrim + v.mekanGunlukKira + personelMaas;
         const brutKar = v.toplamCiro - toplamMaliyet;
         return (
           <div style={{ ...sectionStyle, background: 'rgba(52,211,153,0.04)', border: '1px solid rgba(52,211,153,0.14)' }}>
@@ -716,6 +722,12 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
                       <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>-{tl(toplamPrim)}</span>
                     </div>
                   )}
+                  {personelMaas > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>Personel Maaşları</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#fb923c' }}>-{tl(personelMaas)}</span>
+                    </div>
+                  )}
                   {v.mekanGunlukKira > 0 && (
                     <div className="flex items-center justify-between">
                       <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>Mekan Kirası (günlük)</span>
@@ -724,7 +736,7 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
                   )}
                   <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', fontWeight: 700 }}>Toplam Maliyet</span>
-                    <span style={{ fontSize: 15, fontWeight: 900, color: '#f87171' }}>{tl(toplamMaliyet)}</span>
+                    <span style={{ fontSize: 15, fontWeight: 900, color: '#f87171' }}>-{tl(toplamMaliyet)}</span>
                   </div>
                   {v.toplamCiro > 0 && (
                     <div className="flex items-center justify-between">
@@ -849,6 +861,33 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
               {/* Ayırıcı */}
               <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', marginBottom: 12 }} />
 
+              {/* Fotoğraf özet grid: Toplam Basılan | Satılan | İade */}
+              {(() => {
+                const iadeFotografToplam = v.yazicilar.reduce((s, y) => s + ((y as any).iadeFotograf || 0), 0);
+                const satilanFotografToplam = Math.max(0, cikisAdediToplam - iadeFotografToplam);
+                return (
+                  <div className="grid grid-cols-3 gap-2 mb-2">
+                    <div style={{ background: 'rgba(157,217,234,0.07)', borderRadius: 10, padding: '10px 10px', border: '1px solid rgba(157,217,234,0.15)' }}>
+                      <p style={labelStyle}>Toplam Basılan</p>
+                      <p style={{ ...valStyle, color: '#9dd9ea' }}>{cikisAdediToplam.toLocaleString('tr-TR')}</p>
+                      {v.printType && (
+                        <p style={{ fontSize: 9, color: 'rgba(157,217,234,0.5)', marginTop: 2 }}>{v.printType === 'yarim' ? 'Yarım Boy' : 'Tam Boy'}</p>
+                      )}
+                    </div>
+                    <div style={{ background: 'rgba(74,222,128,0.07)', borderRadius: 10, padding: '10px 10px', border: '1px solid rgba(74,222,128,0.15)' }}>
+                      <p style={labelStyle}>Satılan</p>
+                      <p style={{ ...valStyle, color: '#4ade80' }}>{satilanFotografToplam.toLocaleString('tr-TR')}</p>
+                      <p style={{ fontSize: 9, color: 'rgba(74,222,128,0.5)', marginTop: 2 }}>kare</p>
+                    </div>
+                    <div style={{ background: 'rgba(248,113,113,0.07)', borderRadius: 10, padding: '10px 10px', border: '1px solid rgba(248,113,113,0.15)' }}>
+                      <p style={labelStyle}>İade</p>
+                      <p style={{ ...valStyle, color: '#f87171' }}>{iadeFotografToplam.toLocaleString('tr-TR')}</p>
+                      <p style={{ fontSize: 9, color: 'rgba(248,113,113,0.5)', marginTop: 2 }}>kare</p>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Özet grid: 3 kolon — kullanilanBaski (fiziksel tam boy kağıt), kağıt tipi, personel çekimi */}
               {(() => {
                 const personelKareToplam = v.personeller.reduce((s, p) => s + p.kare, 0);
@@ -873,7 +912,7 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
               })()}
               <div className="flex items-center justify-between px-1">
                 <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Baskı Maliyeti</span>
-                <span style={{ fontSize: 14, fontWeight: 800, color: '#f87171' }}>{tl(v.baskiMaliyeti)}</span>
+                <span style={{ fontSize: 14, fontWeight: 800, color: '#f87171' }}>-{tl(v.baskiMaliyeti)}</span>
               </div>
             </>
           );
@@ -990,22 +1029,6 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
         );
       })()}
 
-      {/* ── BLOK 4: Mekan Kirası ── */}
-      {v.mekanGunlukKira > 0 && (
-        <div style={sectionStyle}>
-          <p style={labelStyle}>
-            <Banknote style={{ width: 10, height: 10, display: 'inline', marginRight: 4 }} />
-            Mekan Kirası
-          </p>
-          <div className="flex items-center justify-between">
-            <div>
-              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>Günlük Kira</p>
-              <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>Yıllık kira / 365 gün</p>
-            </div>
-            <p style={{ fontSize: 18, fontWeight: 900, color: '#ffd4a3' }}>{tl(v.mekanGunlukKira)}<span style={{ fontSize: 10, fontWeight: 500, color: 'rgba(255,212,163,0.5)', marginLeft: 3 }}>/gün</span></p>
-          </div>
-        </div>
-      )}
 
       {/* ── Personel Detayı ── */}
       {v.personeller.length > 0 && (
@@ -1077,6 +1100,55 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
                     </div>
                   </div>
                 )}
+
+                {/* Personel katkı ve kazanç */}
+                {(() => {
+                  const personelKareToplam = v.personeller.reduce((s, pp) => s + pp.kare, 0);
+                  const ciroYuzde = v.toplamCiro > 0 ? (p.toplamTL / v.toplamCiro) * 100 : 0;
+                  const kareYuzde = personelKareToplam > 0 ? (p.kare / personelKareToplam) * 100 : 0;
+                  const mekanKatkisi = ciroYuzde * 0.60 + kareYuzde * 0.40;
+                  const prim = v.primBilgi?.topKademePrim || 0;
+                  const maas = p.gunlukMaas || 0;
+                  const personelKazanc = maas + prim;
+                  return (
+                    <>
+                      {/* Ayırıcı */}
+                      <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '10px 0' }} />
+
+                      {/* 4 blok: Maaş, Prim, Ciro Katkısı, Kare Katkısı */}
+                      <div className="grid grid-cols-4 gap-1.5">
+                        <div style={{ background: 'rgba(251,146,60,0.08)', border: '1px solid rgba(251,146,60,0.2)', borderRadius: 8, padding: '6px 8px' }}>
+                          <p style={{ fontSize: 8, color: 'rgba(251,146,60,0.7)', fontWeight: 600, marginBottom: 2 }}>GÜNLÜK MAAŞ</p>
+                          <p style={{ fontSize: 11, fontWeight: 800, color: '#fb923c' }}>{maas > 0 ? tl(maas) : '—'}</p>
+                        </div>
+                        <div style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: 8, padding: '6px 8px' }}>
+                          <p style={{ fontSize: 8, color: 'rgba(251,191,36,0.7)', fontWeight: 600, marginBottom: 2 }}>PRİM</p>
+                          <p style={{ fontSize: 11, fontWeight: 800, color: '#fbbf24' }}>{prim > 0 ? tl(prim) : '—'}</p>
+                        </div>
+                        <div style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)', borderRadius: 8, padding: '6px 8px' }}>
+                          <p style={{ fontSize: 8, color: 'rgba(52,211,153,0.7)', fontWeight: 600, marginBottom: 2 }}>CİRO KATKISI</p>
+                          <p style={{ fontSize: 11, fontWeight: 800, color: '#34d399' }}>%{ciroYuzde.toFixed(0)}</p>
+                        </div>
+                        <div style={{ background: 'rgba(157,217,234,0.08)', border: '1px solid rgba(157,217,234,0.2)', borderRadius: 8, padding: '6px 8px' }}>
+                          <p style={{ fontSize: 8, color: 'rgba(157,217,234,0.7)', fontWeight: 600, marginBottom: 2 }}>KARE KATKISI</p>
+                          <p style={{ fontSize: 11, fontWeight: 800, color: '#9dd9ea' }}>%{kareYuzde.toFixed(0)}</p>
+                        </div>
+                      </div>
+
+                      {/* 2 blok: Personel Kazanç, Mekan Katkısı */}
+                      <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+                        <div style={{ background: 'rgba(251,146,60,0.05)', border: '1px solid rgba(251,146,60,0.15)', borderRadius: 8, padding: '6px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.45)', fontWeight: 600 }}>Personel Kazanç</span>
+                          <span style={{ fontSize: 12, fontWeight: 800, color: '#fb923c' }}>{personelKazanc > 0 ? tl(personelKazanc) : '—'}</span>
+                        </div>
+                        <div style={{ background: 'rgba(157,217,234,0.05)', border: '1px solid rgba(157,217,234,0.15)', borderRadius: 8, padding: '6px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.45)', fontWeight: 600 }}>Mekan Katkısı</span>
+                          <span style={{ fontSize: 12, fontWeight: 800, color: '#9dd9ea' }}>%{mekanKatkisi.toFixed(0)}</span>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             ))}
           </div>
