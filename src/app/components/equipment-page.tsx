@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { UserRole } from './login';
-import { authHeaders } from '../lib/api';
+import { authHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -248,10 +248,10 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
     try {
       const h = await authHeaders();
       const [listeRes, kulRes, mekRes, maliyetRes] = await Promise.all([
-        fetch(`${API_BASE}/malzeme/liste`,    { headers: h }),
-        fetch(`${API_BASE}/auth/kullanicilar`, { headers: h }),
-        fetch(`${API_BASE}/mekanlar`,          { headers: h }),
-        fetch(`${API_BASE}/maliyetler`,          { headers: h }),
+        fetch(`${API_BASE}/malzeme/liste${ghostParams()}`,    { headers: h }),
+        fetch(`${API_BASE}/auth/kullanicilar${ghostParams()}`, { headers: h }),
+        fetch(`${API_BASE}/mekanlar${ghostParams()}`,          { headers: h }),
+        fetch(`${API_BASE}/maliyetler${ghostParams()}`,          { headers: h }),
       ]);
       const listeJson   = await listeRes.json();
       const kulJson     = await kulRes.json();

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 
 import { CurrencyWidget } from './currency-widget';
-import { authHeaders } from '../lib/api';
+import { authHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -137,11 +137,11 @@ export function OperationsDashboard({ userName, onNavigate }: Props) {
       const headers = await authHeaders();
       const today   = todayTR();
       const [staffRes, tasksRes, mekanRes, stokRes, leaveRes] = await Promise.allSettled([
-        fetch(`${SERVER}/rotasyon/personel`,  { headers }),
-        fetch(`${SERVER}/rotasyon/gorevler`,  { headers }),
-        fetch(`${SERVER}/mekanlar`,           { headers }),
-        fetch(`${SERVER}/stok/genel-durum`,   { headers }),
-        fetch(`${SERVER}/rotasyon/izinler`,   { headers }),
+        fetch(`${SERVER}/rotasyon/personel${ghostParams()}`,  { headers }),
+        fetch(`${SERVER}/rotasyon/gorevler${ghostParams()}`,  { headers }),
+        fetch(`${SERVER}/mekanlar${ghostParams()}`,           { headers }),
+        fetch(`${SERVER}/stok/genel-durum${ghostParams()}`,   { headers }),
+        fetch(`${SERVER}/rotasyon/izinler${ghostParams()}`,   { headers }),
       ]);
       if (staffRes.status === 'fulfilled' && staffRes.value.ok) {
         const d = await staffRes.value.json();

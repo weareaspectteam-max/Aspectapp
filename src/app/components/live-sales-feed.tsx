@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, Wifi, Camera, ShoppingBag, MapPin, ChevronDown, ChevronUp, TrendingUp, Clock, AlertCircle, Maximize2, Minimize2 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
-import { authHeaders } from '../lib/api';
+import { authHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -297,7 +297,7 @@ export function LiveSalesFeed({
     setError(null);
     try {
       const headers = await authHeaders();
-      let res = await fetch(`${BASE}/stok/canli-satis`, { headers });
+      let res = await fetch(`${BASE}/stok/canli-satis${ghostParams()}`, { headers });
       // 401 → token yenile ve bir kez daha dene
       if (res.status === 401) {
         console.warn('[LiveSalesFeed] 401 alındı, token yenileniyor...');

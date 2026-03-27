@@ -4,7 +4,7 @@
  * Supabase KV Store API entegrasyonu
  */
 
-import { authHeaders, buildHeaders } from '../lib/api';
+import { authHeaders, buildHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -95,7 +95,7 @@ export interface Location {
 export const getStaffMembers = async (token?: string): Promise<StaffMember[]> => {
   try {
     const headers = token ? buildHeaders(token) : await authHeaders();
-    const res = await fetch(`${API_BASE}/rotasyon/personel`, { headers });
+    const res = await fetch(`${API_BASE}/rotasyon/personel${ghostParams()}`, { headers });
     if (!res.ok) {
       console.error('getStaffMembers error:', res.status, await res.text());
       return [];
@@ -115,7 +115,7 @@ export const getStaffMembers = async (token?: string): Promise<StaffMember[]> =>
 export const getLocations = async (token?: string): Promise<Location[]> => {
   try {
     const headers = token ? buildHeaders(token) : await authHeaders();
-    const res = await fetch(`${API_BASE}/mekanlar`, { headers });
+    const res = await fetch(`${API_BASE}/mekanlar${ghostParams()}`, { headers });
     if (!res.ok) {
       console.error('getLocations error:', res.status, await res.text());
       return [];
@@ -142,7 +142,7 @@ export const getLocations = async (token?: string): Promise<Location[]> => {
 export const getTasks = async (token?: string): Promise<Task[]> => {
   try {
     const headers = token ? buildHeaders(token) : await authHeaders();
-    const res = await fetch(`${API_BASE}/rotasyon/gorevler`, { headers });
+    const res = await fetch(`${API_BASE}/rotasyon/gorevler${ghostParams()}`, { headers });
     if (!res.ok) {
       console.error('getTasks error:', res.status);
       return [];
@@ -220,7 +220,7 @@ export const deleteTask = async (taskId: string, token?: string): Promise<void> 
 export const getLeaveRequests = async (token?: string): Promise<LeaveRequest[]> => {
   try {
     const headers = token ? buildHeaders(token) : await authHeaders();
-    const res = await fetch(`${API_BASE}/rotasyon/izinler`, { headers });
+    const res = await fetch(`${API_BASE}/rotasyon/izinler${ghostParams()}`, { headers });
     if (!res.ok) {
       console.error('getLeaveRequests error:', res.status);
       return [];

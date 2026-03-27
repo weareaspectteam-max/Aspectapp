@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, RefreshCw, Loader2, ChevronLeft, ChevronRight,
-  Clock, AlertTriangle, CheckCircle2, Bell, Users, TrendingUp,
+  Clock, AlertTriangle, CheckCircle2, Bell, Users, TrendingUp, Trash2, Calendar,
 } from 'lucide-react';
 import { buildHeaders, getToken, appendGhostParam } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
@@ -97,6 +97,17 @@ export function VardiyaIstatistikleri({ userName, userRole, accessToken, onNavig
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  /* ── Geç giriş sıfırla state ── */
+  const today = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const thisMonthStart = `${today.slice(0, 7)}-01`;
+  const [showSifirlaModal, setShowSifirlaModal] = useState(false);
+  const [sifirlaFilterKey, setSifirlaFilterKey] = useState<'bugun' | 'bu-ay' | 'ozel'>('bu-ay');
+  const [sifirlaBaslangic, setSifirlaBaslangic] = useState(thisMonthStart);
+  const [sifirlasBitis, setSifirlasBitis] = useState(today);
+  const [sifirlaYukleniyor, setSifirlaYukleniyor] = useState(false);
+  const [sifirlaHata, setSifirlaHata] = useState('');
+  const [sifirlaBasarili, setSifirlaBasarili] = useState('');
+
   const isYonetici = ['yonetici', 'ust-mudur', 'mudur', 'operasyon', 'idari'].includes(userRole);
 
   const fetchStats = useCallback(async () => {
@@ -122,6 +133,29 @@ export function VardiyaIstatistikleri({ userName, userRole, accessToken, onNavig
   }, [ay, accessToken]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
+
+  const handleGecGirisSifirla = async () => {
+    setSifirlaYukleniyor(true);
+    setSifirlaHata('');
+    setSifirlaBasarili('');
+    try {
+      const token = accessToken || await getToken();
+      const res = await fetch(appendGhostParam(`${API_BASE}/vardiya/gec-giris-sifirla`), {
+        method: 'POST',
+        headers: { ...buildHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baslangic: sifirlaBaslangic, bitis: sifirlasBitis }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setSifirlaHata(data.error || 'Sıfırlama başarısız.'); return; }
+      setSifirlaBasarili(`${data.sifirlanenCheckin} geç giriş, ${data.silinenNotice} bildirim temizlendi.`);
+      setShowSifirlaModal(false);
+      await fetchStats();
+    } catch (e) {
+      setSifirlaHata('Sunucuya ulaşılamadı.');
+    } finally {
+      setSifirlaYukleniyor(false);
+    }
+  };
 
   /* ── Yetki kontrolü ── */
   if (!isYonetici) {
@@ -164,7 +198,7 @@ export function VardiyaIstatistikleri({ userName, userRole, accessToken, onNavig
           }}>
             <ArrowLeft style={{ width: 16, height: 16, color: 'white' }} />
           </button>
-          <div>
+          <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <h1 style={{ fontSize: 22, fontWeight: 900, color: 'white', margin: 0 }}>Vardiya İstatistikleri</h1>
               <span style={{ fontSize: 20 }}>⏱️</span>
@@ -173,6 +207,19 @@ export function VardiyaIstatistikleri({ userName, userRole, accessToken, onNavig
               {userName} · Personel bazlı aylık giriş/çıkış takibi
             </p>
           </div>
+          {userRole === 'yonetici' && (
+            <button
+              onClick={() => { setSifirlaHata(''); setSifirlaBasarili(''); setShowSifirlaModal(true); }}
+              style={{
+                width: 36, height: 36, borderRadius: 10, border: '1px solid rgba(239,68,68,0.35)',
+                background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center',
+                justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
+              }}
+              title="Geç Giriş Sıfırla"
+            >
+              <Trash2 style={{ width: 16, height: 16, color: '#f87171' }} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -409,6 +456,124 @@ export function VardiyaIstatistikleri({ userName, userRole, accessToken, onNavig
           </div>
         )}
       </div>
+
+      {/* ── Başarı Banner ── */}
+      {sifirlaBasarili && (
+        <div style={{
+          position: 'fixed', bottom: 112, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 50, padding: '10px 20px', borderRadius: 16,
+          background: 'rgba(16,185,129,0.18)', border: '1px solid rgba(16,185,129,0.4)',
+          backdropFilter: 'blur(16px)', display: 'flex', alignItems: 'center', gap: 8,
+          color: '#6ee7b7', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
+        }}>
+          ✅ {sifirlaBasarili}
+        </div>
+      )}
+
+      {/* ── Geç Giriş Sıfırla Modal ── */}
+      {showSifirlaModal && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 50,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px',
+          background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)',
+        }}>
+          <div style={{
+            width: '100%', maxWidth: 360, borderRadius: 24, padding: 24,
+            background: 'rgba(15,8,35,0.97)', border: '1px solid rgba(239,68,68,0.35)',
+            backdropFilter: 'blur(24px)', display: 'flex', flexDirection: 'column', gap: 20,
+          }}>
+            {/* İkon + Başlık */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 8 }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: 16,
+                background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Trash2 style={{ width: 28, height: 28, color: '#f87171' }} />
+              </div>
+              <h2 style={{ fontSize: 17, fontWeight: 800, color: 'white', margin: 0 }}>Geç Giriş Kayıtlarını Sıfırla</h2>
+              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', margin: 0, lineHeight: 1.5 }}>
+                Seçilen tarih aralığındaki <span style={{ color: '#f87171', fontWeight: 600 }}>geç giriş</span> ve <span style={{ color: '#f87171', fontWeight: 600 }}>geç bildirim</span> kayıtları silinecek. Bu işlem geri alınamaz.
+              </p>
+            </div>
+
+            {/* Tarih seçimi */}
+            <div>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Calendar style={{ width: 12, height: 12 }} /> Tarih Aralığı
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {(['bugun', 'bu-ay', 'ozel'] as const).map(k => (
+                  <button
+                    key={k}
+                    onClick={() => {
+                      setSifirlaFilterKey(k);
+                      if (k === 'bugun') { setSifirlaBaslangic(today); setSifirlasBitis(today); }
+                      if (k === 'bu-ay') { setSifirlaBaslangic(thisMonthStart); setSifirlasBitis(today); }
+                    }}
+                    style={{
+                      padding: '6px 12px', borderRadius: 10, fontSize: 12, fontWeight: 700,
+                      border: 'none', cursor: 'pointer', transition: 'all 0.15s',
+                      background: sifirlaFilterKey === k ? '#7c3aed' : 'rgba(255,255,255,0.10)',
+                      color: sifirlaFilterKey === k ? 'white' : 'rgba(255,255,255,0.6)',
+                    }}
+                  >
+                    {k === 'bugun' ? 'Bugün' : k === 'bu-ay' ? 'Bu Ay' : 'Özel'}
+                  </button>
+                ))}
+              </div>
+              {sifirlaFilterKey === 'ozel' && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <input type="date" value={sifirlaBaslangic}
+                    onChange={e => setSifirlaBaslangic(e.target.value)}
+                    style={{ flex: 1, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.20)', borderRadius: 10, padding: '8px 10px', color: 'white', fontSize: 12 }} />
+                  <input type="date" value={sifirlasBitis}
+                    onChange={e => setSifirlasBitis(e.target.value)}
+                    style={{ flex: 1, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.20)', borderRadius: 10, padding: '8px 10px', color: 'white', fontSize: 12 }} />
+                </div>
+              )}
+            </div>
+
+            {/* Hata */}
+            {sifirlaHata && (
+              <div style={{ borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#fca5a5', display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)' }}>
+                <AlertTriangle style={{ width: 14, height: 14, flexShrink: 0 }} /> {sifirlaHata}
+              </div>
+            )}
+
+            {/* Butonlar */}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setShowSifirlaModal(false)}
+                disabled={sifirlaYukleniyor}
+                style={{
+                  flex: 1, padding: '12px 0', borderRadius: 14, fontSize: 13, fontWeight: 700,
+                  border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.08)',
+                  color: 'rgba(255,255,255,0.6)', cursor: 'pointer',
+                }}
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleGecGirisSifirla}
+                disabled={sifirlaYukleniyor}
+                style={{
+                  flex: 1, padding: '12px 0', borderRadius: 14, fontSize: 13, fontWeight: 800,
+                  border: '1px solid rgba(239,68,68,0.5)', cursor: sifirlaYukleniyor ? 'not-allowed' : 'pointer',
+                  background: sifirlaYukleniyor ? 'rgba(239,68,68,0.3)' : 'rgba(239,68,68,0.7)',
+                  color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                }}
+              >
+                {sifirlaYukleniyor
+                  ? <><Loader2 style={{ width: 14, height: 14, animation: 'spin 0.8s linear infinite' }} /> Sıfırlanıyor...</>
+                  : <><Trash2 style={{ width: 14, height: 14 }} /> Evet, Sıfırla</>
+                }
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

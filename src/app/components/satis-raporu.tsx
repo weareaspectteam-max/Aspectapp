@@ -187,7 +187,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
     try {
       const token = accessToken || await getToken();
       const h = buildHeaders(token);
-      let url = `${API_BASE}/isletme/satis-raporu?baslangic=${baslangic}&bitis=${bitis}`;
+      let url = `${API_BASE}/isletme/satis-raporu${appendGhostParam(`?baslangic=${baslangic}&bitis=${bitis}`)}`;
       if (selectedMekan) url += `&mekanId=${selectedMekan}`;
       const res = await fetch(url, { headers: h });
       const json = await res.json();

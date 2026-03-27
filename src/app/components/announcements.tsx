@@ -6,7 +6,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 
 import { NewBottomNav } from './new-bottom-nav';
-import { authHeaders } from '../lib/api';
+import { authHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const SERVER_URL = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -87,7 +87,7 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
     setApiError('');
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${SERVER_URL}/announcements`, { headers });
+      const res = await fetch(`${SERVER_URL}/announcements${ghostParams()}`, { headers });
       const data = await res.json();
       if (!res.ok) {
         setApiError(data.error || 'Duyurular yüklenemedi.');

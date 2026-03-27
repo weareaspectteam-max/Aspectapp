@@ -102,6 +102,7 @@ function MainApp() {
   const [userBirthDate, setUserBirthDate] = useState('');
   const [userCompanyId, setUserCompanyId] = useState('aspect'); // ← Kendi şirket kimliği (JWT'den)
   const [ghostCompanyId, setGhostCompanyId] = useState<string | null>(null); // ← SuperAdmin ghost mod (localStorage'a yazılmaz)
+  const [originalToken, setOriginalToken] = useState<string>(''); // ← Ghost mod öncesi superadmin token'ı
   const [isSuperAdminFlag, setIsSuperAdminFlag] = useState(false); // ← Gerçek superadmin mi? (userRole 'yonetici'ye normalize edilse bile)
   const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('');
@@ -229,6 +230,17 @@ function MainApp() {
     setUserAvatar(avatar);
     setUserCompanyId(companyId); // ← Şirket kimliği
 
+    // Şirket adını çek ve localStorage'a kaydet (yükleme ekranı için)
+    fetch(`${SERVER_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.company_name) {
+          localStorage.setItem('aspect_company_name', data.company_name);
+          localStorage.setItem('aspect_company_emoji', data.company_emoji || '🏢');
+        }
+      })
+      .catch(() => {});
+
     // Superadmin bootstrap: hedef email girişinde rolü henüz superadmin değilse
     // backend endpoint'ini çağır; başarılı olursa session yenile
     const SUPERADMIN_EMAIL = 'ozgur.demirbas@yandex.com';
@@ -274,7 +286,10 @@ function MainApp() {
     setUserBirthDate('');
     setUserCompanyId('aspect');
     setGhostCompanyId(null); // ← Ghost mod sıfırla
+    setOriginalToken('');    // ← Ghost token saklamayı sıfırla
     setIsSuperAdminFlag(false); // ← SuperAdmin flag sıfırla
+    localStorage.removeItem('aspect_company_name');
+    localStorage.removeItem('aspect_company_emoji');
     setAuthToken(''); // ← Cache'i temizle
     setActiveTab('');
     setSelectedProject('');
@@ -416,11 +431,46 @@ function MainApp() {
   const isSuperAdmin = isSuperAdminFlag;
   // Ghost modda görüntülenen şirket; null = kendi şirketi (aspect)
   const effectiveCompanyId = ghostCompanyId ?? userCompanyId;
-  const handleSwitchCompany = (cId: string | null) => {
+  const handleSwitchCompany = async (cId: string | null, targetUserId?: string) => {
+    if (!cId) {
+      // Ghost moddan çık — kendi token'ına geri dön
+      if (originalToken) {
+        setAccessToken(originalToken);
+        setAuthToken(originalToken);
+        setOriginalToken('');
+      }
+      setGhostCompanyId(null);
+      setGhostCompanyIdInApi(null);
+      setActiveTab('dashboard');
+      setContentKey(prev => prev + 1);
+      return;
+    }
+
+    if (targetUserId) {
+      try {
+        const { authHeaders } = await import('./lib/api');
+        const headers = await authHeaders();
+        const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
+        const res = await fetch(`${SERVER}/superadmin/ghost-token`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ targetUserId }),
+        });
+        const data = await res.json();
+        if (res.ok && data.access_token) {
+          setOriginalToken(accessToken);   // Kendi token'ını sakla
+          setAccessToken(data.access_token);
+          setAuthToken(data.access_token);
+        }
+      } catch (e) {
+        console.error('[handleSwitchCompany] ghost-token hatası:', e);
+      }
+    }
+
     setGhostCompanyId(cId);
-    setGhostCompanyIdInApi(cId);          // API header'ına da yaz
-    setActiveTab('dashboard');            // Dashboard'a git
-    setContentKey(prev => prev + 1);      // Bileşen ağacını remount et → veri yenilenir
+    setGhostCompanyIdInApi(cId);
+    setActiveTab('dashboard');
+    setContentKey(prev => prev + 1);
   };
 
   // Rol bazlı yetki kontrolleri (superadmin tüm yönetici işlemlerini yapabilir)
@@ -1036,11 +1086,18 @@ function MainApp() {
   };
 
   if (authLoading) {
+    const savedCompanyName = localStorage.getItem('aspect_company_name');
+    const savedCompanyEmoji = localStorage.getItem('aspect_company_emoji') || '🏢';
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] flex items-center justify-center">
-        <div className="text-center space-y-6">
-          <AspectLogo width={192} height={52} className="mx-auto opacity-80" />
-          <div className="flex items-center justify-center gap-2">
+        <div className="text-center space-y-4">
+          {savedCompanyName && (
+            <>
+              <div className="text-5xl">{savedCompanyEmoji}</div>
+              <div className="text-white text-xl font-semibold tracking-wide">{savedCompanyName}</div>
+            </>
+          )}
+          <div className="flex items-center justify-center gap-2 pt-2">
             <div className="w-2 h-2 bg-[#9dd9ea] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
             <div className="w-2 h-2 bg-[#9dd9ea] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
             <div className="w-2 h-2 bg-[#9dd9ea] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />

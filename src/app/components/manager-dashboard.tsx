@@ -6,7 +6,7 @@ import {
   Star, Activity, Zap, Trophy,
 } from 'lucide-react';
 import { CurrencyWidget } from './currency-widget';
-import { getToken, buildHeaders } from '../lib/api';
+import { getToken, buildHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -98,7 +98,7 @@ export function ManagerDashboard({ userName, roleTitle, onNavigate }: ManagerDas
       setLoading(true);
       setError(null);
       const token = await getToken();
-      const res = await fetchWithRetry(`${API_BASE}/manager/dashboard-summary`, {
+      const res = await fetchWithRetry(`${API_BASE}/manager/dashboard-summary${ghostParams()}`, {
         headers: buildHeaders(token),
       });
       const json = await res.json();

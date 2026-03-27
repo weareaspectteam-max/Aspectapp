@@ -57,7 +57,7 @@ interface Props {
   userName: string;
   onNavigate: (tab: string) => void;
   onLogout: () => void;
-  onSwitchCompany?: (companyId: string | null) => void;
+  onSwitchCompany?: (companyId: string | null, targetUserId?: string) => void | Promise<void>;
 }
 
 /* ─── Rol etiketleri ─── */
@@ -957,8 +957,10 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompan
           {onSwitchCompany && (
             <motion.button
               whileTap={{ scale: 0.97 }}
-              onClick={() => {
-                onSwitchCompany(c.id);
+              onClick={async () => {
+                // Şirketin yöneticisini bul, token swap ile geç
+                const yonetici = companyUsers.find(u => u.role === 'yonetici');
+                await onSwitchCompany(c.id, yonetici?.id);
                 onNavigate('dashboard');
               }}
               style={{
