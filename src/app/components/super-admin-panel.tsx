@@ -57,7 +57,7 @@ interface Props {
   userName: string;
   onNavigate: (tab: string) => void;
   onLogout: () => void;
-  onSwitchCompany?: (companyId: string | null) => void;
+  onSwitchCompany?: (companyId: string | null, targetUserId?: string) => void | Promise<void>;
 }
 
 /* ─── Rol etiketleri ─── */
@@ -155,7 +155,7 @@ function Modal({ title, onClose, children, accentColor = '#a855f7' }: {
         onClick={e => e.stopPropagation()}
         style={{
           width: '100%', maxWidth: 480, margin: '0 auto',
-          background: 'linear-gradient(170deg, #120830 0%, #1a0a3c 45%, #0f0620 100%)',
+          background: 'var(--app-bg, linear-gradient(170deg, #120830 0%, #1a0a3c 45%, #0f0620 100%))',
           borderRadius: '24px 24px 0 0',
           borderTop: `1px solid ${accentColor}30`,
           borderLeft: `1px solid rgba(255,255,255,0.08)`,
@@ -957,8 +957,10 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompan
           {onSwitchCompany && (
             <motion.button
               whileTap={{ scale: 0.97 }}
-              onClick={() => {
-                onSwitchCompany(c.id);
+              onClick={async () => {
+                // Şirketin yöneticisini bul, token swap ile geç
+                const yonetici = companyUsers.find(u => u.role === 'yonetici');
+                await onSwitchCompany(c.id, yonetici?.id);
                 onNavigate('dashboard');
               }}
               style={{

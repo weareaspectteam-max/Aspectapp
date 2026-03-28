@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, Wifi, Camera, ShoppingBag, MapPin, ChevronDown, ChevronUp, TrendingUp, Clock, AlertCircle, Maximize2, Minimize2 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
-import { authHeaders } from '../lib/api';
+import { authHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -297,7 +297,7 @@ export function LiveSalesFeed({
     setError(null);
     try {
       const headers = await authHeaders();
-      let res = await fetch(`${BASE}/stok/canli-satis`, { headers });
+      let res = await fetch(`${BASE}/stok/canli-satis${ghostParams()}`, { headers });
       // 401 → token yenile ve bir kez daha dene
       if (res.status === 401) {
         console.warn('[LiveSalesFeed] 401 alındı, token yenileniyor...');
@@ -395,14 +395,17 @@ export function LiveSalesFeed({
     <div
       ref={scrollRef}
       className={isFullscreen
-        ? 'fixed inset-0 z-[90] bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c] overflow-y-auto flex flex-col font-sans'
-        : 'min-h-screen bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c] pb-24 font-sans'
+        ? 'fixed inset-0 z-[90] overflow-y-auto flex flex-col font-sans'
+        : 'min-h-screen pb-24 font-sans'
       }
-      style={isFullscreen && pullDelta > 0 ? {
+      style={{
+        background: 'var(--app-bg, linear-gradient(to bottom, #0a051e, #120830, #1a0a3c))',
+        ...(isFullscreen && pullDelta > 0 ? {
         transform: `translateY(${Math.min(pullDelta * 0.45, 60)}px)`,
         borderRadius: `${Math.min(pullDelta * 0.3, 24)}px`,
         transition: pullDelta === 0 ? 'transform 0.3s ease, border-radius 0.3s ease' : 'none',
-      } : undefined}
+      } : {}),
+      }}
       onTouchStart={isFullscreen ? (e) => {
         touchStartY.current = e.touches[0].clientY;
       } : undefined}

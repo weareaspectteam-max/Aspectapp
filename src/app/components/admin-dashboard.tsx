@@ -88,10 +88,10 @@ const ALBUM_COLORS = [
 ];
 
 const QUICK_ACTIONS = [
-  { label: 'Satış İstatistik', icon: BarChart2,     color: '#9dd9ea', tab: 'satis-raporu'         },
   { label: 'Vardiya Raporları',  icon: FileText,      color: '#ffd4a3', tab: 'vardiya-raporlari'    },
+  { label: 'Satış İstatistik', icon: BarChart2,     color: '#9dd9ea', tab: 'satis-raporu'         },
   { label: 'Anomali İstatistik', icon: AlertTriangle, color: '#f87171', tab: 'anomali-panosu'       },
-  { label: 'Mekan Durumu',       icon: MapPin,        color: '#a8e6cf', tab: 'isletme-genel-durum'  },
+  { label: 'Vardiya İstatistik', icon: Clock,         color: '#a8e6cf', tab: 'vardiya-istatistikleri' },
   { label: 'İndirim İstatistik', icon: Star,          color: '#c4b5fd', tab: 'indirim-istatistik'   },
   { label: 'Yön. Raporları',     icon: TrendingUp,    color: '#fb923c', tab: 'manager-reports'      },
   { label: 'Prim Takip',         icon: Trophy,        color: '#fbbf24', tab: 'prim-takip'           },
@@ -366,7 +366,7 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
               </p>
             </div>
             <button
-              onClick={fetchData}
+              onClick={() => fetchData()}
               disabled={loading}
               style={{ ...glass, padding: 10, borderRadius: 14 }}
             >
@@ -654,7 +654,7 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
               {data.mekanCiroList.map((mekan, i) => {
                 const maxC = data.mekanCiroList[0].ciro || 1;
                 const pct = Math.round((mekan.ciro / maxC) * 100);
-                const rankColors = [COLORS.yellow, 'rgba(192,192,192,0.9)', '#cd7f32', 'rgba(255,255,255,0.3)', 'rgba(255,255,255,0.2)'];
+                const rankColors = [COLORS.yellow, '#94a3b8', '#cd7f32', 'rgba(255,255,255,0.3)', 'rgba(255,255,255,0.2)'];
                 return (
                   <div key={mekan.id} className="flex items-center gap-3" style={{ padding: '10px 12px', borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
                     <div className="flex items-center justify-center text-xs font-black shrink-0" style={{ width: 28, height: 28, borderRadius: 8, background: `${rankColors[i]}20`, border: `1px solid ${rankColors[i]}50`, color: rankColors[i] }}>
@@ -747,7 +747,7 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
           ) : (
             <div className="space-y-2">
               {data.personelPerformans.slice(0, 5).map((p, i) => {
-                const rankColors = [COLORS.yellow, 'rgba(192,192,192,0.9)', '#cd7f32', 'rgba(255,255,255,0.3)', 'rgba(255,255,255,0.2)'];
+                const rankColors = [COLORS.yellow, '#94a3b8', '#cd7f32', 'rgba(255,255,255,0.3)', 'rgba(255,255,255,0.2)'];
                 const rankEmojis = ['🥇', '🥈', '🥉', '', ''];
                 const maxC = data.personelPerformans[0]?.ciro || 1;
                 const pct = Math.round((p.ciro / maxC) * 100);

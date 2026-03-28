@@ -17,7 +17,7 @@ import {
   Users, Lock, MessageSquare, ChevronRight,
   X, Search, RefreshCw, Plus, Trash2,
 } from 'lucide-react';
-import { authHeaders } from '../lib/api';
+import { authHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 import type { UserRole } from './login';
 
@@ -270,8 +270,8 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
     try {
       const headers = await authHeaders();
       const [chRes, dmRes] = await Promise.allSettled([
-        fetch(`${SERVER}/mesajlar/kanallar`, { headers }),
-        fetch(`${SERVER}/mesajlar/dm-list`,  { headers }),
+        fetch(`${SERVER}/mesajlar/kanallar${ghostParams()}`, { headers }),
+        fetch(`${SERVER}/mesajlar/dm-list${ghostParams()}`,  { headers }),
       ]);
       if (chRes.status === 'fulfilled' && chRes.value.ok) {
         const d = await chRes.value.json();
@@ -380,7 +380,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
     if (allUsers.length === 0) {
       try {
         const headers = await authHeaders();
-        const res = await fetch(`${SERVER}/mesajlar/kullanicilar`, { headers });
+        const res = await fetch(`${SERVER}/mesajlar/kullanicilar${ghostParams()}`, { headers });
         if (res.ok) { const d = await res.json(); setAllUsers(d.users || []); }
       } catch (e) { console.error('[Messaging] openNewDm:', e); }
     }

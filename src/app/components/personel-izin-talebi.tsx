@@ -201,7 +201,7 @@ export function PersonelIzinTalebi({ userName, userRole, accessToken, onNavigate
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #0a051e 0%, #1a0a3c 55%, #0d0a2e 100%)',
+      background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 55%, #0d0a2e 100%))',
       paddingBottom: 100,
     }}>
 

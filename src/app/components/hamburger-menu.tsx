@@ -18,6 +18,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
 import { authHeaders } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
+import { THEMES, applyTheme, getThemeById } from '../lib/themes';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -301,6 +302,30 @@ export function HamburgerMenu({
   const [tgDeleting, setTgDeleting]           = useState(false);
   const [tgTesting, setTgTesting]             = useState(false);
   const [tgMsg, setTgMsg]                     = useState<{type: 'ok'|'err'; text: string} | null>(null);
+  const [aiSectionOpen, setAiSectionOpen]     = useState(false);
+  const [apiSectionOpen, setApiSectionOpen]   = useState(false);
+  const [themeOpen, setThemeOpen]             = useState(false);
+  const [activeTheme, setActiveTheme]         = useState(() => localStorage.getItem('aspect_theme') || 'mor-gece');
+  const [themeSaving, setThemeSaving]         = useState(false);
+
+  const handleThemeChange = async (themeId: string) => {
+    setActiveTheme(themeId);
+    applyTheme(themeId);
+    // Backend'e kaydet
+    setThemeSaving(true);
+    try {
+      const headers = await authHeaders();
+      await fetch(`${API_BASE}/auth/profile`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ theme: themeId }),
+      });
+    } catch (e) {
+      console.error('Tema kaydetme hatası:', e);
+    } finally {
+      setThemeSaving(false);
+    }
+  };
 
   const sections  = getSections(userRole, onNavigate, onLogout, close, activeTab, effectiveCompanyId);
   const roleColor = ROLE_COLORS[userRole] ?? '#a855f7';
@@ -513,7 +538,7 @@ export function HamburgerMenu({
         style={{
           width:          40,
           height:         40,
-          background:     'rgba(10,5,30,0.92)',
+          background:     'rgba(0,0,0,0.7)',
           border:         '1px solid rgba(255,255,255,0.15)',
           backdropFilter: 'blur(32px)',
         }}
@@ -553,7 +578,7 @@ export function HamburgerMenu({
                 className="fixed top-0 right-0 bottom-0 z-[9999] flex flex-col overflow-hidden"
                 style={{
                   width:      272,
-                  background: 'linear-gradient(170deg, #120830 0%, #1a0a3c 45%, #0f0620 100%)',
+                  background: 'var(--app-bg, linear-gradient(170deg, #120830 0%, #1a0a3c 45%, #0f0620 100%))',
                   borderLeft: '1px solid rgba(255,255,255,0.08)',
                 }}
               >
@@ -952,259 +977,266 @@ export function HamburgerMenu({
                                     color="#818cf8"
                                     badge="SADECE YÖNETİCİ"
                                   >
-                                    <AiToggleRow label="AI — Benim İçin" desc="Sadece yönetici" enabled={aiPersonal} loading={toggleLoading === 'ai_personal_yonetici'} color="#a855f7" onToggle={handleTogglePersonal} />
-                                    <AiToggleRow label="AI — Yönetim İçin" desc="Üst müdür + müdür" enabled={aiYonetim} loading={toggleLoading === 'ai_yonetim_enabled'} color="#6366f1" onToggle={handleToggleYonetim} />
-                                    <AiToggleRow label="AI — İdari İçin" desc="İdari görevliler" enabled={aiIdari} loading={toggleLoading === 'ai_idari_enabled'} color="#60a5fa" onToggle={handleToggleIdari} />
-                                    <AiToggleRow label="AI — Personel İçin" desc="Personel rolü" enabled={aiPersonel} loading={toggleLoading === 'ai_personel_enabled'} color="#34d399" onToggle={handleTogglePersonel} />
-                                    <AiToggleRow label="AI — Operasyon İçin" desc="Operasyon rolü" enabled={aiOperasyon} loading={toggleLoading === 'ai_operasyon_enabled'} color="#fb923c" onToggle={handleToggleOperasyon} />
-
-                                    {/* ── OpenAI API Key Bölümü ── */}
+                                    {/* ── AI Ayarları — açılır bölüm ── */}
                                     <div style={{
-                                      marginTop: 10,
                                       borderRadius: 14,
                                       background: 'rgba(255,255,255,0.04)',
-                                      border: '1px solid rgba(139,92,246,0.25)',
-                                      padding: '12px 12px 10px',
+                                      border: '1px solid rgba(168,85,247,0.25)',
+                                      overflow: 'hidden',
                                     }}>
-                                      {/* Başlık */}
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+                                      <button
+                                        onClick={() => setAiSectionOpen(p => !p)}
+                                        style={{
+                                          width: '100%', display: 'flex', alignItems: 'center', gap: 7,
+                                          padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer',
+                                        }}
+                                      >
                                         <div style={{
                                           width: 26, height: 26, borderRadius: 8,
-                                          background: 'rgba(139,92,246,0.18)',
-                                          border: '1px solid rgba(139,92,246,0.3)',
+                                          background: 'rgba(168,85,247,0.18)',
+                                          border: '1px solid rgba(168,85,247,0.3)',
                                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                                           fontSize: 13,
-                                        }}>🔑</div>
-                                        <div style={{ flex: 1 }}>
-                                          <div style={{ fontSize: 12, fontWeight: 600, color: '#d4b5f7' }}>OpenAI API Key</div>
+                                        }}>🤖</div>
+                                        <div style={{ flex: 1, textAlign: 'left' }}>
+                                          <div style={{ fontSize: 12, fontWeight: 600, color: '#d4b5f7' }}>AI Ayarları</div>
                                           <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>
-                                            Key girilirse gerçek GPT-4o-mini kullanılır. Girilmezse ücretsiz KV motoru çalışır.
+                                            Rol bazlı AI erişim kontrolleri
                                           </div>
                                         </div>
-                                      </div>
-
-                                      {/* Durum rozeti */}
-                                      <div style={{
-                                        display: 'inline-flex', alignItems: 'center', gap: 5,
-                                        background: companyKeyHas ? 'rgba(34,197,94,0.12)' : 'rgba(255,255,255,0.06)',
-                                        border: `1px solid ${companyKeyHas ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.12)'}`,
-                                        borderRadius: 20, padding: '3px 10px', marginBottom: 10,
-                                      }}>
-                                        <div style={{
-                                          width: 6, height: 6, borderRadius: '50%',
-                                          background: companyKeyHas ? '#22c55e' : '#6b7280',
-                                          boxShadow: companyKeyHas ? '0 0 6px #22c55e' : 'none',
-                                        }} />
-                                        <span style={{ fontSize: 10, color: companyKeyHas ? '#86efac' : 'rgba(255,255,255,0.4)', fontWeight: 600 }}>
-                                          {companyKeyHas ? 'Key Kayıtlı — OpenAI Aktif' : 'Key Yok — Ücretsiz KV Motoru'}
-                                        </span>
-                                      </div>
-
-                                      {/* Input + Kaydet — dikey layout */}
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                                        <input
-                                          type="password"
-                                          placeholder="sk-proj-..."
-                                          value={companyKeyInput}
-                                          onChange={e => { setCompanyKeyInput(e.target.value); setCompanyKeyMsg(null); }}
-                                          style={{
-                                            width: '100%', borderRadius: 10, border: '1px solid rgba(139,92,246,0.3)',
-                                            background: 'rgba(0,0,0,0.25)', color: '#fff',
-                                            padding: '8px 10px', fontSize: 11, outline: 'none',
-                                            fontFamily: 'monospace', boxSizing: 'border-box',
-                                          }}
-                                        />
-                                        <button
-                                          onClick={handleSaveCompanyKey}
-                                          disabled={companyKeySaving || !companyKeyInput.trim()}
-                                          style={{
-                                            width: '100%', borderRadius: 10, border: '1px solid rgba(139,92,246,0.4)',
-                                            background: companyKeySaving || !companyKeyInput.trim()
-                                              ? 'rgba(139,92,246,0.1)' : 'rgba(139,92,246,0.3)',
-                                            color: '#d4b5f7', padding: '9px 12px', fontSize: 12,
-                                            fontWeight: 700, cursor: companyKeySaving || !companyKeyInput.trim() ? 'not-allowed' : 'pointer',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                                          }}
-                                        >
-                                          {companyKeySaving
-                                            ? <><Loader2 style={{ width: 12, height: 12 }} className="animate-spin" /> Kaydediliyor...</>
-                                            : '💾 Kaydet'
-                                          }
-                                        </button>
-                                      </div>
-
-                                      {/* Sil butonu (key varsa) */}
-                                      {companyKeyHas && (
-                                        <button
-                                          onClick={handleDeleteCompanyKey}
-                                          disabled={companyKeyDeleting}
-                                          style={{
-                                            marginTop: 7, width: '100%', borderRadius: 10,
-                                            border: '1px solid rgba(239,68,68,0.25)',
-                                            background: 'rgba(239,68,68,0.07)',
-                                            color: '#f87171', padding: '7px', fontSize: 11,
-                                            fontWeight: 600, cursor: companyKeyDeleting ? 'not-allowed' : 'pointer',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                                          }}
-                                        >
-                                          {companyKeyDeleting
-                                            ? <><Loader2 style={{ width: 11, height: 11 }} className="animate-spin" /> Siliniyor...</>
-                                            : '🗑️ Key\'i Sil ve KV Moduna Dön'
-                                          }
-                                        </button>
-                                      )}
-
-                                      {/* Mesaj */}
-                                      {companyKeyMsg && (
-                                        <div style={{
-                                          marginTop: 7, borderRadius: 8, padding: '6px 10px',
-                                          background: companyKeyMsg.type === 'ok' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-                                          border: `1px solid ${companyKeyMsg.type === 'ok' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
-                                          fontSize: 10, color: companyKeyMsg.type === 'ok' ? '#86efac' : '#fca5a5',
+                                        <span style={{
+                                          fontSize: 9, padding: '2px 7px', borderRadius: 6,
+                                          background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.3)',
+                                          color: '#c4b5fd', fontWeight: 700,
                                         }}>
-                                          {companyKeyMsg.text}
+                                          {[aiPersonal, aiYonetim, aiIdari, aiPersonel, aiOperasyon].filter(Boolean).length}/5 aktif
+                                        </span>
+                                        <ChevronDown style={{
+                                          width: 14, height: 14, color: 'rgba(255,255,255,0.3)',
+                                          transition: 'transform 0.2s',
+                                          transform: aiSectionOpen ? 'rotate(180deg)' : 'none',
+                                        }} />
+                                      </button>
+                                      {aiSectionOpen && (
+                                        <div style={{ padding: '0 8px 8px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                                          <AiToggleRow label="AI — Benim İçin" desc="Sadece yönetici" enabled={aiPersonal} loading={toggleLoading === 'ai_personal_yonetici'} color="#a855f7" onToggle={handleTogglePersonal} />
+                                          <AiToggleRow label="AI — Yönetim İçin" desc="Üst müdür + müdür" enabled={aiYonetim} loading={toggleLoading === 'ai_yonetim_enabled'} color="#6366f1" onToggle={handleToggleYonetim} />
+                                          <AiToggleRow label="AI — İdari İçin" desc="İdari görevliler" enabled={aiIdari} loading={toggleLoading === 'ai_idari_enabled'} color="#60a5fa" onToggle={handleToggleIdari} />
+                                          <AiToggleRow label="AI — Personel İçin" desc="Personel rolü" enabled={aiPersonel} loading={toggleLoading === 'ai_personel_enabled'} color="#34d399" onToggle={handleTogglePersonel} />
+                                          <AiToggleRow label="AI — Operasyon İçin" desc="Operasyon rolü" enabled={aiOperasyon} loading={toggleLoading === 'ai_operasyon_enabled'} color="#fb923c" onToggle={handleToggleOperasyon} />
                                         </div>
                                       )}
                                     </div>
 
-                                    {/* ── Telegram Bağlantısı Bölümü ── */}
+                                    {/* ── API & Entegrasyonlar — açılır bölüm ── */}
                                     <div style={{
                                       marginTop: 10,
                                       borderRadius: 14,
                                       background: 'rgba(255,255,255,0.04)',
-                                      border: '1px solid rgba(29,161,242,0.25)',
-                                      padding: '12px 12px 10px',
+                                      border: '1px solid rgba(96,165,250,0.25)',
+                                      overflow: 'hidden',
                                     }}>
-                                      {/* Başlık */}
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+                                      <button
+                                        onClick={() => setApiSectionOpen(p => !p)}
+                                        style={{
+                                          width: '100%', display: 'flex', alignItems: 'center', gap: 7,
+                                          padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer',
+                                        }}
+                                      >
                                         <div style={{
                                           width: 26, height: 26, borderRadius: 8,
-                                          background: 'rgba(29,161,242,0.18)',
-                                          border: '1px solid rgba(29,161,242,0.3)',
+                                          background: 'rgba(96,165,250,0.18)',
+                                          border: '1px solid rgba(96,165,250,0.3)',
                                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                                           fontSize: 13,
-                                        }}>✈️</div>
-                                        <div style={{ flex: 1 }}>
-                                          <div style={{ fontSize: 12, fontWeight: 600, color: '#7dd3fc' }}>Telegram Bağlantısı</div>
+                                        }}>🔑</div>
+                                        <div style={{ flex: 1, textAlign: 'left' }}>
+                                          <div style={{ fontSize: 12, fontWeight: 600, color: '#93c5fd' }}>API & Entegrasyonlar</div>
                                           <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>
-                                            Bildirimler bu şirkete özel kanala gönderilir.
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: companyKeyHas ? '#22c55e' : '#ef4444', display: 'inline-block', boxShadow: companyKeyHas ? '0 0 4px #22c55e' : 'none' }} />OpenAI</span> · <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: tgHasConfig ? '#22c55e' : '#ef4444', display: 'inline-block', boxShadow: tgHasConfig ? '0 0 4px #22c55e' : 'none' }} />Telegram</span>
                                           </div>
                                         </div>
-                                      </div>
-
-                                      {/* Durum rozeti */}
-                                      <div style={{
-                                        display: 'inline-flex', alignItems: 'center', gap: 5,
-                                        background: tgHasConfig ? 'rgba(34,197,94,0.12)' : 'rgba(255,255,255,0.06)',
-                                        border: `1px solid ${tgHasConfig ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.12)'}`,
-                                        borderRadius: 20, padding: '3px 10px', marginBottom: 10,
-                                      }}>
-                                        <div style={{
-                                          width: 6, height: 6, borderRadius: '50%',
-                                          background: tgHasConfig ? '#22c55e' : '#6b7280',
-                                          boxShadow: tgHasConfig ? '0 0 6px #22c55e' : 'none',
+                                        <ChevronDown style={{
+                                          width: 14, height: 14, color: 'rgba(255,255,255,0.3)',
+                                          transition: 'transform 0.2s',
+                                          transform: apiSectionOpen ? 'rotate(180deg)' : 'none',
                                         }} />
-                                        <span style={{ fontSize: 10, color: tgHasConfig ? '#86efac' : 'rgba(255,255,255,0.4)', fontWeight: 600 }}>
-                                          {tgHasConfig
-                                            ? `Bağlı${tgChatIdDisplay ? ` · ${tgChatIdDisplay}` : ''}`
-                                            : 'Bağlı Değil'}
-                                        </span>
-                                      </div>
+                                      </button>
+                                      {apiSectionOpen && (
+                                        <div style={{ padding: '0 12px 12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
 
-                                      {/* Input alanları */}
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                        <input
-                                          type="password"
-                                          placeholder="Bot Token (1234567:ABCDef...)"
-                                          value={tgTokenInput}
-                                          onChange={e => { setTgTokenInput(e.target.value); setTgMsg(null); }}
-                                          style={{
-                                            width: '100%', borderRadius: 10, border: '1px solid rgba(29,161,242,0.3)',
-                                            background: 'rgba(0,0,0,0.25)', color: '#fff',
-                                            padding: '8px 10px', fontSize: 11, outline: 'none',
-                                            fontFamily: 'monospace', boxSizing: 'border-box',
-                                          }}
-                                        />
-                                        <input
-                                          type="text"
-                                          placeholder="Chat ID (örn: -1001234567890)"
-                                          value={tgChatIdInput}
-                                          onChange={e => { setTgChatIdInput(e.target.value); setTgMsg(null); }}
-                                          style={{
-                                            width: '100%', borderRadius: 10, border: '1px solid rgba(29,161,242,0.3)',
-                                            background: 'rgba(0,0,0,0.25)', color: '#fff',
-                                            padding: '8px 10px', fontSize: 11, outline: 'none',
-                                            fontFamily: 'monospace', boxSizing: 'border-box',
-                                          }}
-                                        />
-                                        <button
-                                          onClick={handleSaveTgConfig}
-                                          disabled={tgSaving || !tgTokenInput.trim() || !tgChatIdInput.trim()}
-                                          style={{
-                                            width: '100%', borderRadius: 10, border: '1px solid rgba(29,161,242,0.4)',
-                                            background: tgSaving || !tgTokenInput.trim() || !tgChatIdInput.trim()
-                                              ? 'rgba(29,161,242,0.08)' : 'rgba(29,161,242,0.25)',
-                                            color: '#7dd3fc', padding: '9px 12px', fontSize: 12,
-                                            fontWeight: 700, cursor: tgSaving || !tgTokenInput.trim() || !tgChatIdInput.trim() ? 'not-allowed' : 'pointer',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                                          }}
-                                        >
-                                          {tgSaving
-                                            ? <><Loader2 style={{ width: 12, height: 12 }} className="animate-spin" /> Kaydediliyor...</>
-                                            : '💾 Kaydet'
-                                          }
-                                        </button>
-                                      </div>
+                                          {/* ── OpenAI API Key ── */}
+                                          <div style={{ marginTop: 10 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                                              <span style={{ fontSize: 12 }}>🔑</span>
+                                              <span style={{ fontSize: 11, fontWeight: 700, color: '#d4b5f7' }}>OpenAI API Key</span>
+                                              <div style={{
+                                                display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 'auto',
+                                                padding: '1px 7px', borderRadius: 10,
+                                                background: companyKeyHas ? 'rgba(34,197,94,0.12)' : 'rgba(255,255,255,0.06)',
+                                                border: `1px solid ${companyKeyHas ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.12)'}`,
+                                              }}>
+                                                <div style={{ width: 5, height: 5, borderRadius: '50%', background: companyKeyHas ? '#22c55e' : '#6b7280' }} />
+                                                <span style={{ fontSize: 9, color: companyKeyHas ? '#86efac' : 'rgba(255,255,255,0.4)', fontWeight: 600 }}>
+                                                  {companyKeyHas ? 'Aktif' : 'Yok'}
+                                                </span>
+                                              </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                              <input
+                                                type="password"
+                                                placeholder="sk-proj-..."
+                                                value={companyKeyInput}
+                                                onChange={e => { setCompanyKeyInput(e.target.value); setCompanyKeyMsg(null); }}
+                                                style={{
+                                                  width: '100%', borderRadius: 10, border: '1px solid rgba(139,92,246,0.3)',
+                                                  background: 'rgba(0,0,0,0.25)', color: '#fff',
+                                                  padding: '8px 10px', fontSize: 11, outline: 'none',
+                                                  fontFamily: 'monospace', boxSizing: 'border-box',
+                                                }}
+                                              />
+                                              <div style={{ display: 'flex', gap: 6 }}>
+                                                <button
+                                                  onClick={handleSaveCompanyKey}
+                                                  disabled={companyKeySaving || !companyKeyInput.trim()}
+                                                  style={{
+                                                    flex: 1, borderRadius: 10, border: '1px solid rgba(139,92,246,0.4)',
+                                                    background: companyKeySaving || !companyKeyInput.trim() ? 'rgba(139,92,246,0.1)' : 'rgba(139,92,246,0.3)',
+                                                    color: '#d4b5f7', padding: '8px', fontSize: 11,
+                                                    fontWeight: 700, cursor: companyKeySaving || !companyKeyInput.trim() ? 'not-allowed' : 'pointer',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                                                  }}
+                                                >
+                                                  {companyKeySaving ? <><Loader2 style={{ width: 11, height: 11 }} className="animate-spin" /> Kaydediliyor...</> : '💾 Kaydet'}
+                                                </button>
+                                                {companyKeyHas && (
+                                                  <button
+                                                    onClick={handleDeleteCompanyKey}
+                                                    disabled={companyKeyDeleting}
+                                                    style={{
+                                                      borderRadius: 10, border: '1px solid rgba(239,68,68,0.25)',
+                                                      background: 'rgba(239,68,68,0.07)', color: '#f87171',
+                                                      padding: '8px 12px', fontSize: 11, fontWeight: 600,
+                                                      cursor: companyKeyDeleting ? 'not-allowed' : 'pointer',
+                                                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                                                    }}
+                                                  >
+                                                    {companyKeyDeleting ? <Loader2 style={{ width: 11, height: 11 }} className="animate-spin" /> : '🗑️ Sil'}
+                                                  </button>
+                                                )}
+                                              </div>
+                                            </div>
+                                            {companyKeyMsg && (
+                                              <div style={{
+                                                marginTop: 6, borderRadius: 8, padding: '5px 10px', fontSize: 10,
+                                                background: companyKeyMsg.type === 'ok' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                                                border: `1px solid ${companyKeyMsg.type === 'ok' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                                                color: companyKeyMsg.type === 'ok' ? '#86efac' : '#fca5a5',
+                                              }}>{companyKeyMsg.text}</div>
+                                            )}
+                                          </div>
 
-                                      {/* Test + Sil butonları (config varsa) */}
-                                      {tgHasConfig && (
-                                        <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
-                                          <button
-                                            onClick={handleTestTgConfig}
-                                            disabled={tgTesting}
-                                            style={{
-                                              flex: 1, borderRadius: 10,
-                                              border: '1px solid rgba(29,161,242,0.3)',
-                                              background: 'rgba(29,161,242,0.12)',
-                                              color: '#7dd3fc', padding: '7px', fontSize: 11,
-                                              fontWeight: 600, cursor: tgTesting ? 'not-allowed' : 'pointer',
-                                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                                            }}
-                                          >
-                                            {tgTesting
-                                              ? <><Loader2 style={{ width: 11, height: 11 }} className="animate-spin" /> Test...</>
-                                              : '📨 Test Et'
-                                            }
-                                          </button>
-                                          <button
-                                            onClick={handleDeleteTgConfig}
-                                            disabled={tgDeleting}
-                                            style={{
-                                              flex: 1, borderRadius: 10,
-                                              border: '1px solid rgba(239,68,68,0.25)',
-                                              background: 'rgba(239,68,68,0.07)',
-                                              color: '#f87171', padding: '7px', fontSize: 11,
-                                              fontWeight: 600, cursor: tgDeleting ? 'not-allowed' : 'pointer',
-                                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                                            }}
-                                          >
-                                            {tgDeleting
-                                              ? <><Loader2 style={{ width: 11, height: 11 }} className="animate-spin" /> Siliniyor...</>
-                                              : '🗑️ Sil'
-                                            }
-                                          </button>
-                                        </div>
-                                      )}
+                                          {/* Ayırıcı */}
+                                          <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '12px 0' }} />
 
-                                      {/* Mesaj */}
-                                      {tgMsg && (
-                                        <div style={{
-                                          marginTop: 7, borderRadius: 8, padding: '6px 10px',
-                                          background: tgMsg.type === 'ok' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-                                          border: `1px solid ${tgMsg.type === 'ok' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
-                                          fontSize: 10, color: tgMsg.type === 'ok' ? '#86efac' : '#fca5a5',
-                                        }}>
-                                          {tgMsg.text}
+                                          {/* ── Telegram Bağlantısı ── */}
+                                          <div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                                              <span style={{ fontSize: 12 }}>✈️</span>
+                                              <span style={{ fontSize: 11, fontWeight: 700, color: '#7dd3fc' }}>Telegram Bağlantısı</span>
+                                              <div style={{
+                                                display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 'auto',
+                                                padding: '1px 7px', borderRadius: 10,
+                                                background: tgHasConfig ? 'rgba(34,197,94,0.12)' : 'rgba(255,255,255,0.06)',
+                                                border: `1px solid ${tgHasConfig ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.12)'}`,
+                                              }}>
+                                                <div style={{ width: 5, height: 5, borderRadius: '50%', background: tgHasConfig ? '#22c55e' : '#6b7280' }} />
+                                                <span style={{ fontSize: 9, color: tgHasConfig ? '#86efac' : 'rgba(255,255,255,0.4)', fontWeight: 600 }}>
+                                                  {tgHasConfig ? 'Bağlı' : 'Yok'}
+                                                </span>
+                                              </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                              <input
+                                                type="password"
+                                                placeholder="Bot Token (1234567:ABCDef...)"
+                                                value={tgTokenInput}
+                                                onChange={e => { setTgTokenInput(e.target.value); setTgMsg(null); }}
+                                                style={{
+                                                  width: '100%', borderRadius: 10, border: '1px solid rgba(29,161,242,0.3)',
+                                                  background: 'rgba(0,0,0,0.25)', color: '#fff',
+                                                  padding: '8px 10px', fontSize: 11, outline: 'none',
+                                                  fontFamily: 'monospace', boxSizing: 'border-box',
+                                                }}
+                                              />
+                                              <input
+                                                type="text"
+                                                placeholder="Chat ID (örn: -1001234567890)"
+                                                value={tgChatIdInput}
+                                                onChange={e => { setTgChatIdInput(e.target.value); setTgMsg(null); }}
+                                                style={{
+                                                  width: '100%', borderRadius: 10, border: '1px solid rgba(29,161,242,0.3)',
+                                                  background: 'rgba(0,0,0,0.25)', color: '#fff',
+                                                  padding: '8px 10px', fontSize: 11, outline: 'none',
+                                                  fontFamily: 'monospace', boxSizing: 'border-box',
+                                                }}
+                                              />
+                                              <div style={{ display: 'flex', gap: 6 }}>
+                                                <button
+                                                  onClick={handleSaveTgConfig}
+                                                  disabled={tgSaving || !tgTokenInput.trim() || !tgChatIdInput.trim()}
+                                                  style={{
+                                                    flex: 1, borderRadius: 10, border: '1px solid rgba(29,161,242,0.4)',
+                                                    background: tgSaving || !tgTokenInput.trim() || !tgChatIdInput.trim() ? 'rgba(29,161,242,0.08)' : 'rgba(29,161,242,0.25)',
+                                                    color: '#7dd3fc', padding: '8px', fontSize: 11,
+                                                    fontWeight: 700, cursor: tgSaving || !tgTokenInput.trim() || !tgChatIdInput.trim() ? 'not-allowed' : 'pointer',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                                                  }}
+                                                >
+                                                  {tgSaving ? <><Loader2 style={{ width: 11, height: 11 }} className="animate-spin" /> Kaydediliyor...</> : '💾 Kaydet'}
+                                                </button>
+                                                {tgHasConfig && (
+                                                  <>
+                                                    <button
+                                                      onClick={handleTestTgConfig}
+                                                      disabled={tgTesting}
+                                                      style={{
+                                                        borderRadius: 10, border: '1px solid rgba(29,161,242,0.3)',
+                                                        background: 'rgba(29,161,242,0.12)', color: '#7dd3fc',
+                                                        padding: '8px 10px', fontSize: 11, fontWeight: 600,
+                                                        cursor: tgTesting ? 'not-allowed' : 'pointer',
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                                                      }}
+                                                    >
+                                                      {tgTesting ? <Loader2 style={{ width: 11, height: 11 }} className="animate-spin" /> : '📨 Test'}
+                                                    </button>
+                                                    <button
+                                                      onClick={handleDeleteTgConfig}
+                                                      disabled={tgDeleting}
+                                                      style={{
+                                                        borderRadius: 10, border: '1px solid rgba(239,68,68,0.25)',
+                                                        background: 'rgba(239,68,68,0.07)', color: '#f87171',
+                                                        padding: '8px 10px', fontSize: 11, fontWeight: 600,
+                                                        cursor: tgDeleting ? 'not-allowed' : 'pointer',
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                                                      }}
+                                                    >
+                                                      {tgDeleting ? <Loader2 style={{ width: 11, height: 11 }} className="animate-spin" /> : '🗑️ Sil'}
+                                                    </button>
+                                                  </>
+                                                )}
+                                              </div>
+                                            </div>
+                                            {tgMsg && (
+                                              <div style={{
+                                                marginTop: 6, borderRadius: 8, padding: '5px 10px', fontSize: 10,
+                                                background: tgMsg.type === 'ok' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                                                border: `1px solid ${tgMsg.type === 'ok' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                                                color: tgMsg.type === 'ok' ? '#86efac' : '#fca5a5',
+                                              }}>{tgMsg.text}</div>
+                                            )}
+                                          </div>
+
                                         </div>
                                       )}
                                     </div>
@@ -1240,7 +1272,7 @@ export function HamburgerMenu({
                         <div className="h-px flex-1 rounded-full" style={{ background: `linear-gradient(to left, ${section.color}40, transparent)` }} />
                       </div>
                       <div className="space-y-1">
-                        {section.items.map(item => {
+                        {section.items.filter(i => !i.danger).map(item => {
                           const Icon = item.icon;
                           return (
                             <motion.button
@@ -1250,29 +1282,131 @@ export function HamburgerMenu({
                               className="w-full flex items-center gap-3 rounded-xl transition-all"
                               style={{
                                 padding: '9px 11px',
-                                background: item.danger ? 'rgba(239,68,68,0.07)' : `${section.color}07`,
-                                border: item.danger ? '1px solid rgba(239,68,68,0.18)' : `1px solid ${section.color}18`,
+                                background: `${section.color}07`,
+                                border: `1px solid ${section.color}18`,
                               }}
                             >
                               <div
                                 className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
                                 style={{
-                                  background: item.danger ? 'rgba(239,68,68,0.12)' : `${section.color}18`,
-                                  border: item.danger ? '1px solid rgba(239,68,68,0.2)' : `1px solid ${section.color}35`,
+                                  background: `${section.color}18`,
+                                  border: `1px solid ${section.color}35`,
                                 }}
                               >
-                                <Icon style={{ width: 14, height: 14, color: item.danger ? '#f87171' : `${section.color}cc` }} strokeWidth={1.8} />
+                                <Icon style={{ width: 14, height: 14, color: `${section.color}cc` }} strokeWidth={1.8} />
                               </div>
                               <span
                                 className="flex-1 text-left"
-                                style={{ fontSize: 13, color: item.danger ? '#f87171' : `${section.color}cc`, fontWeight: 500 }}
+                                style={{ fontSize: 13, color: `${section.color}cc`, fontWeight: 500 }}
                               >{item.label}</span>
                               <ChevronRight
                                 style={{
                                   width: 13, height: 13, flexShrink: 0,
-                                  color: item.danger ? 'rgba(248,113,113,0.5)' : `${section.color}60`,
+                                  color: `${section.color}60`,
                                 }}
                               />
+                            </motion.button>
+                          );
+                        })}
+
+                        {/* ── Tema Rengi ── */}
+                        <div style={{
+                          borderRadius: 14,
+                          overflow: 'hidden',
+                          border: themeOpen ? `1px solid ${section.color}45` : `1px solid ${section.color}18`,
+                          background: themeOpen ? `${section.color}10` : `${section.color}07`,
+                          transition: 'all 0.25s',
+                          marginTop: 4,
+                        }}>
+                          <button
+                            onClick={() => setThemeOpen(p => !p)}
+                            className="w-full flex items-center gap-3 transition-all"
+                            style={{ padding: '9px 11px' }}
+                          >
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                              style={{ background: `${section.color}18`, border: `1px solid ${section.color}35` }}>
+                              <span style={{ fontSize: 14 }}>🎨</span>
+                            </div>
+                            <span className="flex-1 text-left" style={{ fontSize: 13, color: `${section.color}cc`, fontWeight: 500 }}>
+                              Tema Rengi
+                            </span>
+                            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 600 }}>
+                              {getThemeById(activeTheme).name}
+                            </span>
+                            <ChevronDown style={{
+                              width: 13, height: 13, flexShrink: 0,
+                              color: `${section.color}60`,
+                              transform: themeOpen ? 'rotate(180deg)' : 'none',
+                              transition: 'transform 0.2s',
+                            }} />
+                          </button>
+                          {themeOpen && (
+                            <div style={{ padding: '4px 10px 10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
+                                {THEMES.map(t => {
+                                  const isActive = activeTheme === t.id;
+                                  return (
+                                    <button
+                                      key={t.id}
+                                      onClick={() => handleThemeChange(t.id)}
+                                      style={{
+                                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                                        padding: '6px 2px', borderRadius: 10, cursor: 'pointer',
+                                        background: isActive ? `${t.accent}20` : 'transparent',
+                                        border: isActive ? `1.5px solid ${t.accent}` : '1.5px solid transparent',
+                                        transition: 'all 0.2s',
+                                      }}
+                                    >
+                                      <div style={{
+                                        width: 28, height: 28, borderRadius: '50%',
+                                        background: t.bg,
+                                        border: `2px solid ${t.accent}`,
+                                        boxShadow: isActive ? `0 0 10px ${t.accent}60` : 'none',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                      }}>
+                                        {isActive && <div style={{ width: 8, height: 8, borderRadius: '50%', background: t.accent }} />}
+                                      </div>
+                                      <span style={{
+                                        fontSize: 7, fontWeight: 700, textAlign: 'center', lineHeight: 1.1,
+                                        color: isActive ? t.accent : 'rgba(255,255,255,0.35)',
+                                      }}>{t.name}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              {themeSaving && (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 6 }}>
+                                  <Loader2 style={{ width: 10, height: 10, color: 'rgba(255,255,255,0.3)' }} className="animate-spin" />
+                                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>Kaydediliyor...</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* ── Çıkış Yap (en son) ── */}
+                        {section.items.filter(i => i.danger).map(item => {
+                          const Icon = item.icon;
+                          return (
+                            <motion.button
+                              key={item.label}
+                              onClick={item.action}
+                              whileTap={{ scale: 0.97 }}
+                              className="w-full flex items-center gap-3 rounded-xl transition-all"
+                              style={{
+                                padding: '9px 11px',
+                                background: 'rgba(239,68,68,0.07)',
+                                border: '1px solid rgba(239,68,68,0.18)',
+                              }}
+                            >
+                              <div
+                                className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                                style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.2)' }}
+                              >
+                                <Icon style={{ width: 14, height: 14, color: '#f87171' }} strokeWidth={1.8} />
+                              </div>
+                              <span className="flex-1 text-left" style={{ fontSize: 13, color: '#f87171', fontWeight: 500 }}>{item.label}</span>
+                              <ChevronRight style={{ width: 13, height: 13, flexShrink: 0, color: 'rgba(248,113,113,0.5)' }} />
                             </motion.button>
                           );
                         })}

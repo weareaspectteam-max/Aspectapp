@@ -187,7 +187,7 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
     <div
       className="min-h-screen pb-40"
       style={{
-        background: 'linear-gradient(135deg, #0a051e 0%, #120830 50%, #1a0a3c 100%)',
+        background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #120830 50%, #1a0a3c 100%))',
       }}
     >
       {/* Arka plan efektleri */}

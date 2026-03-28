@@ -6,7 +6,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 
 import { NewBottomNav } from './new-bottom-nav';
-import { authHeaders } from '../lib/api';
+import { authHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const SERVER_URL = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -87,7 +87,7 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
     setApiError('');
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${SERVER_URL}/announcements`, { headers });
+      const res = await fetch(`${SERVER_URL}/announcements${ghostParams()}`, { headers });
       const data = await res.json();
       if (!res.ok) {
         setApiError(data.error || 'Duyurular yüklenemedi.');
@@ -412,7 +412,7 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] pb-20">
+    <div className="min-h-screen pb-20" style={{ background: 'var(--app-bg, linear-gradient(135deg, #1a1a2e, #16213e, #0f3460))' }}>
       {/* Create Button - Yetkili tüm roller için */}
       {canCreateAnnouncement() && (
         <div className="sticky top-[64px] z-30 px-4 pt-4">
@@ -652,7 +652,7 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-lg max-h-[80vh] overflow-y-auto backdrop-blur-xl bg-gradient-to-br from-[#2a2a3a] to-[#1a1a2e] rounded-3xl border border-white/20 shadow-2xl z-[51] p-6"
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-lg max-h-[80vh] overflow-y-auto backdrop-blur-xl bg-[rgba(0,0,0,0.85)] backdrop-blur-xl rounded-3xl border border-white/20 shadow-2xl z-[51] p-6"
             >
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-6">
@@ -916,7 +916,7 @@ export function Announcements({ userName, userRole, onLogout, onNavigate }: Anno
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm backdrop-blur-xl bg-gradient-to-br from-[#2a2a3a] to-[#1a1a2e] rounded-3xl border border-white/20 shadow-2xl z-[51] p-6"
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm backdrop-blur-xl bg-[rgba(0,0,0,0.85)] backdrop-blur-xl rounded-3xl border border-white/20 shadow-2xl z-[51] p-6"
             >
               <div className="text-center">
                 <div className="w-16 h-16 rounded-full bg-[#ffb3ba]/20 border border-[#ffb3ba]/30 flex items-center justify-center mx-auto mb-4">

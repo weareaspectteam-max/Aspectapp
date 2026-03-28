@@ -110,6 +110,9 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
   const [sifirlaYukleniyor, setSifirlaYukleniyor] = useState(false);
   const [sifirlaHata, setSifirlaHata] = useState('');
   const [sifirlaBasarili, setSifirlaBasarili] = useState('');
+  const [sifirlaFilterKey, setSifirlaFilterKey] = useState<'bugun' | 'bu-ay' | 'ozel'>('bu-ay');
+  const [sifirlaBaslangic, setSifirlaBaslangic] = useState(thisMonthStart);
+  const [sifirlasBitis, setSifirlasBitis] = useState(today);
 
   /* ─── Tarih aralığı hesaplama ─── */
   const applyFilterKey = (key: typeof filterKey) => {
@@ -160,7 +163,7 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
       const res = await fetch(appendGhostParam(`${API_BASE}/personel/anomali-sifirla`), {
         method: 'POST',
         headers: { ...buildHeaders(token), 'Content-Type': 'application/json' },
-        body: JSON.stringify({}), // tüm tarihler
+        body: JSON.stringify({ baslangic: sifirlaBaslangic, bitis: sifirlasBitis }),
       });
       const data = await res.json();
       if (!res.ok) { setSifirlaHata(data.error || 'Sıfırlama başarısız.'); return; }
@@ -512,7 +515,7 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
 
       {/* ─── Anomali Sıfırla Onay Modalı ─── */}
       {showSifirlaModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center pb-8 px-4"
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
           style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}>
           <div className="w-full max-w-sm rounded-3xl p-6 space-y-5"
             style={{ background: 'rgba(15,8,35,0.97)', border: '1px solid rgba(239,68,68,0.35)', backdropFilter: 'blur(24px)' }}>
@@ -523,11 +526,45 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
                 style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)' }}>
                 <Trash2 className="w-7 h-7 text-red-400" />
               </div>
-              <h2 className="text-lg font-bold text-white">Tüm Anomali Kayıtlarını Sıfırla</h2>
+              <h2 className="text-lg font-bold text-white">Anomali Kayıtlarını Sıfırla</h2>
               <p className="text-sm text-gray-400 leading-relaxed">
-                Tüm tarihlerdeki <span className="text-red-300 font-semibold">açılış</span> ve <span className="text-red-300 font-semibold">kapanış anomalileri</span> kalıcı olarak silinecek.
-                Personel puanları sıfırlanacak. Bu işlem geri alınamaz.
+                Seçilen tarih aralığındaki <span className="text-red-300 font-semibold">açılış</span> ve <span className="text-red-300 font-semibold">kapanış anomalileri</span> kalıcı olarak silinecek.
+                Personel puanları güncellenir. Bu işlem geri alınamaz.
               </p>
+            </div>
+
+            {/* Tarih seçimi */}
+            <div>
+              <p className="text-xs text-gray-400 mb-2 font-medium flex items-center gap-1">
+                <Calendar className="w-3 h-3" /> Tarih Aralığı
+              </p>
+              <div className="flex gap-2">
+                {(['bugun', 'bu-ay', 'ozel'] as const).map(k => (
+                  <button
+                    key={k}
+                    onClick={() => {
+                      setSifirlaFilterKey(k);
+                      if (k === 'bugun') { setSifirlaBaslangic(today); setSifirlasBitis(today); }
+                      if (k === 'bu-ay') { setSifirlaBaslangic(thisMonthStart); setSifirlasBitis(today); }
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                      sifirlaFilterKey === k ? 'bg-violet-600 text-white' : 'bg-white/10 text-gray-300'
+                    }`}
+                  >
+                    {k === 'bugun' ? 'Bugün' : k === 'bu-ay' ? 'Bu Ay' : 'Özel'}
+                  </button>
+                ))}
+              </div>
+              {sifirlaFilterKey === 'ozel' && (
+                <div className="flex gap-2 mt-2">
+                  <input type="date" value={sifirlaBaslangic}
+                    onChange={e => setSifirlaBaslangic(e.target.value)}
+                    className="flex-1 bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white text-xs" />
+                  <input type="date" value={sifirlasBitis}
+                    onChange={e => setSifirlasBitis(e.target.value)}
+                    className="flex-1 bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white text-xs" />
+                </div>
+              )}
             </div>
 
             {/* Hata */}

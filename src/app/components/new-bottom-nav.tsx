@@ -104,7 +104,7 @@ export function NewBottomNav({ activeTab, onTabChange, onNavigate, userRole, unr
         style={{
           padding:              '6px 12px',
           gap:                  4,
-          background:           'rgba(10,5,30,0.92)',
+          background:           'rgba(0,0,0,0.75)',
           backdropFilter:       'blur(32px)',
           WebkitBackdropFilter: 'blur(32px)',
           boxShadow:            '0 8px 40px rgba(0,0,0,0.5)',

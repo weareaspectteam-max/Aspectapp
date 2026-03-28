@@ -180,7 +180,7 @@ export function AppHeader({
               gap:                  6,
               padding:              '4px 10px 4px 4px',
               borderRadius:         9999,
-              background:           'rgba(10,5,30,0.9)',
+              background:           'rgba(0,0,0,0.7)',
               border:               `1px solid ${c}40`,
               backdropFilter:       'blur(24px)',
               WebkitBackdropFilter: 'blur(24px)',
@@ -272,7 +272,7 @@ export function AppHeader({
               width:          40,
               height:         40,
               borderRadius:   9999,
-              background:     'rgba(10,5,30,0.9)',
+              background:     'rgba(0,0,0,0.7)',
               border:         (hasNotification || notificationCount > 0)
                                 ? '1px solid rgba(251,146,60,0.5)'
                                 : '1px solid rgba(255,255,255,0.15)',
@@ -285,7 +285,7 @@ export function AppHeader({
             }
             {notificationCount > 0 && (
               <span
-                className="absolute rounded-full bg-orange-400 border border-[#0a051e] flex items-center justify-center"
+                className="absolute rounded-full bg-orange-400 border border-black flex items-center justify-center"
                 style={{
                   top: notificationCount > 9 ? 2 : 4,
                   right: notificationCount > 9 ? 2 : 4,
@@ -293,7 +293,7 @@ export function AppHeader({
                   height: notificationCount > 9 ? 16 : 12,
                   fontSize: 8,
                   fontWeight: 700,
-                  color: '#0a051e',
+                  color: '#000',
                   paddingInline: notificationCount > 9 ? 2 : 0,
                 }}
               >
@@ -302,7 +302,7 @@ export function AppHeader({
             )}
             {notificationCount === 0 && (hasNotification) && (
               <span
-                className="absolute rounded-full bg-orange-400 border border-[#0a051e]"
+                className="absolute rounded-full bg-orange-400 border border-black"
                 style={{ top: 5, right: 5, width: 7, height: 7 }}
               />
             )}

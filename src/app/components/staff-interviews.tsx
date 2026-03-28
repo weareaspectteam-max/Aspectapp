@@ -17,7 +17,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { UserRole } from './login';
-import { getToken, buildHeaders } from '../lib/api';
+import { getToken, buildHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -230,8 +230,8 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel', 
       try {
         const h = await getAuthHeaders();
         const [gorusmeRes, personelRes] = await Promise.all([
-          fetch(`${API_BASE}/gorusmeler`, { headers: h }),
-          fetch(`${API_BASE}/users`, { headers: h }),
+          fetch(`${API_BASE}/gorusmeler${ghostParams()}`, { headers: h }),
+          fetch(`${API_BASE}/users${ghostParams()}`, { headers: h }),
         ]);
         if (gorusmeRes.ok) { const d = await gorusmeRes.json(); setInterviews(d.gorusmeler || []); }
         else { const e = await gorusmeRes.json().catch(() => ({})); setApiError(e.error || `HTTP ${gorusmeRes.status}`); }

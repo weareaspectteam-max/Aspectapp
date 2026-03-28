@@ -180,7 +180,7 @@ export function Settings({ userName, userRole, userAvatar, userEmail, userBirthD
   };
 
   return (
-    <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
+    <div className="pb-20 min-h-screen" style={{ background: 'var(--app-bg, linear-gradient(to bottom, #2a2a3a, #3a3a4e, #2f3439))' }}>
       {/* Success Message */}
       {showSuccessMessage && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4">

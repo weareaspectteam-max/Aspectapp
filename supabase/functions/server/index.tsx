@@ -2,7 +2,7 @@ import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js";
-import { jwtVerify, decodeJwt } from "npm:jose@5";
+import { jwtVerify, decodeJwt, SignJWT } from "npm:jose@5";
 import * as kv from "./kv_store.tsx";
 import { companyKvFor, getCompanyId, migrateLegacyToAspect } from "./company_kv.tsx";
 import { registerKareTkmRoutes } from "./kare_tkm.tsx";
@@ -897,6 +897,49 @@ app.delete("/make-server-4da0b637/superadmin/applications/:id", async (c) => {
   }
 });
 
+// POST /superadmin/ghost-token — Hedef şirketin yöneticisi adına imzalı JWT üret
+app.post("/make-server-4da0b637/superadmin/ghost-token", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user || user.user_metadata?.originalRole !== "superadmin")
+      return c.json({ error: "Yetkisiz erişim." }, 403);
+
+    const { targetUserId } = await c.req.json();
+    if (!targetUserId) return c.json({ error: "targetUserId zorunludur." }, 400);
+
+    const adminClient = getAdminClient();
+    const { data: { user: targetUser }, error } = await adminClient.auth.admin.getUserById(targetUserId);
+    if (error || !targetUser) return c.json({ error: "Kullanıcı bulunamadı." }, 404);
+
+    const jwtSecret = Deno.env.get("SUPABASE_JWT_SECRET") || Deno.env.get("JWT_SECRET");
+    if (!jwtSecret) return c.json({ error: "JWT secret yapılandırılmamış." }, 500);
+
+    const secret = new TextEncoder().encode(jwtSecret);
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const now = Math.floor(Date.now() / 1000);
+
+    const ghostToken = await new SignJWT({
+      sub: targetUser.id,
+      email: targetUser.email ?? "",
+      role: "authenticated",
+      app_metadata: targetUser.app_metadata ?? {},
+      user_metadata: targetUser.user_metadata ?? {},
+      iss: `${supabaseUrl}/auth/v1`,
+      aud: "authenticated",
+      iat: now,
+      exp: now + 3600,
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .sign(secret);
+
+    console.log(`[ghost-token] superadmin → ${targetUser.email} (${targetUser.user_metadata?.company_id}) ghost token üretildi`);
+    return c.json({ access_token: ghostToken });
+  } catch (err) {
+    console.log("[ghost-token] error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 // DELETE /superadmin/companies/:id — Şirketi ve TÜM verisini kalıcı olarak sil
 app.delete("/make-server-4da0b637/superadmin/companies/:id", async (c) => {
   try {
@@ -1351,6 +1394,8 @@ app.get("/make-server-4da0b637/auth/me", async (c) => {
       return c.json({ error: "Yetkisiz erişim." }, 401);
     }
 
+    const cId = getCompanyId(user);
+    const profile: any = await kv.get(`company_profile_${cId}`);
     return c.json({
       id: user.id,
       email: user.email,
@@ -1360,6 +1405,9 @@ app.get("/make-server-4da0b637/auth/me", async (c) => {
       avatar: user.user_metadata?.avatar || "",
       created_at: user.created_at,
       last_sign_in: user.last_sign_in_at,
+      company_id: cId,
+      company_name: profile?.name || cId,
+      company_emoji: profile?.emoji || "🏢",
     });
   } catch (err) {
     console.log("Get profile error:", err);
@@ -1377,7 +1425,7 @@ app.put("/make-server-4da0b637/auth/profile", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
 
-    const { full_name, phone, avatar, email, birth_date } = await c.req.json();
+    const { full_name, phone, avatar, email, birth_date, theme } = await c.req.json();
     const supabase = getAdminClient();
 
     const updatedMetadata: Record<string, string> = {
@@ -1387,6 +1435,7 @@ app.put("/make-server-4da0b637/auth/profile", async (c) => {
     if (phone !== undefined) updatedMetadata.phone = phone.trim();
     if (avatar !== undefined) updatedMetadata.avatar = avatar;
     if (birth_date !== undefined) updatedMetadata.birth_date = birth_date;
+    if (theme !== undefined) updatedMetadata.theme = theme;
 
     // E-posta değişiyorsa updateUserById'e email de ekle
     const updatePayload: Record<string, any> = { user_metadata: updatedMetadata };
@@ -1412,6 +1461,7 @@ app.put("/make-server-4da0b637/auth/profile", async (c) => {
       role: data.user.user_metadata?.role,
       phone: data.user.user_metadata?.phone,
       avatar: data.user.user_metadata?.avatar,
+      theme: data.user.user_metadata?.theme,
     });
   } catch (err) {
     console.log("Profile update unexpected error:", err);
@@ -2127,7 +2177,9 @@ app.get("/make-server-4da0b637/isletme/giderler", async (c) => {
     if (callerRole === "bekleyen" || callerRole === "personel") {
       return c.json({ error: "Bu sayfaya erişim yetkiniz yok." }, 403);
     }
-    const ckv = companyKvFor(getCompanyId(user));
+    const isSAGider = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdGider = c.req.query("company_id");
+    const ckv = companyKvFor((isSAGider && reqCIdGider) ? reqCIdGider : getCompanyId(user));
     const tumGiderler: any[] = await ckv.getByPrefix("isletme_gider_") || [];
     const sirali = tumGiderler.sort((a: any, b: any) =>
       new Date(b.date).getTime() - new Date(a.date).getTime()
@@ -2271,7 +2323,9 @@ app.get("/make-server-4da0b637/gorusmeler", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
     if (["bekleyen", "personel"].includes(callerRole)) return c.json({ error: "Yetki yok." }, 403);
-    const ckv = companyKvFor(getCompanyId(user));
+    const isSAGorusme = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdGorusme = c.req.query("company_id");
+    const ckv = companyKvFor((isSAGorusme && reqCIdGorusme) ? reqCIdGorusme : getCompanyId(user));
     const all: any[] = await ckv.getByPrefix("personel_gorusme_") || [];
     const callerName = user.user_metadata?.full_name || user.email;
     const filtered = ["yonetici", "ust-mudur"].includes(callerRole) ? all : all.filter((g: any) => g.managerName === callerName);
@@ -2328,7 +2382,9 @@ app.get("/make-server-4da0b637/mudur-raporlar", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
     if (["bekleyen", "personel", "operasyon"].includes(callerRole)) return c.json({ error: "Yetki yok." }, 403);
-    const ckv = companyKvFor(getCompanyId(user));
+    const isSAMudur = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdMudur = c.req.query("company_id");
+    const ckv = companyKvFor((isSAMudur && reqCIdMudur) ? reqCIdMudur : getCompanyId(user));
     const all: any[] = await ckv.getByPrefix("mudur_rapor_") || [];
     const callerName = user.user_metadata?.full_name || user.email;
     const filtered = ["yonetici", "ust-mudur"].includes(callerRole) ? all : all.filter((r: any) => r.managerName === callerName);
@@ -2399,8 +2455,9 @@ app.get("/make-server-4da0b637/rotasyon/personel", async (c) => {
     };
 
     // ── Şirket izolasyonu: sadece aynı şirketin personelini döndür ──
-    // company_id olmayan legacy kullanıcılar → aspect'e ait sayılır
-    const companyId = getCompanyId(user);
+    const isSARot = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdRot = c.req.query("company_id");
+    const companyId = (isSARot && reqCIdRot) ? reqCIdRot : getCompanyId(user);
 
     const staffMembers = users
       .filter(u => {
@@ -2433,7 +2490,9 @@ app.get("/make-server-4da0b637/rotasyon/gorevler", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
-    const ckv = companyKvFor(getCompanyId(user));
+    const isSAGorev = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdGorev = c.req.query("company_id");
+    const ckv = companyKvFor((isSAGorev && reqCIdGorev) ? reqCIdGorev : getCompanyId(user));
     const tasks = await ckv.getByPrefix("rotation_task_");
     return c.json({ tasks: tasks || [] });
   } catch (err) {
@@ -2606,7 +2665,9 @@ app.get("/make-server-4da0b637/rotasyon/izinler", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
-    const ckv = companyKvFor(getCompanyId(user));
+    const isSAIzin = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdIzin = c.req.query("company_id");
+    const ckv = companyKvFor((isSAIzin && reqCIdIzin) ? reqCIdIzin : getCompanyId(user));
     const leaveRequests = await ckv.getByPrefix("rotation_leave_");
     return c.json({ leaveRequests: leaveRequests || [] });
   } catch (err) {
@@ -3586,8 +3647,14 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
     const today = bizDateTR();
     console.log(`[canli-satis] bizDate=${today} | UTC=${new Date().toISOString()}`);
 
+    // Ghost mod desteği
+    const isSuperAdminFeed = user.user_metadata?.originalRole === "superadmin";
+    const requestedCompanyIdFeed = c.req.query("company_id");
+    const effectiveCompanyIdFeed = (isSuperAdminFeed && requestedCompanyIdFeed)
+      ? requestedCompanyIdFeed : getCompanyId(user);
+
     // Tüm mekanları çek → id→mekan map
-    const mekanlarList = await getMekanlar();
+    const mekanlarList = await getMekanlarFor(effectiveCompanyIdFeed);
     const mekanMap: Record<string, any> = {};
     for (const m of (mekanlarList || [])) {
       mekanMap[m.id] = m;
@@ -3595,7 +3662,7 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
     console.log(`[canli-satis] getMekanlar → ${mekanlarList.length} mekan: ${mekanlarList.map((m: any) => m.name).join(", ")}`);
 
     // Sadece bugünkü stok kayıtlarını çek (bizDateTR gece 03:00 → dün olarak yazar, zaten doğru)
-    const ckv = companyKvFor(getCompanyId(user));
+    const ckv = companyKvFor(effectiveCompanyIdFeed);
     const tumKayitlar = await ckv.getByPrefix("stok_gunluk_");
     const bugunKayitlar = (tumKayitlar || []).filter(
       (k: any) => k.tarih === today
@@ -3868,13 +3935,17 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
     const ay = c.req.query("ay") || new Date().toISOString().slice(0, 7);
     const [yil, ayNo] = ay.split("-").map(Number);
 
+    const isSAPrim = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdPrim = c.req.query("company_id");
+    const effCIdPrim = (isSAPrim && reqCIdPrim) ? reqCIdPrim : getCompanyId(user);
+
     // Tüm mekanları çek
-    const mekanlarList: any[] = await getMekanlar();
+    const mekanlarList: any[] = await getMekanlarFor(effCIdPrim);
     const mekanMap: Record<string, any> = {};
     for (const m of mekanlarList) mekanMap[m.id] = m;
 
     // O aya ait tüm stok kayıtlarını çek
-    const ckv = companyKvFor(getCompanyId(user));
+    const ckv = companyKvFor(effCIdPrim);
     const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
     const ayKayitlari = tumKayitlar.filter((k: any) => {
       if (!k.tarih) return false;
@@ -4459,7 +4530,9 @@ app.get("/make-server-4da0b637/kidem/carpanlar", async (c) => {
     if (!["yonetici", "ust-mudur"].includes(callerRole)) {
       return c.json({ error: "Bu endpoint yalnızca yönetici ve üst-müdür rolüne açıktır." }, 403);
     }
-    const ckv = companyKvFor(getCompanyId(user));
+    const isSAKidem = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdKidem = c.req.query("company_id");
+    const ckv = companyKvFor((isSAKidem && reqCIdKidem) ? reqCIdKidem : getCompanyId(user));
     const stored = await ckv.get(KIDEM_CARPAN_KEY);
     const carpanlar = stored || KIDEM_CARPAN_DEFAULT;
     return c.json({ carpanlar });
@@ -4722,7 +4795,9 @@ app.get("/make-server-4da0b637/announcements", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const isSADuyuru = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdDuyuru = c.req.query("company_id");
+    const ckv = companyKvFor((isSADuyuru && reqCIdDuyuru) ? reqCIdDuyuru : getCompanyId(user));
     const all = await ckv.getByPrefix("announcement_");
     const now = new Date();
 
@@ -4858,8 +4933,11 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
     const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
     const RIBON_PER_TAKIM = 200; // 1 takım = 200 baskı
 
-    const mekanlarList: any[] = await getMekanlar();
-    const ckv = companyKvFor(getCompanyId(user));
+    const isSAGenel = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdGenel = c.req.query("company_id");
+    const effCIdGenel = (isSAGenel && reqCIdGenel) ? reqCIdGenel : getCompanyId(user);
+    const mekanlarList: any[] = await getMekanlarFor(effCIdGenel);
+    const ckv = companyKvFor(effCIdGenel);
     const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
     const bugunKayitlar = tumKayitlar.filter((k: any) => k.tarih === today);
 
@@ -5114,7 +5192,9 @@ app.get("/make-server-4da0b637/depo/hareketler", async (c) => {
     const role = user.user_metadata?.role;
     if (!["admin", "yonetici", "ust-mudur", "mudur"].includes(role)) return c.json({ error: "Yetki yok." }, 403);
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const isSAHareket = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdHareket = c.req.query("company_id");
+    const ckv = companyKvFor((isSAHareket && reqCIdHareket) ? reqCIdHareket : getCompanyId(user));
     const tumHareketler: any[] = await ckv.getByPrefix("depo_hareket_") || [];
     const sirali = tumHareketler.sort((a: any, b: any) =>
       new Date(b.tarih).getTime() - new Date(a.tarih).getTime()
@@ -5419,7 +5499,9 @@ app.get("/make-server-4da0b637/stok/transferler", async (c) => {
     if (!["yonetici", "ust-mudur", "mudur"].includes(role)) {
       return c.json({ error: "Yetki yok." }, 403);
     }
-    const ckv = companyKvFor(getCompanyId(user));
+    const isSATransfer = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdTransfer = c.req.query("company_id");
+    const ckv = companyKvFor((isSATransfer && reqCIdTransfer) ? reqCIdTransfer : getCompanyId(user));
     const tumTransferler: any[] = await ckv.getByPrefix("stok_transfer_") || [];
     const sirali = tumTransferler.sort((a: any, b: any) =>
       new Date(b.tarih).getTime() - new Date(a.tarih).getTime()
@@ -6267,7 +6349,9 @@ app.get("/make-server-4da0b637/isletme/ciro", async (c) => {
     const baslangic = c.req.query("baslangic") || "";
     const bitis = c.req.query("bitis") || "";
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const isSACiro = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdCiro = c.req.query("company_id");
+    const ckv = companyKvFor((isSACiro && reqCIdCiro) ? reqCIdCiro : getCompanyId(user));
     const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
 
     const filtrelenmis = tumKayitlar.filter((k: any) => {
@@ -6348,9 +6432,12 @@ app.get("/make-server-4da0b637/isletme/satis-raporu", async (c) => {
     const bitis = c.req.query("bitis") || "";
     const mekanIdFilter = c.req.query("mekanId") || "";
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const isSASatis = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdSatis = c.req.query("company_id");
+    const effCIdSatis = (isSASatis && reqCIdSatis) ? reqCIdSatis : getCompanyId(user);
+    const ckv = companyKvFor(effCIdSatis);
     const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
-    const mekanlarList: any[] = await getMekanlar();
+    const mekanlarList: any[] = await getMekanlarFor(effCIdSatis);
     const mekanMap: Record<string, any> = {};
     for (const m of mekanlarList) mekanMap[m.id] = m;
 
@@ -6382,6 +6469,7 @@ app.get("/make-server-4da0b637/isletme/satis-raporu", async (c) => {
           emoji: mekan.emoji || "📍",
           color: mekan.color || "#9dd9ea",
           ciro: 0, satisAdet: 0, iskonto: 0,
+          albumKirilimi: {} as Record<string, { tip: string; adet: number; ciro: number }>,
         };
       }
 
@@ -6401,7 +6489,7 @@ app.get("/make-server-4da0b637/isletme/satis-raporu", async (c) => {
         mekanOzetMap[kayit.mekanId].iskonto += iskonto;
 
         if (!personelMap[personelId]) {
-          personelMap[personelId] = { id: personelId, name: personelAd, ciro: 0, satisAdet: 0, iskonto: 0 };
+          personelMap[personelId] = { id: personelId, name: personelAd, ciro: 0, satisAdet: 0, iskonto: 0, albumKirilimi: {} as Record<string, { tip: string; adet: number; ciro: number }> };
         }
         personelMap[personelId].ciro += tutar;
         personelMap[personelId].satisAdet++;
@@ -6420,15 +6508,32 @@ app.get("/make-server-4da0b637/isletme/satis-raporu", async (c) => {
           const tip = item.product || "Diğer";
           const adet = Number(item.quantity) || 1;
           const birimFiyat = Number(item.unitPrice) || 0;
+          const itemCiro = Math.round(birimFiyat * adet * satisRatio);
           if (!albumMap[tip]) albumMap[tip] = { tip, adet: 0, ciro: 0 };
           albumMap[tip].adet += adet;
-          albumMap[tip].ciro += Math.round(birimFiyat * adet * satisRatio);
+          albumMap[tip].ciro += itemCiro;
+
+          // Personel albüm kırılımı
+          const pAlbum = personelMap[personelId].albumKirilimi;
+          if (!pAlbum[tip]) pAlbum[tip] = { tip, adet: 0, ciro: 0 };
+          pAlbum[tip].adet += adet;
+          pAlbum[tip].ciro += itemCiro;
+
+          // Mekan albüm kırılımı
+          const mAlbum = mekanOzetMap[kayit.mekanId].albumKirilimi;
+          if (!mAlbum[tip]) mAlbum[tip] = { tip, adet: 0, ciro: 0 };
+          mAlbum[tip].adet += adet;
+          mAlbum[tip].ciro += itemCiro;
         }
       }
     }
 
-    const mekanListesi = Object.values(mekanOzetMap).sort((a: any, b: any) => b.ciro - a.ciro);
-    const personelListesi = Object.values(personelMap).sort((a: any, b: any) => b.ciro - a.ciro);
+    const mekanListesi = Object.values(mekanOzetMap).map((m: any) => ({
+      ...m, albumKirilimi: Object.values(m.albumKirilimi).sort((a: any, b: any) => b.adet - a.adet),
+    })).sort((a: any, b: any) => b.ciro - a.ciro);
+    const personelListesi = Object.values(personelMap).map((p: any) => ({
+      ...p, albumKirilimi: Object.values(p.albumKirilimi).sort((a: any, b: any) => b.adet - a.adet),
+    })).sort((a: any, b: any) => b.ciro - a.ciro);
     const albumListesi = Object.values(albumMap).sort((a: any, b: any) => b.adet - a.adet);
     const odemeListesi = Object.entries(odemeMap)
       .map(([yontem, v]) => ({ yontem, ...v }))
@@ -6469,12 +6574,15 @@ app.get("/make-server-4da0b637/personel/indirim-istatistik", async (c) => {
     const kisaEsik = kisaBaslangic.toISOString().split("T")[0];
 
     // Mekan haritası
-    const mekanlarList: any[] = await getMekanlar();
+    const isSAIndirim = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdIndirim = c.req.query("company_id");
+    const effCIdIndirim = (isSAIndirim && reqCIdIndirim) ? reqCIdIndirim : getCompanyId(user);
+    const mekanlarList: any[] = await getMekanlarFor(effCIdIndirim);
     const mekanById: Record<string, any> = {};
     for (const m of mekanlarList) mekanById[m.id] = m;
 
     // Tüm günlük kayıtları çek, isteğe bağlı mekan filtresi
-    const ckv = companyKvFor(getCompanyId(user));
+    const ckv = companyKvFor(effCIdIndirim);
     const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
     let filtrelenmis = mekanIdQ
       ? tumKayitlar.filter((k: any) => k.mekanId === mekanIdQ)
@@ -6607,14 +6715,17 @@ app.get("/make-server-4da0b637/personel/anomali-puanlar", async (c) => {
     const userIdQ   = c.req.query("userId")    || "";
 
     // ── 1. Mekan haritaları ──
-    const mekanlarList: any[] = await getMekanlar();
+    const isSAAnomali = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdAnomali = c.req.query("company_id");
+    const effCIdAnomali = (isSAAnomali && reqCIdAnomali) ? reqCIdAnomali : getCompanyId(user);
+    const mekanlarList: any[] = await getMekanlarFor(effCIdAnomali);
     const mekanById:   Record<string, any> = {};
     for (const m of mekanlarList) {
       mekanById[m.id] = m;
     }
 
     // ── 2. Rotation task haritası: { "YYYY-MM-DD__mekanAdi" → Personnel[] } ──
-    const ckv = companyKvFor(getCompanyId(user));
+    const ckv = companyKvFor(effCIdAnomali);
     const allTasks: any[] = await ckv.getByPrefix("rotation_task_") || [];
     const taskMap: Record<string, any[]> = {};
     for (const t of allTasks) {
@@ -7619,7 +7730,11 @@ app.get("/make-server-4da0b637/malzeme/liste", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     if (user.user_metadata?.role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const isSAMalzeme = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdMalzeme = c.req.query("company_id");
+    const effCIdMalzeme = (isSAMalzeme && reqCIdMalzeme) ? reqCIdMalzeme : getCompanyId(user);
+
+    const ckv = companyKvFor(effCIdMalzeme);
     const tumEkipmanlar: any[] = await ckv.getByPrefix("ekipman_") || [];
     const sirali = tumEkipmanlar.sort((a: any, b: any) =>
       new Date(a.olusturulmaTarihi || 0).getTime() - new Date(b.olusturulmaTarihi || 0).getTime()
@@ -8002,7 +8117,9 @@ app.get("/make-server-4da0b637/mesajlar/kanallar", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role || "personel";
     const canSeeMekan = ["yonetici", "ust-mudur", "superadmin"].includes(role);
-    const companyId = getCompanyId(user);
+    const isSAMesaj = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdMesaj = c.req.query("company_id");
+    const companyId = (isSAMesaj && reqCIdMesaj) ? reqCIdMesaj : getCompanyId(user);
 
     const STATIC_CHANNELS = [
       { id: "general",  name: "general",  type: "channel", isAdminOnly: false, deletable: false },
@@ -8020,7 +8137,7 @@ app.get("/make-server-4da0b637/mesajlar/kanallar", async (c) => {
     }
 
     // Özel kanallar — tüm aktif roller görebilir
-    const ckv = companyKvFor(getCompanyId(user));
+    const ckv = companyKvFor(companyId);
     const customs: any[] = await ckv.getByPrefix("chat_channel_") || [];
     const customChannels = customs.map((ch: any) => ({
       id: ch.id, name: ch.name, type: "channel", emoji: ch.emoji || "💬",
@@ -8154,11 +8271,14 @@ app.get("/make-server-4da0b637/mesajlar/kullanicilar", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const isSAMesajU = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdMesajU = c.req.query("company_id");
+    const filterCompanyId = (isSAMesajU && reqCIdMesajU) ? reqCIdMesajU : getCompanyId(user);
     const supabase = getAdminClient();
     const { data: { users }, error } = await supabase.auth.admin.listUsers({ perPage: 500 });
     if (error) return c.json({ error: `Kullanıcılar alınamadı: ${error.message}` }, 400);
     const list = users
-      .filter((u: any) => u.id !== user.id && u.user_metadata?.role !== "bekleyen")
+      .filter((u: any) => u.id !== user.id && u.user_metadata?.role !== "bekleyen" && u.user_metadata?.company_id === filterCompanyId)
       .map((u: any) => ({
         id: u.id,
         name: u.user_metadata?.full_name || u.email || "Bilinmeyen",
@@ -8293,13 +8413,16 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
     const mekanIdFilter = c.req.query("mekanId") || "";
     const periodKey = c.req.query("periodKey") || "";
 
-    // ��─ 1. Mekanlar ──
-    const mekanlarList: any[] = await getMekanlar();
+    // ── 1. Mekanlar ──
+    const isSALeader = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdLeader = c.req.query("company_id");
+    const effCIdLeader = (isSALeader && reqCIdLeader) ? reqCIdLeader : getCompanyId(user);
+    const mekanlarList: any[] = await getMekanlarFor(effCIdLeader);
     const mekanById: Record<string, any> = {};
     for (const m of mekanlarList) mekanById[m.id] = m;
 
     // ── 2. Stok kayıtları filtrele ──
-    const ckv = companyKvFor(getCompanyId(user));
+    const ckv = companyKvFor(effCIdLeader);
     const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
     const filtrelenmis = tumKayitlar.filter((k: any) => {
       if (!k.tarih) return false;
@@ -8589,12 +8712,17 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
     const qBitis    = c.req.query("bitis") || "";
     const qMekanId  = c.req.query("mekanId") || "";
 
-    const ckv = companyKvFor(getCompanyId(user));
-    const [tumKayitlarRaw, mekanlarList, costAlbumsRaw, exRatesRaw] = await Promise.all([
+    const isSAVardiya = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdVardiya = c.req.query("company_id");
+    const effCIdVardiya = (isSAVardiya && reqCIdVardiya) ? reqCIdVardiya : getCompanyId(user);
+
+    const ckv = companyKvFor(effCIdVardiya);
+    const [tumKayitlarRaw, mekanlarList, costAlbumsRaw, exRatesRaw, maaslarRaw] = await Promise.all([
       ckv.getByPrefix("stok_gunluk_"),
-      getMekanlar(),
+      getMekanlarFor(effCIdVardiya),
       ckv.get("cost_albums"),
       ckv.get("cost_exchange_rates"),
+      ckv.getByPrefix("cost_salary_"),
     ]);
 
     const mekanMap: Record<string, any> = {};
@@ -8622,6 +8750,39 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
       const mm = String(n || "").match(/^(\d+)/);
       return mm ? parseInt(mm[1]) : null;
     };
+
+    // Maaş yardımcıları
+    const maaslar: any[] = maaslarRaw || [];
+    // userId → günlük maaş (TRY) haritası
+    const maasById: Record<string, number> = {};
+    for (const m of maaslar) {
+      if (!m.userId) continue;
+      const aylik = (() => {
+        const amt = toTL2(Number(m.amount) || 0, m.currency || "TRY");
+        const extra = amt * ((Number(m.extraCostPercentage) || 0) / 100);
+        const total = amt + extra;
+        if (m.frequency === "daily")   return total * 30;
+        if (m.frequency === "weekly")  return total * 4.33;
+        if (m.frequency === "yearly")  return total / 12;
+        return total; // monthly
+      })();
+      maasById[m.userId] = Math.round(aylik / 30);
+    }
+
+    // Tarih → personelId → kaç mekanda çalıştı haritası (tüm kayıtlardan)
+    const tumKayitlarTmp: any[] = tumKayitlarRaw || [];
+    const gunPersonelMekan: Record<string, Record<string, number>> = {};
+    for (const k of tumKayitlarTmp) {
+      if (!k.tarih || !k.satislar) continue;
+      const gun = k.tarih;
+      if (!gunPersonelMekan[gun]) gunPersonelMekan[gun] = {};
+      const pIds = new Set<string>();
+      for (const s of (k.satislar || [])) { if (s.satisciId) pIds.add(s.satisciId); }
+      for (const kk of (k.kareKayitlari || [])) { if (kk.photographerId) pIds.add(kk.photographerId); }
+      for (const pid of pIds) {
+        gunPersonelMekan[gun][pid] = (gunPersonelMekan[gun][pid] || 0) + 1;
+      }
+    }
 
     const isFotoPaspartu = (n: string): boolean => {
       const lc = String(n || "").toLowerCase();
@@ -8769,6 +8930,14 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
       const toplamCiro = personeller.reduce((s, p) => s + p.toplamTL, 0);
       const toplamIskonto = satislar.reduce((s: number, sat: any) => s + (Number(sat.discount) || 0), 0);
 
+      // Personel günlük maaş hesabı
+      const personellerWithMaas = personeller.map((p: any) => {
+        const mekanSayisi = gunPersonelMekan[kayit.tarih]?.[p.id] || 1;
+        const gunlukMaas = maasById[p.id] ? Math.round(maasById[p.id] / mekanSayisi) : 0;
+        return { ...p, gunlukMaas };
+      });
+      const personelMaasGideri = personellerWithMaas.reduce((s: number, p: any) => s + p.gunlukMaas, 0);
+
       return {
         id: `${kayit.mekanId}_${kayit.tarih}`,
         mekanId: kayit.mekanId,
@@ -8779,7 +8948,7 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
         acilisSaat: fmtSaat(kayit.acilisZamani),
         kapanisSaat: fmtSaat(kayit.kapanisZamani),
         printType: printType as "tam" | "yarim",
-        personeller,
+        personeller: personellerWithMaas,
         yazicilar,
         anomaliler,
         albumler,
@@ -8794,6 +8963,7 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
         krediToplamTL: Math.round(personeller.reduce((s, p) => s + p.krediTL, 0)),
         albumMaliyeti: Math.round(albumMaliyeti),
         baskiMaliyeti: Math.round(baskiMaliyeti),
+        personelMaasGideri: Math.round(personelMaasGideri),
         baskiPaperName,
         kotaKademeleri: mekan.kotaKademeleri || [],
         mekanGunlukKira: Math.round((Number(mekan.yearlyRent) || 0) / 365),
@@ -8864,6 +9034,71 @@ app.delete("/make-server-4da0b637/vardiya/sil", async (c) => {
   } catch (err) {
     console.log("Vardiya sil error:", err);
     return c.json({ error: `Sunucu hatasi: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// GEÇ GİRİŞ SIFIRLA — POST /make-server-4da0b637/vardiya/gec-giris-sifirla
+// Body: { baslangic: string, bitis: string, userId?: string }
+// baslangic/bitis: YYYY-MM-DD formatında tarih aralığı
+// userId verilirse sadece o personel, verilmezse tüm personel
+// Sadece yonetici rolü erişebilir
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/vardiya/gec-giris-sifirla", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole !== "yonetici") {
+      return c.json({ error: "Bu işlemi yalnızca yönetici yapabilir." }, 403);
+    }
+
+    const body = await c.req.json().catch(() => ({}));
+    const baslangic: string = body.baslangic || "";
+    const bitis: string = body.bitis || "";
+    const userId: string | undefined = body.userId;
+
+    if (!baslangic || !bitis) {
+      return c.json({ error: "baslangic ve bitis tarihleri zorunludur." }, 400);
+    }
+
+    const ckv = companyKvFor(getCompanyId(user));
+
+    // checkin_ kayıtlarını getir, aralıktakilerin lateMin'ini sıfırla
+    // Her kayıt hem aspect: prefixli hem legacy (prefix'siz) olabilir — ikisini de güncelle
+    const tumCheckins: any[] = await ckv.getByPrefix("checkin_") || [];
+    let sifirlanenCheckin = 0;
+    for (const kayit of tumCheckins) {
+      if (!kayit?.tarih || !kayit?.userId) continue;
+      if (kayit.tarih < baslangic || kayit.tarih > bitis) continue;
+      if (userId && kayit.userId !== userId) continue;
+      if ((kayit.lateMin || 0) === 0) continue;
+
+      const guncellenmis = { ...kayit, lateMin: 0 };
+      const baseKey = `checkin_${kayit.userId}_${kayit.tarih}`;
+      await ckv.set(baseKey, guncellenmis);   // aspect:checkin_... (prefixli)
+      await kv.set(baseKey, guncellenmis);    // checkin_... (legacy)
+      sifirlanenCheckin++;
+    }
+
+    // lateNotice_ kayıtlarını sil (ckv.del zaten her iki versiyonu da siler)
+    const tumLateNotices: any[] = await ckv.getByPrefix("lateNotice_") || [];
+    let silinenNotice = 0;
+    for (const kayit of tumLateNotices) {
+      if (!kayit?.tarih || !kayit?.userId) continue;
+      if (kayit.tarih < baslangic || kayit.tarih > bitis) continue;
+      if (userId && kayit.userId !== userId) continue;
+
+      const baseKey = `lateNotice_${kayit.userId}_${kayit.tarih}`;
+      await ckv.del(baseKey); // aspect:lateNotice_... ve legacy ikisini de siler
+      silinenNotice++;
+    }
+
+    console.log(`Geç giriş sıfırlama: ${sifirlanenCheckin} checkin, ${silinenNotice} bildirim | ${baslangic}-${bitis} | kullanıcı=${user.email}`);
+    return c.json({ basarili: true, sifirlanenCheckin, silinenNotice });
+  } catch (err) {
+    console.log("Geç giriş sıfırla error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
 
@@ -11034,7 +11269,9 @@ app.get("/make-server-4da0b637/vardiya/istatistikler", async (c) => {
     if (!["yonetici", "ust-mudur", "mudur", "operasyon", "idari"].includes(callerRole)) {
       return c.json({ error: "Yetki yok." }, 403);
     }
-    const callerCompanyId = getCompanyId(user);
+    const isSAVardiya = user.user_metadata?.originalRole === "superadmin";
+    const reqCIdVardiya = c.req.query("company_id");
+    const callerCompanyId = (isSAVardiya && reqCIdVardiya) ? reqCIdVardiya : getCompanyId(user);
     const ckv = companyKvFor(callerCompanyId);
     const { searchParams } = new URL(c.req.url);
     const ay = searchParams.get("ay") || new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 7);

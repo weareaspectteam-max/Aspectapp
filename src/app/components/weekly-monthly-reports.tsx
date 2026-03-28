@@ -15,7 +15,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { UserRole } from './login';
-import { getToken, buildHeaders } from '../lib/api';
+import { getToken, buildHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -184,8 +184,8 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
       try {
         const h = await getAuthHeaders();
         const [raporRes, mekanRes] = await Promise.all([
-          fetch(`${API_BASE}/mudur-raporlar`, { headers: h }),
-          fetch(`${API_BASE}/mekanlar`, { headers: h }),
+          fetch(`${API_BASE}/mudur-raporlar${ghostParams()}`, { headers: h }),
+          fetch(`${API_BASE}/mekanlar${ghostParams()}`, { headers: h }),
         ]);
         if (raporRes.ok) { const d = await raporRes.json(); setReports(d.raporlar || []); }
         else { const e = await raporRes.json().catch(() => ({})); setApiError(e.error || `HTTP ${raporRes.status}`); }

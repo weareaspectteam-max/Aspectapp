@@ -392,7 +392,7 @@ export function XoxGame({ userName, userId, userCompanyId, accessToken, onBack }
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%)',
+      background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))',
       padding: '16px 16px 80px',
       fontFamily: 'inherit',
     }}>

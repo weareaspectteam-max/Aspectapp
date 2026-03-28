@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { UserRole } from './login';
-import { authHeaders } from '../lib/api';
+import { authHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -624,7 +624,7 @@ function DepoModal({
     setGecmisYukleniyor(true);
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${API_BASE}/depo/hareketler`, { headers });
+      const res = await fetch(`${API_BASE}/depo/hareketler${ghostParams()}`, { headers });
       const json = await res.json();
       if (json.hareketler) setHareketler(json.hareketler);
     } catch { /* sessiz */ }
@@ -956,7 +956,7 @@ function AktarimModal({
     setGecmisYukleniyor(true);
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${API_BASE}/stok/transferler`, { headers });
+      const res = await fetch(`${API_BASE}/stok/transferler${ghostParams()}`, { headers });
       const json = await res.json();
       if (json.transferler) setTransferler(json.transferler);
     } catch { /* sessiz */ }
@@ -1367,7 +1367,7 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
     setHata(false);
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${API_BASE}/stok/genel-durum`, { headers });
+      const res = await fetch(`${API_BASE}/stok/genel-durum${ghostParams()}`, { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (!json.mekanlar) throw new Error('Geçersiz yanıt');
@@ -1386,7 +1386,7 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
     setTransferYukleniyor(true);
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${API_BASE}/stok/transferler`, { headers });
+      const res = await fetch(`${API_BASE}/stok/transferler${ghostParams()}`, { headers });
       const json = await res.json();
       if (json.transferler) setTransferler(json.transferler);
     } catch (err) {
@@ -1399,7 +1399,7 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
   useEffect(() => { yukle(); transferleriYukle(); }, [yukle, transferleriYukle]);
 
   return (
-    <div className="pb-24 min-h-screen bg-gradient-to-br from-[#0a051e] via-[#120830] to-[#1a0a3c]">
+    <div className="pb-24 min-h-screen" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #120830 50%, #1a0a3c 100%))' }}>
 
       {/* Header */}
       <div className="bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-b border-white/10 px-4 pt-3 pb-3">

@@ -289,7 +289,7 @@ export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, acce
   return (
     <div
       className="min-h-screen flex flex-col"
-      style={{ background: 'linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%)' }}
+      style={{ background: 'var(--app-bg, linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%))' }}
     >
       {/* ── Header ── */}
       <div

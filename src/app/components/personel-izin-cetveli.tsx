@@ -206,7 +206,7 @@ function CellPopup({
           transition={{ type: 'spring', damping: 26, stiffness: 300 }}
           onClick={e => e.stopPropagation()}
           style={{
-            background: 'linear-gradient(170deg, #1a0a3c 0%, #120830 100%)',
+            background: 'var(--app-bg, linear-gradient(170deg, #1a0a3c 0%, #120830 100%))',
             border: '1px solid rgba(255,255,255,0.12)',
             boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
           }}
@@ -600,7 +600,7 @@ export function PersonelIzinCetveli({
   return (
     <div
       className="flex flex-col min-h-screen"
-      style={{ background: 'linear-gradient(170deg, #0f0620 0%, #1a0a3c 50%, #0a0515 100%)' }}
+      style={{ background: 'var(--app-bg, linear-gradient(170deg, #0f0620 0%, #1a0a3c 50%, #0a0515 100%))' }}
     >
       {/* ── Header ── */}
       <div
@@ -730,7 +730,7 @@ export function PersonelIzinCetveli({
                     position: 'sticky',
                     left: 0,
                     zIndex: 30,
-                    background: 'linear-gradient(170deg, #120830 0%, #1a0a3c 100%)',
+                    background: 'var(--app-bg, linear-gradient(170deg, #120830 0%, #1a0a3c 100%))',
                     borderBottom: '1px solid rgba(255,255,255,0.07)',
                     borderRight: '1px solid rgba(255,255,255,0.08)',
                     padding: '6px 10px',
@@ -801,7 +801,7 @@ export function PersonelIzinCetveli({
                     position: 'sticky',
                     right: 0,
                     zIndex: 30,
-                    background: 'linear-gradient(170deg, #120830 0%, #1a0a3c 100%)',
+                    background: 'var(--app-bg, linear-gradient(170deg, #120830 0%, #1a0a3c 100%))',
                     borderBottom: '1px solid rgba(255,255,255,0.07)',
                     borderLeft: '1px solid rgba(255,255,255,0.08)',
                     padding: '6px 8px',

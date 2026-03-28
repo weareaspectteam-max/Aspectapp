@@ -76,8 +76,9 @@ interface SatisRaporuProps {
   onNavigate: (tab: string) => void;
 }
 
-interface Mekan { id: string; name: string; emoji: string; color: string; ciro: number; satisAdet: number; iskonto: number; }
-interface Personel { id: string; name: string; ciro: number; satisAdet: number; iskonto: number; }
+interface AlbumKirilim { tip: string; adet: number; ciro: number; }
+interface Mekan { id: string; name: string; emoji: string; color: string; ciro: number; satisAdet: number; iskonto: number; albumKirilimi: AlbumKirilim[]; }
+interface Personel { id: string; name: string; ciro: number; satisAdet: number; iskonto: number; albumKirilimi: AlbumKirilim[]; }
 interface Album { tip: string; adet: number; ciro: number; }
 interface Odeme { yontem: string; adet: number; ciro: number; }
 
@@ -162,6 +163,8 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
   const [error, setError]               = useState('');
   const [activeTab, setActiveTab]       = useState<'mekan' | 'personel' | 'album' | 'odeme'>('mekan');
   const [showMekanDrop, setShowMekanDrop] = useState(false);
+  const [expandedPersonel, setExpandedPersonel] = useState<string | null>(null);
+  const [expandedMekanId, setExpandedMekanId] = useState<string | null>(null);
 
   /* Mevcut mekanları yükle */
   useEffect(() => {
@@ -187,7 +190,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
     try {
       const token = accessToken || await getToken();
       const h = buildHeaders(token);
-      let url = `${API_BASE}/isletme/satis-raporu?baslangic=${baslangic}&bitis=${bitis}`;
+      let url = `${API_BASE}/isletme/satis-raporu${appendGhostParam(`?baslangic=${baslangic}&bitis=${bitis}`)}`;
       if (selectedMekan) url += `&mekanId=${selectedMekan}`;
       const res = await fetch(url, { headers: h });
       const json = await res.json();
@@ -211,7 +214,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
   const selectedMekanName = mekanlar.find(m => m.id === selectedMekan)?.name || 'Tüm Mekanlar';
 
   return (
-    <div className="min-h-screen pb-28" style={{ background: 'linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%)' }}>
+    <div className="min-h-screen pb-28" style={{ background: 'var(--app-bg, linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%))' }}>
       {/* Header */}
       <div className="px-4 pt-4 pb-2">
         <div className="flex items-center gap-3 mb-1">
@@ -396,27 +399,53 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                   {data.mekanlar.length === 0 && (
                     <p className="text-xs text-center py-4" style={{ color: 'rgba(255,255,255,0.3)' }}>Veri yok</p>
                   )}
-                  {data.mekanlar.map(m => (
-                    <div key={m.id}>
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm">{m.emoji}</span>
-                          <span className="text-xs font-bold text-white">{m.name}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-xs font-black" style={{ color: COLORS.emerald }}>₺{m.ciro.toLocaleString('tr-TR')}</span>
-                          <span className="text-[10px] ml-1.5" style={{ color: 'rgba(255,255,255,0.3)' }}>{m.satisAdet} satış</span>
-                        </div>
+                  {data.mekanlar.map(m => {
+                    const isMekanExpanded = expandedMekanId === m.id;
+                    return (
+                      <div key={m.id} className="rounded-xl overflow-hidden"
+                        style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${isMekanExpanded ? 'rgba(168,85,247,0.3)' : 'rgba(255,255,255,0.07)'}` }}>
+                        <button
+                          onClick={() => setExpandedMekanId(isMekanExpanded ? null : m.id)}
+                          className="w-full px-3 py-2.5 text-left active:scale-[0.98] transition-all">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm">{m.emoji}</span>
+                              <span className="text-xs font-bold text-white">{m.name}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="text-right">
+                                <span className="text-xs font-black" style={{ color: COLORS.emerald }}>₺{m.ciro.toLocaleString('tr-TR')}</span>
+                                <span className="text-[10px] ml-1.5" style={{ color: 'rgba(255,255,255,0.3)' }}>{m.satisAdet} satış</span>
+                              </div>
+                              <ChevronDown className="w-3.5 h-3.5 shrink-0 transition-transform" style={{ color: 'rgba(255,255,255,0.3)', transform: isMekanExpanded ? 'rotate(180deg)' : 'none' }} />
+                            </div>
+                          </div>
+                          <BarRow
+                            label=""
+                            value={m.ciro}
+                            max={data.mekanlar[0]?.ciro || 1}
+                            color={m.color || COLORS.violet}
+                            right=""
+                          />
+                        </button>
+                        {isMekanExpanded && m.albumKirilimi && m.albumKirilimi.length > 0 && (
+                          <div className="px-3 pb-3 space-y-1.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                            <p className="text-[10px] font-bold pt-2 mb-1" style={{ color: 'rgba(196,181,253,0.5)' }}>Albüm Tipi Kırılımı</p>
+                            {m.albumKirilimi.map((a) => (
+                              <div key={a.tip} className="flex items-center gap-2">
+                                <span className="text-[11px] font-semibold shrink-0 w-24 truncate" style={{ color: 'rgba(255,255,255,0.6)' }}>{a.tip}</span>
+                                <div className="flex-1 rounded-full overflow-hidden" style={{ height: 5, background: 'rgba(255,255,255,0.07)' }}>
+                                  <div className="h-full rounded-full" style={{ width: `${Math.round((a.adet / (m.albumKirilimi[0]?.adet || 1)) * 100)}%`, background: m.color || COLORS.violet }} />
+                                </div>
+                                <span className="text-[10px] font-bold shrink-0" style={{ color: m.color || COLORS.violet }}>{a.adet} ad.</span>
+                                <span className="text-[10px] font-bold shrink-0" style={{ color: COLORS.emerald }}>₺{a.ciro.toLocaleString('tr-TR')}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <BarRow
-                        label=""
-                        value={m.ciro}
-                        max={data.mekanlar[0]?.ciro || 1}
-                        color={m.color || COLORS.violet}
-                        right=""
-                      />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {/* Toplam */}
                 <div className="flex justify-between items-center mt-4 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
@@ -435,25 +464,49 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                     <p className="text-xs text-center py-4" style={{ color: 'rgba(255,255,255,0.3)' }}>Veri yok</p>
                   )}
                   {data.personeller.map((p, i) => {
-                    const rankColors = [COLORS.yellow, 'rgba(192,192,192,0.9)', '#cd7f32'];
+                    const rankColors = [COLORS.yellow, '#94a3b8', '#cd7f32'];
                     const rc = rankColors[i] || 'rgba(255,255,255,0.2)';
+                    const isExpanded = expandedPersonel === p.id;
                     return (
-                      <div key={p.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5"
-                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                        <div className="flex items-center justify-center text-xs font-black shrink-0"
-                          style={{ width: 26, height: 26, borderRadius: 8, background: `${rc}20`, border: `1px solid ${rc}50`, color: rc }}>
-                          {i + 1}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-white truncate">{p.name}</p>
-                          <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>{p.satisAdet} satış · İsk: ₺{p.iskonto.toLocaleString('tr-TR')}</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-sm font-black" style={{ color: COLORS.emerald }}>₺{p.ciro.toLocaleString('tr-TR')}</p>
-                          <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                            %{data.toplamCiro > 0 ? Math.round((p.ciro / data.toplamCiro) * 100) : 0}
-                          </p>
-                        </div>
+                      <div key={p.id} className="rounded-xl overflow-hidden"
+                        style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${isExpanded ? 'rgba(168,85,247,0.3)' : 'rgba(255,255,255,0.07)'}` }}>
+                        <button
+                          onClick={() => setExpandedPersonel(isExpanded ? null : p.id)}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 text-left active:scale-[0.98] transition-all">
+                          <div className="flex items-center justify-center text-xs font-black shrink-0"
+                            style={{ width: 26, height: 26, borderRadius: 8, background: `${rc}20`, border: `1px solid ${rc}50`, color: rc }}>
+                            {i + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-white truncate">{p.name}</p>
+                            <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>{p.satisAdet} satış · İsk: ₺{p.iskonto.toLocaleString('tr-TR')}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-sm font-black" style={{ color: COLORS.emerald }}>₺{p.ciro.toLocaleString('tr-TR')}</p>
+                            <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                              %{data.toplamCiro > 0 ? Math.round((p.ciro / data.toplamCiro) * 100) : 0}
+                            </p>
+                          </div>
+                          <ChevronDown className="w-3.5 h-3.5 shrink-0 transition-transform" style={{ color: 'rgba(255,255,255,0.3)', transform: isExpanded ? 'rotate(180deg)' : 'none' }} />
+                        </button>
+                        {isExpanded && p.albumKirilimi && p.albumKirilimi.length > 0 && (
+                          <div className="px-3 pb-3 space-y-1.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                            <p className="text-[10px] font-bold pt-2 mb-1" style={{ color: 'rgba(196,181,253,0.5)' }}>Albüm Tipi Kırılımı</p>
+                            {p.albumKirilimi.map((a) => {
+                              const pct = p.satisAdet > 0 ? Math.round((a.adet / p.satisAdet) * 100) : 0;
+                              return (
+                                <div key={a.tip} className="flex items-center gap-2">
+                                  <span className="text-[11px] font-semibold shrink-0 w-24 truncate" style={{ color: 'rgba(255,255,255,0.6)' }}>{a.tip}</span>
+                                  <div className="flex-1 rounded-full overflow-hidden" style={{ height: 5, background: 'rgba(255,255,255,0.07)' }}>
+                                    <div className="h-full rounded-full" style={{ width: `${Math.round((a.adet / (p.albumKirilimi[0]?.adet || 1)) * 100)}%`, background: COLORS.violet }} />
+                                  </div>
+                                  <span className="text-[10px] font-bold shrink-0" style={{ color: COLORS.violet }}>{a.adet} ad.</span>
+                                  <span className="text-[10px] font-bold shrink-0" style={{ color: COLORS.emerald }}>₺{a.ciro.toLocaleString('tr-TR')}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

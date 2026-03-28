@@ -945,7 +945,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
         >
           <div style={{
             width: '100%', maxWidth: 480,
-            background: 'linear-gradient(160deg,#1a0a3c,#0d0a2e)',
+            background: 'var(--app-bg, linear-gradient(160deg,#1a0a3c,#0d0a2e))',
             borderRadius: '24px 24px 0 0',
             border: '1px solid rgba(255,255,255,0.12)',
             padding: '24px 20px 36px',

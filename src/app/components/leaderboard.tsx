@@ -268,7 +268,7 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
   return (
     <div
       className="min-h-screen pb-32 relative overflow-x-hidden"
-      style={{ background: 'linear-gradient(to bottom, #0a051e, #120830, #1a0a3c)' }}
+      style={{ background: 'var(--app-bg, linear-gradient(to bottom, #0a051e, #120830, #1a0a3c))' }}
     >
       {/* ── Arka plan glow blob'ları ── */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -282,7 +282,7 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
       {/* ── Sticky Header ── */}
       <div
         className="sticky top-0 z-20 px-4 pt-12 pb-3"
-        style={{ background: 'rgba(10,5,30,0.88)', backdropFilter: 'blur(24px)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}
+        style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(24px)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}
       >
         {/* Başlık satırı */}
         <div className="flex items-center gap-3 mb-3">
@@ -666,7 +666,7 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
                   {isOpen && (
                     <div
                       className="mx-1 rounded-b-3xl border-x border-b px-4 pt-3 pb-4 space-y-4"
-                      style={{ background: 'rgba(10,5,30,0.75)', backdropFilter: 'blur(20px)', borderColor: 'rgba(255,255,255,0.07)' }}
+                      style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(20px)', borderColor: 'rgba(255,255,255,0.07)' }}
                     >
                       {/* 5 metrik bar */}
                       <div className="space-y-2.5">

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, useMotionValue, useDragControls } from 'motion/react';
 import { X, RefreshCw, ShoppingBag, Camera, TrendingUp, Clock } from 'lucide-react';
-import { authHeaders } from '../lib/api';
+import { authHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -76,11 +76,11 @@ export function LiveFeedSheet({ mekanId, mekanName, mekanIcon, mekanColor, onClo
     setError(null);
     try {
       const headers = await authHeaders();
-      let res = await fetch(`${BASE}/stok/canli-satis`, { headers });
+      let res = await fetch(`${BASE}/stok/canli-satis${ghostParams()}`, { headers });
       if (res.status === 401) {
         await new Promise(r => setTimeout(r, 800));
         const freshHeaders = await authHeaders();
-        res = await fetch(`${BASE}/stok/canli-satis`, { headers: freshHeaders });
+        res = await fetch(`${BASE}/stok/canli-satis${ghostParams()}`, { headers: freshHeaders });
       }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -122,7 +122,7 @@ export function LiveFeedSheet({ mekanId, mekanName, mekanIcon, mekanColor, onClo
         key="sheet"
         className="fixed inset-x-0 bottom-0 z-[60] flex flex-col overflow-hidden rounded-t-3xl"
         style={{
-          background: 'linear-gradient(to bottom, #1e1e2e, #2a2a3a)',
+          background: 'var(--app-bg, linear-gradient(to bottom, #1e1e2e, #2a2a3a))',
           top: 'calc(env(safe-area-inset-top, 44px) + 48px)',
           y: dragY,
         }}

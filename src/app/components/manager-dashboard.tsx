@@ -6,7 +6,7 @@ import {
   Star, Activity, Zap, Trophy,
 } from 'lucide-react';
 import { CurrencyWidget } from './currency-widget';
-import { getToken, buildHeaders } from '../lib/api';
+import { getToken, buildHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -78,10 +78,10 @@ const glass: React.CSSProperties = {
 };
 
 const QUICK_ACTIONS = [
-  { label: 'Satış İstatistik',  icon: BarChart2,      color: '#9dd9ea', tab: 'satis-raporu' },
   { label: 'Vardiya Raporları', icon: FileText,        color: '#ffd4a3', tab: 'vardiya-raporlari' },
+  { label: 'Satış İstatistik',  icon: BarChart2,      color: '#9dd9ea', tab: 'satis-raporu' },
   { label: 'Anomali İstatistik',icon: AlertTriangle,   color: '#f87171', tab: 'anomali-panosu' },
-  { label: 'Mekan Durumu',       icon: MapPin,      color: '#a8e6cf', tab: 'isletme-genel-durum' },
+  { label: 'Vardiya İstatistik',  icon: Clock,       color: '#a8e6cf', tab: 'vardiya-istatistikleri' },
   { label: 'İndirim İstatistik', icon: Star,        color: '#c4b5fd', tab: 'indirim-istatistik' },
   { label: 'Yön. Raporları',     icon: TrendingUp,  color: '#fb923c', tab: 'manager-reports' },
   { label: 'Prim Takip',         icon: Trophy,      color: '#fbbf24', tab: 'prim-takip' },
@@ -98,7 +98,7 @@ export function ManagerDashboard({ userName, roleTitle, onNavigate }: ManagerDas
       setLoading(true);
       setError(null);
       const token = await getToken();
-      const res = await fetchWithRetry(`${API_BASE}/manager/dashboard-summary`, {
+      const res = await fetchWithRetry(`${API_BASE}/manager/dashboard-summary${ghostParams()}`, {
         headers: buildHeaders(token),
       });
       const json = await res.json();
@@ -122,7 +122,7 @@ export function ManagerDashboard({ userName, roleTitle, onNavigate }: ManagerDas
   const isLoading = loading && !data;
 
   return (
-    <div className="min-h-screen pb-28" style={{ background: 'linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%)' }}>
+    <div className="min-h-screen pb-28" style={{ background: 'var(--app-bg, linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%))' }}>
       <div className="px-4 pt-4 space-y-4">
 
         {/* ── Başlık ── */}

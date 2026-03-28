@@ -165,7 +165,7 @@ export function Login({ onLogin }: LoginProps) {
   return (
     <div
       className="min-h-screen relative overflow-hidden flex items-center justify-center p-5"
-      style={{ background: 'linear-gradient(145deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%)' }}
+      style={{ background: 'var(--app-bg, linear-gradient(145deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}
     >
       {/* ── Arka plan orb'ları ── */}
       <motion.div

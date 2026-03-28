@@ -75,7 +75,7 @@ export function SignupPage() {
   // Yükleniyor
   if (companyLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%)' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--app-bg, linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%))' }}>
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 rounded-full border-2 border-[#9dd9ea] border-t-transparent animate-spin" />
           <p className="text-white/50 text-sm">Şirket bilgileri yükleniyor…</p>
@@ -89,7 +89,7 @@ export function SignupPage() {
     return (
       <div
         className="min-h-screen flex items-center justify-center p-6"
-        style={{ background: 'linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%)' }}
+        style={{ background: 'var(--app-bg, linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%))' }}
       >
         <div
           className="text-center p-8 max-w-sm w-full"
@@ -181,7 +181,7 @@ export function SignupPage() {
     return (
       <div
         className="min-h-screen flex items-center justify-center p-6"
-        style={{ background: 'linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%)' }}
+        style={{ background: 'var(--app-bg, linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%))' }}
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
@@ -234,7 +234,7 @@ export function SignupPage() {
   return (
     <div
       className="min-h-screen relative overflow-hidden flex items-center justify-center p-4"
-      style={{ background: 'linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%)' }}
+      style={{ background: 'var(--app-bg, linear-gradient(135deg,#0a051e 0%,#1a0a3c 50%,#0d0a2e 100%))' }}
     >
       {/* Arka plan partikülleri */}
       {[...Array(12)].map((_, i) => {

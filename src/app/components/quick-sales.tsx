@@ -1452,10 +1452,13 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   };
 
   return (
-    <div className={operasyonFullscreen
-      ? 'fixed inset-0 z-[70] bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c] overflow-y-auto overscroll-contain flex flex-col'
-      : 'pb-32 bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c] min-h-screen'
-    }>
+    <div
+      className={operasyonFullscreen
+        ? 'fixed inset-0 z-[70] overflow-y-auto overscroll-contain flex flex-col'
+        : 'pb-32 min-h-screen'
+      }
+      style={{ background: 'var(--app-bg, linear-gradient(to bottom, #0a051e, #120830, #1a0a3c))' }}
+    >
       {/* Tam ekran modunda status bar boşluğu */}
       {operasyonFullscreen && (
         <div className="flex-shrink-0 h-safe-top" style={{ height: 'env(safe-area-inset-top, 44px)' }} />

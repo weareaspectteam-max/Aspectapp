@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { UserRole } from './login';
-import { authHeaders } from '../lib/api';
+import { authHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -248,10 +248,10 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
     try {
       const h = await authHeaders();
       const [listeRes, kulRes, mekRes, maliyetRes] = await Promise.all([
-        fetch(`${API_BASE}/malzeme/liste`,    { headers: h }),
-        fetch(`${API_BASE}/auth/kullanicilar`, { headers: h }),
-        fetch(`${API_BASE}/mekanlar`,          { headers: h }),
-        fetch(`${API_BASE}/maliyetler`,          { headers: h }),
+        fetch(`${API_BASE}/malzeme/liste${ghostParams()}`,    { headers: h }),
+        fetch(`${API_BASE}/auth/kullanicilar${ghostParams()}`, { headers: h }),
+        fetch(`${API_BASE}/mekanlar${ghostParams()}`,          { headers: h }),
+        fetch(`${API_BASE}/maliyetler${ghostParams()}`,          { headers: h }),
       ]);
       const listeJson   = await listeRes.json();
       const kulJson     = await kulRes.json();
@@ -536,7 +536,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
 
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="pb-24 min-h-screen bg-gradient-to-br from-[#0a051e] via-[#120830] to-[#1a0a3c]">
+    <div className="pb-24 min-h-screen" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #120830 50%, #1a0a3c 100%))' }}>
       {toast && <Toast mesaj={toast.mesaj} tip={toast.tip} onKapat={() => setToast(null)} />}
 
       {/* Lightbox */}
@@ -545,7 +545,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
       )}
 
       {/* Header */}
-      <div className="bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-b border-white/10 px-4 pt-3 pb-3">
+      <div className="bg-[rgba(0,0,0,0.75)] backdrop-blur-xl border-b border-white/10 px-4 pt-3 pb-3">
         <div className="flex items-center gap-3">
           <div className="flex-1">
             <div className="flex items-center gap-2">
@@ -610,7 +610,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
           </div>
 
           {/* Filtreler */}
-          <div className="rounded-2xl border border-white/10 bg-[rgba(10,5,30,0.55)] backdrop-blur p-4 space-y-3">
+          <div className="rounded-2xl border border-white/10 bg-[rgba(0,0,0,0.4)] backdrop-blur p-4 space-y-3">
             <div>
               <p className="text-[10px] font-semibold text-white/35 uppercase tracking-wider mb-2">Kategori</p>
               <div className="flex flex-wrap gap-1.5">
@@ -693,7 +693,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
 
           {/* Liste */}
           {filtrelenmis.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-[rgba(10,5,30,0.55)] p-8 text-center">
+            <div className="rounded-2xl border border-white/10 bg-[rgba(0,0,0,0.4)] p-8 text-center">
               <div className="text-4xl mb-3">📭</div>
               <div className="text-sm font-semibold text-white mb-1">Ekipman bulunamadı</div>
               <div className="text-xs text-white/30">
@@ -710,7 +710,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                   : null;
                 return (
                   <div key={eq.id}
-                    className="rounded-2xl border border-white/12 bg-[rgba(10,5,30,0.6)] backdrop-blur overflow-hidden">
+                    className="rounded-2xl border border-white/12 bg-[rgba(0,0,0,0.45)] backdrop-blur overflow-hidden">
 
                     {/* Fotoğraf şeridi (varsa) */}
                     {eq.imageUrl && (
@@ -721,7 +721,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                           className="w-full h-full object-cover"
                         />
                         {/* Gradient overlay */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-[rgba(10,5,30,0.85)] via-transparent to-transparent" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-[rgba(0,0,0,0.7)] via-transparent to-transparent" />
                         {/* Durum rozeti üstte */}
                         <div className={`absolute top-3 right-3 px-2.5 py-1 rounded-lg border text-[10px] font-bold ${durumClass(eq.status)}`}>
                           {durumLabel(eq.status)}
@@ -920,7 +920,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
       {modalAcik && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm"
           onClick={e => { if (e.target === e.currentTarget) modalKapat(); }}>
-          <div className="w-full max-w-md bg-[#0e0826] border border-white/12 rounded-t-3xl overflow-hidden mb-16"
+          <div className="w-full max-w-md bg-[rgba(0,0,0,0.85)] border border-white/12 rounded-t-3xl overflow-hidden mb-16"
             style={{ maxHeight: '92vh' }}>
 
             {/* Modal Header */}
@@ -1372,7 +1372,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
       {zimmetModal && zimmetHedef && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm"
           onClick={e => { if (e.target === e.currentTarget) { setZimmetModal(false); setZimmetHedef(null); } }}>
-          <div className="w-full max-w-md bg-[#0e0826] border border-white/12 rounded-t-3xl overflow-hidden mb-16"
+          <div className="w-full max-w-md bg-[rgba(0,0,0,0.85)] border border-white/12 rounded-t-3xl overflow-hidden mb-16"
             style={{ maxHeight: '70vh' }}>
             <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/10">
               <div>

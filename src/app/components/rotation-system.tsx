@@ -782,9 +782,9 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
   // ==========================================
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0a051e] via-[#120830] to-[#1a0a3c] pb-20">
+    <div className="min-h-screen pb-20" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #120830 50%, #1a0a3c 100%))' }}>
       {/* Tab Buttons — tüm roller için, global header altında sticky */}
-      <div className="sticky top-[64px] z-[4] backdrop-blur-xl bg-[rgba(10,5,30,0.85)] border-b border-white/15 px-6 py-4">
+      <div className="sticky top-[64px] z-[4] backdrop-blur-xl border-b border-white/15 px-6 py-4" style={{ background: 'rgba(0,0,0,0.65)' }}>
         <div className="flex gap-2 bg-white/5 p-1.5 rounded-xl border border-white/10">
           {userRole !== 'personel' && (
             <button
