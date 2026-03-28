@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  ArrowLeft, ChevronRight, Users, Printer, TrendingUp, Package,
+  ArrowLeft, ChevronLeft, ChevronRight, Users, Printer, TrendingUp, Package,
   CreditCard, Banknote, Wallet, AlertTriangle, Camera, RefreshCw,
   SlidersHorizontal, ChevronUp, ChevronDown, Loader2, AlertCircle,
   Trash2, Trophy, FileSpreadsheet, FileText, PrinterIcon,
@@ -21,6 +21,21 @@ import { bizDateStr } from '../lib/date';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 const SAYFA_BOYUTU = 10;
+
+// Türkçe → ASCII (jsPDF helvetica Türkçe karakter desteklemez)
+function tr(s: any): string {
+  if (typeof s === 'number') return String(s);
+  if (typeof s !== 'string') return String(s ?? '');
+  return s
+    .replace(/₺/g,'TL ').replace(/—/g,'-').replace(/–/g,'-')
+    .replace(/ğ/g,'g').replace(/Ğ/g,'G')
+    .replace(/ü/g,'u').replace(/Ü/g,'U')
+    .replace(/ş/g,'s').replace(/Ş/g,'S')
+    .replace(/ı/g,'i').replace(/İ/g,'I')
+    .replace(/ö/g,'o').replace(/Ö/g,'O')
+    .replace(/ç/g,'c').replace(/Ç/g,'C');
+}
+const trRow = (row: any[]): any[] => row.map((c: any) => typeof c === 'number' ? c : tr(String(c)));
 
 /* ─────────────────────── Types ─────────────────────── */
 interface UrunSatir {
@@ -295,14 +310,17 @@ function OzetKart({
     ? ((v.toplamIskonto / (v.toplamCiro + v.toplamIskonto)) * 100).toFixed(1)
     : null;
 
+  const oT = v.nakitToplamTL + v.ibanToplamTL + v.krediToplamTL;
+
   return (
     <motion.div
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
+      className="w-full rounded-2xl text-left transition-all"
       style={{
         background: 'rgba(255,255,255,0.04)',
         border: v.anomaliler.length > 0 ? '1px solid rgba(251,146,60,0.25)' : '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 16, padding: '14px 16px', cursor: 'pointer', marginBottom: 10,
+        overflow: 'hidden', cursor: 'pointer', marginBottom: 10,
         position: 'relative',
       }}
     >
@@ -311,19 +329,18 @@ function OzetKart({
         <button
           onClick={e => { e.stopPropagation(); onSilTalep(v); }}
           className="absolute top-2.5 right-2.5 w-7 h-7 rounded-xl flex items-center justify-center transition-all active:scale-90"
-          style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)' }}
+          style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)', zIndex: 2 }}
         >
           <Trash2 style={{ width: 12, height: 12, color: '#f87171' }} />
         </button>
       )}
 
-      <div className="flex items-start gap-3">
-        <div style={{ fontSize: 28, flexShrink: 0, lineHeight: 1, marginTop: 2 }}>{v.mekanEmoji}</div>
-
-        <div className="flex-1 min-w-0">
-          {/* Satır 1: mekan + anomali badge */}
-          <div className="flex items-center gap-1.5 mb-0.5 flex-wrap" style={{ paddingRight: canDelete ? 28 : 0 }}>
-            <span className="text-white font-bold" style={{ fontSize: 14 }}>{v.mekan}</span>
+      {/* Üst bant — mekan + bilgi + ciro */}
+      <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
+        <div>
+          <div className="flex items-center gap-2 mb-0.5" style={{ paddingRight: canDelete ? 28 : 0 }}>
+            <span style={{ fontSize: 22, lineHeight: 1 }}>{v.mekanEmoji}</span>
+            <p className="text-[14px] font-black text-white leading-tight">{v.mekan}</p>
             {v.anomaliler.length > 0 && (
               <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full"
                 style={{ background: 'rgba(251,146,60,0.15)', border: '1px solid rgba(251,146,60,0.3)' }}>
@@ -332,66 +349,85 @@ function OzetKart({
               </div>
             )}
           </div>
-
-          {/* Satır 2: tarih + saat */}
-          <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>
-            {formatTarih(v.tarih)} · {v.acilisSaat}–{v.kapanisSaat}
-          </p>
-
-          {/* Satır 3: personel chip'leri — mekan katkısı */}
-          {v.personeller.length > 0 && (() => {
-            const toplamKare = v.personeller.reduce((s, pp) => s + pp.kare, 0);
-            return (
-              <div className="flex flex-wrap gap-1.5">
-                {v.personeller.map(p => {
-                  const ciroYuzde = v.toplamCiro > 0 ? (p.toplamTL / v.toplamCiro) * 100 : 0;
-                  const kareYuzde = toplamKare > 0 ? (p.kare / toplamKare) * 100 : 0;
-                  const mekanKatkisi = Math.round(ciroYuzde * 0.60 + kareYuzde * 0.40);
-                  return (
-                    <div key={p.id} className="flex items-center gap-1 px-2 py-0.5 rounded-full"
-                      style={{ background: 'rgba(129,140,248,0.1)', border: '1px solid rgba(129,140,248,0.2)' }}>
-                      <span style={{ fontSize: 9 }}>{p.avatar}</span>
-                      <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
-                        {p.ad.split(' ')[0]}
-                      </span>
-                      <span style={{ fontSize: 9, color: '#818cf8', fontWeight: 700 }}>%{mekanKatkisi}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-        </div>
-
-        {/* Sağ: iskonto (üstte) + ciro + nakit */}
-        <div className="flex items-center gap-1.5 flex-shrink-0 self-center">
-          <div className="text-right">
-            {/* İskonto — cironun üstünde */}
-            {iskOran && (
-              <div className="flex items-center justify-end gap-1 mb-1.5">
-                <div className="flex items-center gap-1 px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(251,146,60,0.12)', border: '1px solid rgba(251,146,60,0.28)' }}>
-                  <span style={{ fontSize: 11, color: '#fb923c', fontWeight: 600 }}>İsk</span>
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>|</span>
-                  <span style={{ fontSize: 11, color: '#fb923c', fontWeight: 700 }}>-{tl(v.toplamIskonto)}</span>
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>|</span>
-                  <span style={{ fontSize: 11, color: '#fbbf24', fontWeight: 700 }}>%{iskOran}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Ciro */}
-            <p style={{ fontSize: 16, fontWeight: 800, color: '#a78bfa', lineHeight: 1 }}>{tl(v.toplamCiro)}</p>
-
-            {/* Nakit */}
-            <div className="flex items-center justify-end gap-1 mt-1.5">
-              <Banknote style={{ width: 9, height: 9, color: '#34d399' }} />
-              <span style={{ fontSize: 11, color: '#34d399', fontWeight: 700 }}>{tl(v.nakitToplamTL)}</span>
-            </div>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-[10px] font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              {formatTarih(v.tarih)} · {v.acilisSaat}–{v.kapanisSaat}
+            </span>
           </div>
-          <ChevronRight className="w-4 h-4 text-white/20 flex-shrink-0" />
+        </div>
+        <div className="text-right flex-shrink-0" style={{ paddingRight: canDelete ? 30 : 0 }}>
+          {iskOran && (
+            <div className="flex items-center justify-end gap-1 mb-1.5">
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(251,146,60,0.12)', border: '1px solid rgba(251,146,60,0.28)' }}>
+                <span style={{ fontSize: 10, color: '#fb923c', fontWeight: 600 }}>İsk</span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>|</span>
+                <span style={{ fontSize: 10, color: '#fb923c', fontWeight: 700 }}>-{tl(v.toplamIskonto)}</span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>|</span>
+                <span style={{ fontSize: 10, color: '#fbbf24', fontWeight: 700 }}>%{iskOran}</span>
+              </div>
+            </div>
+          )}
+          <p className="text-[18px] font-black leading-tight" style={{ color: '#a78bfa' }}>
+            {tl(v.toplamCiro)}
+          </p>
         </div>
       </div>
+
+      {/* Ödeme dağılımı çubuğu */}
+      {oT > 0 && (
+        <div className="px-4 pb-2">
+          <div className="flex rounded-full overflow-hidden" style={{ height: 4, background: 'rgba(255,255,255,0.06)' }}>
+            {v.nakitToplamTL > 0 && <div style={{ width: `${(v.nakitToplamTL / oT) * 100}%`, background: '#34d399' }} />}
+            {v.ibanToplamTL > 0 && <div style={{ width: `${(v.ibanToplamTL / oT) * 100}%`, background: '#60a5fa' }} />}
+            {v.krediToplamTL > 0 && <div style={{ width: `${(v.krediToplamTL / oT) * 100}%`, background: '#f472b6' }} />}
+          </div>
+          <div className="flex items-center gap-3 mt-1.5">
+            {v.nakitToplamTL > 0 && (
+              <div className="flex items-center gap-1">
+                <span className="text-[8px] font-semibold" style={{ color: 'rgba(52,211,153,0.6)' }}>Nakit</span>
+                <span className="text-[9px] font-bold" style={{ color: '#34d399' }}>{tl(v.nakitToplamTL)}</span>
+              </div>
+            )}
+            {v.ibanToplamTL > 0 && (
+              <div className="flex items-center gap-1">
+                <span className="text-[8px] font-semibold" style={{ color: 'rgba(96,165,250,0.6)' }}>IBAN</span>
+                <span className="text-[9px] font-bold" style={{ color: '#60a5fa' }}>{tl(v.ibanToplamTL)}</span>
+              </div>
+            )}
+            {v.krediToplamTL > 0 && (
+              <div className="flex items-center gap-1">
+                <span className="text-[8px] font-semibold" style={{ color: 'rgba(244,114,182,0.6)' }}>Kredi Kartı</span>
+                <span className="text-[9px] font-bold" style={{ color: '#f472b6' }}>{tl(v.krediToplamTL)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Alt bant — personeller + ok */}
+      {v.personeller.length > 0 && (() => {
+        const toplamKare = v.personeller.reduce((s, pp) => s + pp.kare, 0);
+        return (
+          <div className="flex items-center justify-between px-4 py-2.5"
+            style={{ background: 'rgba(255,255,255,0.02)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="flex gap-1.5 flex-wrap flex-1 min-w-0">
+              {v.personeller.map(p => {
+                const ciroYuzde = v.toplamCiro > 0 ? (p.toplamTL / v.toplamCiro) * 100 : 0;
+                const kareYuzde = toplamKare > 0 ? (p.kare / toplamKare) * 100 : 0;
+                const mekanKatkisi = Math.round(ciroYuzde * 0.60 + kareYuzde * 0.40);
+                return (
+                  <span key={p.id} className="text-[9px] font-semibold px-2 py-0.5 rounded-full truncate"
+                    style={{ background: 'rgba(129,140,248,0.08)', border: '1px solid rgba(129,140,248,0.15)', color: 'rgba(255,255,255,0.5)', maxWidth: 120 }}>
+                    {p.avatar} {p.ad.split(' ')[0]} <span style={{ color: '#818cf8', fontWeight: 700 }}>%{mekanKatkisi}</span>
+                  </span>
+                );
+              })}
+            </div>
+            <ChevronRight style={{ width: 14, height: 14, color: 'rgba(255,255,255,0.2)', flexShrink: 0 }} />
+          </div>
+        );
+      })()}
     </motion.div>
   );
 }
@@ -419,17 +455,6 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
 
   /* ───── Export helpers ───── */
   const dosyaAdi = `${v.mekan.replace(/\s+/g, '_')}_${v.tarih}`;
-
-  // Türkçe → ASCII (PDF font uyumu için)
-  function tr(s: string) {
-    return s
-      .replace(/ğ/g,'g').replace(/Ğ/g,'G')
-      .replace(/ü/g,'u').replace(/Ü/g,'U')
-      .replace(/ş/g,'s').replace(/Ş/g,'S')
-      .replace(/ı/g,'i').replace(/İ/g,'I')
-      .replace(/ö/g,'o').replace(/Ö/g,'O')
-      .replace(/ç/g,'c').replace(/Ç/g,'C');
-  }
 
   function handleExcel() {
     const toplamPrim = v.primBilgi?.toplamPrim || 0;
@@ -1224,10 +1249,334 @@ interface Props {
 }
 
 export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: Props) {
+  const [aktifSekme, setAktifSekme] = useState<'vardiya' | 'gun'>('vardiya');
   const [raporlar, setRaporlar] = useState<VardiyaKayit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [seciliId, setSeciliId] = useState<string | null>(null);
+
+  // Gün raporu state
+  const [gunTarihBas, setGunTarihBas] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 30);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  });
+  const [gunTarihBit, setGunTarihBit] = useState(() => bizDateStr());
+  const [gunListe, setGunListe] = useState<any[]>([]);
+  const [gunSecili, setGunSecili] = useState<string | null>(null);
+  const [gunDetay, setGunDetay] = useState<any>(null);
+  const [gunLoading, setGunLoading] = useState(false);
+  const [gunError, setGunError] = useState<string | null>(null);
+  const [gunDetayLoading, setGunDetayLoading] = useState(false);
+
+  // Gün listesini çek (tarih aralığı)
+  const fetchGunListesi = useCallback(async (bas: string, bit: string) => {
+    setGunLoading(true);
+    setGunError(null);
+    setGunSecili(null);
+    setGunDetay(null);
+    try {
+      const token = await getToken();
+      const res = await fetch(appendGhostParam(`${API_BASE}/vardiya/gun-raporu?baslangic=${bas}&bitis=${bit}`), {
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}`, 'X-Access-Token': token },
+      });
+      const data = await res.json();
+      if (!res.ok) { setGunError(data.error || `HTTP ${res.status}`); return; }
+      setGunListe(data.gunler || []);
+    } catch (e) {
+      setGunError('Sunucuya bağlanılamadı.');
+    } finally {
+      setGunLoading(false);
+    }
+  }, []);
+
+  // Tek gün detayını çek
+  const fetchGunDetay = useCallback(async (tarih: string) => {
+    setGunDetayLoading(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(appendGhostParam(`${API_BASE}/vardiya/gun-raporu?tarih=${tarih}`), {
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}`, 'X-Access-Token': token },
+      });
+      const data = await res.json();
+      if (res.ok) setGunDetay(data);
+    } catch (e) { /* ignore */ }
+    finally { setGunDetayLoading(false); }
+  }, []);
+
+  // ── Gün Bazlı Dışa Aktarım ──
+  const handleGunExcel = () => {
+    if (!gunDetay || gunDetay.bos) return;
+    const d = gunDetay;
+    const oz = d.ozet || {};
+    const mal = d.maliyet || {};
+    const tarihStr = formatTarih(d.tarih || gunSecili || '');
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Günlük Özet
+    const brutCiro = (oz.toplamCiro || 0) + (oz.toplamIskonto || 0);
+    const iskYuzde = brutCiro > 0 ? Math.round((oz.toplamIskonto / brutCiro) * 100) : 0;
+    const nakit = (d.odemeler || []).find((o: any) => o.yontem === 'cash')?.ciro || 0;
+    const iban = (d.odemeler || []).find((o: any) => o.yontem === 'iban')?.ciro || 0;
+    const kredi = (d.odemeler || []).find((o: any) => o.yontem === 'card')?.ciro || 0;
+    const s1 = XLSX.utils.aoa_to_sheet([
+      ['GÜNLÜK OPERASYON RAPORU'],
+      [], ['Tarih', tarihStr],
+      ['Mekan Sayısı', `${oz.toplamMekan || 0} (${oz.acilanMekan || 0} açıldı / ${oz.kapananMekan || 0} kapandı)`],
+      [], ['Toplam Ciro', oz.toplamCiro || 0],
+      ['Brüt Ciro', brutCiro],
+      ['İskonto', `${oz.toplamIskonto || 0} (%${iskYuzde})`],
+      [], ['Nakit', nakit], ['IBAN', iban], ['Kredi Kartı', kredi],
+      [], ['Toplam Kare', oz.toplamKare || 0],
+      ['Basılan Fotoğraf', oz.toplamBasilanFotograf || 0],
+      ['Satılan Fotoğraf', oz.toplamSatilanFotograf || 0],
+      ['İade', oz.toplamIadeFotograf || 0],
+      [], ['Baskı Maliyeti', mal.baskiMaliyeti || 0],
+      ['Albüm Maliyeti', mal.albumMaliyeti || 0],
+      ['Kira Gideri', mal.kiraGideri || 0],
+      ['Maaş Gideri', mal.maasGideri || 0],
+      ['Prim Gideri', mal.primGideri || 0],
+      ['Toplam Maliyet', mal.toplamGider || 0],
+      [], ['Kar/Zarar', mal.karZarar || 0],
+      ['Kar Marjı', `%${mal.karMarji || 0}`],
+    ]);
+    XLSX.utils.book_append_sheet(wb, s1, 'Günlük Özet');
+
+    // Sheet 2: Mekan Bazlı
+    const mekanRows = (d.mekanlar || []).map((m: any) => {
+      const mBrut = (m.ciro || 0) + (m.iskonto || 0);
+      const mIskYuzde = mBrut > 0 ? Math.round((m.iskonto / mBrut) * 100) : 0;
+      return [m.name, m.acilisSaat || '-', m.kapanisSaat || '-', m.ciro, m.satisAdet, m.iskonto, `%${mIskYuzde}`, m.gunlukKira];
+    });
+    const s2 = XLSX.utils.aoa_to_sheet([
+      ['Mekan', 'Açılış', 'Kapanış', 'Ciro', 'Satış', 'İskonto', 'İsk %', 'Kira'],
+      ...mekanRows,
+    ]);
+    XLSX.utils.book_append_sheet(wb, s2, 'Mekan Bazlı');
+
+    // Sheet 3: Personel (Kazanç = Maaş + Prim)
+    const perRows = (d.personeller || []).map((p: any) => {
+      const kazanc = (p.gunlukMaas || 0) + (p.primToplam || 0);
+      return [p.ad, (p.mekanlar || []).join(', '), p.ciro, p.kare, p.gunlukMaas, p.primToplam || 0, kazanc];
+    });
+    const perTopMaas = (d.personeller || []).reduce((s: number, p: any) => s + (p.gunlukMaas || 0), 0);
+    const perTopPrim = (d.personeller || []).reduce((s: number, p: any) => s + (p.primToplam || 0), 0);
+    const perTopCiro = (d.personeller || []).reduce((s: number, p: any) => s + (p.ciro || 0), 0);
+    const perTopKare = (d.personeller || []).reduce((s: number, p: any) => s + (p.kare || 0), 0);
+    const perTopKazanc = perTopMaas + perTopPrim;
+    perRows.push(['TOPLAM', '', perTopCiro, perTopKare, perTopMaas, perTopPrim, perTopKazanc]);
+    const s3 = XLSX.utils.aoa_to_sheet([
+      ['Personel', 'Mekan', 'Ciro', 'Kare', 'Maaş', 'Prim', 'Kazanç'],
+      ...perRows,
+    ]);
+    XLSX.utils.book_append_sheet(wb, s3, 'Personel');
+
+    // Sheet 4: Baskı Özeti (mekan bazlı)
+    const baskiRows = (d.mekanlar || []).filter((m: any) => (m.basilanFotograf || 0) > 0).map((m: any) => [
+      m.name, m.basilanFotograf || 0, m.iadeFotograf || 0, m.netSatilanFotograf || 0, m.birimBaskiMaliyeti || 0, m.baskiMaliyeti || 0,
+    ]);
+    const bTopBasilan = (d.mekanlar || []).reduce((s: number, m: any) => s + (m.basilanFotograf || 0), 0);
+    const bTopIade = (d.mekanlar || []).reduce((s: number, m: any) => s + (m.iadeFotograf || 0), 0);
+    const bTopNet = (d.mekanlar || []).reduce((s: number, m: any) => s + (m.netSatilanFotograf || 0), 0);
+    const bTopMaliyet = (d.mekanlar || []).reduce((s: number, m: any) => s + (m.baskiMaliyeti || 0), 0);
+    baskiRows.push(['TOPLAM', bTopBasilan, bTopIade, bTopNet, '', bTopMaliyet]);
+    const s4 = XLSX.utils.aoa_to_sheet([
+      ['Mekan', 'Basılan', 'İade', 'Net Satılan', 'Birim Maliyet', 'Toplam Maliyet'],
+      ...baskiRows,
+    ]);
+    XLSX.utils.book_append_sheet(wb, s4, 'Baskı Özeti');
+
+    // Sheet 5: Ürün/Albüm Satışları
+    const albumRows = (d.albumler || []).map((a: any) => [a.tip, a.adet, a.ciro]);
+    const aTopAdet = (d.albumler || []).reduce((s: number, a: any) => s + (a.adet || 0), 0);
+    const aTopCiro = (d.albumler || []).reduce((s: number, a: any) => s + (a.ciro || 0), 0);
+    albumRows.push(['TOPLAM', aTopAdet, aTopCiro]);
+    const s5 = XLSX.utils.aoa_to_sheet([
+      ['Ürün', 'Adet', 'Ciro'],
+      ...albumRows,
+    ]);
+    XLSX.utils.book_append_sheet(wb, s5, 'Ürün Satışları');
+
+    // Sheet 6: Ödeme Dağılımı
+    const odemeler = d.odemeler || [];
+    const odemeToplam = odemeler.reduce((s: number, o: any) => s + (o.ciro || 0), 0);
+    const odemeLabel: Record<string, string> = { cash: 'Nakit', iban: 'IBAN', card: 'Kredi Kartı', foreign: 'Döviz' };
+    const odemeRows = odemeler.map((o: any) => {
+      const oran = odemeToplam > 0 ? Math.round((o.ciro / odemeToplam) * 1000) / 10 : 0;
+      return [odemeLabel[o.yontem] || o.yontem, o.ciro, `%${oran}`];
+    });
+    odemeRows.push(['TOPLAM', odemeToplam, '%100']);
+    const s6 = XLSX.utils.aoa_to_sheet([
+      ['Ödeme Yöntemi', 'Tutar', 'Oran'],
+      ...odemeRows,
+    ]);
+    XLSX.utils.book_append_sheet(wb, s6, 'Ödeme Dağılımı');
+
+    // Sheet 7: Anomaliler
+    const anomaliler = d.anomaliler || [];
+    if (anomaliler.length > 0) {
+      const tipLabel = (t: string) => t === 'acilis' ? 'Açılış Stok' : t === 'kapanis' ? 'Kapanış Stok' : 'Yazıcı';
+      const anomaliRows = anomaliler.map((a: any) => {
+        const detayStr = a.detay ? (typeof a.detay === 'object' ? Object.entries(a.detay).map(([k, v]) => `${k}: ${Number(v) > 0 ? '+' : ''}${v}`).join(', ') : String(a.detay)) : '';
+        return [a.mekan, tipLabel(a.tip), detayStr];
+      });
+      const s7 = XLSX.utils.aoa_to_sheet([['Mekan', 'Tip', 'Detay'], ...anomaliRows]);
+      XLSX.utils.book_append_sheet(wb, s7, 'Anomaliler');
+    }
+
+    XLSX.writeFile(wb, `Gun_Raporu_${d.tarih || gunSecili || 'rapor'}.xlsx`);
+  };
+
+  const handleGunPDF = () => {
+    if (!gunDetay || gunDetay.bos) return;
+    const d = gunDetay;
+    const oz = d.ozet || {};
+    const mal = d.maliyet || {};
+    const tarihStr = formatTarih(d.tarih || gunSecili || '');
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pw = doc.internal.pageSize.getWidth();
+    let y = 12;
+
+    // Başlık
+    doc.setFontSize(13); doc.setFont('helvetica', 'bold');
+    doc.text(tr(`GUNLUK OPERASYON RAPORU - ${tarihStr}`), pw / 2, y, { align: 'center' });
+    y += 8;
+
+    const headStyle = { fillColor: [30, 20, 50] as [number, number, number], textColor: [255, 255, 255] as [number, number, number], fontStyle: 'bold' as const, fontSize: 7 };
+    const bodyStyle = { fontSize: 7 };
+
+    // Sol: Günlük Özet | Sağ: Ödeme + Baskı
+    const brutCiro = (oz.toplamCiro || 0) + (oz.toplamIskonto || 0);
+    const iskYuzde = brutCiro > 0 ? Math.round((oz.toplamIskonto / brutCiro) * 100) : 0;
+    const nakit = (d.odemeler || []).find((o: any) => o.yontem === 'cash')?.ciro || 0;
+    const ibanV = (d.odemeler || []).find((o: any) => o.yontem === 'iban')?.ciro || 0;
+    const krediV = (d.odemeler || []).find((o: any) => o.yontem === 'card')?.ciro || 0;
+
+    // Sol tablo: Günlük Özet
+    autoTable(doc, {
+      startY: y, margin: { left: 10, right: pw / 2 + 2 },
+      head: [[tr('Gunluk Ozet'), '']],
+      body: [
+        ['Mekan', `${oz.toplamMekan || 0} (${oz.acilanMekan || 0} ac. / ${oz.kapananMekan || 0} kap.)`],
+        [tr('Toplam Ciro'), `TL ${(oz.toplamCiro || 0).toLocaleString('tr-TR')}`],
+        [tr('Iskonto'), `TL ${(oz.toplamIskonto || 0).toLocaleString('tr-TR')} (%${iskYuzde})`],
+        ['Toplam Kare', String(oz.toplamKare || 0)],
+        [tr('Basilan / Satilan / Iade'), `${oz.toplamBasilanFotograf || 0} / ${oz.toplamSatilanFotograf || 0} / ${oz.toplamIadeFotograf || 0}`],
+        [tr('Baski Maliyeti'), `TL ${(mal.baskiMaliyeti || 0).toLocaleString('tr-TR')}`],
+        [tr('Album Maliyeti'), `TL ${(mal.albumMaliyeti || 0).toLocaleString('tr-TR')}`],
+        [tr('Kira Gideri'), `TL ${(mal.kiraGideri || 0).toLocaleString('tr-TR')}`],
+        [tr('Maas Gideri'), `TL ${(mal.maasGideri || 0).toLocaleString('tr-TR')}`],
+        ['Prim Gideri', `TL ${(mal.primGideri || 0).toLocaleString('tr-TR')}`],
+        [tr('Toplam Maliyet'), `TL ${(mal.toplamGider || 0).toLocaleString('tr-TR')}`],
+        ['Kar/Zarar', `TL ${(mal.karZarar || 0).toLocaleString('tr-TR')} (%${mal.karMarji || 0})`],
+      ],
+      headStyles: headStyle, bodyStyles: bodyStyle,
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 35 } },
+      theme: 'grid',
+    });
+
+    // Sağ tablo: Ödeme Dağılımı
+    const odemeToplam = nakit + ibanV + krediV;
+    const oranN = odemeToplam > 0 ? Math.round((nakit / odemeToplam) * 1000) / 10 : 0;
+    const oranI = odemeToplam > 0 ? Math.round((ibanV / odemeToplam) * 1000) / 10 : 0;
+    const oranK = odemeToplam > 0 ? Math.round((krediV / odemeToplam) * 1000) / 10 : 0;
+    autoTable(doc, {
+      startY: y, margin: { left: pw / 2 + 2, right: 10 },
+      head: [[tr('Odeme'), 'Tutar', '%']],
+      body: [
+        ['Nakit', `TL ${nakit.toLocaleString('tr-TR')}`, `%${oranN}`],
+        ['IBAN', `TL ${ibanV.toLocaleString('tr-TR')}`, `%${oranI}`],
+        [tr('Kredi Karti'), `TL ${krediV.toLocaleString('tr-TR')}`, `%${oranK}`],
+        ['TOPLAM', `TL ${odemeToplam.toLocaleString('tr-TR')}`, '%100'],
+      ],
+      headStyles: headStyle, bodyStyles: bodyStyle, theme: 'grid',
+    });
+
+    // Sağ tablo: Baskı Özeti (ödemenin altına)
+    const baskiY = (doc as any).lastAutoTable?.finalY + 3 || y + 40;
+    const baskiMekanlar = (d.mekanlar || []).filter((m: any) => (m.basilanFotograf || 0) > 0);
+    if (baskiMekanlar.length > 0) {
+      const bRows = baskiMekanlar.map((m: any) => [tr(m.name), m.basilanFotograf || 0, m.iadeFotograf || 0, m.netSatilanFotograf || 0, `TL ${(m.birimBaskiMaliyeti || 0).toFixed(2)}`, `TL ${(m.baskiMaliyeti || 0).toLocaleString('tr-TR')}`]);
+      const bTopB = baskiMekanlar.reduce((s: number, m: any) => s + (m.basilanFotograf || 0), 0);
+      const bTopI = baskiMekanlar.reduce((s: number, m: any) => s + (m.iadeFotograf || 0), 0);
+      const bTopN = baskiMekanlar.reduce((s: number, m: any) => s + (m.netSatilanFotograf || 0), 0);
+      const bTopM = baskiMekanlar.reduce((s: number, m: any) => s + (m.baskiMaliyeti || 0), 0);
+      bRows.push(['TOPLAM', bTopB, bTopI, bTopN, '', `TL ${bTopM.toLocaleString('tr-TR')}`]);
+      autoTable(doc, {
+        startY: baskiY, margin: { left: pw / 2 + 2, right: 10 },
+        head: [[tr('Baski'), 'Bas.', 'Iade', 'Net', 'Birim', 'Toplam']],
+        body: bRows,
+        headStyles: headStyle, bodyStyles: { fontSize: 6 }, theme: 'grid',
+      });
+    }
+
+    // Sol özet tablosunun altını al
+    y = Math.max((doc as any).lastAutoTable?.finalY || y + 50, y + 50) + 4;
+
+    // Mekan Bazlı (tam genişlik)
+    const mekanRows = (d.mekanlar || []).map((m: any) => {
+      const mBrut = (m.ciro || 0) + (m.iskonto || 0);
+      const mIskY = mBrut > 0 ? Math.round((m.iskonto / mBrut) * 100) : 0;
+      return [tr(m.name), m.acilisSaat || '-', m.kapanisSaat || '-', `TL ${(m.ciro || 0).toLocaleString('tr-TR')}`, m.satisAdet, `TL ${(m.iskonto || 0).toLocaleString('tr-TR')}`, `%${mIskY}`, `TL ${(m.gunlukKira || 0).toLocaleString('tr-TR')}`];
+    });
+    autoTable(doc, {
+      startY: y, margin: { left: 10, right: 10 },
+      head: [trRow(['Mekan', 'Acilis', 'Kapanis', 'Ciro', 'Satis', 'Iskonto', 'Isk%', 'Kira'])],
+      body: mekanRows,
+      headStyles: headStyle, bodyStyles: bodyStyle, theme: 'grid',
+    });
+    y = (doc as any).lastAutoTable?.finalY + 4;
+
+    // Personel (tam genişlik)
+    const perRows = (d.personeller || []).map((p: any) => {
+      const kazanc = (p.gunlukMaas || 0) + (p.primToplam || 0);
+      return [tr(p.ad), tr((p.mekanlar || []).join(', ')), `TL ${(p.ciro || 0).toLocaleString('tr-TR')}`, p.kare, `TL ${(p.gunlukMaas || 0).toLocaleString('tr-TR')}`, `TL ${(p.primToplam || 0).toLocaleString('tr-TR')}`, `TL ${kazanc.toLocaleString('tr-TR')}`];
+    });
+    const pTM = (d.personeller || []).reduce((s: number, p: any) => s + (p.gunlukMaas || 0), 0);
+    const pTP = (d.personeller || []).reduce((s: number, p: any) => s + (p.primToplam || 0), 0);
+    const pTC = (d.personeller || []).reduce((s: number, p: any) => s + (p.ciro || 0), 0);
+    const pTK = (d.personeller || []).reduce((s: number, p: any) => s + (p.kare || 0), 0);
+    perRows.push(['TOPLAM', '', `TL ${pTC.toLocaleString('tr-TR')}`, pTK, `TL ${pTM.toLocaleString('tr-TR')}`, `TL ${pTP.toLocaleString('tr-TR')}`, `TL ${(pTM + pTP).toLocaleString('tr-TR')}`]);
+    autoTable(doc, {
+      startY: y, margin: { left: 10, right: 10 },
+      head: [['Personel', 'Mekan', 'Ciro', 'Kare', 'Maas', 'Prim', 'Kazanc']],
+      body: perRows,
+      headStyles: headStyle, bodyStyles: bodyStyle, theme: 'grid',
+    });
+    y = (doc as any).lastAutoTable?.finalY + 4;
+
+    // Alt kısım: Ürün (sol) + Anomali (sağ)
+    if (y > 240) { doc.addPage(); y = 12; }
+
+    // Sol: Ürün/Albüm
+    const albumRows = (d.albumler || []).map((a: any) => [tr(a.tip), a.adet, `TL ${(a.ciro || 0).toLocaleString('tr-TR')}`]);
+    const aTotA = (d.albumler || []).reduce((s: number, a: any) => s + (a.adet || 0), 0);
+    const aTotC = (d.albumler || []).reduce((s: number, a: any) => s + (a.ciro || 0), 0);
+    albumRows.push(['TOPLAM', aTotA, `TL ${aTotC.toLocaleString('tr-TR')}`]);
+    autoTable(doc, {
+      startY: y, margin: { left: 10, right: pw / 2 + 2 },
+      head: [[tr('Urun'), 'Adet', 'Ciro']],
+      body: albumRows,
+      headStyles: headStyle, bodyStyles: bodyStyle, theme: 'grid',
+    });
+
+    // Sağ: Anomaliler
+    const anomaliler = d.anomaliler || [];
+    if (anomaliler.length > 0) {
+      const tipL = (t: string) => t === 'acilis' ? 'Acilis' : t === 'kapanis' ? 'Kapanis' : 'Yazici';
+      const aRows = anomaliler.map((a: any) => {
+        const det = a.detay ? (typeof a.detay === 'object' ? Object.entries(a.detay).map(([k, v]) => `${k}:${Number(v) > 0 ? '+' : ''}${v}`).join(', ') : String(a.detay)) : '';
+        return [tr(a.mekan), tipL(a.tip), tr(det)];
+      });
+      autoTable(doc, {
+        startY: y, margin: { left: pw / 2 + 2, right: 10 },
+        head: [['Mekan', 'Tip', 'Detay']],
+        body: aRows,
+        headStyles: headStyle, bodyStyles: { fontSize: 6 }, theme: 'grid',
+      });
+    }
+
+    doc.save(`Gun_Raporu_${d.tarih || gunSecili || 'rapor'}.pdf`);
+  };
 
   // Sayfalama
   const [gorunenAdet, setGorunenAdet] = useState(SAYFA_BOYUTU);
@@ -1349,21 +1698,463 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
         <div className="flex-1">
           <h1 className="text-white font-black" style={{ fontSize: 18 }}>Vardiya Raporları</h1>
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
-            {secili ? secili.mekan : loading ? 'Yükleniyor…' : `${raporlar.length} kapanmış vardiya`}
+            {aktifSekme === 'gun' ? (gunSecili ? `Gün Detayı — ${gunSecili}` : `Gün Raporu — ${gunListe.length} gün`) : secili ? secili.mekan : loading ? 'Yükleniyor…' : `${raporlar.length} kapanmış vardiya`}
           </p>
         </div>
         {!secili && (
           <button
-            onClick={handleAra}
+            onClick={aktifSekme === 'gun' ? () => { if (gunSecili) fetchGunDetay(gunSecili); else fetchGunListesi(gunTarihBas, gunTarihBit); } : handleAra}
             className="w-9 h-9 rounded-2xl flex items-center justify-center transition-all active:scale-90"
             style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)' }}
           >
-            <RefreshCw className={`w-4 h-4 text-violet-400 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 text-violet-400 ${(aktifSekme === 'gun' ? gunLoading : loading) ? 'animate-spin' : ''}`} />
           </button>
         )}
       </div>
 
-      {/* İçerik */}
+      {/* Sekme Seçici */}
+      {!secili && (
+        <div className="px-4 pb-3">
+          <div className="flex gap-2 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            {([['vardiya', 'Vardiya Bazlı'], ['gun', 'Gün Bazlı']] as const).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => { setAktifSekme(key); if (key === 'gun' && gunListe.length === 0) fetchGunListesi(gunTarihBas, gunTarihBit); }}
+                className="flex-1 py-2 rounded-lg text-xs font-bold transition-all"
+                style={{
+                  background: aktifSekme === key ? 'rgba(167,139,250,0.25)' : 'transparent',
+                  color: aktifSekme === key ? '#c4b5fd' : 'rgba(255,255,255,0.4)',
+                  border: aktifSekme === key ? '1px solid rgba(167,139,250,0.4)' : '1px solid transparent',
+                }}
+              >{label}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ════ GÜN BAZLI RAPOR ════ */}
+      {aktifSekme === 'gun' && !secili && (
+        <div className="px-4 pb-8">
+          {/* Tarih aralığı filtresi */}
+          {!gunSecili && (
+            <div className="flex items-center gap-2 mb-4">
+              <input type="date" value={gunTarihBas} onChange={e => setGunTarihBas(e.target.value)}
+                className="flex-1 text-xs font-bold text-white rounded-xl px-3 py-2 outline-none"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }} />
+              <span className="text-white/30 text-xs">—</span>
+              <input type="date" value={gunTarihBit} onChange={e => setGunTarihBit(e.target.value)}
+                className="flex-1 text-xs font-bold text-white rounded-xl px-3 py-2 outline-none"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }} />
+              <button onClick={() => fetchGunListesi(gunTarihBas, gunTarihBit)}
+                className="px-3 py-2 rounded-xl text-xs font-bold active:scale-95"
+                style={{ background: 'rgba(167,139,250,0.2)', border: '1px solid rgba(167,139,250,0.4)', color: '#c4b5fd' }}>
+                Ara
+              </button>
+            </div>
+          )}
+
+          {/* Geri butonu (detay modunda) */}
+          {gunSecili && (
+            <button onClick={() => { setGunSecili(null); setGunDetay(null); }}
+              className="flex items-center gap-2 mb-4 text-xs font-bold active:scale-95"
+              style={{ color: '#c4b5fd' }}>
+              <ChevronLeft style={{ width: 14, height: 14 }} /> Listeye Dön
+            </button>
+          )}
+
+          {/* Yükleniyor */}
+          {gunLoading && (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-7 h-7 text-violet-400 animate-spin" />
+            </div>
+          )}
+
+          {/* Hata */}
+          {gunError && !gunLoading && (
+            <div className="rounded-2xl p-4 text-center" style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.3)' }}>
+              <AlertCircle className="w-6 h-6 text-red-400 mx-auto mb-2" />
+              <p className="text-red-300 text-sm font-bold">{gunError}</p>
+            </div>
+          )}
+
+          {/* Boş */}
+          {!gunLoading && !gunError && gunListe.length === 0 && !gunSecili && (
+            <div className="rounded-2xl p-8 text-center" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <p className="text-white/40 text-sm font-bold">Gün raporu için "Ara" butonuna tıklayın</p>
+            </div>
+          )}
+
+          {/* ── GÜN LİSTESİ (kartlar) ── */}
+          {!gunSecili && !gunLoading && gunListe.length > 0 && (
+            <div className="space-y-3">
+              {gunListe.map((g: any) => {
+                const karZarar = g.karZarar || 0;
+                const karPositif = karZarar >= 0;
+                const karRenk = karPositif ? '#34d399' : '#f87171';
+                const ciro = g.toplamCiro || 0;
+                const nakit = g.nakitToplam || 0;
+                const iban = g.ibanToplam || 0;
+                const kredi = g.krediToplam || 0;
+                const odemeToplam = nakit + iban + kredi;
+                return (
+                  <motion.button key={g.tarih}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => { setGunSecili(g.tarih); fetchGunDetay(g.tarih); }}
+                    className="w-full rounded-2xl text-left transition-all"
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+
+                    {/* Üst bant — tarih + ciro */}
+                    <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
+                      <div>
+                        <p className="text-[14px] font-black text-white leading-tight">{formatTarih(g.tarih)}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                            {g.toplamMekan} mekan
+                          </span>
+                          <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.15)' }} />
+                          <span className="text-[10px] font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                            {g.toplamSatisAdet} satis
+                          </span>
+                          <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.15)' }} />
+                          <span className="text-[10px] font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                            {g.toplamKare} kare{g.iadeFotograf > 0 && <span style={{ color: 'rgba(248,113,113,0.5)' }}> ({g.iadeFotograf} iade)</span>}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-[18px] font-black leading-tight" style={{ color: '#a78bfa' }}>
+                          {tl(ciro)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Ödeme dağılımı çubuğu */}
+                    {odemeToplam > 0 && (
+                      <div className="px-4 pb-2">
+                        <div className="flex rounded-full overflow-hidden" style={{ height: 4, background: 'rgba(255,255,255,0.06)' }}>
+                          {nakit > 0 && <div style={{ width: `${(nakit / odemeToplam) * 100}%`, background: '#34d399' }} />}
+                          {iban > 0 && <div style={{ width: `${(iban / odemeToplam) * 100}%`, background: '#60a5fa' }} />}
+                          {kredi > 0 && <div style={{ width: `${(kredi / odemeToplam) * 100}%`, background: '#f472b6' }} />}
+                        </div>
+                        <div className="flex items-center gap-3 mt-1.5">
+                          {nakit > 0 && (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[8px] font-semibold" style={{ color: 'rgba(52,211,153,0.6)' }}>Nakit</span>
+                              <span className="text-[9px] font-bold" style={{ color: '#34d399' }}>{tl(nakit)}</span>
+                            </div>
+                          )}
+                          {iban > 0 && (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[8px] font-semibold" style={{ color: 'rgba(96,165,250,0.6)' }}>IBAN</span>
+                              <span className="text-[9px] font-bold" style={{ color: '#60a5fa' }}>{tl(iban)}</span>
+                            </div>
+                          )}
+                          {kredi > 0 && (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[8px] font-semibold" style={{ color: 'rgba(244,114,182,0.6)' }}>Kredi Kartı</span>
+                              <span className="text-[9px] font-bold" style={{ color: '#f472b6' }}>{tl(kredi)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Kar/Zarar + İskonto | Anomali + Geç Giriş */}
+                    <div className="flex items-center justify-between px-4 pb-2.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg"
+                          style={{ background: karPositif ? 'rgba(52,211,153,0.1)' : 'rgba(248,113,113,0.1)', border: `1px solid ${karPositif ? 'rgba(52,211,153,0.2)' : 'rgba(248,113,113,0.2)'}` }}>
+                          <TrendingUp style={{ width: 10, height: 10, color: karRenk }} />
+                          <span className="text-[10px] font-bold" style={{ color: karRenk }}>
+                            {tl(karZarar)}
+                          </span>
+                          <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{
+                            background: karPositif ? 'rgba(52,211,153,0.15)' : 'rgba(248,113,113,0.15)',
+                            color: karRenk,
+                          }}>%{g.karMarji || 0}</span>
+                        </div>
+
+                        {g.toplamIskonto > 0 && (() => {
+                          const brut = (g.toplamCiro || 0) + g.toplamIskonto;
+                          const iskYuzde = brut > 0 ? Math.round((g.toplamIskonto / brut) * 100) : 0;
+                          return (
+                            <div className="flex items-center gap-1 px-2 py-1 rounded-lg"
+                              style={{ background: 'rgba(251,146,60,0.08)', border: '1px solid rgba(251,146,60,0.18)' }}>
+                              <span className="text-[10px] font-semibold" style={{ color: 'rgba(251,146,60,0.7)' }}>Isk</span>
+                              <span className="text-[10px] font-bold" style={{ color: '#fb923c' }}>-{tl(g.toplamIskonto)}</span>
+                              <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ background: 'rgba(251,146,60,0.15)', color: '#fbbf24' }}>%{iskYuzde}</span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {(g.anomaliSayisi > 0 || g.gecGirisSayisi > 0) && (
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {g.anomaliSayisi > 0 && (
+                            <div className="flex items-center gap-1 px-2 py-1 rounded-lg"
+                              style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.18)' }}>
+                              <AlertTriangle style={{ width: 9, height: 9, color: '#f87171' }} />
+                              <span className="text-[9px] font-bold" style={{ color: '#f87171' }}>{g.anomaliSayisi} anomali</span>
+                            </div>
+                          )}
+
+                          {g.gecGirisSayisi > 0 && (
+                            <div className="flex items-center gap-1 px-2 py-1 rounded-lg"
+                              style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.18)' }}>
+                              <AlertCircle style={{ width: 9, height: 9, color: '#fbbf24' }} />
+                              <span className="text-[9px] font-bold" style={{ color: '#fbbf24' }}>{g.gecGirisSayisi} geç giriş</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Alt bant — mekanlar + ok */}
+                    <div className="flex items-center justify-between px-4 py-2.5"
+                      style={{ background: 'rgba(255,255,255,0.02)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div className="flex gap-1.5 flex-wrap flex-1 min-w-0">
+                        {(g.mekanlar || []).slice(0, 5).map((m: string, i: number) => (
+                          <span key={i} className="text-[9px] font-semibold px-2 py-0.5 rounded-full truncate"
+                            style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.15)', color: 'rgba(255,255,255,0.5)', maxWidth: 100 }}>
+                            {m}
+                          </span>
+                        ))}
+                        {(g.mekanlar || []).length > 5 && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                            +{g.mekanlar.length - 5}
+                          </span>
+                        )}
+                      </div>
+                      <ChevronRight style={{ width: 14, height: 14, color: 'rgba(255,255,255,0.2)', flexShrink: 0 }} />
+                    </div>
+                  </motion.button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── GÜN DETAYI (tek gün seçildiğinde) ── */}
+          {gunSecili && (
+            <div>
+              {gunDetayLoading && (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-7 h-7 text-violet-400 animate-spin" />
+                </div>
+              )}
+              {!gunDetayLoading && gunDetay && !gunDetay.bos && (
+                <div className="space-y-3">
+                  {/* Özet Kartlar */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Toplam Ciro + İskonto yan yana */}
+                    <div className="rounded-xl p-3 flex items-center justify-between" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(52,211,153,0.15)' }}>
+                      <div>
+                        <p className="text-[10px] font-semibold" style={{ color: 'rgba(255,255,255,0.4)' }}>Toplam Ciro</p>
+                        <p className="text-lg font-black" style={{ color: '#34d399' }}>₺{(gunDetay.ozet?.toplamCiro || 0).toLocaleString('tr-TR')}</p>
+                      </div>
+                      {(gunDetay.ozet?.toplamIskonto || 0) > 0 && (() => {
+                        const isk = gunDetay.ozet.toplamIskonto;
+                        const brut = (gunDetay.ozet.toplamCiro || 0) + isk;
+                        const yuzde = brut > 0 ? Math.round((isk / brut) * 100) : 0;
+                        return (
+                          <div className="text-right">
+                            <p className="text-[9px] font-semibold" style={{ color: 'rgba(255,255,255,0.3)' }}>İskonto</p>
+                            <p className="text-[13px] font-black" style={{ color: '#fb923c' }}>₺{isk.toLocaleString('tr-TR')} <span className="text-[10px]">%{yuzde}</span></p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Satış Adedi */}
+                    <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(96,165,250,0.15)' }}>
+                      <p className="text-[10px] font-semibold" style={{ color: 'rgba(255,255,255,0.4)' }}>Satış Adedi</p>
+                      <p className="text-lg font-black" style={{ color: '#60a5fa' }}>{gunDetay.ozet?.toplamSatisAdet || 0}</p>
+                    </div>
+
+                    {/* Ödeme Dağılımı (eski iskonto kartının yerine) */}
+                    {(() => {
+                      const odemeler: any[] = gunDetay.odemeler || [];
+                      const nakit = odemeler.find((o: any) => o.yontem === 'cash')?.ciro || 0;
+                      const iban = odemeler.find((o: any) => o.yontem === 'iban')?.ciro || 0;
+                      const kredi = odemeler.find((o: any) => o.yontem === 'card')?.ciro || 0;
+                      const toplam = nakit + iban + kredi;
+                      if (toplam <= 0) return null;
+                      return (
+                        <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                          <p className="text-[10px] font-semibold mb-1.5" style={{ color: 'rgba(255,255,255,0.4)' }}>Ödeme Dağılımı</p>
+                          <div className="flex rounded-full overflow-hidden mb-1.5" style={{ height: 4, background: 'rgba(255,255,255,0.06)' }}>
+                            {nakit > 0 && <div style={{ width: `${(nakit / toplam) * 100}%`, background: '#34d399' }} />}
+                            {iban > 0 && <div style={{ width: `${(iban / toplam) * 100}%`, background: '#60a5fa' }} />}
+                            {kredi > 0 && <div style={{ width: `${(kredi / toplam) * 100}%`, background: '#f472b6' }} />}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {nakit > 0 && <div className="flex items-center gap-0.5"><span className="text-[7px] font-semibold" style={{ color: 'rgba(52,211,153,0.6)' }}>Nakit</span><span className="text-[9px] font-bold" style={{ color: '#34d399' }}>₺{nakit.toLocaleString('tr-TR')}</span></div>}
+                            {iban > 0 && <div className="flex items-center gap-0.5"><span className="text-[7px] font-semibold" style={{ color: 'rgba(96,165,250,0.6)' }}>IBAN</span><span className="text-[9px] font-bold" style={{ color: '#60a5fa' }}>₺{iban.toLocaleString('tr-TR')}</span></div>}
+                            {kredi > 0 && <div className="flex items-center gap-0.5"><span className="text-[7px] font-semibold" style={{ color: 'rgba(244,114,182,0.6)' }}>Kredi</span><span className="text-[9px] font-bold" style={{ color: '#f472b6' }}>₺{kredi.toLocaleString('tr-TR')}</span></div>}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {/* Toplam Kare — satılan + iade yan yana */}
+                    <div className="rounded-xl p-3 flex items-center justify-between" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(196,181,253,0.15)' }}>
+                      <div>
+                        <p className="text-[10px] font-semibold" style={{ color: 'rgba(255,255,255,0.4)' }}>Toplam Kare</p>
+                        <p className="text-lg font-black" style={{ color: '#c4b5fd' }}>{gunDetay.ozet?.toplamKare || 0}</p>
+                      </div>
+                      {(gunDetay.ozet?.toplamBasilanFotograf || gunDetay.ozet?.toplamSatilanFotograf || 0) > 0 && (
+                        <div className="flex items-center gap-3">
+                          {(gunDetay.ozet?.toplamBasilanFotograf || 0) > 0 && (
+                            <div className="text-right">
+                              <p className="text-[9px] font-semibold" style={{ color: 'rgba(255,255,255,0.3)' }}>Basılan</p>
+                              <p className="text-[13px] font-black" style={{ color: '#a78bfa' }}>{gunDetay.ozet.toplamBasilanFotograf}</p>
+                            </div>
+                          )}
+                          {(gunDetay.ozet?.toplamSatilanFotograf || 0) > 0 && (
+                            <div className="text-right">
+                              <p className="text-[9px] font-semibold" style={{ color: 'rgba(255,255,255,0.3)' }}>Satılan</p>
+                              <p className="text-[13px] font-black" style={{ color: '#34d399' }}>{gunDetay.ozet.toplamSatilanFotograf}</p>
+                            </div>
+                          )}
+                          {(gunDetay.ozet?.toplamIadeFotograf || 0) > 0 && (
+                            <div className="text-right">
+                              <p className="text-[9px] font-semibold" style={{ color: 'rgba(255,255,255,0.3)' }}>İade</p>
+                              <p className="text-[13px] font-black" style={{ color: '#f87171' }}>{gunDetay.ozet.toplamIadeFotograf}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Kar/Zarar */}
+                  {gunDetay.maliyet && (
+                    <div className="rounded-xl p-4" style={{
+                      background: (gunDetay.maliyet.karZarar || 0) >= 0 ? 'rgba(52,211,153,0.08)' : 'rgba(248,113,113,0.08)',
+                      border: `1px solid ${(gunDetay.maliyet.karZarar || 0) >= 0 ? 'rgba(52,211,153,0.3)' : 'rgba(248,113,113,0.3)'}`,
+                    }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-bold text-white/60">Günlük Kar/Zarar</p>
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-lg" style={{
+                          background: (gunDetay.maliyet.karZarar || 0) >= 0 ? 'rgba(52,211,153,0.2)' : 'rgba(248,113,113,0.2)',
+                          color: (gunDetay.maliyet.karZarar || 0) >= 0 ? '#34d399' : '#f87171',
+                        }}>%{gunDetay.maliyet.karMarji || 0} marj</span>
+                      </div>
+                      <p className="text-2xl font-black" style={{ color: (gunDetay.maliyet.karZarar || 0) >= 0 ? '#34d399' : '#f87171' }}>
+                        ₺{(gunDetay.maliyet.karZarar || 0).toLocaleString('tr-TR')}
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 mt-3">
+                        {[
+                          { label: 'Baskı Maliyeti', value: gunDetay.maliyet.baskiMaliyeti },
+                          { label: 'Albüm Maliyeti', value: gunDetay.maliyet.albumMaliyeti },
+                          { label: 'Kira Gideri', value: gunDetay.maliyet.kiraGideri },
+                          { label: 'Maaş Gideri', value: gunDetay.maliyet.maasGideri },
+                          { label: 'Prim Gideri', value: gunDetay.maliyet.primGideri },
+                        ].filter(g => (g.value || 0) > 0).map(g => (
+                          <div key={g.label} className="flex justify-between text-[11px]">
+                            <span style={{ color: 'rgba(255,255,255,0.4)' }}>{g.label}</span>
+                            <span className="font-bold text-white/70">₺{(g.value || 0).toLocaleString('tr-TR')}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {(gunDetay.maliyet.toplamGider || 0) > 0 && (
+                        <div className="flex justify-between text-[11px] mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                          <span style={{ color: 'rgba(248,113,113,0.6)' }} className="font-bold">Toplam Maliyet</span>
+                          <span className="font-black" style={{ color: '#f87171' }}>₺{(gunDetay.maliyet.toplamGider || 0).toLocaleString('tr-TR')}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Mekan Sıralaması */}
+                  {(gunDetay.mekanlar || []).length > 0 && (
+                    <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <p className="text-xs font-black text-white mb-2">📍 Mekan Sıralaması</p>
+                      <div className="space-y-2">
+                        {(gunDetay.mekanlar || []).map((m: any, i: number) => (
+                          <div key={m.id} className="flex items-center gap-2 rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                            <span className="text-xs font-black w-5 text-center" style={{ color: i === 0 ? '#fbbf24' : i === 1 ? '#94a3b8' : i === 2 ? '#cd7f32' : 'rgba(255,255,255,0.3)' }}>{i + 1}</span>
+                            <span className="text-sm">{m.emoji}</span>
+                            <span className="text-xs font-bold text-white flex-1 truncate">{m.name}</span>
+                            <span className="text-xs font-black" style={{ color: '#34d399' }}>₺{(m.ciro || 0).toLocaleString('tr-TR')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Personel */}
+                  {(gunDetay.personeller || []).length > 0 && (
+                    <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <p className="text-xs font-black text-white mb-2">👤 Personel Performansı</p>
+                      <div className="space-y-2">
+                        {(gunDetay.personeller || []).map((p: any, i: number) => (
+                          <div key={p.id} className="flex items-center gap-2 rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                            <span className="text-xs font-black w-5 text-center" style={{ color: i === 0 ? '#fbbf24' : i === 1 ? '#94a3b8' : i === 2 ? '#cd7f32' : 'rgba(255,255,255,0.3)' }}>{i + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold text-white truncate">{p.ad}</p>
+                              <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>{p.satisAdet} satış · {p.kare} kare</p>
+                            </div>
+                            <p className="text-xs font-black" style={{ color: '#34d399' }}>₺{(p.ciro || 0).toLocaleString('tr-TR')}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Ürün + Ödeme + Anomali */}
+                  {(gunDetay.albumler || []).length > 0 && (
+                    <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <p className="text-xs font-black text-white mb-2">📘 Ürün Dağılımı</p>
+                      {(gunDetay.albumler || []).map((a: any) => (
+                        <div key={a.tip} className="flex justify-between text-xs py-0.5">
+                          <span style={{ color: 'rgba(255,255,255,0.5)' }}>{a.tip}</span>
+                          <span className="font-bold" style={{ color: '#c4b5fd' }}>{a.adet} ad. · ₺{(a.ciro||0).toLocaleString('tr-TR')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {(gunDetay.anomaliler || []).length > 0 && (
+                    <div className="rounded-xl p-3" style={{ background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.2)' }}>
+                      <p className="text-xs font-black text-red-400 mb-1">⚠️ Anomaliler ({gunDetay.anomaliler.length})</p>
+                      {(gunDetay.anomaliler || []).map((a: any, i: number) => (
+                        <p key={i} className="text-[11px]" style={{ color: 'rgba(255,255,255,0.5)' }}>{a.mekanEmoji} {a.mekan} — {a.tip === 'acilis' ? 'Açılış' : 'Kapanış'}</p>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Dışa Aktar */}
+                  <div style={{ marginTop: 6, marginBottom: 24 }}>
+                    <p className="text-center text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: 'rgba(255,255,255,0.2)' }}>Dışa Aktar</p>
+                    <div className="grid grid-cols-3 gap-3">
+                      <button onClick={() => window.print()}
+                        className="flex flex-col items-center gap-2 py-3 rounded-xl transition-all active:scale-95"
+                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                        <PrinterIcon style={{ width: 18, height: 18, color: 'rgba(255,255,255,0.4)' }} />
+                        <span className="text-[10px] font-bold" style={{ color: 'rgba(255,255,255,0.4)' }}>Yazdır</span>
+                      </button>
+                      <button onClick={handleGunExcel}
+                        className="flex flex-col items-center gap-2 py-3 rounded-xl transition-all active:scale-95"
+                        style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.2)' }}>
+                        <FileSpreadsheet style={{ width: 18, height: 18, color: '#34d399' }} />
+                        <span className="text-[10px] font-bold" style={{ color: '#34d399' }}>Excel</span>
+                      </button>
+                      <button onClick={handleGunPDF}
+                        className="flex flex-col items-center gap-2 py-3 rounded-xl transition-all active:scale-95"
+                        style={{ background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.2)' }}>
+                        <FileText style={{ width: 18, height: 18, color: '#f87171' }} />
+                        <span className="text-[10px] font-bold" style={{ color: '#f87171' }}>PDF</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ════ VARDİYA BAZLI RAPOR ════ */}
+      {aktifSekme === 'vardiya' && (
       <div className="px-4 pb-8">
         <AnimatePresence mode="wait">
           {/* Liste */}
@@ -1458,6 +2249,7 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
           )}
         </AnimatePresence>
       </div>
+      )}
 
       {/* Silme Onay Dialog */}
       <AnimatePresence>
