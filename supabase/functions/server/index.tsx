@@ -9797,17 +9797,47 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
           }
           const personelSayisi = rotPers.length;
           const soloMu = personelSayisi === 1 && !rotPers[0].gorev;
+          // Görev bazlı kişi sayıları (bantlı sistem)
+          const gorevSayilariVR: Record<string, number> = {};
+          for (const per of rotPers) {
+            const g = per.gorev || 'fotograf-satis';
+            gorevSayilariVR[g] = (gorevSayilariVR[g] || 0) + 1;
+          }
           const gecilenKademeler = kkList.map((k: any, i: number) => ({ ...k, index: i })).filter((k: any) => Math.round(toplamCiro) >= k.hedef);
           if (gecilenKademeler.length === 0) return null;
           const topKademe = gecilenKademeler[gecilenKademeler.length - 1];
-          // Basit toplam: her personel × her kademe (bantlı hesap gun-raporu'ndaki hesaplaPrimGideri'de yapılıyor)
-          const toplamPrimTutar = gecilenKademeler.reduce((s: number, k: any) => {
-            return s + (soloMu ? (Number(k.primTek) || 0) : personelSayisi * (Number(k.primCoklu) || 0));
-          }, 0);
+          // Bantlı hakediş hesaplama helper
+          const getVRHakedis = (kademe: any, gorev: string | undefined, solo: boolean): number => {
+            if (solo) return Number(kademe.primTek) || 0;
+            const g = gorev || 'fotograf-satis';
+            const gorevKisiSayisi = gorevSayilariVR[g] || 1;
+            const bantKey = g === 'baski' ? 'baskiBantlar' : g === 'album' ? 'albumBantlar' : g === 'gozlemci' ? 'gozlemciBantlar' : 'fotografBantlar';
+            const bantlar: any[] = kademe[bantKey];
+            if (bantlar && Array.isArray(bantlar) && bantlar.length > 0) {
+              const bant = bantlar.find((b: any) => gorevKisiSayisi >= Number(b.min) && gorevKisiSayisi <= Number(b.max));
+              return bant ? Number(bant.tutar) || 0 : 0;
+            }
+            // Geriye uyumluluk
+            if (g === 'baski') return Number(kademe.primBaski) || Number(kademe.primCoklu) || 0;
+            if (g === 'album') return Number(kademe.primAlbum) || Number(kademe.primCoklu) || 0;
+            if (g === 'gozlemci') return Number(kademe.primGozlemci) || 0;
+            return Number(kademe.primFotograf) || Number(kademe.primCoklu) || 0;
+          };
+          // Toplam hakediş: her personel × her kademe
+          let toplamPrimTutar = 0;
+          for (const kademe of gecilenKademeler) {
+            for (const per of rotPers) {
+              toplamPrimTutar += getVRHakedis(kademe, per.gorev, soloMu);
+            }
+          }
+          // topKademePrim: kişi başı ortalama (UI'da gösterim)
+          const topKademePerPersonel = Math.round(toplamPrimTutar > 0 && gecilenKademeler.length > 0
+            ? rotPers.reduce((s, p) => s + getVRHakedis(topKademe, p.gorev, soloMu), 0) / personelSayisi
+            : 0);
           return {
             kademeIndex: topKademe.index,
             kademeHedef: topKademe.hedef,
-            topKademePrim: soloMu ? (Number(topKademe.primTek) || 0) : (Number(topKademe.primCoklu) || 0),
+            topKademePrim: topKademePerPersonel,
             toplamPrim: toplamPrimTutar,
             toplamKademe: gecilenKademeler.length,
             personelSayisi,
