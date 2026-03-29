@@ -12,7 +12,7 @@ import {
   Cake, User, Settings, LogOut, ChevronRight, Package,
   BarChart2, ClipboardList, CalendarDays, FileBarChart, Wallet, Gamepad2,
   ChevronDown, Crown, Sliders, Brain, Globe, Loader2, Users, DollarSign, TrendingUp,
-  AlertTriangle, Building2, Eye, Camera,
+  AlertTriangle, Building2, Eye, Camera, Target,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
@@ -105,9 +105,10 @@ function getSections(
       items: [
         { icon: Activity,      label: 'Canlı Feed',          roles: ['yonetici','ust-mudur'] as UserRole[],                                   action: () => go('live-feed')              },
         { icon: ClipboardList, label: 'İzin Çizelgesi',       roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],                    action: () => go('personel-izin-cetveli')  },
-        { icon: TrendingUp,    label: 'Prim Takip',           roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],                    action: () => go('prim-takip')             },
+        { icon: TrendingUp,    label: 'Hakediş Takip',        roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],                    action: () => go('prim-takip')             },
         { icon: FileBarChart,  label: 'Vardiya Raporları',    roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],                    action: () => go('vardiya-raporlari')      },
-        { icon: BarChart2,     label: 'İşletme Genel Durum',  roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],                    action: () => go('isletme-genel-durum')    },
+        { icon: BarChart2,     label: 'İşletme Genel Durum',  roles: ['yonetici','ust-mudur'] as UserRole[],                                    action: () => go('isletme-genel-durum')    },
+        { icon: Target,        label: 'Hedef Takibi',         roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('hedef-takip')            },
       ],
     },
     {
@@ -142,7 +143,7 @@ function getSections(
       title: 'PERSONEL PANELİ',
       color: '#fbbf24',
       items: [
-        { icon: Wallet,       label: 'Primlerim',              roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('personel-prim-takip')  },
+        { icon: Wallet,       label: 'Hakedişlerim',           roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('personel-prim-takip')  },
         { icon: CalendarDays, label: 'İzin Talebi',            roles: ['operasyon','personel'] as UserRole[],                                        action: () => go('personel-izin-talebi') },
         { icon: CalendarDays, label: 'Kişisel İzin Çizelgesi', roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('kisisel-izin-cetveli') },
       ],
@@ -924,6 +925,7 @@ export function HamburgerMenu({
                                 >
                                   <NavItem icon={<FileBarChart style={{ width: 13, height: 13, color: '#34d399' }} />} label="Müdür Raporları" desc="Satış ve performans analizleri" color="#34d399" onClick={() => { onNavigate('manager-reports'); close(); }} />
                                   <NavItem icon={<BarChart2 style={{ width: 13, height: 13, color: '#a7c7e7' }} />} label="İşletme İstatistikleri" desc="Satış, anomali ve indirim verileri" color="#a7c7e7" onClick={() => { onNavigate('isletme-istatistikleri'); close(); }} />
+                                  {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<Target style={{ width: 13, height: 13, color: '#c084fc' }} />} label="Hedef Takibi" desc="Mekan bazlı ciro ve kâr hedefleri" color="#c084fc" onClick={() => { onNavigate('hedef-takip'); close(); }} />}
                                 </SubAccordion>
 
                                 {/* ── 3. Muhasebe ── */}
@@ -936,9 +938,10 @@ export function HamburgerMenu({
                                   color="#60a5fa"
                                 >
                                   <NavItem icon={<DollarSign style={{ width: 13, height: 13, color: '#60a5fa' }} />} label="Maliyet Yönetimi" desc="Maliyetleri takip et ve yönet" color="#60a5fa" onClick={() => { onNavigate('cost-management'); close(); }} />
-                                  <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#34d399' }} />} label="Prim Takip" desc="Prim ve performans takibi" color="#34d399" onClick={() => { onNavigate('prim-takip'); close(); }} />
-                                  <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#6ee7b7' }} />} label="İşletme Genel Durum" desc="Gelir, gider ve kar/zarar takibi" color="#6ee7b7" onClick={() => { onNavigate('isletme-genel-durum'); close(); }} />
+                                  <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#34d399' }} />} label="Hakediş Takip" desc="Hakediş ve performans takibi" color="#34d399" onClick={() => { onNavigate('prim-takip'); close(); }} />
+                                  {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#6ee7b7' }} />} label="İşletme Genel Durum" desc="Gelir, gider ve kar/zarar takibi" color="#6ee7b7" onClick={() => { onNavigate('isletme-genel-durum'); close(); }} />}
                                   <NavItem icon={<FileBarChart style={{ width: 13, height: 13, color: '#93c5fd' }} />} label="Vardiya Raporları" desc="Günlük vardiya özet raporları" color="#93c5fd" onClick={() => { onNavigate('vardiya-raporlari'); close(); }} />
+                                  {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<Target style={{ width: 13, height: 13, color: '#c084fc' }} />} label="Hedef Takibi" desc="Mekan bazlı ciro ve kar hedefleri" color="#c084fc" onClick={() => { onNavigate('hedef-takip'); close(); }} />}
                                 </SubAccordion>
 
                                 {/* ── 4. Lokasyon & İşletme ── */}

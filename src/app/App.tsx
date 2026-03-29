@@ -56,6 +56,7 @@ import { BirthdayCalendar } from './components/birthday-calendar';
 import { BirthdayNotifications } from './components/birthday-notifications';
 import { Announcements } from './components/announcements';
 import { VardiyaRaporlari } from './components/vardiya-raporlari';
+import HedefTakip from './components/hedef-takip';
 import { VardiyaIstatistikleri } from './components/vardiya-istatistikleri';
 import { OperationsDemo } from './components/operations-demo';
 import { ShiftSetup } from './components/shift-setup';
@@ -991,6 +992,16 @@ function MainApp() {
             userName={userName}
             userRole={userRole}
             onLogout={handleLogout}
+            onNavigate={handleNavigate}
+          />
+        );
+
+      case 'hedef-takip':
+        return (
+          <HedefTakip
+            userName={userName}
+            userRole={userRole}
+            accessToken={accessToken}
             onNavigate={handleNavigate}
           />
         );

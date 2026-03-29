@@ -478,7 +478,7 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
       ['Toplam İskonto (₺)', v.toplamIskonto],
       ['Albüm Maliyeti (₺)', v.albumMaliyeti],
       ['Baskı Maliyeti (₺)', v.baskiMaliyeti],
-      ['Prim Toplamı (₺)', toplamPrim],
+      ['Hakediş Toplamı (₺)', toplamPrim],
       ['Mekan Kirası (₺)', v.mekanGunlukKira],
       ['Toplam Maliyet (₺)', toplamMaliyet],
       ['Brüt Kâr (₺)', brutKar],
@@ -546,7 +546,7 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
         [tr('Toplam Iskonto'), `${Math.round(v.toplamIskonto).toLocaleString('tr-TR')} TL`],
         [tr('Album Maliyeti'), `${Math.round(v.albumMaliyeti).toLocaleString('tr-TR')} TL`],
         [tr('Baski Maliyeti'), `${Math.round(v.baskiMaliyeti).toLocaleString('tr-TR')} TL`],
-        [tr('Prim Toplami'), `${Math.round(toplamPrim).toLocaleString('tr-TR')} TL`],
+        [tr('Hakedis Toplami'), `${Math.round(toplamPrim).toLocaleString('tr-TR')} TL`],
         [tr('Mekan Kirasi'), `${Math.round(v.mekanGunlukKira).toLocaleString('tr-TR')} TL`],
         [tr('Toplam Maliyet'), `${Math.round(toplamMaliyet).toLocaleString('tr-TR')} TL`],
         [tr('Brut Kar'), `${Math.round(brutKar).toLocaleString('tr-TR')} TL`],
@@ -743,7 +743,7 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
                   )}
                   {toplamPrim > 0 && (
                     <div className="flex items-center justify-between">
-                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>Prim Hakedişi</span>
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>Hakediş Gideri</span>
                       <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>-{tl(toplamPrim)}</span>
                     </div>
                   )}
@@ -944,7 +944,7 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
         })()}
       </div>
 
-      {/* ── BLOK 3: Prim ── */}
+      {/* ── BLOK 3: Hakediş ── */}
       {(v.personeller.length > 0 || (v.kotaKademeleri || []).length > 0) && (() => {
         const KADEME_COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399', '#f87171', '#fb923c'];
         const kkList = v.kotaKademeleri || [];
@@ -969,7 +969,7 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
             <div className="flex items-center gap-2 mb-3">
               <Trophy style={{ width: 10, height: 10, color: hasPrim ? '#a78bfa' : 'rgba(255,255,255,0.3)' }} />
               <span style={{ fontSize: 10, fontWeight: 700, color: hasPrim ? '#a78bfa' : 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const, letterSpacing: '0.08em' }}>
-                Prim{hasPrim ? ' — 🏆 Kazanıldı!' : ''}
+                Hakediş{hasPrim ? ' — 🏆 Kazanıldı!' : ''}
               </span>
             </div>
 
@@ -1004,7 +1004,7 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
               </div>
             )}
 
-            {/* Prim VAR → kota durumları */}
+            {/* Hakediş VAR → kota durumları */}
             {hasPrim && kkList.length > 0 && (
               <div className="space-y-1.5" style={{ marginBottom: 10 }}>
                 {kotaDurumlari.map(k => (
@@ -1033,20 +1033,20 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
               </div>
             )}
 
-            {/* Prim VAR → toplam */}
+            {/* Hakediş VAR → toplam */}
             {hasPrim && (
               <div style={{ borderTop: '1px solid rgba(167,139,250,0.15)', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>Toplam Prim Hakedişi</span>
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>Toplam Hakediş</span>
                 <span style={{ fontSize: 16, fontWeight: 900, color: '#a78bfa' }}>{tl(toplamPrim)}</span>
               </div>
             )}
 
-            {/* Prim YOK → ilk kotaya kalan */}
+            {/* Hakediş YOK → ilk kotaya kalan */}
             {!hasPrim && ilkKota && ilkFark > 0 && (
               <div className="flex items-center gap-2">
                 <Trophy style={{ width: 12, height: 12, color: 'rgba(255,255,255,0.2)' }} />
                 <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
-                  1. Prim kotasına {tl(ilkFark)} eksik kaldı
+                  1. Hakediş kotasına {tl(ilkFark)} eksik kaldı
                 </span>
               </div>
             )}
@@ -1140,14 +1140,14 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
                       {/* Ayırıcı */}
                       <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '10px 0' }} />
 
-                      {/* 4 blok: Maaş, Prim, Ciro Katkısı, Kare Katkısı */}
+                      {/* 4 blok: Maaş, Hakediş, Ciro Katkısı, Kare Katkısı */}
                       <div className="grid grid-cols-4 gap-1.5">
                         <div style={{ background: 'rgba(251,146,60,0.08)', border: '1px solid rgba(251,146,60,0.2)', borderRadius: 8, padding: '6px 8px' }}>
                           <p style={{ fontSize: 8, color: 'rgba(251,146,60,0.7)', fontWeight: 600, marginBottom: 2 }}>GÜNLÜK MAAŞ</p>
                           <p style={{ fontSize: 11, fontWeight: 800, color: '#fb923c' }}>{maas > 0 ? tl(maas) : '—'}</p>
                         </div>
                         <div style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: 8, padding: '6px 8px' }}>
-                          <p style={{ fontSize: 8, color: 'rgba(251,191,36,0.7)', fontWeight: 600, marginBottom: 2 }}>PRİM</p>
+                          <p style={{ fontSize: 8, color: 'rgba(251,191,36,0.7)', fontWeight: 600, marginBottom: 2 }}>HAKEDİŞ</p>
                           <p style={{ fontSize: 11, fontWeight: 800, color: '#fbbf24' }}>{prim > 0 ? tl(prim) : '—'}</p>
                         </div>
                         <div style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)', borderRadius: 8, padding: '6px 8px' }}>
@@ -1257,11 +1257,13 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
 
   // Gün raporu state
   const [gunTarihBas, setGunTarihBas] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - 30);
+    const d = new Date(); d.setDate(d.getDate() - 7);
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   });
   const [gunTarihBit, setGunTarihBit] = useState(() => bizDateStr());
+  const GUN_SAYFA_BOYUTU = 7;
   const [gunListe, setGunListe] = useState<any[]>([]);
+  const [gunGorunenAdet, setGunGorunenAdet] = useState(GUN_SAYFA_BOYUTU);
   const [gunSecili, setGunSecili] = useState<string | null>(null);
   const [gunDetay, setGunDetay] = useState<any>(null);
   const [gunLoading, setGunLoading] = useState(false);
@@ -1274,6 +1276,7 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
     setGunError(null);
     setGunSecili(null);
     setGunDetay(null);
+    setGunGorunenAdet(GUN_SAYFA_BOYUTU);
     try {
       const token = await getToken();
       const res = await fetch(appendGhostParam(`${API_BASE}/vardiya/gun-raporu?baslangic=${bas}&bitis=${bit}`), {
@@ -1334,7 +1337,7 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
       ['Albüm Maliyeti', mal.albumMaliyeti || 0],
       ['Kira Gideri', mal.kiraGideri || 0],
       ['Maaş Gideri', mal.maasGideri || 0],
-      ['Prim Gideri', mal.primGideri || 0],
+      ['Hakediş Gideri', mal.primGideri || 0],
       ['Toplam Maliyet', mal.toplamGider || 0],
       [], ['Kar/Zarar', mal.karZarar || 0],
       ['Kar Marjı', `%${mal.karMarji || 0}`],
@@ -1353,7 +1356,7 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
     ]);
     XLSX.utils.book_append_sheet(wb, s2, 'Mekan Bazlı');
 
-    // Sheet 3: Personel (Kazanç = Maaş + Prim)
+    // Sheet 3: Personel (Kazanç = Maaş + Hakediş)
     const perRows = (d.personeller || []).map((p: any) => {
       const kazanc = (p.gunlukMaas || 0) + (p.primToplam || 0);
       return [p.ad, (p.mekanlar || []).join(', '), p.ciro, p.kare, p.gunlukMaas, p.primToplam || 0, kazanc];
@@ -1365,7 +1368,7 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
     const perTopKazanc = perTopMaas + perTopPrim;
     perRows.push(['TOPLAM', '', perTopCiro, perTopKare, perTopMaas, perTopPrim, perTopKazanc]);
     const s3 = XLSX.utils.aoa_to_sheet([
-      ['Personel', 'Mekan', 'Ciro', 'Kare', 'Maaş', 'Prim', 'Kazanç'],
+      ['Personel', 'Mekan', 'Ciro', 'Kare', 'Maaş', 'Hakediş', 'Kazanç'],
       ...perRows,
     ]);
     XLSX.utils.book_append_sheet(wb, s3, 'Personel');
@@ -1465,7 +1468,7 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
         [tr('Album Maliyeti'), `TL ${(mal.albumMaliyeti || 0).toLocaleString('tr-TR')}`],
         [tr('Kira Gideri'), `TL ${(mal.kiraGideri || 0).toLocaleString('tr-TR')}`],
         [tr('Maas Gideri'), `TL ${(mal.maasGideri || 0).toLocaleString('tr-TR')}`],
-        ['Prim Gideri', `TL ${(mal.primGideri || 0).toLocaleString('tr-TR')}`],
+        ['Hakedis Gideri', `TL ${(mal.primGideri || 0).toLocaleString('tr-TR')}`],
         [tr('Toplam Maliyet'), `TL ${(mal.toplamGider || 0).toLocaleString('tr-TR')}`],
         ['Kar/Zarar', `TL ${(mal.karZarar || 0).toLocaleString('tr-TR')} (%${mal.karMarji || 0})`],
       ],
@@ -1538,7 +1541,7 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
     perRows.push(['TOPLAM', '', `TL ${pTC.toLocaleString('tr-TR')}`, pTK, `TL ${pTM.toLocaleString('tr-TR')}`, `TL ${pTP.toLocaleString('tr-TR')}`, `TL ${(pTM + pTP).toLocaleString('tr-TR')}`]);
     autoTable(doc, {
       startY: y, margin: { left: 10, right: 10 },
-      head: [['Personel', 'Mekan', 'Ciro', 'Kare', 'Maas', 'Prim', 'Kazanc']],
+      head: [['Personel', 'Mekan', 'Ciro', 'Kare', 'Maas', 'Hakedis', 'Kazanc']],
       body: perRows,
       headStyles: headStyle, bodyStyles: bodyStyle, theme: 'grid',
     });
@@ -1591,7 +1594,7 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
   const [filtreMekan, setFiltreMekan] = useState('');
   const [filtreTarihBas, setFiltreTarihBas] = useState(() => {
     const d = new Date();
-    d.setDate(d.getDate() - 30);
+    d.setDate(d.getDate() - 7);
     // Türkiye lokal tarihi (UTC değil) — gece yarısı 00:00–02:59 arası kayma önlendi
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   });
@@ -1787,7 +1790,7 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
           {/* ── GÜN LİSTESİ (kartlar) ── */}
           {!gunSecili && !gunLoading && gunListe.length > 0 && (
             <div className="space-y-3">
-              {gunListe.map((g: any) => {
+              {gunListe.slice(0, gunGorunenAdet).map((g: any) => {
                 const karZarar = g.karZarar || 0;
                 const karPositif = karZarar >= 0;
                 const karRenk = karPositif ? '#34d399' : '#f87171';
@@ -1930,6 +1933,31 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
                   </motion.button>
                 );
               })}
+
+              {/* +7 Daha Göster */}
+              {gunListe.length > gunGorunenAdet && (
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setGunGorunenAdet(prev => prev + GUN_SAYFA_BOYUTU)}
+                  className="w-full py-3 rounded-2xl flex items-center justify-center gap-2 mt-1"
+                  style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.15)' }}
+                >
+                  <ChevronDown style={{ width: 14, height: 14, color: '#a78bfa' }} />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#a78bfa' }}>
+                    +{Math.min(gunListe.length - gunGorunenAdet, GUN_SAYFA_BOYUTU)} Daha Göster
+                  </span>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginLeft: 2 }}>
+                    ({gunListe.length - gunGorunenAdet} kaldı)
+                  </span>
+                </motion.button>
+              )}
+
+              {/* Tümü gösterildi */}
+              {gunListe.length > 0 && gunListe.length <= gunGorunenAdet && gunGorunenAdet > GUN_SAYFA_BOYUTU && (
+                <p className="text-center mt-3" style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>
+                  Tüm {gunListe.length} gün gösteriliyor
+                </p>
+              )}
             </div>
           )}
 
@@ -2047,7 +2075,7 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
                           { label: 'Albüm Maliyeti', value: gunDetay.maliyet.albumMaliyeti },
                           { label: 'Kira Gideri', value: gunDetay.maliyet.kiraGideri },
                           { label: 'Maaş Gideri', value: gunDetay.maliyet.maasGideri },
-                          { label: 'Prim Gideri', value: gunDetay.maliyet.primGideri },
+                          { label: 'Hakediş Gideri', value: gunDetay.maliyet.primGideri },
                         ].filter(g => (g.value || 0) > 0).map(g => (
                           <div key={g.label} className="flex justify-between text-[11px]">
                             <span style={{ color: 'rgba(255,255,255,0.4)' }}>{g.label}</span>

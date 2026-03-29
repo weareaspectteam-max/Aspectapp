@@ -1018,7 +1018,7 @@ export function StaffPersonalDashboard({
               <Trophy style={{ width: 16, height: 16, color: '#fbbf24' }} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>Primlerim</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>Hakedişlerim</div>
               <div style={{ fontSize: 11, color: 'rgba(251,191,36,0.60)' }}>Kazançlarını ve alacaklarını gör</div>
             </div>
             <ChevronRight style={{ width: 16, height: 16, color: 'rgba(255,255,255,0.30)', flexShrink: 0 }} />

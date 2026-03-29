@@ -441,7 +441,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                           background: `${glowColor}22`, border: `1px solid ${glowColor}44`,
                         }}>
                           <Trophy style={{ width: 9, height: 9, color: glowColor ?? '#fbbf24' }} />
-                          <span style={{ fontSize: 9, fontWeight: 800, color: glowColor ?? '#fbbf24' }}>PRİM</span>
+                          <span style={{ fontSize: 9, fontWeight: 800, color: glowColor ?? '#fbbf24' }}>HAKEDİŞ {primBilgi.toplamPrim > 0 ? `₺${primBilgi.toplamPrim.toLocaleString('tr-TR')}` : ''}</span>
                         </div>
                       ) : fark !== null && fark > 0 ? (
                         <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontWeight: 600 }}>
@@ -510,7 +510,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                             whiteSpace: 'nowrap',
                             lineHeight: 1.1,
                           }}>
-                            {achieved ? `+${formatTLc(k.primTek)}` : formatTLc(k.hedef)}
+                            {achieved ? `+${formatTLc(k.primTek || 0)}` : formatTLc(k.hedef)}
                           </span>
                         </div>
                       );

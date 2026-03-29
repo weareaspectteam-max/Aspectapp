@@ -65,8 +65,10 @@ interface PrimKayit {
   primMiktar: number;
   personelAdi: string;
   personelSayisi: number;
-  personelGorev?: 'fotograf-satis' | 'baski' | 'album';
+  personelGorev?: 'fotograf-satis' | 'baski' | 'album' | 'gozlemci';
   coklu: boolean;
+  gorevKisiSayisi?: number;
+  kidemSeviye?: string;
   odendi: boolean;
   odemeTarihi: string | null;
   odemeKey: string;
@@ -210,9 +212,9 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
           <div className="flex-1">
             <h1 className="text-xl font-black text-white flex items-center gap-2">
               <Trophy className="w-5 h-5" style={{ color: '#fbbf24' }} />
-              Primlerim
+              Hakedişlerim
             </h1>
-            <p className="text-xs" style={{ color: 'rgba(196,181,253,0.5)' }}>Kişisel prim geçmişi</p>
+            <p className="text-xs" style={{ color: 'rgba(196,181,253,0.5)' }}>Kişisel hakediş geçmişi</p>
           </div>
           <button
             onClick={fetchRapor}
@@ -551,9 +553,21 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
                                         <p style={{ color: kc, fontSize: 11, fontWeight: 700 }}>
                                           {kayit.kademeIndex + 1}. Kademe
                                         </p>
-                                        <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 9 }}>
-                                          Hedef: {formatTL(kayit.kademeHedef)}
-                                        </p>
+                                        <div className="flex items-center gap-1 flex-wrap">
+                                          <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 9 }}>
+                                            Hedef: {formatTL(kayit.kademeHedef)}
+                                          </span>
+                                          {kayit.gorevKisiSayisi && kayit.gorevKisiSayisi > 0 && (
+                                            <span style={{ fontSize: 8, padding: '0px 4px', borderRadius: 4, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.3)' }}>
+                                              {kayit.gorevKisiSayisi} kişi
+                                            </span>
+                                          )}
+                                          {kayit.kidemSeviye && kayit.kidemSeviye !== 'kidemsiz' && (
+                                            <span style={{ fontSize: 8, padding: '0px 4px', borderRadius: 4, background: kayit.kidemSeviye === 'kidemliPlus' ? 'rgba(168,85,247,0.12)' : 'rgba(96,165,250,0.12)', border: `1px solid ${kayit.kidemSeviye === 'kidemliPlus' ? 'rgba(168,85,247,0.25)' : 'rgba(96,165,250,0.25)'}`, color: kayit.kidemSeviye === 'kidemliPlus' ? '#c084fc' : '#93c5fd' }}>
+                                              {kayit.kidemSeviye === 'kidemliPlus' ? 'Kıdemli+' : 'Kıdemli'}
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
 
                                       {/* Tutar */}
@@ -651,7 +665,7 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
                 <div style={{ fontSize: 32, marginBottom: 8 }}>🎉</div>
                 <p style={{ color: '#34d399', fontWeight: 800, fontSize: 14 }}>Tüm Primler Ödendi!</p>
                 <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, marginTop: 4 }}>
-                  Bu ay tüm primlerini aldın. Tebrikler!
+                  Bu ay tüm hakedişlerini aldın. Tebrikler!
                 </p>
               </motion.div>
             )}

@@ -38,6 +38,7 @@ interface MekanOzet {
   ribonlar?: Record<string, number>;
   stokRibonAdet: number;
   makinaKalan: number;
+  makinaKalanByTip?: Record<string, number>;
   toplamRibonKapasite: number;
   veriVar: boolean;
   tarih?: string;
@@ -110,46 +111,145 @@ function VardiyaBadge({ durum, fallbackTarih }: { durum: MekanOzet['vardiyaDurum
 }
 
 // ─── Genel Albüm Dağılımı Kartı ───────────────────────────────────────────────
-function GenelAlbumCard({ dagilim }: { dagilim: AlbumDagilimItem[] }) {
+function GenelAlbumCard({ dagilim, mekanlar, depo, kagitTipleri }: {
+  dagilim: AlbumDagilimItem[];
+  mekanlar: MekanOzet[];
+  depo: DepoOzet;
+  kagitTipleri: Array<{ id: string; name: string }>;
+}) {
   const sadecAlbumler = dagilim.filter(d => d.alan !== 'ribon');
   const toplam = sadecAlbumler.reduce((s, d) => s + d.count, 0);
+
+  // Kağıt tipine göre toplam ribon (stok takım + makina kalan baskı) hesapla
+  const ribonByTip: Record<string, { takim: number; makinaKalan: number }> = {};
+  const ensureTip = (tipId: string) => {
+    if (!ribonByTip[tipId]) ribonByTip[tipId] = { takim: 0, makinaKalan: 0 };
+  };
+  // Eski format fallback: tüm eski ribon stoğunu Citizen'a ata
+  const citizenTip = kagitTipleri.find(kt => kt.name.toLowerCase().includes('citizen'));
+  const eskiFallbackId = citizenTip?.id || kagitTipleri[0]?.id || '_bilinmeyen';
+
+  for (const m of mekanlar) {
+    // Stok takımları
+    if (m.ribonlar && Object.keys(m.ribonlar).length > 0) {
+      for (const [tipId, adet] of Object.entries(m.ribonlar)) {
+        ensureTip(tipId);
+        ribonByTip[tipId].takim += adet;
+      }
+    } else {
+      const eski = m.albumSayilari['ribon'] || 0;
+      if (eski > 0) {
+        ensureTip(eskiFallbackId);
+        ribonByTip[eskiFallbackId].takim += eski;
+      }
+    }
+    // Makina kalan (kağıt tipine göre)
+    if (m.makinaKalanByTip) {
+      for (const [tipId, kalan] of Object.entries(m.makinaKalanByTip)) {
+        ensureTip(tipId);
+        ribonByTip[tipId].makinaKalan += kalan;
+      }
+    } else if (m.makinaKalan > 0) {
+      ensureTip(eskiFallbackId);
+      ribonByTip[eskiFallbackId].makinaKalan += m.makinaKalan;
+    }
+  }
+  // Depo stok
+  if (depo.ribonlar && Object.keys(depo.ribonlar).length > 0) {
+    for (const [tipId, adet] of Object.entries(depo.ribonlar)) {
+      ensureTip(tipId);
+      ribonByTip[tipId].takim += adet;
+    }
+  } else if (depo.ribonTakim > 0) {
+    ensureTip(eskiFallbackId);
+    ribonByTip[eskiFallbackId].takim += depo.ribonTakim;
+  }
+
+  const hasRibon = Object.keys(ribonByTip).length > 0;
+
   return (
     <div className="mx-4 mb-4 rounded-2xl border border-white/12 bg-[rgba(10,5,30,0.6)] backdrop-blur overflow-hidden">
       <div className="px-4 pt-4 pb-3 border-b border-white/8 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Package className="w-4 h-4 text-violet-400" />
-          <span className="text-sm font-bold text-white">Genel Albüm Dağılımı</span>
+          <span className="text-sm font-bold text-white">Genel Stok Dağılımı</span>
         </div>
         <span className="text-[10px] text-white/30">Tüm mekanlar + depo</span>
       </div>
       <div className="px-4 py-3 space-y-2.5">
-        {toplam === 0 ? (
+        {toplam === 0 && !hasRibon ? (
           <p className="text-center text-xs text-white/25 py-3">Stok verisi henüz girilmemiş</p>
-        ) : sadecAlbumler.map(item => {
-          const pct = toplam > 0 ? Math.round((item.count / toplam) * 100) : 0;
-          return (
-            <div key={item.alan} className="flex items-center gap-2">
-              <div className="w-14 text-xs text-white/55 font-medium">{item.name}</div>
-              <div className="flex-1 h-6 bg-black/30 rounded-lg overflow-hidden border border-white/6">
-                <div className="h-full rounded-lg transition-all duration-500"
-                  style={{ width: `${pct}%`, backgroundColor: item.color, opacity: 0.82 }} />
+        ) : (
+          <>
+            {sadecAlbumler.map(item => {
+              const pct = toplam > 0 ? Math.round((item.count / toplam) * 100) : 0;
+              return (
+                <div key={item.alan} className="flex items-center gap-2">
+                  <div className="w-14 text-xs text-white/55 font-medium">{item.name}</div>
+                  <div className="flex-1 h-6 bg-black/30 rounded-lg overflow-hidden border border-white/6">
+                    <div className="h-full rounded-lg transition-all duration-500"
+                      style={{ width: `${pct}%`, backgroundColor: item.color, opacity: 0.82 }} />
+                  </div>
+                  <div className="w-10 text-right text-xs font-bold text-white">{item.count}</div>
+                  <div className="w-9 text-right text-[10px] text-white/30">%{pct}</div>
+                </div>
+              );
+            })}
+            {/* Ribon — kağıt tipine göre */}
+            {hasRibon && (
+              <div className="pt-2 border-t border-white/6 space-y-2">
+                {kagitTipleri.map(kt => {
+                  const data = ribonByTip[kt.id];
+                  if (!data || (data.takim === 0 && data.makinaKalan === 0)) return null;
+                  const toplamBaskiKapasite = (data.takim * RIBON_PER_TAKIM) + data.makinaKalan;
+                  return (
+                    <div key={kt.id}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-pink-300/80">{kt.name}</span>
+                        <div>
+                          <span className="text-sm font-bold text-pink-300">{toplamBaskiKapasite.toLocaleString('tr-TR')}</span>
+                          <span className="text-[10px] text-pink-300/30 ml-0.5">adet</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-3 text-[11px] text-white/35 mt-0.5">
+                        {data.takim > 0 && (
+                          <span>📦 {data.takim} takım ({Math.floor(data.takim / TAKIM_PER_KUTU)} kutu{data.takim % TAKIM_PER_KUTU > 0 ? ' + 1 takım' : ''})</span>
+                        )}
+                        {data.makinaKalan > 0 && (
+                          <span>🖨️ {data.makinaKalan.toLocaleString('tr-TR')} adet</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="w-10 text-right text-xs font-bold text-white">{item.count}</div>
-              <div className="w-9 text-right text-[10px] text-white/30">%{pct}</div>
+            )}
+          </>
+        )}
+      </div>
+      <div className="px-4 py-3 border-t border-white/8 space-y-1.5">
+        <div className="flex justify-between items-center">
+          <span className="text-xs text-white/35">Toplam Albüm</span>
+          <span className="text-base font-bold text-white">{toplam.toLocaleString('tr-TR')}</span>
+        </div>
+        {hasRibon && (() => {
+          const topTakim = Object.values(ribonByTip).reduce((s, d) => s + d.takim, 0);
+          const topMakina = Object.values(ribonByTip).reduce((s, d) => s + d.makinaKalan, 0);
+          const topBaskiKapasite = (topTakim * RIBON_PER_TAKIM) + topMakina;
+          return (
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-pink-300/35">Toplam Basılabilir Fotoğraf</span>
+              <span className="text-sm font-bold text-pink-300">{topBaskiKapasite.toLocaleString('tr-TR')}</span>
             </div>
           );
-        })}
-      </div>
-      <div className="px-4 py-3 border-t border-white/8 flex justify-between items-center">
-        <span className="text-xs text-white/35">Toplam Albüm</span>
-        <span className="text-base font-bold text-white">{toplam.toLocaleString('tr-TR')}</span>
+        })()}
       </div>
     </div>
   );
 }
 
 // ─── Ribon Stoğu Kartı ────────────────────────────────────────────────────────
-function RibonCard({ mekanlar, depo }: { mekanlar: MekanOzet[]; depo: DepoOzet }) {
+function RibonCard({ mekanlar, depo, kagitTipleri }: { mekanlar: MekanOzet[]; depo: DepoOzet; kagitTipleri: Array<{ id: string; name: string }> }) {
   const toplamKapasite = mekanlar.reduce((s, m) => s + m.toplamRibonKapasite, 0) + depo.ribonAdet;
   const maxKapasite = Math.max(
     ...mekanlar.map(m => m.toplamRibonKapasite),
@@ -157,15 +257,23 @@ function RibonCard({ mekanlar, depo }: { mekanlar: MekanOzet[]; depo: DepoOzet }
     1
   );
 
+  // Kağıt tipi adını çöz
+  const tipAdi = (tipId: string) => kagitTipleri.find(k => k.id === tipId)?.name || tipId;
+  // Eski format fallback: tüm eski ribon stoğunu Citizen'a ata
+  const citizenTipRibon = kagitTipleri.find(kt => kt.name.toLowerCase().includes('citizen'));
+  const eskiFallbackAdiRibon = citizenTipRibon?.name || kagitTipleri[0]?.name || 'Ribon';
+
   const RibonSatir = ({
-    emoji, name, takim, makinaKalan, toplam, veriVar, vardiyaDurumu, fallbackTarih
+    emoji, name, takim, ribonlar, makinaKalan, toplam, veriVar, vardiyaDurumu, fallbackTarih
   }: {
     emoji: string; name: string; takim: number;
+    ribonlar?: Record<string, number>;
     makinaKalan?: number; toplam: number;
     veriVar?: boolean; vardiyaDurumu?: MekanOzet['vardiyaDurumu']; fallbackTarih?: string | null;
   }) => {
     const pct = maxKapasite > 0 ? Math.round((toplam / maxKapasite) * 100) : 0;
     const renk = toplam === 0 ? '#f87171' : toplam < 200 ? '#fbbf24' : '#f9a8d4';
+    const hasRibonlar = ribonlar && Object.keys(ribonlar).length > 0;
     return (
       <div className="space-y-1">
         <div className="flex items-center gap-2">
@@ -185,21 +293,36 @@ function RibonCard({ mekanlar, depo }: { mekanlar: MekanOzet[]; depo: DepoOzet }
             <span className="text-[10px] text-white/30 ml-0.5">adet</span>
           </div>
         </div>
-        {/* Detay satırı */}
-        <div className="flex gap-3 pl-6">
-          {takim > 0 && (
-            <span className="text-[10px] text-white/22">📦 {ribonMetni(takim)}</span>
-          )}
-          {(makinaKalan ?? 0) > 0 && (
-            <span className="text-[10px] text-white/22">🖨️ Makina: {makinaKalan!.toLocaleString('tr-TR')}</span>
-          )}
-          {veriVar === false && (
-            <span className="text-[10px] text-white/18">Bugün veri girilmemiş</span>
-          )}
-          {takim === 0 && (makinaKalan ?? 0) === 0 && veriVar && (
-            <span className="text-[10px] text-red-400/60">Ribon yok</span>
-          )}
-        </div>
+        {/* Tip bazlı ribon detayı */}
+        {hasRibonlar ? (
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-6">
+            {Object.entries(ribonlar!).filter(([, v]) => v > 0).map(([tipId, adet]) => (
+              <span key={tipId} className="text-[10px] text-pink-300/50">
+                🎞️ {tipAdi(tipId)}: <span className="font-bold text-pink-300/70">{adet}</span> tk
+              </span>
+            ))}
+            {(makinaKalan ?? 0) > 0 && (
+              <span className="text-[10px] text-white/22">🖨️ Makina: {makinaKalan!.toLocaleString('tr-TR')}</span>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-6">
+            {takim > 0 && (
+              <span className="text-[10px] text-pink-300/50">
+                🎞️ {eskiFallbackAdiRibon}: <span className="font-bold text-pink-300/70">{takim}</span> tk
+              </span>
+            )}
+            {(makinaKalan ?? 0) > 0 && (
+              <span className="text-[10px] text-white/22">🖨️ Makina: {makinaKalan!.toLocaleString('tr-TR')}</span>
+            )}
+            {veriVar === false && (
+              <span className="text-[10px] text-white/18">Bugün veri girilmemiş</span>
+            )}
+            {takim === 0 && (makinaKalan ?? 0) === 0 && veriVar && (
+              <span className="text-[10px] text-red-400/60">Ribon yok</span>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -209,9 +332,9 @@ function RibonCard({ mekanlar, depo }: { mekanlar: MekanOzet[]; depo: DepoOzet }
       <div className="px-4 pt-4 pb-3 border-b border-white/8 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Printer className="w-4 h-4 text-pink-400" />
-          <span className="text-sm font-bold text-white">Ribon Stoğu</span>
+          <span className="text-sm font-bold text-white">Mekan Bazlı Ribon Stoğu</span>
         </div>
-        <span className="text-[10px] text-white/30">Basılabilir resim adedi</span>
+        <span className="text-[10px] text-white/30">Basılabilir fotoğraf adedi</span>
       </div>
       <div className="px-4 py-3 space-y-4">
         {/* Mekanlar */}
@@ -221,6 +344,7 @@ function RibonCard({ mekanlar, depo }: { mekanlar: MekanOzet[]; depo: DepoOzet }
             emoji={m.emoji}
             name={m.name}
             takim={m.albumSayilari['ribon'] || 0}
+            ribonlar={m.ribonlar}
             makinaKalan={m.makinaKalan}
             toplam={m.toplamRibonKapasite}
             veriVar={m.veriVar}
@@ -235,12 +359,13 @@ function RibonCard({ mekanlar, depo }: { mekanlar: MekanOzet[]; depo: DepoOzet }
           emoji="🏪"
           name="Depo"
           takim={depo.ribonTakim}
+          ribonlar={depo.ribonlar}
           toplam={depo.ribonAdet}
           veriVar={true}
         />
       </div>
       <div className="px-4 py-3 border-t border-white/8 flex justify-between items-center">
-        <span className="text-xs text-white/35">Toplam Basılabilir Resim</span>
+        <span className="text-xs text-white/35">Toplam Basılabilir Fotoğraf</span>
         <div>
           <span className="text-base font-bold text-pink-300">{toplamKapasite.toLocaleString('tr-TR')}</span>
           <span className="text-[10px] text-white/30 ml-1">adet</span>
@@ -252,12 +377,13 @@ function RibonCard({ mekanlar, depo }: { mekanlar: MekanOzet[]; depo: DepoOzet }
 
 // ─── Mekan Albüm Accordion ────────────────────────────────────────────────────
 function MekanAlbumCard({
-  mekan, isYonetici, onGuncelle, onSifirla,
+  mekan, isYonetici, onGuncelle, onSifirla, kagitTipleri,
 }: {
   mekan: MekanOzet;
   isYonetici: boolean;
   onGuncelle: (m: MekanOzet) => void;
   onSifirla: (m: MekanOzet) => void;
+  kagitTipleri: Array<{ id: string; name: string }>;
 }) {
   const [acik, setAcik] = useState(false);
   const albumToplam = SADECE_ALBUMLER.reduce((s, a) => s + (mekan.albumSayilari[a] || 0), 0);
@@ -307,15 +433,33 @@ function MekanAlbumCard({
               );
             })
           )}
-          {/* Ribon satırı */}
-          {(mekan.albumSayilari['ribon'] || 0) > 0 && (
-            <div className="flex items-center gap-2 pt-1 border-t border-white/6">
-              <div className="w-14 text-xs text-pink-300/70">Ribon</div>
-              <div className="flex-1 text-[10px] text-white/25">{ribonMetni(mekan.albumSayilari['ribon'] || 0)}</div>
-              <div className="w-8 text-right text-xs font-bold text-pink-300">{mekan.albumSayilari['ribon'] || 0}</div>
-              <div className="w-9" />
-            </div>
-          )}
+          {/* Ribon satırları — tip bazlı */}
+          {mekan.ribonlar && Object.keys(mekan.ribonlar).length > 0 ? (
+            Object.entries(mekan.ribonlar).filter(([, v]) => v > 0).map(([tipId, adet]) => {
+              const tipAdi = kagitTipleri.find(k => k.id === tipId)?.name || tipId;
+              return (
+                <div key={tipId} className="flex items-center gap-2 pt-1 border-t border-white/6">
+                  <div className="w-14 text-xs text-pink-300/70 truncate">{tipAdi}</div>
+                  <div className="flex-1 text-[10px] text-white/25">{ribonMetni(adet)}</div>
+                  <div className="w-8 text-right text-xs font-bold text-pink-300">{adet}</div>
+                  <div className="w-9" />
+                </div>
+              );
+            })
+          ) : (mekan.albumSayilari['ribon'] || 0) > 0 ? (() => {
+            const ribonAdet = mekan.albumSayilari['ribon'] || 0;
+            // Eski format fallback: Citizen'ı bul, yoksa ilk tip
+            const citizenM = kagitTipleri.find(kt => kt.name.toLowerCase().includes('citizen'));
+            const eskiTipAdi = citizenM?.name || kagitTipleri[0]?.name || 'Ribon';
+            return (
+              <div className="flex items-center gap-2 pt-1 border-t border-white/6">
+                <div className="w-14 text-xs text-pink-300/70 truncate">{eskiTipAdi}</div>
+                <div className="flex-1 text-[10px] text-white/25">{ribonMetni(ribonAdet)}</div>
+                <div className="w-8 text-right text-xs font-bold text-pink-300">{ribonAdet}</div>
+                <div className="w-9" />
+              </div>
+            );
+          })() : null}
           {/* Yönetici butonları */}
           {isYonetici && (
             <div className="flex gap-2 pt-3 border-t border-white/8 mt-1">
@@ -337,12 +481,13 @@ function MekanAlbumCard({
 
 // ─── Depo Albüm Accordion ─────────────────────────────────────────────────────
 function DepoAlbumCard({
-  depo, isYonetici, onGuncelle, onSifirla,
+  depo, isYonetici, onGuncelle, onSifirla, kagitTipleri,
 }: {
   depo: DepoOzet;
   isYonetici: boolean;
   onGuncelle: () => void;
   onSifirla: () => void;
+  kagitTipleri: Array<{ id: string; name: string }>;
 }) {
   const [acik, setAcik] = useState(false);
   const toplam = SADECE_ALBUMLER.reduce((s, a) => s + (depo.albumSayilari[a] || 0), 0);
@@ -380,13 +525,32 @@ function DepoAlbumCard({
               </div>
             );
           })}
-          {/* Ribon satırı */}
-          <div className="flex items-center gap-2 pt-1 border-t border-white/6">
-            <div className="w-14 text-xs text-pink-300/70">Ribon</div>
-            <div className="flex-1 text-[10px] text-white/25">{ribonMetni(depo.ribonTakim)}</div>
-            <div className="w-8 text-right text-xs font-bold text-pink-300">{depo.ribonTakim}</div>
-            <div className="w-9" />
-          </div>
+          {/* Ribon satırları — tip bazlı */}
+          {depo.ribonlar && Object.keys(depo.ribonlar).length > 0 ? (
+            Object.entries(depo.ribonlar).map(([tipId, adet]) => {
+              const tipAdi = kagitTipleri.find(k => k.id === tipId)?.name || tipId;
+              return (
+                <div key={tipId} className="flex items-center gap-2 pt-1 border-t border-white/6">
+                  <div className="w-14 text-xs text-pink-300/70 truncate">{tipAdi}</div>
+                  <div className="flex-1 text-[10px] text-white/25">{ribonMetni(adet)}</div>
+                  <div className="w-8 text-right text-xs font-bold text-pink-300">{adet}</div>
+                  <div className="w-9" />
+                </div>
+              );
+            })
+          ) : (() => {
+            // Eski format fallback: Citizen'ı bul, yoksa ilk tip
+            const citizenD = kagitTipleri.find(kt => kt.name.toLowerCase().includes('citizen'));
+            const eskiTipAdi = citizenD?.name || kagitTipleri[0]?.name || 'Ribon';
+            return (
+              <div className="flex items-center gap-2 pt-1 border-t border-white/6">
+                <div className="w-14 text-xs text-pink-300/70 truncate">{eskiTipAdi}</div>
+                <div className="flex-1 text-[10px] text-white/25">{ribonMetni(depo.ribonTakim)}</div>
+                <div className="w-8 text-right text-xs font-bold text-pink-300">{depo.ribonTakim}</div>
+                <div className="w-9" />
+              </div>
+            );
+          })()}
           {/* Yönetici butonları */}
           {isYonetici && (
             <div className="flex gap-2 pt-3 border-t border-white/8 mt-1">
@@ -426,9 +590,15 @@ function StokGuncelleModal({
     const init: Record<string, string> = {};
     if (mevcutRibonlar && Object.keys(mevcutRibonlar).length > 0) {
       for (const [k, v] of Object.entries(mevcutRibonlar)) init[k] = String(v || 0);
-    } else if (kagitTipleri.length === 1) {
-      init[kagitTipleri[0].id] = String(mevcutRibonTakim || 0);
-    } else if (kagitTipleri.length === 0) {
+      kagitTipleri.forEach(kt => { if (!(kt.id in init)) init[kt.id] = '0'; });
+    } else if (kagitTipleri.length > 0) {
+      // Eski format: mevcut toplam ribon stoğunu Citizen'a ata, diğerleri 0
+      const citizenInit = kagitTipleri.find(kt => kt.name.toLowerCase().includes('citizen'));
+      const citizenInitId = citizenInit?.id || kagitTipleri[0]?.id;
+      kagitTipleri.forEach(kt => {
+        init[kt.id] = kt.id === citizenInitId ? String(mevcutRibonTakim || 0) : '0';
+      });
+    } else {
       init['_bilinmeyen'] = String(mevcutRibonTakim || 0);
     }
     return init;
@@ -462,10 +632,10 @@ function StokGuncelleModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 backdrop-blur-sm"
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 backdrop-blur-sm"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-md rounded-t-3xl overflow-hidden"
-        style={{ background: '#0e0826', border: '1px solid rgba(255,255,255,0.12)', maxHeight: '92vh' }}>
+      <div className="w-full max-w-md mx-4 rounded-3xl overflow-hidden"
+        style={{ background: '#0e0826', border: '1px solid rgba(255,255,255,0.12)', maxHeight: '85vh' }}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/10">
           <div className="flex items-center gap-2">
@@ -481,7 +651,7 @@ function StokGuncelleModal({
           </button>
         </div>
         {/* Form */}
-        <div className="overflow-y-auto px-5 py-4 space-y-3" style={{ maxHeight: 'calc(92vh - 140px)' }}>
+        <div className="overflow-y-auto px-5 py-4 space-y-3" style={{ maxHeight: 'calc(85vh - 140px)' }}>
           <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mb-1">Albümler (adet)</p>
           <div className="grid grid-cols-2 gap-2">
             {SADECE_ALBUMLER.map(alan => (
@@ -509,7 +679,7 @@ function StokGuncelleModal({
           {hata && <div className="rounded-xl bg-red-500/12 border border-red-500/20 px-4 py-3 text-xs text-red-300">{hata}</div>}
         </div>
         {/* Footer */}
-        <div className="px-5 pt-3 flex gap-3 border-t border-white/8" style={{ paddingBottom: 'calc(1.5rem + max(80px, env(safe-area-inset-bottom) + 70px))' }}>
+        <div className="px-5 py-4 flex gap-3 border-t border-white/8">
           <button onClick={onClose}
             className="flex-1 h-11 rounded-xl bg-white/6 border border-white/12 text-sm font-semibold text-white/50 active:scale-95 transition-transform">
             İptal
@@ -586,14 +756,19 @@ function StokSifirlaOnay({
 
 // ─── Depo Yönetim Modalı ──────────────────────────────────────────────────────
 function DepoModal({
-  onClose, onSuccess, mekanlar,
+  onClose, onSuccess, mekanlar, kagitTipleri, depoRibonlar, depoAlbumSayilari, depoRibonTakim,
 }: {
   onClose: () => void;
   onSuccess: () => void;
   mekanlar: MekanOzet[];
+  kagitTipleri: Array<{ id: string; name: string }>;
+  depoRibonlar?: Record<string, number>;
+  depoAlbumSayilari?: Record<string, number>;
+  depoRibonTakim?: number;
 }) {
   const [sekme, setSekme] = useState<'giris' | 'cikis' | 'gecmis'>('giris');
   const [alan, setAlan] = useState('album3');
+  const [secilenRibonTipi, setSecilenRibonTipi] = useState(kagitTipleri[0]?.id || '');
   const [miktar, setMiktar] = useState('');
   const [hedefMekan, setHedefMekan] = useState('');
   const [not, setNot] = useState('');
@@ -616,6 +791,7 @@ function DepoModal({
       const headers = await authHeaders();
       const endpoint = sekme === 'giris' ? 'giris' : 'cikis';
       const body: any = { alan, miktar: Number(miktar), not };
+      if (alan === 'ribon' && secilenRibonTipi) body.kagitTipiId = secilenRibonTipi;
       if (sekme === 'cikis' && hedefMekan) body.hedefMekan = hedefMekan;
 
       const res = await fetch(`${API_BASE}/depo/${endpoint}`, {
@@ -659,9 +835,10 @@ function DepoModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      onTouchMove={e => { if (e.target === e.currentTarget) e.preventDefault(); }}>
       <div className="w-full max-w-md bg-[#0e0826] border border-white/12 rounded-t-3xl overflow-hidden mb-16"
-        style={{ maxHeight: '92vh' }}>
+        style={{ maxHeight: '92vh', overscrollBehavior: 'contain' }}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/10">
           <div className="flex items-center gap-2">
@@ -695,7 +872,7 @@ function DepoModal({
           })}
         </div>
 
-        <div className="overflow-y-auto" style={{ maxHeight: 'calc(92vh - 130px)' }}>
+        <div className="overflow-y-auto" style={{ maxHeight: 'calc(92vh - 130px)', overscrollBehavior: 'contain' }}>
           {/* Giriş / Çıkış formu */}
           {(sekme === 'giris' || sekme === 'cikis') && (
             <div className="p-5 space-y-4">
@@ -703,18 +880,59 @@ function DepoModal({
               <div>
                 <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Ürün</label>
                 <div className="grid grid-cols-4 gap-1.5">
-                  {ALBUM_TIPLERI.map(a => (
-                    <button key={a} onClick={() => setAlan(a)}
-                      className={`py-2 rounded-xl text-xs font-semibold border transition-all ${
-                        alan === a
-                          ? 'border-violet-400/60 bg-violet-500/20 text-violet-200'
-                          : 'border-white/8 bg-white/4 text-white/40 active:bg-white/8'
-                      }`}>
-                      {ALAN_ETIKET[a]}
-                    </button>
-                  ))}
+                  {ALBUM_TIPLERI.map(a => {
+                    const mevcutStok = a === 'ribon' ? (depoRibonTakim || 0) : (depoAlbumSayilari?.[a] || 0);
+                    return (
+                      <button key={a} onClick={() => setAlan(a)}
+                        className={`py-2 px-1 rounded-xl text-xs font-semibold border transition-all flex flex-col items-center gap-0.5 ${
+                          alan === a
+                            ? 'border-violet-400/60 bg-violet-500/20 text-violet-200'
+                            : 'border-white/8 bg-white/4 text-white/40 active:bg-white/8'
+                        }`}>
+                        <span>{ALAN_ETIKET[a]}</span>
+                        {sekme === 'cikis' && (
+                          <span className={`text-[9px] font-black ${mevcutStok === 0 ? 'text-red-400/50' : 'text-emerald-400/70'}`}>{mevcutStok}</span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
+
+              {/* Ribon tipi seçimi */}
+              {alan === 'ribon' && kagitTipleri.length > 0 && (
+                <div>
+                  <label className="text-[11px] font-semibold text-pink-300/60 uppercase tracking-wider block mb-2">Ribon Tipi</label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(() => {
+                      const hasRibonlarData = depoRibonlar && Object.keys(depoRibonlar).length > 0;
+                      return kagitTipleri.map(kt => {
+                        const tipStok = hasRibonlarData ? (depoRibonlar![kt.id] || 0) : null;
+                        // Eski format (ribonlar yok) → disable etme; yeni format → stoğu 0 olanı disable et
+                        const tipSifir = sekme === 'cikis' && hasRibonlarData && tipStok === 0;
+                        return (
+                          <button key={kt.id} onClick={() => { if (!tipSifir) setSecilenRibonTipi(kt.id); }}
+                            disabled={tipSifir}
+                            className={`py-2 px-2 rounded-xl text-xs font-semibold border transition-all flex flex-col items-center gap-0.5 ${
+                              secilenRibonTipi === kt.id
+                                ? 'border-pink-400/60 bg-pink-500/20 text-pink-200'
+                                : tipSifir
+                                ? 'border-red-500/20 bg-red-500/5 text-white/25 opacity-50 cursor-not-allowed'
+                                : 'border-white/8 bg-white/4 text-white/50 active:bg-white/8'
+                            }`}>
+                            <span>🎞️ {kt.name}</span>
+                            {sekme === 'cikis' && (
+                              <span className={`text-[9px] font-black ${tipSifir ? 'text-red-400/50' : 'text-pink-300/70'}`}>
+                                {tipStok !== null ? `${tipStok} tk` : '—'}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
 
               {/* Miktar */}
               <div>
@@ -751,7 +969,7 @@ function DepoModal({
                   <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">
                     📍 Hedef Mekan <span className="text-white/25 normal-case font-normal">(opsiyonel)</span>
                   </label>
-                  <div className="relative">
+                  <div>
                     <button
                       type="button"
                       onClick={() => setHedefAcik(!hedefAcik)}
@@ -779,39 +997,35 @@ function DepoModal({
                       )}
                     </button>
                     {hedefAcik && (
-                      <>
-                        <div className="fixed inset-0 z-[60]" onClick={() => setHedefAcik(false)} />
-                        <div
-                          className="absolute top-full left-0 right-0 mt-1.5 rounded-2xl border border-white/15 overflow-hidden z-[70]"
-                          style={{ background: 'rgba(12,6,32,0.98)', backdropFilter: 'blur(24px)', boxShadow: '0 12px 40px rgba(0,0,0,0.7)' }}>
-                          {/* Boş bırak seçeneği */}
+                      <div className="mt-1.5 rounded-2xl border border-white/15 overflow-hidden"
+                        style={{ background: 'rgba(12,6,32,0.98)' }}>
+                        {/* Boş bırak seçeneği */}
+                        <button
+                          type="button"
+                          onClick={() => { setHedefMekan(''); setHedefAcik(false); }}
+                          className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-white/8 ${
+                            hedefMekan === '' ? 'bg-white/8 text-white/60' : 'text-white/40 hover:bg-white/6'
+                          }`}>
+                          <span className="text-lg">—</span>
+                          <span className="text-sm font-medium">Mekan belirtme</span>
+                          {hedefMekan === '' && <Check className="w-3.5 h-3.5 text-white/40 ml-auto" />}
+                        </button>
+                        {mekanlar.map(m => (
                           <button
+                            key={m.id}
                             type="button"
-                            onClick={() => { setHedefMekan(''); setHedefAcik(false); }}
-                            className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-white/8 ${
-                              hedefMekan === '' ? 'bg-white/8 text-white/60' : 'text-white/40 hover:bg-white/6'
+                            onClick={() => { setHedefMekan(m.name); setHedefAcik(false); }}
+                            className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-white/6 last:border-0 ${
+                              hedefMekan === m.name
+                                ? 'bg-violet-500/25 text-violet-100'
+                                : 'text-white/85 hover:bg-white/8 active:bg-white/12'
                             }`}>
-                            <span className="text-lg">—</span>
-                            <span className="text-sm font-medium">Mekan belirtme</span>
-                            {hedefMekan === '' && <Check className="w-3.5 h-3.5 text-white/40 ml-auto" />}
+                            <span className="text-lg shrink-0">{m.emoji}</span>
+                            <span className="text-sm font-semibold">{m.name}</span>
+                            {hedefMekan === m.name && <Check className="w-3.5 h-3.5 text-violet-400 ml-auto shrink-0" />}
                           </button>
-                          {mekanlar.map(m => (
-                            <button
-                              key={m.id}
-                              type="button"
-                              onClick={() => { setHedefMekan(m.name); setHedefAcik(false); }}
-                              className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-white/6 last:border-0 ${
-                                hedefMekan === m.name
-                                  ? 'bg-violet-500/25 text-violet-100'
-                                  : 'text-white/85 hover:bg-white/8 active:bg-white/12'
-                              }`}>
-                              <span className="text-lg shrink-0">{m.emoji}</span>
-                              <span className="text-sm font-semibold">{m.name}</span>
-                              {hedefMekan === m.name && <Check className="w-3.5 h-3.5 text-violet-400 ml-auto shrink-0" />}
-                            </button>
-                          ))}
-                        </div>
-                      </>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -918,18 +1132,30 @@ function AktarimModal({
   ];
 
   // Kaynak mekanın seçili ürün için mevcut stoğunu hesapla (frontend'deki data'dan)
+  // Eski format fallback: tüm eski ribon stoğunu Citizen'a ata
+  const citizenTipAktarim = kagitTipleri.find(kt => kt.name.toLowerCase().includes('citizen'));
+  const eskiFallbackIdAktarim = citizenTipAktarim?.id || kagitTipleri[0]?.id || '';
+
   const getKaynakStok = (kId: string, a: string, kagitId?: string): { adet: number; veriVar: boolean } => {
     if (kId === 'depo') {
-      if (a === 'ribon' && kagitId && depo.ribonlar?.[kagitId] !== undefined) {
-        return { adet: depo.ribonlar[kagitId] || 0, veriVar: true };
+      if (a === 'ribon' && kagitId) {
+        if (depo.ribonlar && Object.keys(depo.ribonlar).length > 0) {
+          return { adet: depo.ribonlar[kagitId] || 0, veriVar: true };
+        }
+        // Eski format: tüm ribon stoğu Citizen'a atanır
+        return { adet: kagitId === eskiFallbackIdAktarim ? depo.ribonTakim : 0, veriVar: true };
       }
       if (a === 'ribon') return { adet: depo.ribonTakim, veriVar: true };
       return { adet: depo.albumSayilari[a] || 0, veriVar: true };
     }
     const mekan = mekanlar.find(m => m.id === kId);
     if (!mekan) return { adet: 0, veriVar: false };
-    if (a === 'ribon' && kagitId && mekan.ribonlar?.[kagitId] !== undefined) {
-      return { adet: mekan.ribonlar[kagitId] || 0, veriVar: mekan.veriVar };
+    if (a === 'ribon' && kagitId) {
+      if (mekan.ribonlar && Object.keys(mekan.ribonlar).length > 0) {
+        return { adet: mekan.ribonlar[kagitId] || 0, veriVar: mekan.veriVar };
+      }
+      // Eski format: tüm ribon stoğu Citizen'a atanır
+      return { adet: kagitId === eskiFallbackIdAktarim ? (mekan.albumSayilari['ribon'] || 0) : 0, veriVar: mekan.veriVar };
     }
     return { adet: mekan.albumSayilari[a] || 0, veriVar: mekan.veriVar };
   };
@@ -1149,23 +1375,43 @@ function AktarimModal({
               </div>
 
               {/* Ribon seçildiğinde kağıt tipi seçimi */}
-              {alan === 'ribon' && kagitTipleri.length > 0 && (
+              {alan === 'ribon' && kagitTipleri.length > 0 && (() => {
+                // Kaynakta ribonlar verisi var mı kontrol et (eski format mı?)
+                const kaynakRibonlarVar = kaynakId === 'depo'
+                  ? (depo.ribonlar && Object.keys(depo.ribonlar).length > 0)
+                  : (() => { const m = mekanlar.find(m => m.id === kaynakId); return m?.ribonlar && Object.keys(m.ribonlar).length > 0; })();
+                return (
                 <div>
                   <label className="text-[11px] font-semibold text-pink-300/60 uppercase tracking-wider block mb-2">Ribon Tipi</label>
+                  {!kaynakRibonlarVar && (
+                    <p className="text-[10px] text-amber-300/50 mb-1.5">⚠️ Tip bazlı stok henüz ayrılmamış — ilk işlemde otomatik ayrılacak</p>
+                  )}
                   <div className="grid grid-cols-2 gap-1.5">
-                    {kagitTipleri.map(kt => (
-                      <button key={kt.id} onClick={() => { setSecilenKagitTipiId(kt.id); setMiktar(''); }}
-                        className={`py-2 px-2 rounded-xl text-xs font-semibold border transition-all ${
-                          secilenKagitTipiId === kt.id
-                            ? 'border-pink-400/60 bg-pink-500/20 text-pink-200'
-                            : 'border-white/8 bg-white/4 text-white/50 active:bg-white/8'
-                        }`}>
-                        🎞️ {kt.name}
-                      </button>
-                    ))}
+                    {kagitTipleri.map(kt => {
+                      const tipStok = getKaynakStok(kaynakId, 'ribon', kt.id);
+                      // Eski format: disable etme, stok yerine toplam göster
+                      const tipSifir = kaynakRibonlarVar && tipStok.adet === 0;
+                      return (
+                        <button key={kt.id} onClick={() => { if (!tipSifir) { setSecilenKagitTipiId(kt.id); setMiktar(''); } }}
+                          disabled={tipSifir}
+                          className={`py-2 px-2 rounded-xl text-xs font-semibold border transition-all flex flex-col items-center gap-0.5 ${
+                            secilenKagitTipiId === kt.id
+                              ? 'border-pink-400/60 bg-pink-500/20 text-pink-200'
+                              : tipSifir
+                              ? 'border-red-500/20 bg-red-500/5 text-white/25 opacity-50 cursor-not-allowed'
+                              : 'border-white/8 bg-white/4 text-white/50 active:bg-white/8'
+                          }`}>
+                          <span>🎞️ {kt.name}</span>
+                          <span className={`text-[9px] font-black ${tipSifir ? 'text-red-400/50' : 'text-pink-300/70'}`}>
+                            {kaynakRibonlarVar ? `${tipStok.adet} tk` : '—'}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               {/* Kaynak stok durumu göstergesi */}
               <div className={`rounded-xl px-4 py-3 border flex items-center gap-3 ${
@@ -1536,17 +1782,12 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
           </div>
 
           {/* 1 · Genel Albüm Dağılımı */}
-          <GenelAlbumCard dagilim={veri.genelAlbumDagilimi} />
+          <GenelAlbumCard dagilim={veri.genelAlbumDagilimi} mekanlar={veri.mekanlar} depo={veri.depo} kagitTipleri={kagitTipleri} />
 
           {/* 2 · Ribon Stoğu */}
-          <RibonCard mekanlar={veri.mekanlar} depo={veri.depo} />
+          <RibonCard mekanlar={veri.mekanlar} depo={veri.depo} kagitTipleri={kagitTipleri} />
 
-          {/* 3 · Son Aktarımlar (sadece yönetici/müdür) */}
-          {canManageStok && (
-            <SonAktarimlarCard transferler={transferler} yukleniyor={transferYukleniyor} />
-          )}
-
-          {/* 4 · Mekan Bazlı Albüm Dağılımı */}
+          {/* 3 · Mekan Bazlı Albüm Dağılımı */}
           <div className="mx-4 mb-4 rounded-2xl border border-white/12 bg-[rgba(10,5,30,0.6)] backdrop-blur overflow-hidden">
             <div className="px-4 pt-4 pb-3 border-b border-white/8 flex items-center gap-2">
               <Package className="w-4 h-4 text-indigo-400" />
@@ -1564,6 +1805,7 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
                     ribonlar: mekan.ribonlar,
                   })}
                   onSifirla={mekan => setSifirlaHedef({ mekanId: mekan.id, mekanAdi: mekan.name, mekanEmoji: mekan.emoji })}
+                  kagitTipleri={kagitTipleri}
                 />
               ))}
               <DepoAlbumCard
@@ -1575,9 +1817,15 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
                   ribonlar: veri.depo.ribonlar,
                 })}
                 onSifirla={() => setSifirlaHedef({ mekanId: 'depo', mekanAdi: 'Depo', mekanEmoji: '🏪' })}
+                kagitTipleri={kagitTipleri}
               />
             </div>
           </div>
+
+          {/* 4 · Son Aktarımlar (sadece yönetici/müdür) */}
+          {canManageStok && (
+            <SonAktarimlarCard transferler={transferler} yukleniyor={transferYukleniyor} />
+          )}
         </div>
       )}
 
@@ -1596,6 +1844,10 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
       {depoModalAcik && veri && (
         <DepoModal
           mekanlar={veri.mekanlar}
+          kagitTipleri={kagitTipleri}
+          depoRibonlar={veri.depo.ribonlar}
+          depoAlbumSayilari={veri.depo.albumSayilari}
+          depoRibonTakim={veri.depo.ribonTakim}
           onClose={() => setDepoModalAcik(false)}
           onSuccess={() => { setDepoModalAcik(false); yukle(); }}
         />

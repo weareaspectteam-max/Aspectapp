@@ -541,7 +541,7 @@ export function ShiftEnd({ userName, userRole, projectName, onBack, onLogout, on
                   <div className="flex items-center justify-center gap-2 py-4"
                     style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 14, border: '1px solid rgba(255,255,255,0.08)' }}>
                     <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white/80 animate-spin" />
-                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>Prim hesaplanıyor…</span>
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>Hakediş hesaplanıyor…</span>
                   </div>
                 ) : pb ? (
                   <motion.div
@@ -564,7 +564,7 @@ export function ShiftEnd({ userName, userRole, projectName, onBack, onLogout, on
                         {kEmoji}
                       </div>
                       <div className="flex-1">
-                        <p style={{ fontSize: 13, fontWeight: 800, color: 'white' }}>🏆 Prim Kazandınız!</p>
+                        <p style={{ fontSize: 13, fontWeight: 800, color: 'white' }}>🏆 Hakediş Kazandınız!</p>
                         <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
                           {pb.toplamKademe}/{pb.toplamKademeAdet} kota · ₺{pb.ciro.toLocaleString('tr-TR')} ciro
                         </p>
@@ -609,7 +609,7 @@ export function ShiftEnd({ userName, userRole, projectName, onBack, onLogout, on
                       })}
                     </div>
                     <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>
-                      Prim ödemeniz yönetici tarafından yapılacaktır
+                      Hakediş ödemesi yönetici tarafından yapılacaktır
                     </p>
                   </motion.div>
                 ) : primFark !== null && primFark > 0 ? (
@@ -625,7 +625,7 @@ export function ShiftEnd({ userName, userRole, projectName, onBack, onLogout, on
                     <div className="flex items-center gap-2.5">
                       <Trophy style={{ width: 18, height: 18, color: 'rgba(255,255,255,0.25)', flexShrink: 0 }} />
                       <div>
-                        <p style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.55)' }}>Prim eşiğine ulaşılamadı</p>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.55)' }}>Hakediş eşiğine ulaşılamadı</p>
                         <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
                           İlk kotaya ₺{primFark.toLocaleString('tr-TR')} eksik kaldı
                         </p>
@@ -643,7 +643,7 @@ export function ShiftEnd({ userName, userRole, projectName, onBack, onLogout, on
                     }}
                   >
                     <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
-                      Bu mekana prim kotası tanımlı değil
+                      Bu mekana hakediş kotası tanımlı değil
                     </p>
                   </motion.div>
                 )}

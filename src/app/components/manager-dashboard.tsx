@@ -84,7 +84,7 @@ const QUICK_ACTIONS = [
   { label: 'Vardiya İstatistik',  icon: Clock,       color: '#a8e6cf', tab: 'vardiya-istatistikleri' },
   { label: 'İndirim İstatistik', icon: Star,        color: '#c4b5fd', tab: 'indirim-istatistik' },
   { label: 'Yön. Raporları',     icon: TrendingUp,  color: '#fb923c', tab: 'manager-reports' },
-  { label: 'Prim Takip',         icon: Trophy,      color: '#fbbf24', tab: 'prim-takip' },
+  { label: 'Hakediş Takip',      icon: Trophy,      color: '#fbbf24', tab: 'prim-takip' },
 ];
 
 export function ManagerDashboard({ userName, roleTitle, onNavigate }: ManagerDashboardProps) {

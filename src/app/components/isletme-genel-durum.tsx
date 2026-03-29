@@ -62,6 +62,17 @@ interface SystemUser {
 
 type DateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'last3months' | 'last6months' | 'last1year' | 'custom';
 
+interface Gelir {
+  id: string;
+  mekanId: string;
+  mekanAdi: string;
+  amount: number;
+  description: string;
+  date: string;
+  created_at: string;
+  created_by: string;
+}
+
 interface IsletmeGenelDurumProps {
   userName: string;
   userRole: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';
@@ -108,7 +119,7 @@ const roleColors: Record<string, string> = {
 };
 
 const odemeTipiLabels: Record<string, string> = {
-  maas: '💰 Maaş', prim: '🏆 Prim', ikramiye: '🎁 İkramiye', avans: '💳 Avans', diger: '📦 Diğer'
+  maas: '💰 Maaş', prim: '🏆 Hakediş', ikramiye: '🎁 İkramiye', avans: '💳 Avans', diger: '📦 Diğer'
 };
 const odemeTipiColors: Record<string, string> = {
   maas: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
@@ -158,6 +169,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [mekanFilter, setMekanFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [displayLimit, setDisplayLimit] = useState(15);
 
@@ -166,6 +178,21 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   const [showUserPicker, setShowUserPicker] = useState(false);
   const [userPickerSearch, setUserPickerSearch] = useState('');
   const userPickerRef = useRef<HTMLDivElement>(null);
+
+  // Gelir state
+  const [gelirler, setGelirler] = useState<Gelir[]>([]);
+  const [showGelirForm, setShowGelirForm] = useState(false);
+  const [editingGelir, setEditingGelir] = useState<Gelir | null>(null);
+  const [gelirForm, setGelirForm] = useState({
+    mekanId: '',
+    mekanAdi: '',
+    amount: '',
+    description: '',
+    date: new Date().toISOString().split('T')[0],
+  });
+  const [isSavingGelir, setIsSavingGelir] = useState(false);
+  // Mekan listesi (tüm mekanlar — gelir formu için)
+  const [tumMekanlar, setTumMekanlar] = useState<Array<{ id: string; name: string; emoji: string }>>([]);
 
   const now = new Date();
   const defaultDonem = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -181,6 +208,8 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
     personelRol: '',
     odemeTipi: 'maas' as 'maas' | 'prim' | 'ikramiye' | 'avans' | 'diger',
     donem: defaultDonem,
+    mekanId: '',
+    mekanAdi: '',
   });
 
   // ─── Auth ───────────────────────────────
@@ -212,11 +241,12 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
     setApiError(null);
     try {
       const h = await getAuthHeaders();
-      const [giderRes, usersRes, maliyetRes, mekanRes] = await Promise.all([
+      const [giderRes, usersRes, maliyetRes, mekanRes, gelirRes] = await Promise.all([
         fetch(appendGhostParam(`${API_BASE}/isletme/giderler`), { headers: h }),
         fetch(appendGhostParam(`${API_BASE}/auth/kullanicilar`), { headers: h }),
         fetch(appendGhostParam(`${API_BASE}/maliyetler`), { headers: h }),
         fetch(appendGhostParam(`${API_BASE}/mekanlar`), { headers: h }),
+        fetch(appendGhostParam(`${API_BASE}/isletme/gelirler`), { headers: h }),
       ]);
       if (giderRes.ok) {
         const d = await giderRes.json();
@@ -238,11 +268,17 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
       }
       if (mekanRes.ok) {
         const d = await mekanRes.json();
+        const allMekanlar = (d.mekanlar || []);
+        setTumMekanlar(allMekanlar.map((m: any) => ({ id: m.id, name: m.name, emoji: m.emoji || '📍' })));
         setMekanKiralar(
-          (d.mekanlar || [])
+          allMekanlar
             .filter((m: any) => m.yearlyRent && m.yearlyRent > 0)
             .map((m: any) => ({ id: m.id, name: m.name, emoji: m.emoji || '📍', yearlyRent: m.yearlyRent }))
         );
+      }
+      if (gelirRes.ok) {
+        const d = await gelirRes.json();
+        setGelirler(d.gelirler || []);
       }
     } catch (err) {
       console.log('isletme fetchData error:', err);
@@ -389,6 +425,8 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
         currency: formData.currency,
         description: formData.description,
         date: formData.date,
+        mekanId: formData.mekanId || null,
+        mekanAdi: formData.mekanAdi || null,
       };
       if (formData.category === 'personel') {
         payload.personelId = formData.personelId || null;
@@ -460,6 +498,8 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
       personelRol: expense.personelRol || '',
       odemeTipi: (expense.odemeTipi as any) || 'maas',
       donem: expense.donem || defaultDonem,
+      mekanId: (expense as any).mekanId || '',
+      mekanAdi: (expense as any).mekanAdi || '',
     });
     setShowAddForm(true);
     setShowUserPicker(false);
@@ -481,6 +521,91 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
       personelRol: '',
       odemeTipi: 'maas',
       donem: defaultDonem,
+      mekanId: '',
+      mekanAdi: '',
+    });
+  };
+
+  // ─── Gelir CRUD ────────────────────────────
+  const handleSaveGelir = async () => {
+    if (!gelirForm.amount || parseFloat(gelirForm.amount) <= 0) {
+      alert('Lütfen geçerli bir tutar girin.');
+      return;
+    }
+    setIsSavingGelir(true);
+    try {
+      const h = await getAuthHeaders();
+      const payload = {
+        mekanId: gelirForm.mekanId,
+        mekanAdi: gelirForm.mekanAdi,
+        amount: parseFloat(gelirForm.amount),
+        description: gelirForm.description,
+        date: gelirForm.date,
+      };
+      const isEdit = !!editingGelir;
+      const url = isEdit ? `${API_BASE}/isletme/gelirler/${editingGelir!.id}` : `${API_BASE}/isletme/gelirler`;
+      const res = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: h,
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        alert(e.error || 'Kayıt başarısız.');
+        return;
+      }
+      const { gelir } = await res.json();
+      if (isEdit) {
+        setGelirler(prev => prev.map(g => g.id === gelir.id ? gelir : g));
+      } else {
+        setGelirler(prev => [gelir, ...prev]);
+      }
+      cancelGelirEdit();
+    } catch (err) {
+      console.log('handleSaveGelir error:', err);
+      alert('Sunucu hatası!');
+    } finally {
+      setIsSavingGelir(false);
+    }
+  };
+
+  const handleDeleteGelir = async (id: string) => {
+    if (!confirm('Bu gelir kaydını silmek istediğinizden emin misiniz?')) return;
+    try {
+      const h = await getAuthHeaders();
+      const res = await fetch(`${API_BASE}/isletme/gelirler/${id}`, { method: 'DELETE', headers: h });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        alert(e.error || 'Silinemedi.');
+        return;
+      }
+      setGelirler(prev => prev.filter(g => g.id !== id));
+    } catch (err) {
+      alert('Sunucu hatası!');
+    }
+  };
+
+  const startGelirEdit = (gelir: Gelir) => {
+    setEditingGelir(gelir);
+    setGelirForm({
+      mekanId: gelir.mekanId || '',
+      mekanAdi: gelir.mekanAdi || '',
+      amount: gelir.amount.toString(),
+      description: gelir.description || '',
+      date: gelir.date,
+    });
+    setShowGelirForm(true);
+  };
+
+  const cancelGelirEdit = () => {
+    setEditingGelir(null);
+    setShowGelirForm(false);
+    setGelirForm({
+      mekanId: '',
+      mekanAdi: '',
+      amount: '',
+      description: '',
+      date: new Date().toISOString().split('T')[0],
     });
   };
 
@@ -548,9 +673,10 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
       else if (currentRole === 'personel' || currentRole === 'mudur') roleCatMatch = exp.category !== 'operasyonel' && exp.category !== 'personel';
 
       const catMatch = categoryFilter === 'all' || exp.category === categoryFilter;
+      const mekanMatch = mekanFilter === 'all' || ((exp as any).mekanId || '') === mekanFilter || (mekanFilter === 'genel' && !(exp as any).mekanId);
       const q = searchQuery.toLowerCase().trim();
       const searchMatch = !q || exp.description?.toLowerCase().includes(q) || exp.personelAdi?.toLowerCase().includes(q) || categoryLabels[exp.category].toLowerCase().includes(q);
-      return dateMatch && roleCatMatch && catMatch && searchMatch;
+      return dateMatch && roleCatMatch && catMatch && mekanMatch && searchMatch;
     });
   };
 
@@ -559,7 +685,30 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   const { days: filterDays } = getDateRangeForFilter();
   const autoGiderToplam = dateFilter !== 'all' ? computeAutoGider(filterDays) : 0;
   const totalExpenses = manualGiderToplam + autoGiderToplam;
-  const totalRevenue = ciroData.toplamCiro;
+  // Gelir kayıtlarını tarih + mekan filtresine göre filtrele
+  const filteredGelirler = gelirler.filter(g => {
+    const d = new Date(g.date);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+    const startOfWeek = new Date(today); const dow2 = startOfWeek.getDay(); startOfWeek.setDate(startOfWeek.getDate() - (dow2 === 0 ? 6 : dow2 - 1));
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    let dateMatch = true;
+    switch (dateFilter) {
+      case 'today': dateMatch = d >= today; break;
+      case 'yesterday': dateMatch = d >= yesterday && d < today; break;
+      case 'week': dateMatch = d >= startOfWeek; break;
+      case 'month': dateMatch = d >= startOfMonth; break;
+      case 'last3months': dateMatch = d >= new Date(now.getFullYear(), now.getMonth() - 2, 1); break;
+      case 'last6months': dateMatch = d >= new Date(now.getFullYear(), now.getMonth() - 5, 1); break;
+      case 'last1year': dateMatch = d >= new Date(now.getFullYear() - 1, now.getMonth(), 1); break;
+      case 'custom': dateMatch = customStartDate && customEndDate ? d >= new Date(customStartDate) && d <= new Date(customEndDate) : false; break;
+      default: dateMatch = true;
+    }
+    const mekanMatch = mekanFilter === 'all' || (g.mekanId || '') === mekanFilter || (mekanFilter === 'genel' && !g.mekanId);
+    return dateMatch && mekanMatch;
+  });
+  const ekGelirToplam = filteredGelirler.reduce((s, g) => s + g.amount, 0);
+  const totalRevenue = ciroData.toplamCiro + ekGelirToplam;
   const netProfit = totalRevenue - totalExpenses;
   const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
@@ -679,7 +828,10 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                       {isCiroLoading && <Loader2 className="w-3 h-3 animate-spin text-green-400 ml-auto" />}
                     </div>
                     <div className="text-xl font-bold text-white">₺{totalRevenue.toLocaleString('tr-TR')}</div>
-                    <div className="text-xs text-gray-500 mt-1">{ciroData.toplamSatisAdet} satış</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {ciroData.toplamSatisAdet} satış
+                      {ekGelirToplam > 0 && <span className="text-green-400/60"> + ₺{ekGelirToplam.toLocaleString('tr-TR')} ek gelir</span>}
+                    </div>
                     {ciroData.mekanlar.length > 0 && (
                       <div className="mt-2 space-y-1">
                         {ciroData.mekanlar.slice(0, 3).map(m => (
@@ -791,15 +943,155 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
             </div>
           )}
 
-          {/* ── Yeni Gider Butonu ── */}
+          {/* ── Mekan Filtresi ── */}
+          {tumMekanlar.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setMekanFilter('all')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  mekanFilter === 'all' ? 'bg-[#9dd9ea]/20 text-[#9dd9ea] border border-[#9dd9ea]/30' : 'bg-white/5 text-gray-400 border border-white/10'
+                }`}
+              >
+                Tümü
+              </button>
+              <button
+                onClick={() => setMekanFilter('genel')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  mekanFilter === 'genel' ? 'bg-[#9dd9ea]/20 text-[#9dd9ea] border border-[#9dd9ea]/30' : 'bg-white/5 text-gray-400 border border-white/10'
+                }`}
+              >
+                🏢 Genel
+              </button>
+              {tumMekanlar.map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setMekanFilter(m.id)}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    mekanFilter === m.id ? 'bg-[#9dd9ea]/20 text-[#9dd9ea] border border-[#9dd9ea]/30' : 'bg-white/5 text-gray-400 border border-white/10'
+                  }`}
+                >
+                  {m.emoji} {m.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* ── Yeni Gelir / Gider Butonları ── */}
           {canAddExpense && (
-            <button
-              onClick={() => { setShowAddForm(!showAddForm); if (showAddForm) cancelEdit(); }}
-              className="w-full bg-gradient-to-r from-[#9dd9ea] to-[#7ec8dd] text-[#0a051e] font-bold py-3 px-4 rounded-2xl flex items-center justify-center gap-2 hover:opacity-90 transition-all active:scale-95 shadow-lg"
-            >
-              {showAddForm ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-              {showAddForm ? 'Formu Kapat' : 'Yeni Gider Ekle'}
-            </button>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => { setShowGelirForm(!showGelirForm); if (showGelirForm) cancelGelirEdit(); if (showAddForm) { setShowAddForm(false); cancelEdit(); } }}
+                className={`py-3 px-4 rounded-2xl flex items-center justify-center gap-2 font-bold transition-all active:scale-95 shadow-lg ${
+                  showGelirForm
+                    ? 'bg-white/10 border border-white/20 text-gray-300'
+                    : 'bg-gradient-to-r from-green-500 to-green-600 text-white'
+                }`}
+              >
+                {showGelirForm ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                {showGelirForm ? 'Kapat' : 'Gelir Ekle'}
+              </button>
+              <button
+                onClick={() => { setShowAddForm(!showAddForm); if (showAddForm) cancelEdit(); if (showGelirForm) { setShowGelirForm(false); cancelGelirEdit(); } }}
+                className={`py-3 px-4 rounded-2xl flex items-center justify-center gap-2 font-bold transition-all active:scale-95 shadow-lg ${
+                  showAddForm
+                    ? 'bg-white/10 border border-white/20 text-gray-300'
+                    : 'bg-gradient-to-r from-[#9dd9ea] to-[#7ec8dd] text-[#0a051e]'
+                }`}
+              >
+                {showAddForm ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                {showAddForm ? 'Kapat' : 'Gider Ekle'}
+              </button>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════
+              GELİR EKLEME / DÜZENLEME FORMU
+          ══════════════════════════════════ */}
+          {showGelirForm && (
+            <div className="backdrop-blur-2xl bg-gradient-to-br from-green-500/10 to-green-600/5 border border-green-500/20 rounded-2xl p-5 space-y-4">
+              <div className="flex items-center gap-3 pb-3 border-b border-green-500/20">
+                <div className="w-9 h-9 rounded-xl bg-green-500/20 border border-green-500/30 flex items-center justify-center">
+                  {editingGelir ? <Edit2 className="w-4 h-4 text-green-400" /> : <Plus className="w-4 h-4 text-green-400" />}
+                </div>
+                <h3 className="font-bold text-white">{editingGelir ? 'Gelir Düzenle' : 'Yeni Gelir'}</h3>
+              </div>
+
+              {/* Mekan Seçimi */}
+              <div>
+                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 block">Mekan</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setGelirForm(prev => ({ ...prev, mekanId: '', mekanAdi: '' }))}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-semibold transition-all ${
+                      !gelirForm.mekanId ? 'bg-green-500/20 border border-green-500/30 text-green-300' : 'bg-white/5 border border-white/10 text-gray-400'
+                    }`}
+                  >
+                    🏢 Genel (Mekansız)
+                  </button>
+                  {tumMekanlar.map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => setGelirForm(prev => ({ ...prev, mekanId: m.id, mekanAdi: m.name }))}
+                      className={`py-2.5 px-3 rounded-xl text-xs font-semibold transition-all ${
+                        gelirForm.mekanId === m.id ? 'bg-green-500/20 border border-green-500/30 text-green-300' : 'bg-white/5 border border-white/10 text-gray-400'
+                      }`}
+                    >
+                      {m.emoji} {m.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tutar */}
+              <div>
+                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 block">Tutar (₺)</label>
+                <input
+                  type="number"
+                  value={gelirForm.amount}
+                  onChange={e => setGelirForm(prev => ({ ...prev, amount: e.target.value }))}
+                  placeholder="0"
+                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-lg font-bold focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-400/30"
+                />
+              </div>
+
+              {/* Tarih */}
+              <div>
+                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 block">Tarih</label>
+                <input
+                  type="date"
+                  value={gelirForm.date}
+                  onChange={e => setGelirForm(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-green-400"
+                />
+              </div>
+
+              {/* Açıklama */}
+              <div>
+                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 block">Açıklama</label>
+                <input
+                  type="text"
+                  value={gelirForm.description}
+                  onChange={e => setGelirForm(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Opsiyonel açıklama"
+                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-green-400"
+                />
+              </div>
+
+              {/* Kaydet/İptal */}
+              <div className="flex gap-3 pt-2">
+                <button onClick={cancelGelirEdit} className="flex-1 py-3 px-4 bg-white/10 border border-white/20 rounded-xl text-gray-400 font-semibold">
+                  İptal
+                </button>
+                <button
+                  onClick={handleSaveGelir}
+                  disabled={isSavingGelir}
+                  className="flex-1 py-3 px-4 bg-gradient-to-r from-green-500 to-green-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isSavingGelir ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  {editingGelir ? 'Güncelle' : 'Kaydet'}
+                </button>
+              </div>
+            </div>
           )}
 
           {/* ══════════════════════════════════
@@ -830,6 +1122,32 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                       }`}
                     >
                       {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Mekan Seçimi (opsiyonel) ── */}
+              <div>
+                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 block">Mekan (opsiyonel)</label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setFormData(prev => ({ ...prev, mekanId: '', mekanAdi: '' }))}
+                    className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all ${
+                      !formData.mekanId ? 'bg-[#9dd9ea]/20 border border-[#9dd9ea]/30 text-[#9dd9ea]' : 'bg-white/5 border border-white/10 text-gray-400'
+                    }`}
+                  >
+                    🏢 Genel
+                  </button>
+                  {tumMekanlar.map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => setFormData(prev => ({ ...prev, mekanId: m.id, mekanAdi: m.name }))}
+                      className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all ${
+                        formData.mekanId === m.id ? 'bg-[#9dd9ea]/20 border border-[#9dd9ea]/30 text-[#9dd9ea]' : 'bg-white/5 border border-white/10 text-gray-400'
+                      }`}
+                    >
+                      {m.emoji} {m.name}
                     </button>
                   ))}
                 </div>
@@ -1035,7 +1353,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                   type="text"
                   value={formData.description}
                   onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder={formData.category === 'personel' ? 'Örn: "Şubat maaşı", "Fuar primleri"' : 'Açıklama...'}
+                  placeholder={formData.category === 'personel' ? 'Örn: "Şubat maaşı", "Fuar hakedişleri"' : 'Açıklama...'}
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-[#9dd9ea] transition-all"
                 />
               </div>
@@ -1231,6 +1549,48 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
             )}
           </div>
 
+          {/* ── Gelir Kayıtları ── */}
+          {gelirler.length > 0 && (
+            <div className="backdrop-blur-xl bg-gradient-to-br from-green-500/8 to-green-600/5 border border-green-500/20 rounded-2xl p-5 space-y-3">
+              <div className="flex items-center gap-2 mb-1">
+                <TrendingUp className="w-4 h-4 text-green-400" />
+                <h3 className="font-bold text-white text-sm">Gelir Kayıtları</h3>
+                <span className="text-xs text-gray-500 ml-auto">{gelirler.length} kayıt</span>
+              </div>
+              {gelirler.slice(0, 15).map(g => (
+                <div key={g.id} className="backdrop-blur-xl bg-green-500/5 border border-green-500/15 rounded-xl p-3">
+                  <div className="flex items-start justify-between mb-1.5">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {g.mekanAdi && <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/15 border border-green-500/20 text-green-300 font-medium">📍 {g.mekanAdi}</span>}
+                        {!g.mekanAdi && <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-gray-400">🏢 Genel</span>}
+                      </div>
+                      {g.description && <div className="text-xs text-gray-400 mt-1">{g.description}</div>}
+                    </div>
+                    <div className="flex gap-1 shrink-0 ml-2">
+                      <button onClick={() => startGelirEdit(g)} className="p-1.5 bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg transition-colors">
+                        <Edit2 className="w-3.5 h-3.5 text-gray-400" />
+                      </button>
+                      {canDeleteExpense && (
+                        <button onClick={() => handleDeleteGelir(g.id)} className="p-1.5 bg-red-500/10 hover:bg-red-500/25 border border-red-500/20 rounded-lg transition-colors">
+                          <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-lg font-bold text-green-400">+₺{g.amount.toLocaleString('tr-TR')}</span>
+                    <span className="text-xs text-gray-500">{new Date(g.date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                  </div>
+                  <div className="text-xs text-gray-600 mt-1">👤 {g.created_by || 'Bilinmiyor'}</div>
+                </div>
+              ))}
+              {gelirler.length > 15 && (
+                <div className="text-xs text-gray-500 text-center">+{gelirler.length - 15} kayıt daha</div>
+              )}
+            </div>
+          )}
+
           {/* ── Bilgi Kartı ── */}
           <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-5">
             <div className="flex items-start gap-3">
@@ -1240,10 +1600,9 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
               <div>
                 <h4 className="font-semibold text-white mb-2">Yetki Sistemi</h4>
                 <div className="space-y-1.5 text-xs text-gray-400">
-                  <p><span className="text-purple-300 font-medium">Yönetici / İdari:</span> Tüm giderleri görebilir, ekleyebilir ve silebilir.</p>
-                  <p><span className="text-blue-300 font-medium">Üst Müdür / Müdür:</span> Tüm giderleri görebilir ve ekleyebilir.</p>
-                  <p><span className="text-orange-300 font-medium">Operasyon:</span> Sadece ekipman ve ulaşım giderlerini görebilir.</p>
-                  <p><span className="text-gray-300 font-medium">Personel / Bekleyen:</span> Bu sayfaya erişim yok.</p>
+                  <p><span className="text-purple-300 font-medium">Yönetici:</span> Tüm gelir/giderleri görebilir, ekleyebilir ve silebilir.</p>
+                  <p><span className="text-blue-300 font-medium">Üst Müdür:</span> Tüm gelir/giderleri görebilir ve ekleyebilir.</p>
+                  <p><span className="text-gray-300 font-medium">Diğer roller:</span> Bu sayfaya erişim yok.</p>
                 </div>
               </div>
             </div>

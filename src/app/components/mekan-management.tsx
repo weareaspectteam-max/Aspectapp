@@ -19,8 +19,9 @@ export interface Location {
   emoji: string;
   color: string;
   yearlyRent: number;
-  dailyCostPercentage: number;
-  profitPercentage: number;
+  dailyCostPercentage?: number; // eski, artık kullanılmıyor
+  profitPercentage?: number;    // eski, geriye uyumluluk
+  profitTarget?: number;        // yıllık kar hedefi ₺
   photoPrice: number;
   printType?: 'tam' | 'yarim';
   workingHours?: {
@@ -32,14 +33,26 @@ export interface Location {
   updated_at?: string;
 }
 
+export interface GorevBanti {
+  min: number;
+  max: number;
+  tutar: number;
+}
+
 export interface KotaKademe {
   hedef: number;
-  primTek: number;        // Solo prim (1 kişi)
-  primFotograf: number;   // Takım - Fotoğrafçı/Satışçı
-  primBaski: number;      // Takım - Baskıcı
-  primAlbum: number;      // Takım - Albümcü
-  primGozlemci: number;   // Takım - Gözlemci
-  primCoklu?: number;     // Eski format uyumluluğu
+  primTek: number;        // Solo hakediş (görevsiz tek kişi)
+  // Bantlı görevler (yeni)
+  fotografBantlar?: GorevBanti[];
+  baskiBantlar?: GorevBanti[];
+  albumBantlar?: GorevBanti[];
+  gozlemciBantlar?: GorevBanti[];
+  // Eski sabit alanlar (geriye uyumluluk — bantlar tanımsızsa kullanılır)
+  primFotograf: number;
+  primBaski: number;
+  primAlbum: number;
+  primGozlemci: number;
+  primCoklu?: number;
 }
 
 type UserRole =
@@ -73,8 +86,11 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   const [formColor, setFormColor] = useState('#9dd9ea');
   const [formPhotoPrice, setFormPhotoPrice] = useState('0');
   const [formYearlyRent, setFormYearlyRent] = useState('0');
-  const [formDailyCost, setFormDailyCost] = useState('0');
-  const [formProfit, setFormProfit] = useState('0');
+  const [formProfitTarget, setFormProfitTarget] = useState('0'); // yıllık kar hedefi ₺
+  const [formYearlyRents, setFormYearlyRents] = useState<Record<string, string>>({}); // yıl bazlı kiralar
+  const [formProfitTargets, setFormProfitTargets] = useState<Record<string, string>>({}); // yıl bazlı hedefler
+  const [yilEkleAcik, setYilEkleAcik] = useState(false);
+  const [yilInput, setYilInput] = useState(String(new Date().getFullYear() - 1));
   const [formPrintType, setFormPrintType] = useState<'tam' | 'yarim'>('yarim');
   const [formWorkingHoursStart, setFormWorkingHoursStart] = useState('09:00');
   const [formWorkingHoursEnd, setFormWorkingHoursEnd] = useState('18:00');
@@ -194,8 +210,9 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           color: formColor,
           photoPrice: parseFloat(formPhotoPrice) || 0,
           yearlyRent: parseFloat(formYearlyRent) || 0,
-          dailyCostPercentage: parseFloat(formDailyCost) || 0,
-          profitPercentage: parseFloat(formProfit) || 0,
+          profitTarget: parseFloat(formProfitTarget) || 0,
+          yearlyRents: Object.fromEntries(Object.entries(formYearlyRents).filter(([,v]) => parseFloat(v) > 0).map(([k,v]) => [k, parseFloat(v)])),
+          profitTargets: Object.fromEntries(Object.entries(formProfitTargets).filter(([,v]) => parseFloat(v) > 0).map(([k,v]) => [k, parseFloat(v)])),
           printType: formPrintType,
           workingHours: { start: formWorkingHoursStart, end: formWorkingHoursEnd },
           kotaKademeleri: formKotaKademeleri,
@@ -228,8 +245,9 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           color: formColor,
           photoPrice: parseFloat(formPhotoPrice) || 0,
           yearlyRent: parseFloat(formYearlyRent) || 0,
-          dailyCostPercentage: parseFloat(formDailyCost) || 0,
-          profitPercentage: parseFloat(formProfit) || 0,
+          profitTarget: parseFloat(formProfitTarget) || 0,
+          yearlyRents: Object.fromEntries(Object.entries(formYearlyRents).filter(([,v]) => parseFloat(v) > 0).map(([k,v]) => [k, parseFloat(v)])),
+          profitTargets: Object.fromEntries(Object.entries(formProfitTargets).filter(([,v]) => parseFloat(v) > 0).map(([k,v]) => [k, parseFloat(v)])),
           printType: formPrintType,
           workingHours: { start: formWorkingHoursStart, end: formWorkingHoursEnd },
           kotaKademeleri: formKotaKademeleri,
@@ -298,12 +316,20 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     setFormColor(location.color);
     setFormPhotoPrice((location.photoPrice ?? 0).toString());
     setFormYearlyRent((location.yearlyRent ?? 0).toString());
-    setFormDailyCost((location.dailyCostPercentage ?? 0).toString());
-    setFormProfit((location.profitPercentage ?? 0).toString());
+    // profitTarget varsa onu kullan, yoksa eski profitPercentage'den hesapla (geriye uyumluluk)
+    const pt = location.profitTarget ?? (location.profitPercentage && location.yearlyRent
+      ? Math.round(location.yearlyRent * (location.profitPercentage / 100))
+      : 0);
+    setFormProfitTarget(pt.toString());
     setFormPrintType(location.printType || 'yarim');
     setFormWorkingHoursStart(location.workingHours?.start || '09:00');
     setFormWorkingHoursEnd(location.workingHours?.end || '18:00');
     setFormKotaKademeleri(location.kotaKademeleri || []);
+    // Yıl bazlı kiralar/hedefler
+    const yr = (location as any).yearlyRents || {};
+    const pt2 = (location as any).profitTargets || {};
+    setFormYearlyRents(Object.fromEntries(Object.entries(yr).map(([k, v]) => [k, String(v)])));
+    setFormProfitTargets(Object.fromEntries(Object.entries(pt2).map(([k, v]) => [k, String(v)])));
     setShowAddForm(false);
   };
 
@@ -315,19 +341,19 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     setFormColor('#9dd9ea');
     setFormPhotoPrice('0');
     setFormYearlyRent('0');
-    setFormDailyCost('0');
-    setFormProfit('0');
+    setFormProfitTarget('0');
+    setFormYearlyRents({});
+    setFormProfitTargets({});
     setFormPrintType('yarim');
     setFormWorkingHoursStart('09:00');
     setFormWorkingHoursEnd('18:00');
     setFormKotaKademeleri([]);
   };
 
-  const calculateDailyExpectation = (yearlyRent: number, dailyCost: number, profit: number): number => {
+  const calculateDailyExpectation = (yearlyRent: number, profitTarget: number): number => {
     const dailyRent = yearlyRent / 365;
-    const minDailyRevenue = dailyRent * (1 + dailyCost / 100); // Kira + ek maliyet (break-even)
-    const dailyProfitTarget = (yearlyRent * (profit / 100)) / 365; // Yıllık kar hedefinin günlük payı
-    return minDailyRevenue + dailyProfitTarget;
+    const dailyProfitTarget = profitTarget / 365;
+    return dailyRent + dailyProfitTarget;
   };
 
   const formatCurrency = (value: number | undefined) => {
@@ -573,45 +599,92 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                 </p>
               </div>
 
-              {/* Günlük Maliyet % */}
+              {/* Yıllık Kar Hedefi ₺ */}
               <div>
-                <label className="text-sm font-semibold text-gray-300 mb-2 block">Günlük Ek Maliyet (%)</label>
+                <label className="text-sm font-semibold text-gray-300 mb-2 block">Yıllık Kar Hedefi (₺)</label>
                 <input
                   type="number"
-                  value={formDailyCost}
-                  onChange={(e) => setFormDailyCost(e.target.value)}
+                  value={formProfitTarget}
+                  onChange={(e) => setFormProfitTarget(e.target.value)}
                   className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-pink-400 transition-all"
-                  placeholder="35"
+                  placeholder="1000000"
                 />
                 <p className="text-xs text-gray-400 mt-1">
-                  Personel, elektrik vb. — Günlük kiraya oranla ek gider.
-                  {parseFloat(formDailyCost) > 0 && parseFloat(formYearlyRent) > 0 && (
-                    <span className="text-orange-300 ml-1">
-                      Günlük ek: ₺{formatCurrency((parseFloat(formYearlyRent) / 365) * (parseFloat(formDailyCost) / 100))}
+                  Doğrudan yıllık kar hedefi tutarı.
+                  {parseFloat(formProfitTarget) > 0 && (
+                    <span className="text-pink-300 ml-1">
+                      Günlük: ₺{formatCurrency(parseFloat(formProfitTarget) / 365)}
                     </span>
                   )}
                 </p>
               </div>
 
-              {/* Kar Beklentisi % */}
-              <div>
-                <label className="text-sm font-semibold text-gray-300 mb-2 block">Yıllık Kar Beklentisi (%)</label>
-                <input
-                  type="number"
-                  value={formProfit}
-                  onChange={(e) => setFormProfit(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-pink-400 transition-all"
-                  placeholder="20"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  Yıllık kira × % = Yıllık kar hedefi.
-                  {parseFloat(formProfit) > 0 && parseFloat(formYearlyRent) > 0 && (
-                    <span className="text-pink-300 ml-1">
-                      ₺{formatCurrency(parseFloat(formYearlyRent) * parseFloat(formProfit) / 100)}/yıl
-                    </span>
-                  )}
-                </p>
-              </div>
+              {/* Yıl Bazlı Kira & Hedef */}
+              {Object.keys(formYearlyRents).length > 0 || Object.keys(formProfitTargets).length > 0 ? (
+                <div>
+                  <label className="text-sm font-semibold text-gray-300 mb-2 block">📅 Yıl Bazlı Kira & Hedef</label>
+                  <p className="text-xs text-gray-500 mb-2">Farklı yıllar için özel kira/hedef. Yukarıdaki varsayılan değerlerden farklı olan yılları ekleyin.</p>
+                  <div className="space-y-2">
+                    {Object.keys({ ...formYearlyRents, ...formProfitTargets }).sort().map(yilStr => (
+                      <div key={yilStr} className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-white/50 font-medium">{yilStr}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormYearlyRents(prev => { const n = { ...prev }; delete n[yilStr]; return n; });
+                              setFormProfitTargets(prev => { const n = { ...prev }; delete n[yilStr]; return n; });
+                            }}
+                            className="text-red-400/60 hover:text-red-400 text-xs"
+                          >Kaldır</button>
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            value={formYearlyRents[yilStr] || ''}
+                            onChange={(e) => setFormYearlyRents(prev => ({ ...prev, [yilStr]: e.target.value }))}
+                            className="flex-1 min-w-0 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-blue-400"
+                            placeholder="Kira ₺"
+                          />
+                          <input
+                            type="number"
+                            value={formProfitTargets[yilStr] || ''}
+                            onChange={(e) => setFormProfitTargets(prev => ({ ...prev, [yilStr]: e.target.value }))}
+                            className="flex-1 min-w-0 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-pink-400"
+                            placeholder="Hedef ₺"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {!yilEkleAcik ? (
+                <button type="button" onClick={() => setYilEkleAcik(true)}
+                  className="text-xs text-blue-400/70 hover:text-blue-300 underline">
+                  + Geçmiş yıl bazlı kira/hedef ekle
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={yilInput}
+                    onChange={(e) => setYilInput(e.target.value)}
+                    className="w-20 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:border-blue-400"
+                    placeholder="2025"
+                    min="2020" max="2035"
+                    autoFocus
+                  />
+                  <button type="button" onClick={() => {
+                    if (/^\d{4}$/.test(yilInput.trim())) {
+                      setFormYearlyRents(prev => ({ ...prev, [yilInput.trim()]: prev[yilInput.trim()] || '' }));
+                      setYilEkleAcik(false);
+                    }
+                  }} className="px-3 py-2 bg-blue-500/30 hover:bg-blue-500/50 text-blue-300 text-xs rounded-lg font-medium">Ekle</button>
+                  <button type="button" onClick={() => setYilEkleAcik(false)}
+                    className="text-white/30 hover:text-white/60 text-xs">Vazgeç</button>
+                </div>
+              )}
 
               {/* Çalışma Saatleri */}
               <div>
@@ -637,7 +710,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
               <div className="p-4 bg-gradient-to-br from-yellow-600/10 to-purple-600/10 border-2 border-yellow-500/30 rounded-xl">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-lg">🏆</span>
-                  <h5 className="text-sm font-bold text-yellow-300">Prim Kota Kademeleri</h5>
+                  <h5 className="text-sm font-bold text-yellow-300">Hakediş Kota Kademeleri</h5>
                   {formKotaKademeleri.length > 0 && (
                     <span className="text-xs bg-yellow-500/20 border border-yellow-500/40 text-yellow-200 px-2 py-0.5 rounded-full">
                       {formKotaKademeleri.length} kademe
@@ -645,7 +718,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                   )}
                 </div>
                 <p className="text-xs text-gray-400 mb-3">
-                  Günlük ciro bu hedefleri geçince personele prim kazandırılır.
+                  Günlük ciro bu hedefleri geçince personele hakediş kazandırılır.
                 </p>
 
                 <div className="space-y-3">
@@ -701,102 +774,155 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                                 setFormKotaKademeleri(arr);
                               }}
                               className="flex-1 min-w-0 px-3 py-1.5 bg-white/10 border-2 border-blue-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-400 transition-all text-sm"
-                              placeholder="₺ Solo prim"
+                              placeholder="₺ Solo hakediş"
                             />
                           </div>
-                          {/* Takım primleri 3'lü grid */}
-                          <div className="ml-0 mt-1 mb-1">
-                            <span className="text-[9px] text-white/30 font-bold uppercase tracking-wide">Takım Primleri</span>
-                          </div>
-                          <div className="grid grid-cols-4 gap-1.5">
-                            <div className="flex flex-col gap-1">
-                              <span className="text-[9px] text-green-400/70 font-bold text-center">📸 Fotoğraf</span>
-                              <input
-                                type="number"
-                                value={kota.primFotograf || ''}
-                                onChange={(e) => {
-                                  const arr = [...formKotaKademeleri];
-                                  arr[index] = { ...arr[index], primFotograf: parseFloat(e.target.value) || 0 };
-                                  setFormKotaKademeleri(arr);
-                                }}
-                                className="w-full px-2 py-1.5 bg-white/10 border-2 border-green-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-green-400 transition-all text-xs text-center"
-                                placeholder="₺"
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              <span className="text-[9px] text-orange-400/70 font-bold text-center">🖨️ Baskı</span>
-                              <input
-                                type="number"
-                                value={kota.primBaski || ''}
-                                onChange={(e) => {
-                                  const arr = [...formKotaKademeleri];
-                                  arr[index] = { ...arr[index], primBaski: parseFloat(e.target.value) || 0 };
-                                  setFormKotaKademeleri(arr);
-                                }}
-                                className="w-full px-2 py-1.5 bg-white/10 border-2 border-orange-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-orange-400 transition-all text-xs text-center"
-                                placeholder="₺"
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              <span className="text-[9px] text-pink-400/70 font-bold text-center">📒 Albüm</span>
-                              <input
-                                type="number"
-                                value={kota.primAlbum || ''}
-                                onChange={(e) => {
-                                  const arr = [...formKotaKademeleri];
-                                  arr[index] = { ...arr[index], primAlbum: parseFloat(e.target.value) || 0 };
-                                  setFormKotaKademeleri(arr);
-                                }}
-                                className="w-full px-2 py-1.5 bg-white/10 border-2 border-pink-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-pink-400 transition-all text-xs text-center"
-                                placeholder="₺"
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              <span className="text-[9px] text-cyan-400/70 font-bold text-center">👁️ Gözlemci</span>
-                              <input
-                                type="number"
-                                value={kota.primGozlemci || ''}
-                                onChange={(e) => {
-                                  const arr = [...formKotaKademeleri];
-                                  arr[index] = { ...arr[index], primGozlemci: parseFloat(e.target.value) || 0 };
-                                  setFormKotaKademeleri(arr);
-                                }}
-                                className="w-full px-2 py-1.5 bg-white/10 border-2 border-cyan-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-400 transition-all text-xs text-center"
-                                placeholder="₺"
-                              />
-                            </div>
+                          {/* Görev bazlı hakediş bantları */}
+                          <div className="mt-2 space-y-2">
+                            <span className="text-[9px] text-white/30 font-bold uppercase tracking-wide">Görev Bazlı Hakediş Bantları</span>
+                            {([
+                              { key: 'fotografBantlar', label: '📸 Fotoğrafçı', color: 'green', fallbackKey: 'primFotograf' },
+                              { key: 'baskiBantlar', label: '🖨️ Baskıcı', color: 'orange', fallbackKey: 'primBaski' },
+                              { key: 'albumBantlar', label: '📒 Albümcü', color: 'pink', fallbackKey: 'primAlbum' },
+                              { key: 'gozlemciBantlar', label: '👁️ Gözlemci', color: 'cyan', fallbackKey: 'primGozlemci' },
+                            ] as { key: string; label: string; color: string; fallbackKey: string }[]).map(({ key, label, color, fallbackKey }) => {
+                              const bantlar: GorevBanti[] = (kota as any)[key] || [];
+                              const hasBantlar = bantlar.length > 0;
+                              return (
+                                <div key={key} className={`rounded-lg border border-${color}-500/20 bg-${color}-500/5 p-2`}
+                                  style={{ borderColor: `var(--tw-${color}, rgba(255,255,255,0.1))`, background: 'rgba(255,255,255,0.02)' }}>
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className={`text-[9px] font-bold`} style={{ color: color === 'green' ? '#4ade80' : color === 'orange' ? '#fb923c' : color === 'pink' ? '#f472b6' : '#22d3ee' }}>{label}</span>
+                                    {!hasBantlar && (
+                                      <button type="button" onClick={() => {
+                                        const arr = [...formKotaKademeleri];
+                                        (arr[index] as any)[key] = [{ min: 1, max: 1, tutar: (kota as any)[fallbackKey] || 0 }];
+                                        setFormKotaKademeleri(arr);
+                                      }} className="text-[8px] text-blue-400/60 hover:text-blue-300 underline">Bant ekle</button>
+                                    )}
+                                  </div>
+                                  {hasBantlar ? (
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-1 px-0.5">
+                                        <span className="text-[7px] text-white/25 w-[52px] text-center">Kişi Aralığı</span>
+                                        <span className="text-[7px] text-white/25 w-16 text-center ml-auto">Hakediş ₺</span>
+                                        <span className="w-3"></span>
+                                      </div>
+                                      {bantlar.map((bant, bi) => {
+                                        // Çakışma kontrolü
+                                        const cakisiyor = bantlar.some((other, oi) =>
+                                          oi !== bi && bant.min <= other.max && bant.max >= other.min
+                                        );
+                                        return (
+                                        <div key={bi} className="flex items-center gap-1">
+                                          <input type="number" value={bant.min || ''} onChange={(e) => {
+                                            const arr = [...formKotaKademeleri];
+                                            const b = [...((arr[index] as any)[key] || [])];
+                                            b[bi] = { ...b[bi], min: parseInt(e.target.value) || 0 };
+                                            (arr[index] as any)[key] = b;
+                                            setFormKotaKademeleri(arr);
+                                          }} className={`w-10 px-1 py-1 bg-white/10 border rounded text-white text-[10px] text-center ${cakisiyor ? 'border-red-500/50' : 'border-white/15'}`} placeholder="Min" />
+                                          <span className="text-[9px] text-white/20">—</span>
+                                          <input type="number" value={bant.max || ''} onChange={(e) => {
+                                            const arr = [...formKotaKademeleri];
+                                            const b = [...((arr[index] as any)[key] || [])];
+                                            b[bi] = { ...b[bi], max: parseInt(e.target.value) || 0 };
+                                            (arr[index] as any)[key] = b;
+                                            setFormKotaKademeleri(arr);
+                                          }} className={`w-10 px-1 py-1 bg-white/10 border rounded text-white text-[10px] text-center ${cakisiyor ? 'border-red-500/50' : 'border-white/15'}`} placeholder="Max" />
+                                          <span className="text-[9px] text-white/20">→</span>
+                                          <input type="number" value={bant.tutar || ''} onChange={(e) => {
+                                            const arr = [...formKotaKademeleri];
+                                            const b = [...((arr[index] as any)[key] || [])];
+                                            b[bi] = { ...b[bi], tutar: parseFloat(e.target.value) || 0 };
+                                            (arr[index] as any)[key] = b;
+                                            setFormKotaKademeleri(arr);
+                                          }} className="w-16 px-1 py-1 bg-white/10 border border-white/15 rounded text-white text-[10px] text-center" placeholder="₺" />
+                                          <button type="button" onClick={() => {
+                                            const arr = [...formKotaKademeleri];
+                                            const b = [...((arr[index] as any)[key] || [])];
+                                            b.splice(bi, 1);
+                                            (arr[index] as any)[key] = b;
+                                            setFormKotaKademeleri(arr);
+                                          }} className="text-red-400/40 hover:text-red-400 text-[10px]">✕</button>
+                                          {cakisiyor && <span className="text-[7px] text-red-400">!</span>}
+                                        </div>
+                                        );
+                                      })}
+                                      <button type="button" onClick={() => {
+                                        const arr = [...formKotaKademeleri];
+                                        const b = [...((arr[index] as any)[key] || [])];
+                                        const lastMax = b.length > 0 ? b[b.length - 1].max : 0;
+                                        b.push({ min: lastMax + 1, max: 99, tutar: 0 });
+                                        (arr[index] as any)[key] = b;
+                                        setFormKotaKademeleri(arr);
+                                      }} className="text-[8px] text-blue-400/50 hover:text-blue-300 underline">+ Bant ekle</button>
+                                    </div>
+                                  ) : (
+                                    <input type="number" value={(kota as any)[fallbackKey] || ''} onChange={(e) => {
+                                      const arr = [...formKotaKademeleri];
+                                      (arr[index] as any)[fallbackKey] = parseFloat(e.target.value) || 0;
+                                      setFormKotaKademeleri(arr);
+                                    }} className="w-full px-2 py-1 bg-white/10 border border-white/15 rounded-lg text-white text-xs text-center" placeholder="₺ Sabit tutar" />
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
 
-                        {/* Kıdem Bazlı Prim Önizlemesi — sadece yönetici + üst-müdür */}
-                        {canViewKidem && (kota.primTek > 0 || kota.primFotograf > 0 || kota.primBaski > 0 || kota.primAlbum > 0 || kota.primGozlemci > 0) && (
+                        {/* Kıdem Bazlı Hakediş Önizlemesi — sadece yönetici + üst-müdür */}
+                        {canViewKidem && (() => {
+                          // Önizleme satırları: solo + bantlı görevler + fallback sabitler
+                          const rows: Array<{ label: string; base: number; color: string; bandInfo?: string }> = [];
+                          // Solo
+                          if (kota.primTek > 0) rows.push({ label: '👤 Solo', base: kota.primTek, color: '#a7c7e7' });
+                          // Bantlı görevler
+                          const gorevler = [
+                            { key: 'fotografBantlar', fallback: 'primFotograf', emoji: '📸', name: 'Fotoğrafçı', color: '#4ade80' },
+                            { key: 'baskiBantlar', fallback: 'primBaski', emoji: '🖨️', name: 'Baskıcı', color: '#fb923c' },
+                            { key: 'albumBantlar', fallback: 'primAlbum', emoji: '📒', name: 'Albümcü', color: '#f472b6' },
+                            { key: 'gozlemciBantlar', fallback: 'primGozlemci', emoji: '👁️', name: 'Gözlemci', color: '#22d3ee' },
+                          ];
+                          for (const g of gorevler) {
+                            const bantlar: GorevBanti[] = (kota as any)[g.key] || [];
+                            if (bantlar.length > 0) {
+                              for (const b of bantlar) {
+                                if (b.tutar > 0) {
+                                  const bandLabel = b.min === b.max ? `${b.min} kişi` : b.max >= 99 ? `${b.min}+ kişi` : `${b.min}-${b.max} kişi`;
+                                  rows.push({ label: `${g.emoji} ${g.name}`, base: b.tutar, color: g.color, bandInfo: bandLabel });
+                                }
+                              }
+                            } else if ((kota as any)[g.fallback] > 0) {
+                              rows.push({ label: `${g.emoji} ${g.name}`, base: (kota as any)[g.fallback], color: g.color });
+                            }
+                          }
+                          if (rows.length === 0) return null;
+                          return (
                           <div style={{ marginTop: 10, background: 'rgba(157,217,234,0.05)', border: '1px solid rgba(157,217,234,0.15)', borderRadius: 12, padding: '10px 12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
                               <span style={{ fontSize: 11 }}>🎖️</span>
-                              <span style={{ color: '#9dd9ea', fontSize: 10, fontWeight: 800 }}>Kıdem Bazlı Prim</span>
+                              <span style={{ color: '#9dd9ea', fontSize: 10, fontWeight: 800 }}>Kıdem Bazlı Hakediş</span>
                               <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 6, fontWeight: 700, background: 'rgba(157,217,234,0.1)', border: '1px solid rgba(157,217,234,0.2)', color: 'rgba(157,217,234,0.6)', marginLeft: 'auto' }}>
                                 ×{kidemCarpanlar.kidemsiz.toFixed(2)} / ×{kidemCarpanlar.kidemli.toFixed(2)} / ×{kidemCarpanlar.kidemliPlus.toFixed(2)}
                               </span>
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                              {([
-                                { rlabel: '👤 Solo', base: kota.primTek, color: '#a7c7e7' },
-                                { rlabel: '📸 Fotoğraf/Satış', base: kota.primFotograf, color: '#9dd9ea' },
-                                { rlabel: '🖨️ Baskı', base: kota.primBaski, color: '#ffd4a3' },
-                                { rlabel: '📒 Albüm', base: kota.primAlbum, color: '#d4b5f7' },
-                                { rlabel: '👁️ Gözlemci', base: kota.primGozlemci, color: '#67e8f9' },
-                              ] as { rlabel: string; base: number; color: string }[]).filter(r => r.base > 0).map(({ rlabel, base, color }) => (
-                                <div key={rlabel} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                  <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 9, fontWeight: 700, minWidth: 92 }}>{rlabel}</span>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {rows.map((r, ri) => (
+                                <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <div style={{ minWidth: 80 }}>
+                                    <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 9, fontWeight: 700 }}>{r.label}</span>
+                                    {r.bandInfo && <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 7, marginLeft: 3 }}>({r.bandInfo})</span>}
+                                  </div>
                                   <div style={{ display: 'flex', gap: 3, flex: 1 }}>
                                     {([
-                                      { ckey: 'kidemsiz', klabel: 'Kıdemsiz', carpan: kidemCarpanlar.kidemsiz },
-                                      { ckey: 'kidemli', klabel: 'Kıdemli', carpan: kidemCarpanlar.kidemli },
-                                      { ckey: 'kidemliPlus', klabel: 'Kıdemli+', carpan: kidemCarpanlar.kidemliPlus },
-                                    ] as { ckey: string; klabel: string; carpan: number }[]).map(({ ckey, klabel, carpan }) => (
-                                      <div key={ckey} style={{ flex: 1, textAlign: 'center', background: `${color}08`, border: `1px solid ${color}20`, borderRadius: 7, padding: '3px 2px' }}>
+                                      { klabel: 'Kıdemsiz', carpan: kidemCarpanlar.kidemsiz },
+                                      { klabel: 'Kıdemli', carpan: kidemCarpanlar.kidemli },
+                                      { klabel: 'Kıdemli+', carpan: kidemCarpanlar.kidemliPlus },
+                                    ]).map(({ klabel, carpan }) => (
+                                      <div key={klabel} style={{ flex: 1, textAlign: 'center', background: `${r.color}08`, border: `1px solid ${r.color}20`, borderRadius: 7, padding: '3px 2px' }}>
                                         <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 7, fontWeight: 700, marginBottom: 1 }}>{klabel}</p>
-                                        <p style={{ color, fontSize: 10, fontWeight: 900 }}>₺{Math.round(base * carpan).toLocaleString('tr-TR')}</p>
+                                        <p style={{ color: r.color, fontSize: 10, fontWeight: 900 }}>₺{Math.round(r.base * carpan).toLocaleString('tr-TR')}</p>
                                       </div>
                                     ))}
                                   </div>
@@ -804,7 +930,8 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                               ))}
                             </div>
                           </div>
-                        )}
+                          );
+                        })()}
                       </div>
                     );
                   })}
@@ -827,7 +954,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
 
                 {formKotaKademeleri.length > 0 && (
                   <p className="text-[10px] text-gray-500 mt-2">
-                    💡 Primler toplanarak işlenir — her geçilen kademenin primi bir üstekine eklenir
+                    💡 Hakedişler toplanarak işlenir — her geçilen kademenin hakedişi bir üstekine eklenir
                   </p>
                 )}
               </div>
@@ -856,32 +983,23 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
               {/* Hesaplama Özeti */}
               {parseFloat(formYearlyRent) > 0 && (() => {
                 const yr = parseFloat(formYearlyRent) || 0;
-                const dc = parseFloat(formDailyCost) || 0;
-                const pr = parseFloat(formProfit) || 0;
+                const pt = parseFloat(formProfitTarget) || 0;
                 const dailyRent = yr / 365;
-                const minDailyCiro = dailyRent * (1 + dc / 100);
-                const annualProfit = yr * (pr / 100);
-                const dailyProfit = annualProfit / 365;
-                const dailyTarget = minDailyCiro + dailyProfit;
+                const dailyProfit = pt / 365;
+                const dailyTarget = dailyRent + dailyProfit;
                 const photosNeeded = parseFloat(formPhotoPrice) > 0 ? Math.ceil(dailyTarget / parseFloat(formPhotoPrice)) : null;
                 return (
                   <div className="p-4 bg-gradient-to-br from-blue-600/20 to-green-600/20 border-2 border-blue-500/40 rounded-xl">
                     <h5 className="text-sm font-bold text-blue-300 mb-3">📊 Hesaplama Özeti</h5>
-                    {/* Formül Açıklaması */}
                     <div className="mb-3 p-2 bg-white/5 rounded-lg text-[10px] text-gray-400 leading-relaxed space-y-0.5">
                       <p>📌 <span className="text-gray-300">Günlük Kira</span> = Yıllık Kira ÷ 365</p>
-                      <p>📌 <span className="text-gray-300">Min. Günlük Ciro</span> = Günlük Kira × (1 + Ek Maliyet%)</p>
-                      <p>📌 <span className="text-gray-300">Günlük Kar Hedefi</span> = Yıllık Kar ÷ 365</p>
-                      <p>📌 <span className="text-blue-300 font-semibold">Günlük Gelir Hedefi</span> = Min. Ciro + Günlük Kar</p>
+                      <p>📌 <span className="text-gray-300">Günlük Kar Hedefi</span> = Yıllık Kar Hedefi ÷ 365</p>
+                      <p>📌 <span className="text-blue-300 font-semibold">Günlük Gelir Hedefi</span> = Günlük Kira + Günlük Kar</p>
                     </div>
                     <div className="space-y-2 text-xs">
                       <div className="flex justify-between">
                         <span className="text-gray-300">Günlük Kira:</span>
                         <span className="font-bold text-white">₺{formatCurrency(dailyRent)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-orange-300">Min. Günlük Ciro (break-even):</span>
-                        <span className="font-bold text-orange-300">₺{formatCurrency(minDailyCiro)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-green-300">Günlük Kar Hedefi:</span>
@@ -898,8 +1016,8 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                         </div>
                       )}
                       <div className="flex justify-between pt-1 border-t border-blue-500/30">
-                        <span className="text-pink-300 font-bold">Yıllık Kar Beklentisi:</span>
-                        <span className="font-bold text-pink-300">₺{formatCurrency(annualProfit)}</span>
+                        <span className="text-pink-300 font-bold">Yıllık Kar Hedefi:</span>
+                        <span className="font-bold text-pink-300">₺{formatCurrency(pt)}</span>
                       </div>
                     </div>
                   </div>
@@ -967,10 +1085,10 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           ) : (
             <div className="space-y-3">
               {locations.map((location) => {
+                const profitTgt = location.profitTarget || (location.profitPercentage ? Math.round(location.yearlyRent * (location.profitPercentage / 100)) : 0);
                 const dailyExpectation = calculateDailyExpectation(
                   location.yearlyRent,
-                  location.dailyCostPercentage,
-                  location.profitPercentage,
+                  profitTgt,
                 );
                 const isBeingEdited = editingLocation?.id === location.id;
 
@@ -997,7 +1115,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                           <div className="text-xs text-gray-400 space-y-0.5">
                             <div className="flex gap-3 flex-wrap">
                               <span>Kira: ₺{formatCurrency(location.yearlyRent)}/yıl</span>
-                              <span className="text-green-400">Kar: %{location.profitPercentage}</span>
+                              <span className="text-green-400">Kar Hedefi: ₺{formatCurrency(location.profitTarget || (location.profitPercentage ? Math.round(location.yearlyRent * (location.profitPercentage / 100)) : 0))}</span>
                             </div>
                             <div className="flex gap-3 flex-wrap">
                               <span className="text-blue-300">Günlük Hedef: ₺{formatCurrency(dailyExpectation)}</span>

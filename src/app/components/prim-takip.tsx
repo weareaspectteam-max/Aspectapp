@@ -52,9 +52,11 @@ interface PrimKayit {
   kademeHedef: number;
   primMiktar: number;
   personelAdi: string;
-  personelGorev?: 'fotograf-satis' | 'baski' | 'album';
+  personelGorev?: 'fotograf-satis' | 'baski' | 'album' | 'gozlemci';
   personelSayisi: number;
   coklu: boolean;
+  gorevKisiSayisi?: number;
+  kidemSeviye?: string;
   odendi: boolean;
   odemeTarihi: string | null;
   odemeKey: string;
@@ -231,8 +233,8 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
     const kidemsiz = parseFloat(editCarpan.kidemsiz);
     const kidemli = parseFloat(editCarpan.kidemli);
     const kidemliPlus = parseFloat(editCarpan.kidemliPlus);
-    if (isNaN(kidemsiz) || isNaN(kidemli) || isNaN(kidemliPlus) || kidemsiz <= 0 || kidemli <= 0 || kidemliPlus <= 0) {
-      setCarpanMsg('❌ Tüm çarpanlar pozitif sayı olmalıdır!');
+    if (isNaN(kidemsiz) || isNaN(kidemli) || isNaN(kidemliPlus) || kidemsiz < 0 || kidemli < 0 || kidemliPlus < 0) {
+      setCarpanMsg('❌ Çarpanlar 0 veya üzeri olmalıdır!');
       setTimeout(() => setCarpanMsg(''), 3000);
       return;
     }
@@ -416,7 +418,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
           <div className="flex-1">
             <h1 className="text-xl font-black text-white flex items-center gap-2">
               <Trophy className="w-5 h-5" style={{ color: '#fbbf24' }} />
-              Prim Takip
+              Hakediş Takip
             </h1>
             <p className="text-xs" style={{ color: 'rgba(196,181,253,0.5)' }}>İsim bazlı prim yönetimi</p>
           </div>
@@ -539,7 +541,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
 
             {/* Bilgi notu */}
             <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, marginBottom: 10 }}>
-              Kıdemsiz · Kıdemli · Kıdemli+ çarpanları tüm mekan kota primlerine uygulanır.
+              Kıdemsiz · Kıdemli · Kıdemli+ çarpanları tüm mekan kota hakedişlerine uygulanır.
             </p>
 
             {/* Çarpan kartları */}
@@ -1004,7 +1006,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                                       <button
                                         onClick={() => handleSilPrim(pg.bekleyenKayitlar)}
                                         disabled={saving}
-                                        title="Bekleyen primleri iptal et"
+                                        title="Bekleyen hakedişleri iptal et"
                                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold active:scale-95 transition-all"
                                         style={{
                                           background: 'rgba(248,113,113,0.1)',
@@ -1065,6 +1067,16 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                                                   <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9 }}>
                                                     Hedef {formatTL(kayit.kademeHedef)}
                                                   </span>
+                                                  {kayit.gorevKisiSayisi && kayit.gorevKisiSayisi > 0 && (
+                                                    <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 4, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.3)' }}>
+                                                      {kayit.gorevKisiSayisi} kişi
+                                                    </span>
+                                                  )}
+                                                  {kayit.kidemSeviye && kayit.kidemSeviye !== 'kidemsiz' && (
+                                                    <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 4, background: kayit.kidemSeviye === 'kidemliPlus' ? 'rgba(168,85,247,0.12)' : 'rgba(96,165,250,0.12)', border: `1px solid ${kayit.kidemSeviye === 'kidemliPlus' ? 'rgba(168,85,247,0.25)' : 'rgba(96,165,250,0.25)'}`, color: kayit.kidemSeviye === 'kidemliPlus' ? '#c084fc' : '#93c5fd' }}>
+                                                      {kayit.kidemSeviye === 'kidemliPlus' ? 'Kıdemli+' : 'Kıdemli'}
+                                                    </span>
+                                                  )}
                                                   <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 800, color: kayit.odendi ? '#34d399' : kc }}>
                                                     {formatTL(kayit.primMiktar)}
                                                   </span>

@@ -94,7 +94,7 @@ const QUICK_ACTIONS = [
   { label: 'Vardiya İstatistik', icon: Clock,         color: '#a8e6cf', tab: 'vardiya-istatistikleri' },
   { label: 'İndirim İstatistik', icon: Star,          color: '#c4b5fd', tab: 'indirim-istatistik'   },
   { label: 'Yön. Raporları',     icon: TrendingUp,    color: '#fb923c', tab: 'manager-reports'      },
-  { label: 'Prim Takip',         icon: Trophy,        color: '#fbbf24', tab: 'prim-takip'           },
+  { label: 'Hakediş Takip',      icon: Trophy,        color: '#fbbf24', tab: 'prim-takip'           },
 ];
 
 // ── Custom SVG Chart — Recharts kaldırıldı (iç SVG key çakışması) ──
@@ -588,10 +588,10 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
               <div style={{ width: 44, height: 44, borderRadius: 13, background: 'rgba(168,85,247,0.2)', border: '1px solid rgba(168,85,247,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🏆</div>
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                  <span style={{ color: 'white', fontSize: 13, fontWeight: 800 }}>Prim Takip</span>
+                  <span style={{ color: 'white', fontSize: 13, fontWeight: 800 }}>Hakediş Takip</span>
                   <span style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(251,191,36,0.2)', border: '1px solid rgba(251,191,36,0.4)', borderRadius: 6, color: '#fbbf24', fontWeight: 900 }}>YENİ</span>
                 </div>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>Aylık kota primlerini yönet · Toplu ödeme →</p>
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>Aylık kota hakedişlerini yönet · Toplu ödeme →</p>
               </div>
               <ChevronRight className="w-4 h-4" style={{ color: 'rgba(168,85,247,0.7)', flexShrink: 0 }} />
             </div>
@@ -687,7 +687,7 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
           transition={{ delay: 0.28 }}
           style={{ ...glass, padding: 16 }}
         >
-          <p className="text-sm font-bold text-white mb-3">Genel Albüm Dağılımı</p>
+          <p className="text-sm font-bold text-white mb-3">Bugünkü Satış Dağılımı</p>
           {isLoading ? (
             <div className="space-y-2">
               {[0, 1, 2, 3].map(i => <div key={i} className="h-5 rounded-lg bg-white/10 animate-pulse" />)}
