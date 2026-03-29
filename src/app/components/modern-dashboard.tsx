@@ -64,7 +64,7 @@ export function ModernDashboard({ userName, userRole, onLogout, onNavigate }: Mo
   ];
 
   return (
-    <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
+    <div className="pb-20 min-h-screen" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       {/* Sticky Top Bar - Only for staff */}
       {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <StaffTopBar

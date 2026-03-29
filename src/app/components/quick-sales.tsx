@@ -13,7 +13,7 @@ import {
   stokAlanAdi, stokAlanEmoji,
   type StokSayim, type StokGunluk, type StokEkleme, type PrinterKapanis, type VardiyaSatis, type KareKayit,
 } from '../services/stock-service';
-import { buildHeaders, authHeaders, getToken } from '../lib/api';
+import { buildHeaders, authHeaders, getToken, appendGhostParam } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 import { bizDateStr } from '../lib/date';
 import {
@@ -560,7 +560,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         const timer = setTimeout(() => controller.abort(), 8000);
         let res: Response;
         try {
-          res = await fetch(`${API_BASE_QS}/doviz/canli`, { headers, signal: controller.signal });
+          res = await fetch(appendGhostParam(`${API_BASE_QS}/doviz/canli`), { headers, signal: controller.signal });
         } finally {
           clearTimeout(timer);
         }
@@ -619,7 +619,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       // ── 1. Mekanlar → gerçek ID resolve et ──────────────
       let realMekanId = selectedProject.id;
       try {
-        const mekanRes = await fetch(`${API_BASE_QS}/mekanlar`, { headers: hdr });
+        const mekanRes = await fetch(appendGhostParam(`${API_BASE_QS}/mekanlar`), { headers: hdr });
         if (mekanRes.ok) {
           const { mekanlar } = await mekanRes.json();
           // Önce ID ile eşleş (manager flow), bulamazsa name ile (staff flow, id='1')
@@ -633,7 +633,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
             setMekanPrintType(pt);
             setMekanPrintTypeLoaded(true);
             // Kağıt bilgisi artık yazıcıdan geliyor — sadece availablePapers yükle
-            const paperRes = await fetch(`${API_BASE_QS}/maliyetler`, { headers: hdr });
+            const paperRes = await fetch(appendGhostParam(`${API_BASE_QS}/maliyetler`), { headers: hdr });
             if (paperRes.ok) {
               const { papers } = await paperRes.json();
               const allPapers = (papers || []).filter((p: any) => p.pcsPerBox && p.setsPerBox);
@@ -1023,7 +1023,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         }
 
         try {
-          const pollRes = await fetch(`${API_BASE_QS}/stok/satis-iptal-durum/${approvalId}`, { headers: hdr });
+          const pollRes = await fetch(appendGhostParam(`${API_BASE_QS}/stok/satis-iptal-durum/${approvalId}`), { headers: hdr });
           const pollData = await pollRes.json();
 
           if (pollData.status === 'onaylandi') {
@@ -1500,7 +1500,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
             <div
               style={{
                 position: 'fixed', inset: 0, zIndex: 9999,
-                background: 'rgba(10,5,30,0.85)',
+                background: 'rgba(0,0,0,0.85)',
                 backdropFilter: 'blur(12px)',
                 display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
               }}
@@ -1508,7 +1508,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
               <div
                 style={{
                   width: '100%', maxWidth: 480,
-                  background: 'linear-gradient(135deg, rgba(30,10,60,0.98) 0%, rgba(20,8,45,0.98) 100%)',
+                  background: 'linear-gradient(135deg, rgba(0,0,0,0.98) 0%, rgba(10,10,10,0.98) 100%)',
                   border: '1px solid rgba(255,180,50,0.3)',
                   borderRadius: '24px 24px 0 0',
                   padding: '24px 20px 36px',
@@ -3492,7 +3492,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.92, opacity: 0 }}
               transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-              className="w-full bg-gradient-to-b from-[#3a3a4e] to-[#2f3439] border border-amber-500/30 rounded-3xl p-6 shadow-2xl"
+              className="w-full bg-black border border-amber-500/30 rounded-3xl p-6 shadow-2xl"
               onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center gap-3 mb-4">
@@ -3551,7 +3551,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.92, opacity: 0 }}
               transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-              className="w-full bg-gradient-to-b from-[#3a3a4e] to-[#2f3439] border border-amber-500/30 rounded-3xl p-6 shadow-2xl"
+              className="w-full bg-black border border-amber-500/30 rounded-3xl p-6 shadow-2xl"
               onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center gap-3 mb-4">
@@ -3624,7 +3624,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
               animate={{ y: 0 }}
               exit={{ y: 300 }}
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="w-full bg-gradient-to-b from-[#3a3a4e] to-[#2f3439] rounded-t-3xl p-5 max-h-[70vh] flex flex-col"
+              className="w-full bg-black rounded-t-3xl p-5 max-h-[70vh] flex flex-col"
               onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">
@@ -3676,7 +3676,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       {/* Payment Method Modal */}
       {showPaymentMethod && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[100] flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="w-full max-w-md bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] rounded-3xl shadow-2xl border-2 border-white/10 overflow-hidden max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom-8 duration-300">
+          <div className="w-full max-w-md bg-black rounded-3xl shadow-2xl border-2 border-white/10 overflow-hidden max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom-8 duration-300">
             <div className="relative backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border-b border-white/10 p-6">
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] flex items-center justify-center text-2xl shadow-lg">💳</div>
@@ -3783,7 +3783,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 60, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="w-full max-w-md bg-gradient-to-b from-[#1a0a2e] to-[#0a051e] border border-red-500/30 rounded-3xl shadow-2xl overflow-hidden"
+              className="w-full max-w-md bg-black border border-red-500/30 rounded-3xl shadow-2xl overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}
@@ -4150,7 +4150,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
             initial={{ scale: 0.5, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ type: 'spring', duration: 0.5 }}
-            className="w-full max-w-md bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] rounded-3xl shadow-2xl border-2 border-[#a8e6cf]/30 overflow-hidden"
+            className="w-full max-w-md bg-black rounded-3xl shadow-2xl border-2 border-[#a8e6cf]/30 overflow-hidden"
           >
             <div className="relative p-12 text-center">
               <motion.div

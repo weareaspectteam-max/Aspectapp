@@ -448,7 +448,7 @@ export function LiveSalesFeed({
       )}
 
       {/* ── STATUS BAR ── */}
-      <div className="border-b border-white/8 bg-[rgba(10,5,30,0.92)] backdrop-blur-xl">
+      <div className="border-b border-white/8 bg-[rgba(0,0,0,0.92)] backdrop-blur-xl">
         <div className="flex items-center justify-between px-4 py-2.5">
           <div className="flex items-center gap-2">
             <PulseDot color={error ? '#f87171' : '#4ade80'} />

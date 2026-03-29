@@ -350,7 +350,8 @@ function HedefKart({ data, baslik, emoji, color, yearlyRent, profitTarget, isGen
   const aylikKira = Math.round(yearlyRent / 12);
 
   return (
-    <div className={`mx-4 rounded-2xl border bg-[rgba(10,5,30,0.6)] backdrop-blur overflow-hidden ${isGenel ? 'border-purple-500/25' : 'border-white/10'}`}>
+    <div className={`mx-4 rounded-2xl border backdrop-blur overflow-hidden ${isGenel ? 'border-white/15' : 'border-white/10'}`}
+      style={{ background: 'rgba(255,255,255,0.04)' }}>
       {/* Başlık */}
       <div className="px-4 pt-4 pb-3 border-b border-white/8 flex items-center gap-2">
         {emoji && <span className="text-lg">{emoji}</span>}
@@ -467,10 +468,10 @@ export default function HedefTakip({ userName, userRole, accessToken, onNavigate
   }
 
   return (
-    <div className="min-h-screen pb-32" style={{ background: 'linear-gradient(135deg, #0a0015 0%, #1a0030 50%, #0d001a 100%)' }}>
+    <div className="min-h-screen pb-32" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a0015 0%, #1a0030 50%, #0d001a 100%))' }}>
       {/* Header */}
       <div className="sticky top-0 z-30 backdrop-blur-xl border-b border-white/8"
-        style={{ background: 'rgba(10,0,21,0.85)' }}>
+        style={{ background: 'rgba(0,0,0,0.65)' }}>
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <button onClick={() => onNavigate('dashboard')}

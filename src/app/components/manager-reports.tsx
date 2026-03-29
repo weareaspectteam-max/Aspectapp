@@ -57,9 +57,9 @@ export function ManagerReports({
   // Eğer kategori seçilmişse, o kategoriyi göster
   if (selectedCategory === 'location-visits') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] pb-20">
+      <div className="min-h-screen pb-20" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
         {/* Header */}
-        <div className="sticky top-0 z-[5] backdrop-blur-xl bg-[#2a2a3a]/95 border-b border-white/10">
+        <div className="sticky top-0 z-[5] backdrop-blur-xl bg-black/80 border-b border-white/10">
           <div className="px-4 py-4">
             <div className="flex items-center gap-3 mb-4">
               <button 
@@ -160,7 +160,7 @@ export function ManagerReports({
 
   // Ana ekran - 3 kategori kartı
   return (
-    <div className="min-h-screen pb-28 px-4 pt-4 space-y-4">
+    <div className="min-h-screen pb-28 px-4 pt-4 space-y-4" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
 
       {/* Başlık — business-panel ile birebir */}
       <div>

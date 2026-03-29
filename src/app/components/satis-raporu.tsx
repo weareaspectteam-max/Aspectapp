@@ -13,7 +13,7 @@ const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0
 
 /* ── Glass stil ── */
 const glass: React.CSSProperties = {
-  background: 'rgba(10,5,30,0.72)',
+  background: 'rgba(0,0,0,0.72)',
   border: '1px solid rgba(255,255,255,0.12)',
   backdropFilter: 'blur(20px)',
   WebkitBackdropFilter: 'blur(20px)',

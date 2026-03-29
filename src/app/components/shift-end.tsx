@@ -3,7 +3,7 @@ import { CheckCircle, Package, AlertCircle, Printer, Film, Camera, X, Trophy } f
 import { motion } from 'motion/react';
 import { StaffTopBar } from './staff-top-bar';
 import { NewBottomNav } from './new-bottom-nav';
-import { getToken } from '../lib/api';
+import { getToken, appendGhostParam } from '../lib/api';
 import { projectId, publicAnonKey } from '../lib/supabase-info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -104,7 +104,7 @@ export function ShiftEnd({ userName, userRole, projectName, onBack, onLogout, on
       try {
         const token = await getToken();
         const res = await fetch(
-          `${API_BASE}/shift/prim-bilgi?mekanAdi=${encodeURIComponent(projectName)}`,
+          appendGhostParam(`${API_BASE}/shift/prim-bilgi?mekanAdi=${encodeURIComponent(projectName)}`),
           {
             headers: {
               'Content-Type': 'application/json',
@@ -135,7 +135,7 @@ export function ShiftEnd({ userName, userRole, projectName, onBack, onLogout, on
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] relative pb-20">
+    <div className="min-h-screen relative pb-20" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       {/* Sticky Top Bar - Only for staff */}
       {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <StaffTopBar
@@ -488,7 +488,7 @@ export function ShiftEnd({ userName, userRole, projectName, onBack, onLogout, on
               initial={{ scale: 0.5, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: "spring", duration: 0.5 }}
-              className="w-full max-w-md bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] rounded-3xl shadow-2xl overflow-hidden"
+              className="w-full max-w-md bg-black rounded-3xl shadow-2xl overflow-hidden"
               style={{ border: `2px solid ${pb ? kColor + '60' : 'rgba(168,230,207,0.3)'}` }}
             >
               {/* Success Icon */}

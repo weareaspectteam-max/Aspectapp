@@ -560,7 +560,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
       {/* Rotasyon dışı uyarı overlay */}
       {pendingProject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-6 bg-black/60 backdrop-blur-sm">
-          <div className="backdrop-blur-xl bg-[#2a2a3a]/95 border-2 border-red-500/60 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+          <div className="backdrop-blur-xl bg-black/95 border-2 border-red-500/60 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <div className="flex flex-col items-center text-center gap-3">
               <div className="w-16 h-16 rounded-full bg-red-500/20 border-2 border-red-500/40 flex items-center justify-center">
                 <Lock className="w-8 h-8 text-red-400" />

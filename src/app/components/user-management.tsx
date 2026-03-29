@@ -151,18 +151,18 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
   }, [canViewHakedis, accessToken]);
 
   /* ── Hakediş dahil toggle ── */
+  const hakedisDahilRef = React.useRef(hakedisDahilSet);
+  hakedisDahilRef.current = hakedisDahilSet;
+
   const handleToggleHakedis = async (userId: string) => {
     if (!canEditHakedis) return;
     setHakedisSaving(prev => ({ ...prev, [userId]: true }));
     try {
-      // Güncel state'i oku (stale closure'dan kaçın)
-      let currentIds: string[] = [];
-      setHakedisDahilSet(prev => { currentIds = Array.from(prev); return prev; });
-
-      const isCurrentlyDahil = currentIds.includes(userId);
-      const newIds = isCurrentlyDahil
-        ? currentIds.filter(id => id !== userId)
-        : [...currentIds, userId];
+      const current = hakedisDahilRef.current;
+      const isCurrentlyDahil = current.has(userId);
+      const newSet = new Set(current);
+      if (isCurrentlyDahil) newSet.delete(userId); else newSet.add(userId);
+      const newIds = Array.from(newSet);
 
       const res = await fetch(`${SERVER_URL}/hakedis/dahil`, {
         method: 'POST',
@@ -171,10 +171,10 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Hakediş güncellenemedi');
-      setHakedisDahilSet(new Set(newIds));
+      setHakedisDahilSet(newSet);
+      hakedisDahilRef.current = newSet;
       const userName = users.find(u => u.id === userId)?.full_name || '';
-      const durumText = !isCurrentlyDahil ? 'DAHİL' : 'HARİÇ';
-      setSuccessMessage(`💰 ${userName} → Hakediş ${durumText}`);
+      setSuccessMessage(`💰 ${userName} → Hakediş ${!isCurrentlyDahil ? 'DAHİL' : 'HARİÇ'}`);
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (e: any) {
       setSuccessMessage(`❌ ${e.message}`);
@@ -325,7 +325,7 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
 
   /* ─────────────── RENDER ─────────────── */
   return (
-    <div className="min-h-screen pb-28">
+    <div className="min-h-screen pb-28" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       <div className="px-4 pt-4 space-y-4">
 
         {/* ── Başlık ── */}
@@ -666,10 +666,8 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
                                                 Hakediş Durumu
                                               </p>
                                             </div>
-                                            <motion.button
-                                              whileTap={{ scale: canEditHakedis ? 0.95 : 1 }}
-                                              onClick={() => canEditHakedis && handleToggleHakedis(user.id)}
-                                              disabled={!canEditHakedis || hakedisSaving[user.id]}
+                                            <button
+                                              onClick={() => { console.log('HAKEDIS CLICK', user.id, canEditHakedis); if (canEditHakedis) handleToggleHakedis(user.id); }}
                                               style={{
                                                 width: '100%', padding: '10px 14px', borderRadius: 10,
                                                 cursor: canEditHakedis ? 'pointer' : 'not-allowed',
@@ -701,7 +699,7 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
                                                   transition: 'all 0.2s',
                                                 }} />
                                               </div>
-                                            </motion.button>
+                                            </button>
                                             {!canEditHakedis && (
                                               <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', marginTop: 5, textAlign: 'center' }}>
                                                 🔒 Hakediş ayarı yalnızca yönetici yapabilir

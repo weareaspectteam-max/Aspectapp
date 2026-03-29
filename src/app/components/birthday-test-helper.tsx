@@ -88,7 +88,7 @@ export function BirthdayTestHelper() {
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="backdrop-blur-xl bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] border-2 border-white/20 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+      <div className="backdrop-blur-xl bg-black border-2 border-white/20 rounded-2xl p-6 w-full max-w-md shadow-2xl">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#d4b5f7] to-[#c79ff0] flex items-center justify-center">
             <TestTube className="w-6 h-6 text-white" />

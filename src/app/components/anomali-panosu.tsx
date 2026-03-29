@@ -11,7 +11,7 @@ const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0
 
 /* ── Glassmorphism stili ── */
 const glass: React.CSSProperties = {
-  background: 'rgba(10,5,30,0.82)',
+  background: 'rgba(0,0,0,0.65)',
   border: '1px solid rgba(255,255,255,0.12)',
   backdropFilter: 'blur(20px)',
   WebkitBackdropFilter: 'blur(20px)',
@@ -198,7 +198,7 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
   /* ─── Yetki kontrolü ─── */
   if (!['yonetici', 'ust-mudur', 'mudur'].includes(userRole)) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c] flex items-center justify-center p-6">
+      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
         <div style={glass} className="p-8 text-center max-w-sm">
           <ShieldAlert className="w-12 h-12 text-red-400 mx-auto mb-4" />
           <p className="text-white font-bold text-lg mb-2">Erişim Reddedildi</p>
@@ -210,11 +210,11 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c] pb-24">
+    <div className="min-h-screen pb-24" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
 
       {/* ─── Header ─── */}
       <div className="sticky top-0 z-20 px-4 pt-12 pb-4"
-        style={{ background: 'rgba(10,5,30,0.92)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+        style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <div className="flex items-center gap-3 mb-1">
           <button
             onClick={() => onNavigate('isletme-istatistikleri')}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Cake, Calendar, ArrowLeft, User, Gift, PartyPopper, Loader2 } from 'lucide-react';
-import { authHeaders } from '../lib/api';
+import { authHeaders, appendGhostParam } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const SERVER_URL = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -38,7 +38,7 @@ export function BirthdayCalendar({ userName, userRole, onLogout, onNavigate, onB
     setError('');
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${SERVER_URL}/birthdays`, { headers });
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/birthdays`), { headers });
       if (!res.ok) {
         const data = await res.json();
         setError(data.error || 'Doğum günleri yüklenemedi.');
@@ -147,9 +147,9 @@ export function BirthdayCalendar({ userName, userRole, onLogout, onNavigate, onB
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] pb-20">
+    <div className="min-h-screen pb-20" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       {/* Header */}
-      <div className="sticky top-0 backdrop-blur-xl bg-gradient-to-br from-[#2a2a3a]/95 via-[#3a3a4e]/95 to-[#2f3439]/95 border-b border-white/10 z-10 px-6 py-4">
+      <div className="sticky top-0 backdrop-blur-xl bg-black/80 border-b border-white/10 z-10 px-6 py-4">
         <div className="flex items-center gap-4">
           <button
             onClick={onBack}

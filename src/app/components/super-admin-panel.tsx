@@ -3,7 +3,7 @@
  * Sadece superadmin rolü erişebilir.
  */
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Plus, Users, ChevronRight, X,
   Loader2, CheckCircle, Eye, EyeOff,
@@ -69,7 +69,7 @@ const ROLE_LABELS: Record<string, string> = {
   personel:    'Personel',
   idari:       'İdari Görevli',
   bekleyen:    'Bekleyen',
-  superadmin:  'Süper Yönetici',
+  superadmin:  'Yönetici',
 };
 
 const ROLE_COLORS: Record<string, string> = {
@@ -239,10 +239,30 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompan
   const [showMigrate,       setShowMigrate]       = useState(false);
   const [showDeleteCompany, setShowDeleteCompany] = useState(false);
   const [deleteCompanyLoading, setDeleteCompanyLoading] = useState(false);
+
   const [confirmDeleteText, setConfirmDeleteText] = useState('');
 
   // Şirket kullanıcıları
   const [companyUsers,   setCompanyUsers]   = useState<CompanyUser[]>([]);
+
+  // Gizli geçiş: şirket adına 6x tıklama
+  const [jumpTapCount, setJumpTapCount] = useState(0);
+  const jumpTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleJumpTap = async (company: Company) => {
+    if (!onSwitchCompany) return;
+    const next = jumpTapCount + 1;
+    if (next >= 6) {
+      setJumpTapCount(0);
+      if (jumpTapTimer.current) clearTimeout(jumpTapTimer.current);
+      const yonetici = companyUsers.find(u => u.role === 'yonetici');
+      await onSwitchCompany(company.id, yonetici?.id);
+      onNavigate('dashboard');
+      return;
+    }
+    setJumpTapCount(next);
+    if (jumpTapTimer.current) clearTimeout(jumpTapTimer.current);
+    jumpTapTimer.current = setTimeout(() => setJumpTapCount(0), 2000);
+  };
   const [usersLoading,   setUsersLoading]   = useState(false);
 
   // Migration
@@ -953,29 +973,6 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompan
 
         {/* Aksiyon butonları */}
         <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {/* ── Ghost Mod Butonu ── */}
-          {onSwitchCompany && (
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              onClick={async () => {
-                // Şirketin yöneticisini bul, token swap ile geç
-                const yonetici = companyUsers.find(u => u.role === 'yonetici');
-                await onSwitchCompany(c.id, yonetici?.id);
-                onNavigate('dashboard');
-              }}
-              style={{
-                width: '100%', padding: '14px', borderRadius: 14, cursor: 'pointer', fontWeight: 700, fontSize: 13,
-                background: 'linear-gradient(135deg, rgba(251,191,36,0.22), rgba(245,158,11,0.12))',
-                border: '1px solid rgba(251,191,36,0.55)',
-                color: '#fbbf24', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                boxShadow: '0 4px 18px rgba(251,191,36,0.20)',
-              }}
-            >
-              <Ghost style={{ width: 16, height: 16 }} />
-              Bu Şirkete Geç (Ghost Mod)
-            </motion.button>
-          )}
-
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <button onClick={() => setShowAddUser(true)} style={{
               padding: '12px', borderRadius: 12, cursor: 'pointer', fontWeight: 700, fontSize: 12,
@@ -1045,7 +1042,9 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompan
                 const rc = ROLE_COLORS[u.role] || '#9ca3af';
                 return (
                   <div key={u.id} style={{ ...glassCard(rc, { padding: '12px 14px' }), display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 34, height: 34, borderRadius: 10, background: `${rc}20`, border: `1px solid ${rc}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
+                    <div
+                      onClick={() => u.role === 'yonetici' ? handleJumpTap(c) : undefined}
+                      style={{ width: 34, height: 34, borderRadius: 10, background: `${rc}20`, border: `1px solid ${rc}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0, cursor: u.role === 'yonetici' ? 'pointer' : 'default' }}>
                       {u.role === 'yonetici' ? '👑' : u.role === 'personel' ? '📸' : u.role === 'idari' ? '📋' : '💼'}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -1098,7 +1097,7 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompan
       }}>
         <Shield style={{ width: 11, height: 11, color: '#fbbf24' }} />
         <span style={{ fontSize: 9, fontWeight: 800, color: '#fbbf24', letterSpacing: '0.15em' }}>
-          ⚡ SÜPER YÖNETİCİ — ŞİRKET KONTROL PANELİ
+          ⚡ İŞLETME KONTROL PANELİ
         </span>
       </div>
 

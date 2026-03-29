@@ -1132,7 +1132,7 @@ function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => void }) {
                   const ciroYuzde = v.toplamCiro > 0 ? (p.toplamTL / v.toplamCiro) * 100 : 0;
                   const kareYuzde = personelKareToplam > 0 ? (p.kare / personelKareToplam) * 100 : 0;
                   const mekanKatkisi = ciroYuzde * 0.60 + kareYuzde * 0.40;
-                  const prim = v.primBilgi?.topKademePrim || 0;
+                  const prim = p.hakedisDahil === false ? 0 : (v.primBilgi?.topKademePrim || 0);
                   const maas = p.gunlukMaas || 0;
                   const personelKazanc = maas + prim;
                   return (
@@ -1695,7 +1695,7 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
   const kalanAdet = raporlar.length - gorunenAdet;
 
   return (
-    <div style={{ minHeight: '100vh' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       {/* Header */}
       <div className="px-4 pt-4 pb-3 flex items-center gap-3">
         <div className="flex-1">

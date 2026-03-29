@@ -17,7 +17,7 @@ export function AdministrativeDashboard({ userName }: AdministrativeDashboardPro
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] p-6 pt-24">
+    <div className="min-h-screen p-6 pt-24" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

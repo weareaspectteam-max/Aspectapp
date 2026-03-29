@@ -369,9 +369,9 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
   // NEW REPORT FORM VIEW
   if (showNewReportForm) {
     return (
-      <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
+      <div className="pb-20 min-h-screen" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
         {/* Form Header (Sticky) */}
-        <div className="sticky top-0 z-10 backdrop-blur-xl bg-[#2a2a3a]/95 border-b border-white/10">
+        <div className="sticky top-0 z-10 backdrop-blur-xl bg-black/80 border-b border-white/10">
           <div className="px-4 py-4">
             {/* Title Row */}
             <div className="flex items-center gap-3 mb-3">
@@ -436,8 +436,8 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
               className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-purple-500/50"
               style={{ colorScheme: 'dark' }}
             >
-              <option value="weekly" className="bg-[#2a2a3a] text-white">📅 Haftalık Rapor</option>
-              <option value="monthly" className="bg-[#2a2a3a] text-white">📆 Aylık Rapor</option>
+              <option value="weekly" className="bg-black text-white">📅 Haftalık Rapor</option>
+              <option value="monthly" className="bg-black text-white">📆 Aylık Rapor</option>
             </select>
           </div>
 
@@ -612,8 +612,8 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
               className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-purple-500/50"
               style={{ colorScheme: 'dark' }}
             >
-              <option value="draft" className="bg-[#2a2a3a] text-white">📝 Taslak</option>
-              <option value="submitted" className="bg-[#2a2a3a] text-white">✅ Teslim Edildi</option>
+              <option value="draft" className="bg-black text-white">📝 Taslak</option>
+              <option value="submitted" className="bg-black text-white">✅ Teslim Edildi</option>
             </select>
           </div>
 
@@ -637,9 +637,9 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
 
   // MAIN LIST VIEW
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] pb-20">
+    <div className="min-h-screen pb-20" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       {/* Header */}
-      <div className="sticky top-0 z-[5] backdrop-blur-xl bg-gradient-to-b from-[#2a2a3a]/95 via-[#2a2a3a]/90 to-transparent border-b border-white/10">
+      <div className="sticky top-0 z-[5] backdrop-blur-xl bg-black/80 border-b border-white/10">
         <div className="px-6 py-4">
           {/* Top Row */}
           <div className="flex items-center justify-between mb-3">

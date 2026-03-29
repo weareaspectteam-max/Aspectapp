@@ -19,6 +19,7 @@ import type { UserRole } from './login';
 import { authHeaders } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 import { THEMES, applyTheme, getThemeById } from '../lib/themes';
+import { Changelog } from './changelog';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -60,7 +61,7 @@ const ROLE_TITLES: Record<UserRole, string> = {
   'personel':   'Personel',
   'idari':      'İdari Görevli',
   'bekleyen':   'Onay Bekliyor',
-  'superadmin': 'Süper Yönetici',
+  'superadmin': 'Yönetici',
 };
 
 const ROLE_AVATARS: Record<UserRole, string> = {
@@ -308,6 +309,7 @@ export function HamburgerMenu({
   const [themeOpen, setThemeOpen]             = useState(false);
   const [activeTheme, setActiveTheme]         = useState(() => localStorage.getItem('aspect_theme') || 'mor-gece');
   const [themeSaving, setThemeSaving]         = useState(false);
+  const [changelogOpen, setChangelogOpen]    = useState(false);
 
   const handleThemeChange = async (themeId: string) => {
     setActiveTheme(themeId);
@@ -1427,10 +1429,25 @@ export function HamburgerMenu({
                   <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.08em' }}>
                     {effectiveCompanyId.toUpperCase()} OPERATIONS
                   </span>
-                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.15)' }}>
-                    v2.0
-                  </span>
+                  {['yonetici', 'ust-mudur'].includes(userRole) ? (
+                    <button
+                      onClick={() => setChangelogOpen(true)}
+                      style={{
+                        fontSize: 9, color: 'rgba(255,255,255,0.25)', cursor: 'pointer',
+                        background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: 6, padding: '2px 8px', fontWeight: 600,
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      v2.0
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.15)' }}>
+                      v2.0
+                    </span>
+                  )}
                 </div>
+                <Changelog isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} userName={userName} userRole={userRole} userId={userId} isSuperAdmin={isSuperAdmin} />
               </motion.div>
             )}
           </AnimatePresence>

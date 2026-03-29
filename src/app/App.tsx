@@ -58,6 +58,8 @@ import { Announcements } from './components/announcements';
 import { VardiyaRaporlari } from './components/vardiya-raporlari';
 import HedefTakip from './components/hedef-takip';
 import { VardiyaIstatistikleri } from './components/vardiya-istatistikleri';
+import { FrameTracking } from './components/frame-tracking';
+import { KareIstatistik } from './components/kare-istatistik';
 import { OperationsDemo } from './components/operations-demo';
 import { ShiftSetup } from './components/shift-setup';
 import { ShiftChoice } from './components/shift-choice';
@@ -239,8 +241,10 @@ function MainApp() {
     setUserAvatar(avatar);
     setUserCompanyId(companyId); // ← Şirket kimliği
 
-    // Tema uygula (user_metadata'dan veya localStorage'dan)
-    const savedTheme = user.user_metadata?.theme || localStorage.getItem('aspect_theme') || 'mor-gece';
+    // Tema uygula — localStorage güncel tutulur (applyTheme her çağrıda yazar)
+    // İlk girişte backend'den al, sonraki session refresh'lerde localStorage'a güven
+    const localTheme = localStorage.getItem('aspect_theme');
+    const savedTheme = localTheme || user.user_metadata?.theme || 'mor-gece';
     setUserTheme(savedTheme);
     applyTheme(savedTheme);
 
@@ -504,7 +508,7 @@ function MainApp() {
       'personel':   'Personel',
       'idari':      'İdari Görevli',
       'bekleyen':   'Bekleyen Kullanıcı',
-      'superadmin': 'Süper Yönetici',
+      'superadmin': 'Yönetici',
     };
     return titles[role];
   };
@@ -1015,7 +1019,28 @@ function MainApp() {
             onNavigate={handleNavigate}
           />
         );
-      
+
+      case 'frame-tracking':
+        return (
+          <FrameTracking
+            userName={userName}
+            userRole={userRole}
+            accessToken={accessToken}
+            onLogout={handleLogout}
+            onNavigate={handleNavigate}
+          />
+        );
+
+      case 'kare-istatistik':
+        return (
+          <KareIstatistik
+            userName={userName}
+            userRole={userRole}
+            onLogout={handleLogout}
+            onNavigate={handleNavigate}
+          />
+        );
+
       case 'operations-demo':
         return (
           <OperationsDemo 
@@ -1073,7 +1098,7 @@ function MainApp() {
               <div style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(239,68,68,0.25)', backdropFilter: 'blur(20px)', borderRadius: 20, padding: 32 }}>
                 <div className="text-4xl mb-4">🔒</div>
                 <p className="text-white font-bold text-lg mb-2">Erişim Kısıtlı</p>
-                <p className="text-white/40 text-sm">Bu panel yalnızca Süper Yöneticiye açıktır.</p>
+                <p className="text-white/40 text-sm">Bu panel yalnızca yetkili yöneticiye açıktır.</p>
               </div>
             </div>
           );
@@ -1172,9 +1197,9 @@ function MainApp() {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 10 }}>👁</span>
+              <span style={{ fontSize: 10 }}>🔄</span>
               <span style={{ fontSize: 10, fontWeight: 700, color: '#fbbf24', letterSpacing: '0.04em' }}>
-                GHOST:{' '}
+                AKTİF:{' '}
                 <span style={{ textTransform: 'uppercase', letterSpacing: '0.12em' }}>
                   {ghostCompanyId}
                 </span>

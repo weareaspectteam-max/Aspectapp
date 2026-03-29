@@ -208,7 +208,7 @@ export function PersonelIzinTalebi({ userName, userRole, accessToken, onNavigate
       {/* ── Header ── */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 10,
-        background: 'rgba(10,5,30,0.85)',
+        background: 'rgba(0,0,0,0.85)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
         borderBottom: '1px solid rgba(255,255,255,0.08)',

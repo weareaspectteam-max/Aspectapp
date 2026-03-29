@@ -1438,7 +1438,7 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
                 </button>
 
                 {showUserPicker && (
-                  <div className="absolute top-full left-0 right-0 mt-2 backdrop-blur-2xl bg-[#0a051e]/95 border border-white/20 rounded-2xl shadow-2xl z-50 overflow-hidden">
+                  <div className="absolute top-full left-0 right-0 mt-2 backdrop-blur-2xl bg-black/90 border border-white/20 rounded-2xl shadow-2xl z-50 overflow-hidden">
                     {/* Arama */}
                     <div className="p-3 border-b border-white/10">
                       <input
@@ -1699,7 +1699,7 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
   };
 
   return (
-    <div className="pb-28 min-h-screen">
+    <div className="pb-28 min-h-screen" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       {/* Header */}
       <div className="sticky top-0 z-[5]" style={{ backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', background: 'rgba(42,42,58,0.92)', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
         <div className="px-4 py-4">

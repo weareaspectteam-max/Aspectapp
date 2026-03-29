@@ -47,6 +47,7 @@ const PAGE_LABELS: Record<string, string> = {
   'birthday-calendar':   'Doğum Günleri',
   'announcements':       'Duyurular',
   'frame-tracking':      'Kare Takibi',
+  'kare-istatistik':     'Kare İstatistikleri',
   'operations-demo':     'Demo',
   'header-demo':         'Demo',
   'super-admin':         'Şirket Yönetimi',
@@ -77,6 +78,7 @@ const PAGE_COLORS: Record<string, string> = {
   'birthday-calendar':   '#f472b6',
   'announcements':       '#fb923c',
   'frame-tracking':      '#60a5fa',
+  'kare-istatistik':     '#60a5fa',
   'super-admin':         '#fbbf24',
 };
 
@@ -99,7 +101,7 @@ const ROLE_TITLES: Record<UserRole, string> = {
   'personel':   'Personel',
   'idari':      'İdari Görevli',
   'bekleyen':   'Bekleyen',
-  'superadmin': 'Süper Yönetici',
+  'superadmin': 'Yönetici',
 };
 
 interface AppHeaderProps {

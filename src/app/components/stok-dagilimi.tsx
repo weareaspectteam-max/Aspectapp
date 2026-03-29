@@ -168,7 +168,7 @@ function GenelAlbumCard({ dagilim, mekanlar, depo, kagitTipleri }: {
   const hasRibon = Object.keys(ribonByTip).length > 0;
 
   return (
-    <div className="mx-4 mb-4 rounded-2xl border border-white/12 bg-[rgba(10,5,30,0.6)] backdrop-blur overflow-hidden">
+    <div className="mx-4 mb-4 rounded-2xl border border-white/12 bg-[rgba(255,255,255,0.04)] backdrop-blur overflow-hidden">
       <div className="px-4 pt-4 pb-3 border-b border-white/8 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Package className="w-4 h-4 text-violet-400" />
@@ -328,7 +328,7 @@ function RibonCard({ mekanlar, depo, kagitTipleri }: { mekanlar: MekanOzet[]; de
   };
 
   return (
-    <div className="mx-4 mb-4 rounded-2xl border border-pink-500/20 bg-[rgba(10,5,30,0.6)] backdrop-blur overflow-hidden">
+    <div className="mx-4 mb-4 rounded-2xl border border-pink-500/20 bg-[rgba(255,255,255,0.04)] backdrop-blur overflow-hidden">
       <div className="px-4 pt-4 pb-3 border-b border-white/8 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Printer className="w-4 h-4 text-pink-400" />
@@ -1577,7 +1577,7 @@ function AktarimModal({
 function SonAktarimlarCard({ transferler, yukleniyor }: { transferler: Transfer[]; yukleniyor: boolean }) {
   const [acik, setAcik] = useState(false);
   return (
-    <div className="mx-4 mb-4 rounded-2xl border border-violet-500/20 bg-[rgba(10,5,30,0.6)] backdrop-blur overflow-hidden">
+    <div className="mx-4 mb-4 rounded-2xl border border-violet-500/20 bg-[rgba(255,255,255,0.04)] backdrop-blur overflow-hidden">
       <button
         onClick={() => setAcik(v => !v)}
         className="w-full px-4 py-3.5 flex items-center gap-3 text-left active:bg-white/4 transition-colors">
@@ -1707,7 +1707,7 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
     <div className="pb-24 min-h-screen" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #120830 50%, #1a0a3c 100%))' }}>
 
       {/* Header */}
-      <div className="bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-b border-white/10 px-4 pt-3 pb-3">
+      <div className="bg-[rgba(0,0,0,0.75)] backdrop-blur-xl border-b border-white/10 px-4 pt-3 pb-3">
         <div className="flex items-center gap-3">
           <div className="flex-1">
             <h1 className="text-base font-bold text-white">Stok Dağılımı</h1>
@@ -1788,7 +1788,7 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
           <RibonCard mekanlar={veri.mekanlar} depo={veri.depo} kagitTipleri={kagitTipleri} />
 
           {/* 3 · Mekan Bazlı Albüm Dağılımı */}
-          <div className="mx-4 mb-4 rounded-2xl border border-white/12 bg-[rgba(10,5,30,0.6)] backdrop-blur overflow-hidden">
+          <div className="mx-4 mb-4 rounded-2xl border border-white/12 bg-[rgba(255,255,255,0.04)] backdrop-blur overflow-hidden">
             <div className="px-4 pt-4 pb-3 border-b border-white/8 flex items-center gap-2">
               <Package className="w-4 h-4 text-indigo-400" />
               <span className="text-sm font-bold text-white">Mekan Bazlı Albüm Dağılımı</span>

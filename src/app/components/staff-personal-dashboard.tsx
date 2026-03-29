@@ -8,7 +8,7 @@ import {
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import { CurrencyWidget } from './currency-widget';
 import { getUserQueue, getUserFrameQueue } from '../lib/offline-queue';
-import { buildHeaders, getToken } from '../lib/api';
+import { buildHeaders, getToken, appendGhostParam } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 import { ShiftCheckInCard } from './shift-checkin-card';
 
@@ -194,7 +194,7 @@ export function StaffPersonalDashboard({
       const token = accessToken || await getToken();
       const { baslangic, bitis, periodKey } = getMonthDates();
       const params = new URLSearchParams({ baslangic, bitis, periodKey });
-      const res = await fetch(`${API_BASE}/leaderboard/performans?${params}`, {
+      const res = await fetch(appendGhostParam(`${API_BASE}/leaderboard/performans?${params}`), {
         headers: buildHeaders(token),
       });
       const data = await res.json();
@@ -241,7 +241,7 @@ export function StaffPersonalDashboard({
         months.map(async (mo) => {
           try {
             const params = new URLSearchParams({ baslangic: mo.baslangic, bitis: mo.bitis, periodKey: mo.periodKey });
-            const res = await fetch(`${API_BASE}/leaderboard/performans?${params}`, { headers: buildHeaders(token) });
+            const res = await fetch(appendGhostParam(`${API_BASE}/leaderboard/performans?${params}`), { headers: buildHeaders(token) });
             if (!res.ok) return { ...mo, sira: null, toplamPersonel: 0 };
             const data = await res.json();
             const personeller: any[] = data.personeller || [];
@@ -264,7 +264,7 @@ export function StaffPersonalDashboard({
   const fetchAnnouncement = useCallback(async () => {
     try {
       const token = accessToken || await getToken();
-      const res = await fetch(`${API_BASE}/announcements`, {
+      const res = await fetch(appendGhostParam(`${API_BASE}/announcements`), {
         headers: buildHeaders(token),
       });
       const data = await res.json();
@@ -290,7 +290,7 @@ export function StaffPersonalDashboard({
     setRotasyonLoading(true);
     try {
       const token = accessToken || await getToken();
-      const res = await fetch(`${API_BASE}/rotasyon/gorevler`, { headers: buildHeaders(token) });
+      const res = await fetch(appendGhostParam(`${API_BASE}/rotasyon/gorevler`), { headers: buildHeaders(token) });
       if (!res.ok) { console.error('[StaffDash] rotasyon error:', res.status); return; }
       const data = await res.json();
       const tasks: any[] = data.tasks || [];

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Camera, Mail, Lock, User, Save, Eye, EyeOff, Shield, Bell, CheckCircle, Cake, Loader2 } from 'lucide-react';
 
 import { NewBottomNav } from './new-bottom-nav';
-import { authHeaders } from '../lib/api';
+import { authHeaders, appendGhostParam } from '../lib/api';
 import { projectId, publicAnonKey } from '../lib/supabase-info';
 
 const SERVER_URL = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -69,7 +69,7 @@ export function Settings({ userName, userRole, userAvatar, userEmail, userBirthD
       setBirthdayLoading(true);
       try {
         const headers = await authHeaders();
-        const res = await fetch(`${SERVER_URL}/birthday`, { headers });
+        const res = await fetch(appendGhostParam(`${SERVER_URL}/birthday`), { headers });
         if (res.ok) {
           const data = await res.json();
           setHideBirthdayFromOthers(data.hideBirthdayFromOthers || false);

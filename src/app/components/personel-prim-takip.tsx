@@ -5,7 +5,7 @@ import {
   Calendar, AlertCircle, CheckCircle2, Banknote, TrendingUp,
   Wallet, Star, Award, Users, User,
 } from 'lucide-react';
-import { getToken, buildHeaders } from '../lib/api';
+import { getToken, buildHeaders, appendGhostParam } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -152,7 +152,7 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
     setError('');
     try {
       const token = await getToken();
-      const res = await fetch(`${API_BASE}/primler/kendi-rapor?ay=${seciliAy}`, {
+      const res = await fetch(appendGhostParam(`${API_BASE}/primler/kendi-rapor?ay=${seciliAy}`), {
         headers: buildHeaders(token),
       });
       const data = await res.json();

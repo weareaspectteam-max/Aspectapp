@@ -6,7 +6,7 @@ import {
   RefreshCw, Clock,
   Brain, MessageSquare, Loader2, Trash2, Settings, Mic,
 } from 'lucide-react';
-import { authHeaders, getToken } from '../lib/api';
+import { authHeaders, getToken, appendGhostParam } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 import type { VardiyaSatis } from '../services/stock-service';
 import { getLeaveRequests, saveLeaveRequest, deleteLeaveRequest, getDailyOnLeave, getStaffMembers, getLocations, getTasks, saveTask, updateTask, type LeaveRequest, type Location, type StaffMember, type Task } from '../services/rotation-service';
@@ -585,7 +585,7 @@ async function fetchIndirimAnalizi(soru: string): Promise<{ text: string }> {
       }
     }
 
-    const url = `${API_BASE}/personel/indirim-istatistik?baslangic=${baslangic}&bitis=${bitis}`;
+    const url = appendGhostParam(`${API_BASE}/personel/indirim-istatistik?baslangic=${baslangic}&bitis=${bitis}`);
     const res = await fetch(url, { headers });
     if (!res.ok) return { text: `İndirim verisi alınamadı (${res.status}).` };
     const data = await res.json();
@@ -693,7 +693,7 @@ async function fetchAnomaliAnalizi(soru: string): Promise<{ text: string }> {
 
     // API çağrısı
     const headers = await authHeaders();
-    const url = `${API_BASE}/stok/anomali-raporu?baslangic=${baslangic}&bitis=${bitis}`;
+    const url = appendGhostParam(`${API_BASE}/stok/anomali-raporu?baslangic=${baslangic}&bitis=${bitis}`);
     const res = await fetch(url, { headers });
     if (!res.ok) return { text: `Anomali raporu alınamadı (${res.status}).` };
     const data = await res.json();
@@ -790,7 +790,7 @@ async function fetchSatisAnalizi(soru: string): Promise<{ text: string }> {
 
     // API çağrısı
     const headers = await authHeaders();
-    const url = `${API_BASE}/isletme/satis-raporu?baslangic=${baslangic}&bitis=${bitis}`;
+    const url = appendGhostParam(`${API_BASE}/isletme/satis-raporu?baslangic=${baslangic}&bitis=${bitis}`);
     const res = await fetch(url, { headers });
     if (!res.ok) return { text: 'Satış raporuna ulaşılamadı.' };
     const data = await res.json();
@@ -2596,7 +2596,7 @@ function MekanSecModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm rounded-t-3xl bg-gradient-to-b from-[#1a0a3c] to-[#0a051e] border-t border-white/15 pb-8 pt-4 px-4 mb-24"
+        className="w-full max-w-sm rounded-t-3xl bg-black border-t border-white/15 pb-8 pt-4 px-4 mb-24"
         onClick={e => e.stopPropagation()}
       >
         {/* Handle */}
@@ -3084,7 +3084,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   // KV'den config yükle ve ROLE_CONFIG'i override et
   useEffect(() => {
     authHeaders().then(headers =>
-      fetch(`${API_BASE}/ai/role-config`, { headers })
+      fetch(appendGhostParam(`${API_BASE}/ai/role-config`), { headers })
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (data?.config && typeof data.config === 'object') {
@@ -3124,7 +3124,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     if (!isAdmin) return;
     setOzetLoading(true);
     authHeaders().then(headers =>
-      fetch(`${API_BASE}/ai/ozet`, { headers })
+      fetch(appendGhostParam(`${API_BASE}/ai/ozet`), { headers })
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (data?.ozet) setOzet(data.ozet);
@@ -4019,10 +4019,10 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
     try {
       const headers = await authHeaders();
       const [stokRes, maliyetRes, mekanlarRes, rotasyonRes] = await Promise.all([
-        fetch(`${API_BASE}/stok/gunluk/${mekan.id}/${today}`, { headers }),
-        fetch(`${API_BASE}/maliyetler`, { headers }),
-        fetch(`${API_BASE}/mekanlar`, { headers }),
-        fetch(`${API_BASE}/rotasyon/gorevler`, { headers }),
+        fetch(appendGhostParam(`${API_BASE}/stok/gunluk/${mekan.id}/${today}`), { headers }),
+        fetch(appendGhostParam(`${API_BASE}/maliyetler`), { headers }),
+        fetch(appendGhostParam(`${API_BASE}/mekanlar`), { headers }),
+        fetch(appendGhostParam(`${API_BASE}/rotasyon/gorevler`), { headers }),
       ]);
 
       if (stokRes.ok) {
@@ -4106,7 +4106,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
 
       {/* AI Ayarları Overlay */}
       {showSettings && (
-        <div className="absolute inset-0 z-50 bg-[#0a051e] overflow-y-auto">
+        <div className="absolute inset-0 z-50 bg-black overflow-y-auto">
           <AspectAISettings
             userRole={userRole}
             onBack={() => setShowSettings(false)}
@@ -4115,7 +4115,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
               setTimeout(async () => {
                 try {
                   const headers = await authHeaders();
-                  const res = await fetch(`${API_BASE}/ai/role-config`, { headers });
+                  const res = await fetch(appendGhostParam(`${API_BASE}/ai/role-config`), { headers });
                   const data = await res.json();
                   if (data?.config && typeof data.config === 'object') {
                     const converted: Record<string, RoleConfig> = {};
@@ -4136,7 +4136,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
         </div>
       )}
       {/* ── SUB-HEADER — sabit, asla kımıldamaz ── */}
-      <div className="shrink-0 px-4 pt-3 pb-3 bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-b border-white/8">
+      <div className="shrink-0 px-4 pt-3 pb-3 bg-[rgba(0,0,0,0.92)] backdrop-blur-xl border-b border-white/8">
         <div className="flex items-center gap-2">
           {/* Brain icon */}
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/30 shrink-0">
@@ -4329,7 +4329,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       </div>
 
       {/* ── INPUT BAR — sabit, asla kımıldamaz ── */}
-      <div className="shrink-0 px-4 pt-2 pb-3 bg-[rgba(10,5,30,0.92)] backdrop-blur-xl border-t border-white/8">
+      <div className="shrink-0 px-4 pt-2 pb-3 bg-[rgba(0,0,0,0.92)] backdrop-blur-xl border-t border-white/8">
         <div className="flex items-center gap-3 bg-white/6 border border-white/12 rounded-2xl px-4 py-3">
           <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shrink-0">
             <Sparkles className="w-3.5 h-3.5 text-white" />

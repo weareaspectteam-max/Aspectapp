@@ -1644,7 +1644,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                   className={`backdrop-blur-xl rounded-2xl border-2 overflow-visible border-l-4 relative ${getStatusColors(task)} ${getBorderColor(task)}`}
                 >
                   <div className="absolute -top-3 -left-3 z-20">
-                    <div className="flex items-center justify-center px-3 py-1.5 bg-[rgba(10,5,30,0.85)] border border-white/15 rounded-xl backdrop-blur-sm">
+                    <div className="flex items-center justify-center px-3 py-1.5 bg-[rgba(0,0,0,0.85)] border border-white/15 rounded-xl backdrop-blur-sm">
                       <span className="text-[10px] text-white/80 font-bold">
                         {new Date(task.date).getDate()} {new Date(task.date).toLocaleDateString('tr-TR', { month: 'long' })} {new Date(task.date).toLocaleDateString('tr-TR', { weekday: 'long' })}
                       </span>

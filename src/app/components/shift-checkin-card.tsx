@@ -938,7 +938,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
       {showLateModal && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 9999,
-          background: 'rgba(10,5,30,0.85)', backdropFilter: 'blur(8px)',
+          background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)',
           display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
         }}
           onClick={(e) => { if (e.target === e.currentTarget) setShowLateModal(false); }}

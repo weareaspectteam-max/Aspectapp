@@ -199,13 +199,13 @@ export function FrameTracking({ userName, userRole, accessToken, onNavigate, onL
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] relative">
+    <div className="min-h-screen relative" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       <div className="fixed top-20 right-10 w-48 h-48 rounded-full bg-gradient-to-br from-[#9dd9ea]/8 to-transparent blur-3xl pointer-events-none" />
       <div className="fixed bottom-40 left-5 w-40 h-40 rounded-full bg-gradient-to-br from-[#ffd4a3]/8 to-transparent blur-3xl pointer-events-none" />
 
       {/* Top Bar */}
       <div className="fixed top-0 left-0 right-0 max-w-[480px] mx-auto z-50">
-        <div className="backdrop-blur-xl bg-gradient-to-br from-[#2a2a3a]/95 via-[#3a3a4e]/95 to-[#2f3439]/95 border-b border-white/10 px-4 py-4">
+        <div className="backdrop-blur-xl bg-black/80 border-b border-white/10 px-4 py-4">
           <div className="flex items-center gap-3">
             <button
               onClick={() => onNavigate('dashboard')}
@@ -284,7 +284,7 @@ export function FrameTracking({ userName, userRole, accessToken, onNavigate, onL
               animate={{ y: 0 }}
               exit={{ y: 300 }}
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="w-full bg-gradient-to-b from-[#3a3a4e] to-[#2f3439] rounded-t-3xl p-5 max-h-[70vh] flex flex-col"
+              className="w-full bg-black rounded-t-3xl p-5 max-h-[70vh] flex flex-col"
               onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">

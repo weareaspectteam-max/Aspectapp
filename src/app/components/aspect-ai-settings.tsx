@@ -404,7 +404,7 @@ export function AspectAISettings({ userRole, onBack, onSaved }: AspectAISettings
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
           <p className="text-white/60 text-sm">Ayarlar yükleniyor…</p>
@@ -414,7 +414,7 @@ export function AspectAISettings({ userRole, onBack, onSaved }: AspectAISettings
   }
 
   return (
-    <div className="min-h-screen pb-28">
+    <div className="min-h-screen pb-28" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       {/* Header */}
       <div className="sticky top-0 z-30 bg-black/40 backdrop-blur-xl border-b border-white/10 px-4 py-3 flex items-center gap-3">
         <button onClick={onBack} className="p-2 rounded-xl hover:bg-white/10 transition-colors">

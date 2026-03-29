@@ -332,13 +332,13 @@ export function LocationVisits({
   // DETAIL VIEW
   if (selectedVisit) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] pb-20">
+      <div className="min-h-screen pb-20" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
         {/* Header */}
         {embedded && showOwnHeader && (
-          <div className="sticky top-0 z-10 backdrop-blur-xl bg-[#2a2a3a]/95 border-b border-white/10">
+          <div className="sticky top-0 z-10 backdrop-blur-xl bg-black/80 border-b border-white/10">
             <div className="px-4 py-4">
               <div className="flex items-center gap-3">
-                <button 
+                <button
                   onClick={() => setSelectedVisit(null)}
                   className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-all active:scale-95"
                 >
@@ -534,13 +534,13 @@ export function LocationVisits({
       : '0.0';
 
     return (
-      <div className="min-h-screen bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] pb-20">
+      <div className="min-h-screen pb-20" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
         {/* Header */}
         {embedded && showOwnHeader && (
-          <div className="sticky top-0 z-10 backdrop-blur-xl bg-[#2a2a3a]/95 border-b border-white/10">
+          <div className="sticky top-0 z-10 backdrop-blur-xl bg-black/80 border-b border-white/10">
             <div className="px-4 py-4">
               <div className="flex items-center gap-3 mb-3">
-                <button 
+                <button
                   onClick={() => {
                     setShowNewVisitForm(false);
                     resetForm();
@@ -588,9 +588,9 @@ export function LocationVisits({
               className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-400/50"
               style={{ colorScheme: 'dark' }}
             >
-              <option value="" className="bg-[#2a2a3a] text-white">Mekan Seçin</option>
+              <option value="" className="bg-black text-white">Mekan Seçin</option>
               {realLocations.map(loc => (
-                <option key={loc.id} value={loc.id} className="bg-[#2a2a3a] text-white">
+                <option key={loc.id} value={loc.id} className="bg-black text-white">
                   {loc.name}{loc.type ? ` - ${loc.type}` : ''}
                 </option>
               ))}
@@ -637,7 +637,7 @@ export function LocationVisits({
               style={{ colorScheme: 'dark' }}
             >
               {Object.entries(visitTypeConfig).map(([key, config]) => (
-                <option key={key} value={key} className="bg-[#2a2a3a] text-white">
+                <option key={key} value={key} className="bg-black text-white">
                   {config.emoji} {config.label}
                 </option>
               ))}
@@ -877,7 +877,7 @@ export function LocationVisits({
 
   // MAIN LIST VIEW
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] pb-20">
+    <div className="min-h-screen pb-20" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
 
       {/* Loading / Error */}
       {isLoading && (
@@ -894,7 +894,7 @@ export function LocationVisits({
 
       {/* Header */}
       {embedded && showOwnHeader && (
-        <div className="sticky top-0 z-10 backdrop-blur-xl bg-[#2a2a3a]/95 border-b border-white/10">
+        <div className="sticky top-0 z-10 backdrop-blur-xl bg-black/95 border-b border-white/10">
           <div className="px-4 py-4">
             <div className="flex items-center gap-3">
               <button 
@@ -995,11 +995,11 @@ export function LocationVisits({
               className="w-full bg-transparent text-white text-sm focus:outline-none"
               style={{ colorScheme: 'dark' }}
             >
-              <option value="all" className="bg-[#2a2a3a]">Tümü</option>
-              <option value="routine" className="bg-[#2a2a3a]">📅 Rutin</option>
-              <option value="problem" className="bg-[#2a2a3a]">⚠️ Sorun</option>
-              <option value="quality" className="bg-[#2a2a3a]">⭐ Kalite</option>
-              <option value="meeting" className="bg-[#2a2a3a]">🤝 Toplantı</option>
+              <option value="all" className="bg-black">Tümü</option>
+              <option value="routine" className="bg-black">📅 Rutin</option>
+              <option value="problem" className="bg-black">⚠️ Sorun</option>
+              <option value="quality" className="bg-black">⭐ Kalite</option>
+              <option value="meeting" className="bg-black">🤝 Toplantı</option>
             </select>
           </div>
 
@@ -1011,10 +1011,10 @@ export function LocationVisits({
               className="w-full bg-transparent text-white text-sm focus:outline-none"
               style={{ colorScheme: 'dark' }}
             >
-              <option value="all" className="bg-[#2a2a3a]">Tümü</option>
-              <option value="completed" className="bg-[#2a2a3a]">✅ Tamamlandı</option>
-              <option value="pending" className="bg-[#2a2a3a]">⏳ Beklemede</option>
-              <option value="cancelled" className="bg-[#2a2a3a]">❌ İptal</option>
+              <option value="all" className="bg-black">Tümü</option>
+              <option value="completed" className="bg-black">✅ Tamamlandı</option>
+              <option value="pending" className="bg-black">⏳ Beklemede</option>
+              <option value="cancelled" className="bg-black">❌ İptal</option>
             </select>
           </div>
         </div>

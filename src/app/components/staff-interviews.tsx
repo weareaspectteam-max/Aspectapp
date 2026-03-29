@@ -377,9 +377,9 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel', 
   // NEW INTERVIEW FORM
   if (showNewInterviewForm) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] pb-20">
+      <div className="min-h-screen pb-20" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
         {/* Header */}
-        <div className="sticky top-0 z-10 backdrop-blur-xl bg-[#2a2a3a]/95 border-b border-white/10">
+        <div className="sticky top-0 z-10 backdrop-blur-xl bg-black/80 border-b border-white/10">
           <div className="px-4 py-4">
             <div className="flex items-center gap-3 mb-3">
               <button
@@ -510,10 +510,10 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel', 
                 className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-400/50"
                 style={{ colorScheme: 'dark' }}
               >
-                <option value="performance" className="bg-[#2a2a3a]">📊 Performans</option>
-                <option value="feedback" className="bg-[#2a2a3a]">💬 Geri Bildirim</option>
-                <option value="development" className="bg-[#2a2a3a]">🚀 Gelişim</option>
-                <option value="problem-solving" className="bg-[#2a2a3a]">⚠️ Sorun Çözme</option>
+                <option value="performance" className="bg-black">📊 Performans</option>
+                <option value="feedback" className="bg-black">💬 Geri Bildirim</option>
+                <option value="development" className="bg-black">🚀 Gelişim</option>
+                <option value="problem-solving" className="bg-black">⚠️ Sorun Çözme</option>
               </select>
             </div>
             <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-4">
@@ -524,9 +524,9 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel', 
                 className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-blue-400/50"
                 style={{ colorScheme: 'dark' }}
               >
-                <option value="positive" className="bg-[#2a2a3a]">😊 Pozitif</option>
-                <option value="neutral" className="bg-[#2a2a3a]">😐 Nötr</option>
-                <option value="negative" className="bg-[#2a2a3a]">😟 Negatif</option>
+                <option value="positive" className="bg-black">😊 Pozitif</option>
+                <option value="neutral" className="bg-black">😐 Nötr</option>
+                <option value="negative" className="bg-black">😟 Negatif</option>
               </select>
             </div>
           </div>
@@ -735,7 +735,7 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel', 
 
   // MAIN LIST VIEW
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] pb-20">
+    <div className="min-h-screen pb-20" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
 
       {isLoading && (
         <div className="flex items-center justify-center py-20">
@@ -749,7 +749,7 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel', 
       )}
 
       {/* Header */}
-      <div className="sticky top-0 z-[5] backdrop-blur-xl bg-[#2a2a3a]/95 border-b border-white/10">
+      <div className="sticky top-0 z-[5] backdrop-blur-xl bg-black/95 border-b border-white/10">
         <div className="px-4 py-4">
           <div className="flex items-start gap-3 mb-3">
             <button

@@ -130,7 +130,7 @@ export function RotationLeaveModal({
           exit={{ y: 60, opacity: 0 }}
           transition={{ type: 'spring', damping: 26, stiffness: 320 }}
           onClick={e => e.stopPropagation()}
-          className="w-full sm:max-w-sm bg-[rgba(10,5,30,0.96)] border border-white/12 rounded-t-3xl sm:rounded-2xl max-h-[92vh] overflow-y-auto"
+          className="w-full sm:max-w-sm bg-[rgba(0,0,0,0.96)] border border-white/12 rounded-t-3xl sm:rounded-2xl max-h-[92vh] overflow-y-auto"
           style={{ backdropFilter: 'blur(24px)' }}
         >
           {/* Üstte çekme çubuğu (sadece mobil) */}
@@ -187,9 +187,9 @@ export function RotationLeaveModal({
                   className={inputCls + ' appearance-none'}
                   style={{ colorScheme: 'dark' }}
                 >
-                  <option value="" style={{ background: '#0a051e' }}>Personel Seçiniz</option>
+                  <option value="" style={{ background: '#000000' }}>Personel Seçiniz</option>
                   {availableStaff.map(staff => (
-                    <option key={staff.id} value={staff.id} style={{ background: '#0a051e' }}>
+                    <option key={staff.id} value={staff.id} style={{ background: '#000000' }}>
                       {staff.avatar} {staff.name}
                     </option>
                   ))}

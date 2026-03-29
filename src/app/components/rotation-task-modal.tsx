@@ -278,11 +278,7 @@ export function RotationTaskModal({
       personnel = selectedPersonnel.map(id => {
         const staff = staffMembers.find(s => s.id === id);
         if (!staff) throw new Error(`Personel bulunamadı: ${id}`);
-        const primeDahilSayisi = selectedPersonnel.filter(sid => {
-          const s = staffMembers.find(x => x.id === sid);
-          return s && !["ust-mudur", "yonetici"].includes(s.role || "");
-        }).length;
-        const gorev = primeDahilSayisi > 1 ? gorevMap[id] : undefined;
+        const gorev = selectedPersonnel.length > 1 ? gorevMap[id] : undefined;
         return { id: staff.id, name: staff.name, avatar: staff.avatar, role: staff.role, gorev };
       });
     } catch (err: any) {
@@ -578,11 +574,8 @@ export function RotationTaskModal({
                 </div>
               </div>
 
-              {/* ── Görev Ataması — prime dahil 2+ kişide göster (ust-mudur/yonetici hariç) ── */}
-              {selectedPersonnel.filter(id => {
-                const s = staffMembers.find(x => x.id === id);
-                return s && !["ust-mudur", "yonetici"].includes(s.role || "");
-              }).length > 1 && (
+              {/* ── Görev Ataması — 2+ kişide göster ── */}
+              {selectedPersonnel.length > 1 && (
                 <div>
                   <label className="block text-sm font-semibold text-gray-300 mb-2">
                     🎭 Görev Ataması
@@ -593,16 +586,10 @@ export function RotationTaskModal({
                       const staff = staffMembers.find(s => s.id === id);
                       if (!staff) return null;
                       const gorev = gorevMap[id];
-                      const isPrimDisi = ["ust-mudur", "yonetici"].includes(staff.role || "");
                       return (
                         <div key={id} className="flex items-center gap-2">
                           <span className="text-sm shrink-0 w-5">{staff.avatar}</span>
-                          <span className={`text-xs font-medium flex-1 truncate ${isPrimDisi ? 'text-gray-500' : 'text-white'}`}>{staff.name}</span>
-                          {isPrimDisi ? (
-                            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '3px 8px', whiteSpace: 'nowrap' }}>
-                              Prim sistemi dışında
-                            </span>
-                          ) : (
+                          <span className="text-xs font-medium flex-1 truncate text-white">{staff.name}</span>
                             <div className="flex gap-1 shrink-0">
                               {([
                                 { key: 'fotograf-satis', label: '📸', title: 'Fotoğraf/Satış' },
@@ -625,7 +612,6 @@ export function RotationTaskModal({
                                 </button>
                               ))}
                             </div>
-                          )}
                         </div>
                       );
                     })}

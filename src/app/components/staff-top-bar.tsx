@@ -21,7 +21,7 @@ export function StaffTopBar({
   showBackButton = false 
 }: StaffTopBarProps) {
   return (
-    <div className="sticky top-0 z-[80] backdrop-blur-xl bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] border-b border-white/10">
+    <div className="sticky top-0 z-[80] backdrop-blur-xl bg-black/80 border-b border-white/10">
       <div className="flex items-center justify-between px-6 py-4">
         {/* Left: User Info */}
         <div className="flex items-center gap-3">
@@ -39,7 +39,7 @@ export function StaffTopBar({
               </div>
             )}
             {/* Online Status */}
-            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#a8e6cf] rounded-full border-2 border-[#2a2a3a]"></div>
+            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#a8e6cf] rounded-full border-2 border-black"></div>
           </div>
 
           {/* User Name & Role */}
@@ -69,7 +69,7 @@ export function StaffTopBar({
           {/* Bell Icon */}
           <button className="relative flex items-center justify-center w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-all active:scale-95">
             <Bell className="w-5 h-5 text-white" />
-            <div className="absolute top-1 right-1 w-2 h-2 bg-[#ffb3ba] rounded-full border border-[#2a2a3a]"></div>
+            <div className="absolute top-1 right-1 w-2 h-2 bg-[#ffb3ba] rounded-full border border-black"></div>
           </button>
 
           {/* Hamburger Menu */}

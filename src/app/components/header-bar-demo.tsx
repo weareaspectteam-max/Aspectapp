@@ -41,7 +41,7 @@ function PillBottomNav({ activeTab, onTabChange }: {
   return (
     <div className="absolute bottom-0 left-0 right-0 z-20 flex justify-center pb-2">
       <div className="flex items-center rounded-full border border-white/15 px-2 py-1 gap-0.5"
-        style={{ background: 'rgba(10,5,30,0.92)', backdropFilter: 'blur(32px)', boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }}>
+        style={{ background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(32px)', boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }}>
         {tabs.map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.key;
@@ -54,12 +54,12 @@ function PillBottomNav({ activeTab, onTabChange }: {
                   style={{ background: tab.color + '22', border: `1px solid ${tab.color}45`, boxShadow: `0 0 10px ${tab.color}40` }}
                   transition={{ type: 'spring', damping: 22, stiffness: 280 }}>
                   <Icon className="w-3.5 h-3.5" style={{ color: tab.color }} strokeWidth={2.2} />
-                  {tab.badge && <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500 border border-[#0a051e]" />}
+                  {tab.badge && <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500 border border-black" />}
                 </motion.div>
               ) : (
                 <div className="relative w-7 h-7 flex items-center justify-center rounded-full">
                   <Icon className="w-3.5 h-3.5 text-gray-600" strokeWidth={1.8} />
-                  {tab.badge && <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500 border border-[#0a051e]" />}
+                  {tab.badge && <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500 border border-black" />}
                 </div>
               )}
             </button>
@@ -176,13 +176,13 @@ function PhoneContent({ activePage, activeTab, onTabChange, setActivePage, menuO
           {/* SAĞ */}
           <div className="flex items-center justify-end gap-1">
             <button className="relative w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-90"
-              style={{ background: 'rgba(10,5,30,0.92)', border: hasNotification ? '1px solid rgba(251,146,60,0.5)' : '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(32px)' }}>
+              style={{ background: 'rgba(0,0,0,0.92)', border: hasNotification ? '1px solid rgba(251,146,60,0.5)' : '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(32px)' }}>
               {hasNotification ? <BellRing className="w-3.5 h-3.5" style={{ color: '#fb923c' }} /> : <Bell className="w-3.5 h-3.5 text-gray-600" />}
-              {hasNotification && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-orange-400 border border-[#0a051e]" />}
+              {hasNotification && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-orange-400 border border-black" />}
             </button>
             <button onClick={() => setMenuOpen(true)}
               className="w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-90"
-              style={{ background: 'rgba(10,5,30,0.92)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(32px)' }}>
+              style={{ background: 'rgba(0,0,0,0.92)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(32px)' }}>
               <Menu className="w-3.5 h-3.5 text-white/55" strokeWidth={2} />
             </button>
           </div>
@@ -306,13 +306,13 @@ function MiniBar({
         <div className="w-5 h-5 rounded-full flex items-center justify-center border flex-shrink-0"
           style={isSubPage
             ? { background: 'rgba(251,146,60,0.15)', borderColor: 'rgba(251,146,60,0.35)' }
-            : { background: 'rgba(10,5,30,0.8)', borderColor: 'rgba(255,255,255,0.12)' }}>
+            : { background: 'rgba(0,0,0,0.8)', borderColor: 'rgba(255,255,255,0.12)' }}>
           {isSubPage
             ? <BellRing className="w-2.5 h-2.5" style={{ color: '#fb923c' }} />
             : <Bell className="w-2.5 h-2.5" style={{ color: '#4b5563' }} />}
         </div>
         <div className="w-5 h-5 rounded-full border border-white/10 flex items-center justify-center flex-shrink-0"
-          style={{ background: 'rgba(10,5,30,0.8)' }}>
+          style={{ background: 'rgba(0,0,0,0.8)' }}>
           <Menu className="w-2.5 h-2.5" style={{ color: 'rgba(255,255,255,0.3)' }} />
         </div>
       </div>
@@ -335,7 +335,7 @@ function VarA({ isSubPage, onBack, subLabel, subColor }: {
   return (
     <div className="flex items-center gap-1.5 rounded-full pl-1 pr-2 py-1 flex-shrink-0"
       style={{
-        background: 'rgba(10,5,30,0.9)',
+        background: 'rgba(0,0,0,0.9)',
         border: `1px solid ${c}40`,
         backdropFilter: 'blur(24px)',
         boxShadow: `0 0 12px ${c}25`,
@@ -402,7 +402,7 @@ function VarC({ isSubPage }: { isSubPage?: boolean }) {
   return (
     <div className="flex items-center gap-1.5 rounded-full pl-1 pr-2.5 py-1 flex-shrink-0"
       style={{
-        background: 'rgba(10,5,30,0.9)',
+        background: 'rgba(0,0,0,0.9)',
         border: '1px solid rgba(96,165,250,0.3)',
         backdropFilter: 'blur(24px)',
         boxShadow: '0 0 12px rgba(96,165,250,0.12)',
@@ -432,9 +432,9 @@ function VarD({ isSubPage }: { isSubPage?: boolean }) {
   return (
     <div className="flex items-center gap-1 flex-shrink-0">
       <div className="relative flex items-center justify-center w-7 h-7 rounded-full flex-shrink-0"
-        style={{ background: 'rgba(10,5,30,0.9)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(24px)' }}>
+        style={{ background: 'rgba(0,0,0,0.9)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(24px)' }}>
         <span className="text-[12px] leading-none">👨‍💼</span>
-        <div className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 border border-[#0a051e]" />
+        <div className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 border border-black" />
       </div>
       {isSubPage && (
         <motion.div initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }}
@@ -577,7 +577,7 @@ export default function HeaderBarDemo() {
 
   return (
     <div className="min-h-screen"
-      style={{ background: 'linear-gradient(145deg,#0f0825 0%,#1a0f3a 30%,#0a1628 60%,#0d2318 100%)' }}>
+      style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-20 left-10 w-64 h-64 rounded-full blur-3xl opacity-10"
           style={{ background: 'radial-gradient(circle,#7c3aed,transparent)' }} />

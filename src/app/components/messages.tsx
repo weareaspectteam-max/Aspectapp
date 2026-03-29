@@ -149,7 +149,7 @@ export function Messages({ currentUser, currentRole, onLogout, onNavigate }: Mes
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] relative pb-20">
+    <div className="min-h-screen relative pb-20" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       <div className="flex flex-col min-h-[calc(100vh-140px)] pt-6">{/* Changed pt-4 to pt-6 */}
       {!selectedChat ? (
         // Conversations List
@@ -308,7 +308,7 @@ export function Messages({ currentUser, currentRole, onLogout, onNavigate }: Mes
       {/* Team Modal */}
       {showTeamModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] rounded-2xl shadow-2xl border border-white/10 overflow-hidden max-h-[80vh] flex flex-col">
+          <div className="w-full max-w-md bg-black rounded-2xl shadow-2xl border border-white/10 overflow-hidden max-h-[80vh] flex flex-col">
             {/* Header */}
             <div className="p-5 border-b border-white/10 bg-gradient-to-br from-white/5 to-white/0">
               <div className="flex items-center justify-between mb-2">

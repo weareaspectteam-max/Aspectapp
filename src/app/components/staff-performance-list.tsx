@@ -103,7 +103,7 @@ export function StaffPerformanceList({ isOpen, onClose, onSendMessage, liveData 
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             className="fixed inset-x-4 top-12 bottom-24 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-lg z-50"
           >
-            <div className="h-full backdrop-blur-xl bg-gradient-to-b from-[#2a2a3a] to-[#3a3a4e] border border-white/20 rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+            <div className="h-full backdrop-blur-xl bg-black border border-white/20 rounded-3xl shadow-2xl flex flex-col overflow-hidden">
               {/* Header */}
               <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-white/5 to-transparent flex-shrink-0">
                 <div className="flex items-center gap-2">

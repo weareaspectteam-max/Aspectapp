@@ -51,10 +51,18 @@ export function IsletmeIstatistikleri({ userName, userRole, onNavigate }: Isletm
       tab:         'vardiya-istatistikleri',
       show:        isYonetici,
     },
+    {
+      emoji:       '📸',
+      title:       'Kare İstatistikleri',
+      description: 'Personel bazlı kare analizi, mekan ve tarih filtresi',
+      color:       '#60a5fa',
+      tab:         'kare-istatistik',
+      show:        isYonetici,
+    },
   ].filter(c => c.show);
 
   return (
-    <div className="min-h-screen pb-28 px-4 pt-4 space-y-4">
+    <div className="min-h-screen pb-28 px-4 pt-4 space-y-4" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
 
       {/* Başlık */}
       <div>

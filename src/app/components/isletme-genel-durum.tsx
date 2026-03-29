@@ -786,7 +786,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
 
   // ─── Render ─────────────────────────────
   return (
-    <div className="pb-24 min-h-screen bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c]">
+    <div className="pb-24 min-h-screen" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       {/* Header */}
       <div className="px-5 pt-6 pb-4">
         <div className="flex items-center justify-between">
@@ -1185,7 +1185,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                       </button>
 
                       {showUserPicker && (
-                        <div className="absolute top-full left-0 right-0 mt-2 backdrop-blur-2xl bg-[#0a051e]/95 border border-white/20 rounded-2xl shadow-2xl z-50 overflow-hidden">
+                        <div className="absolute top-full left-0 right-0 mt-2 backdrop-blur-2xl bg-black/90 border border-white/20 rounded-2xl shadow-2xl z-50 overflow-hidden">
                           <div className="p-3 border-b border-white/10">
                             <input
                               autoFocus

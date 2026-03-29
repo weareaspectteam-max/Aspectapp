@@ -450,7 +450,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
 
         {/* Header */}
         <div className="shrink-0 px-4 py-3 border-b border-white/10"
-          style={{ background: 'rgba(10,5,30,0.85)', backdropFilter: 'blur(20px)' }}>
+          style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(20px)' }}>
           <div className="flex items-center gap-3">
             <button onClick={goBack}
               className="w-9 h-9 rounded-xl bg-white/6 border border-white/10 flex items-center justify-center active:scale-90 transition-all">
@@ -528,7 +528,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
 
         {/* Input */}
         <div className="shrink-0 px-4 py-3 border-t border-white/8"
-          style={{ background: 'rgba(10,5,30,0.85)', backdropFilter: 'blur(20px)' }}>
+          style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(20px)' }}>
           {isReadonly ? (
             <div className="flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-white/5 border border-white/10">
               <Lock className="w-4 h-4 text-amber-400/70" />
@@ -672,7 +672,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
       {/* ── Yeni DM Modal ── */}
       {showNewDm && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end justify-center">
-          <div className="bg-[rgba(10,5,30,0.98)] border border-white/12 rounded-t-3xl w-full max-w-lg shadow-2xl max-h-[82vh] flex flex-col">
+          <div className="bg-[rgba(0,0,0,0.98)] border border-white/12 rounded-t-3xl w-full max-w-lg shadow-2xl max-h-[82vh] flex flex-col">
             <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between shrink-0">
               <div>
                 <h2 className="text-base font-bold text-white flex items-center gap-2">
@@ -715,7 +715,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
       {/* ── Yeni Kanal Modal (yonetici + ust-mudur) ── */}
       {showNewCh && canManageChannels && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end justify-center">
-          <div className="bg-[rgba(10,5,30,0.98)] border border-white/12 rounded-t-3xl w-full max-w-lg shadow-2xl">
+          <div className="bg-[rgba(0,0,0,0.98)] border border-white/12 rounded-t-3xl w-full max-w-lg shadow-2xl">
             {/* Modal Header */}
             <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
               <div>

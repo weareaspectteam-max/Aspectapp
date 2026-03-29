@@ -294,7 +294,7 @@ export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, acce
       {/* ── Header ── */}
       <div
         className="sticky top-0 z-30 px-4 py-3 flex items-center gap-3"
-        style={{ background: 'rgba(10,5,30,0.88)', backdropFilter: 'blur(24px)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}
+        style={{ background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(24px)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}
       >
         <div className="flex-1 min-w-0">
           <p className="text-[10px] text-white/40 uppercase tracking-widest font-semibold">Kişisel</p>

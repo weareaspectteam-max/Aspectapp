@@ -10,7 +10,7 @@ import { buildHeaders, getToken, appendGhostParam } from '../lib/api';
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
 const glass: React.CSSProperties = {
-  background: 'rgba(10,5,30,0.82)',
+  background: 'rgba(0,0,0,0.65)',
   border: '1px solid rgba(255,255,255,0.12)',
   backdropFilter: 'blur(20px)',
   WebkitBackdropFilter: 'blur(20px)',
@@ -120,7 +120,7 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
   /* ── Yetki yok ── */
   if (!yetkili) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c] flex items-center justify-center p-6">
+      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
         <div style={glass} className="p-8 text-center max-w-sm">
           <ShieldAlert className="w-12 h-12 text-red-400 mx-auto mb-4" />
           <p className="text-white font-bold text-lg mb-2">Erişim Reddedildi</p>
@@ -132,11 +132,11 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0a051e] via-[#120830] to-[#1a0a3c] pb-28">
+    <div className="min-h-screen pb-28" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
 
       {/* ── Header ── */}
       <div className="sticky top-0 z-20 px-4 pt-12 pb-3"
-        style={{ background: 'rgba(10,5,30,0.92)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+        style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <div className="flex items-center gap-3">
           <button onClick={() => onNavigate('isletme-istatistikleri')} className="p-2 rounded-xl bg-white/10 active:scale-95 transition-all">
             <ArrowLeft className="w-5 h-5 text-white" />

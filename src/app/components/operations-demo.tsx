@@ -73,7 +73,7 @@ export function OperationsDemo({ userName, userRole, onLogout, onNavigate }: Ope
   // Render based on current view
   if (currentView === 'project-select') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439]">
+      <div className="min-h-screen" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
         <div className="pb-20 pt-4">
           <ProjectSelector 
             onProjectSelect={handleProjectSelect}

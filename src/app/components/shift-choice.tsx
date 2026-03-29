@@ -21,7 +21,7 @@ interface ShiftChoiceProps {
 
 export function ShiftChoice({ userName, userRole, projectName, onStartShiftSetup, onStartSales, onViewStock, onEndShift, onLogout, onNavigate, onBack, onEkstraIsSelect, onOzelIsSelect }: ShiftChoiceProps) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] relative pb-20">
+    <div className="min-h-screen relative pb-20" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       {/* Sticky Top Bar - Only for staff */}
       {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <StaffTopBar

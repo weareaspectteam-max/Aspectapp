@@ -157,7 +157,7 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
   };
 
   return (
-    <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
+    <div className="pb-20 min-h-screen" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       {/* Header Banner */}
       <div className="px-6 mb-6">{/* Removed pt-6 for staff role */}
         <div className="bg-gradient-to-br from-[#ffd4a3] via-[#ffe5b4] to-[#9dd9ea] rounded-3xl p-6 text-[#2d3748] shadow-2xl border-2 border-white/20">

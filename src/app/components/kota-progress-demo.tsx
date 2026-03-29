@@ -355,7 +355,7 @@ export function KotaProgressDemo({ onBack }: KotaProgressDemoProps) {
   const kazanilanSayisi = KADEMELER.filter(k => ciro >= k.hedef).length;
 
   return (
-    <div className="min-h-screen pb-32">
+    <div className="min-h-screen pb-32" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       <div className="px-4 pt-4 space-y-4">
 
         {/* Header */}

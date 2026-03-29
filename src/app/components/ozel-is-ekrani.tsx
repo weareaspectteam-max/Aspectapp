@@ -365,7 +365,7 @@ export function OzelIsEkrani({ userName, userId, userRole, task, onBack, onLogou
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#1a0a3c] via-[#0a051e] to-[#0d0a2e] pb-8">
+    <div className="min-h-screen pb-8" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       <StaffTopBar
         userName={userName}
         userRole={userRole as any}

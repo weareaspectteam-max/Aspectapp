@@ -364,7 +364,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   // ─── Erişim yok ekranı ──────────────────────────────────────
   if (!hasAccess) {
     return (
-      <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen flex items-center justify-center">
+      <div className="pb-20 min-h-screen flex items-center justify-center" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
         <div className="px-6 max-w-md">
           <div className="backdrop-blur-xl bg-red-700/20 border-2 border-red-600/40 rounded-2xl p-8 text-center">
             <div className="w-20 h-20 rounded-full bg-red-500/20 border-2 border-red-500/40 flex items-center justify-center mx-auto mb-4">
@@ -387,7 +387,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   // ─── Yükleniyor ekranı ──────────────────────────────────────
   if (loading) {
     return (
-      <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen flex items-center justify-center">
+      <div className="pb-20 min-h-screen flex items-center justify-center" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
         <div className="text-center">
           <div className="w-14 h-14 border-4 border-[#9dd9ea]/30 border-t-[#9dd9ea] rounded-full animate-spin mx-auto mb-4" />
           <p className="text-gray-400 text-sm">Mekanlar yükleniyor...</p>
@@ -397,7 +397,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   }
 
   return (
-    <div className="pb-20 bg-gradient-to-b from-[#2a2a3a] via-[#3a3a4e] to-[#2f3439] min-h-screen">
+    <div className="pb-20 min-h-screen" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
 
       {/* Header */}
       <div className="px-6 pt-6 pb-4">
