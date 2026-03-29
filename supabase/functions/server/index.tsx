@@ -4220,12 +4220,14 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
       (tumSilindi || []).filter((s: any) => s.silindi).map((s: any) => s.orijinalKey).filter(Boolean)
     );
 
-    // Tüm rotasyon görevlerini + kıdem verilerini çek (paralel)
-    const [tumRotasyonlar, tumKidemler, kidemCarpanlari] = await Promise.all([
+    // Tüm rotasyon görevlerini + kıdem verilerini + hakediş hariç listesini çek (paralel)
+    const [tumRotasyonlar, tumKidemler, kidemCarpanlari, hakedisDahilRawPR] = await Promise.all([
       ckv.getByPrefix("rotation_task_").catch(() => []),
       ckv.getByPrefix("kidem_personel_").catch(() => []),
       ckv.get("kidem_carpanlari").catch(() => null),
+      ckv.get(HAKEDIS_DAHIL_KEY).catch(() => []),
     ]);
+    const hakedisDahilSet = new Set<string>(hakedisDahilRawPR || []);
     // Kıdem haritaları
     const kidemMap: Record<string, string> = {}; // userId → kidemSeviye
     for (const k of (tumKidemler || [])) {
@@ -4291,8 +4293,8 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
         if (!Array.isArray(task.personnel)) continue;
         for (const p of task.personnel) {
           if (p.id && p.name && !seenIds.has(p.id)) {
-            // ust-mudur ve yonetici prime dahil edilmez
-            if (["ust-mudur", "yonetici"].includes(p.role || "")) continue;
+            // Hakediş dahil listesinde olmayanlar atlanır
+            if (!hakedisDahilSet.has(p.id)) continue;
             seenIds.add(p.id);
             rotasyonPersonelList.push({ id: p.id, name: p.name, gorev: p.gorev });
           }
@@ -4387,9 +4389,9 @@ app.get("/make-server-4da0b637/primler/kendi-rapor", async (c) => {
     const ay = c.req.query("ay") || new Date().toISOString().slice(0, 7);
     const [yil, ayNo] = ay.split("-").map(Number);
 
-    // Paralel veri çekimi (kıdem dahil)
+    // Paralel veri çekimi (kıdem + hakediş hariç dahil)
     const ckv = companyKvFor(getCompanyId(user));
-    const [mekanlarList, tumKayitlar, tumOdemeler, tumRotasyonlar, tumSilindiKendi, tumKidemlerKendi, kidemCarpanlariKendi] = await Promise.all([
+    const [mekanlarList, tumKayitlar, tumOdemeler, tumRotasyonlar, tumSilindiKendi, tumKidemlerKendi, kidemCarpanlariKendi, hakedisDahilRawKR] = await Promise.all([
       getMekanlar().catch(() => []),
       ckv.getByPrefix("stok_gunluk_").catch(() => []),
       ckv.getByPrefix("prim_odendi_").catch(() => []),
@@ -4397,7 +4399,9 @@ app.get("/make-server-4da0b637/primler/kendi-rapor", async (c) => {
       ckv.getByPrefix("prim_silindi_").catch(() => []),
       ckv.getByPrefix("kidem_personel_").catch(() => []),
       ckv.get("kidem_carpanlari").catch(() => null),
+      ckv.get(HAKEDIS_DAHIL_KEY).catch(() => []),
     ]);
+    const hakedisDahilSet = new Set<string>(hakedisDahilRawKR || []);
     // Kıdem haritaları
     const kidemMapKendi: Record<string, string> = {};
     for (const k of (tumKidemlerKendi || [])) {
@@ -4439,8 +4443,8 @@ app.get("/make-server-4da0b637/primler/kendi-rapor", async (c) => {
         if (!Array.isArray(task.personnel)) continue;
         for (const p of task.personnel) {
           if (p.id && p.name && !seenIds2.has(p.id)) {
-            // ust-mudur ve yonetici prime dahil edilmez
-            if (["ust-mudur", "yonetici"].includes(p.role || "")) continue;
+            // Hakediş dahil listesinde olmayanlar atlanır
+            if (!hakedisDahilSet.has(p.id)) continue;
             seenIds2.add(p.id);
             rotasyonPersonelList2.push({ id: p.id, name: p.name, gorev: p.gorev });
           }
@@ -4609,11 +4613,13 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
 
     // Rotasyon görevinden personel listesi ve çağıran kişinin görevi + kıdem
     const callerName = user.user_metadata?.full_name || user.email || "";
-    const [tumRotasyonlarPrim, tumKidemlerPB, kidemCarpanlariPB] = await Promise.all([
+    const [tumRotasyonlarPrim, tumKidemlerPB, kidemCarpanlariPB, hakedisDahilRawPB] = await Promise.all([
       ckv.getByPrefix("rotation_task_").catch(() => []),
       ckv.getByPrefix("kidem_personel_").catch(() => []),
       ckv.get("kidem_carpanlari").catch(() => null),
+      ckv.get(HAKEDIS_DAHIL_KEY).catch(() => []),
     ]);
+    const hakedisDahilSetPB = new Set<string>(hakedisDahilRawPB || []);
     const kidemMapPB: Record<string, string> = {};
     for (const k of (tumKidemlerPB || [])) { if (k?.userId && k?.kidemSeviye) kidemMapPB[k.userId] = k.kidemSeviye; }
     const carpanlarPB: Record<string, number> = kidemCarpanlariPB || { kidemsiz: 1.0, kidemli: 1.15, kidemliPlus: 1.30 };
@@ -4629,7 +4635,7 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
     for (const task of todayTasks) {
       for (const p of task.personnel) {
         if (p.id && p.name && !seenIds3.has(p.id)) {
-          if (["ust-mudur", "yonetici"].includes(p.role || "")) continue;
+          if (!hakedisDahilSetPB.has(p.id)) continue;
           seenIds3.add(p.id);
           rotasyonPersonelList3.push({ id: p.id, name: p.name, gorev: p.gorev });
         }
@@ -4883,6 +4889,54 @@ app.post("/make-server-4da0b637/primler/sil", async (c) => {
   } catch (err) {
     console.log("Prim sil error:", err);
     return c.json({ error: `Sunucu hatasi: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// HAKEDİŞ DAHİL: Kişi bazlı hakediş dahil listesi
+// Varsayılan: dahil değil — listeye eklenenler hakediş alır
+// GET  /hakedis/dahil — dahil userId listesini getir
+// POST /hakedis/dahil — listeyi güncelle { userIds: string[] }
+// ══════════════════════════════════════════
+const HAKEDIS_DAHIL_KEY = "hakedis_dahil_kisiler";
+
+app.get("/make-server-4da0b637/hakedis/dahil", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur"].includes(callerRole)) {
+      return c.json({ error: "Bu endpoint yalnızca yönetici ve üst-müdür rolüne açıktır." }, 403);
+    }
+    const ckv = companyKvFor(getCompanyId(user));
+    const stored: string[] = await ckv.get(HAKEDIS_DAHIL_KEY) || [];
+    return c.json({ userIds: stored });
+  } catch (err) {
+    console.log("Hakedis dahil GET error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+app.post("/make-server-4da0b637/hakedis/dahil", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole !== "yonetici") {
+      return c.json({ error: "Hakediş dahil listesini sadece yönetici güncelleyebilir." }, 403);
+    }
+    const body = await c.req.json();
+    const { userIds } = body;
+    if (!Array.isArray(userIds)) {
+      return c.json({ error: "userIds dizisi zorunludur." }, 400);
+    }
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.set(HAKEDIS_DAHIL_KEY, userIds);
+    console.log(`[Hakediş Dahil] ${userIds.length} kişi dahil — by ${user.email}`);
+    return c.json({ success: true, userIds });
+  } catch (err) {
+    console.log("Hakedis dahil POST error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
 
@@ -9516,14 +9570,16 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
     const effCIdVardiya = (isSAVardiya && reqCIdVardiya) ? reqCIdVardiya : getCompanyId(user);
 
     const ckv = companyKvFor(effCIdVardiya);
-    const [tumKayitlarRaw, mekanlarList, costAlbumsRaw, exRatesRaw, maaslarRaw, tumRotasyonlarVR] = await Promise.all([
+    const [tumKayitlarRaw, mekanlarList, costAlbumsRaw, exRatesRaw, maaslarRaw, tumRotasyonlarVR, hakedisDahilRawVR] = await Promise.all([
       ckv.getByPrefix("stok_gunluk_"),
       getMekanlarFor(effCIdVardiya),
       ckv.get("cost_albums"),
       ckv.get("cost_exchange_rates"),
       ckv.getByPrefix("cost_salary_"),
       ckv.getByPrefix("rotation_task_").catch(() => []),
+      ckv.get(HAKEDIS_DAHIL_KEY).catch(() => []),
     ]);
+    const hakedisDahilSetVR = new Set<string>(hakedisDahilRawVR || []);
 
     const mekanMap: Record<string, any> = {};
     for (const m of (mekanlarList || [])) mekanMap[m.id] = m;
@@ -9778,7 +9834,7 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
             t.date === kayit.tarih && ["sent","revised"].includes(t.status || "") && t.location === mekanAdiPB && Array.isArray(t.personnel)
           )) {
             for (const p of task.personnel) {
-              if (p.id && p.name && !seenPB.has(p.id) && !["ust-mudur","yonetici"].includes(p.role || "")) {
+              if (p.id && p.name && !seenPB.has(p.id) && hakedisDahilSetVR.has(p.id)) {
                 seenPB.add(p.id);
                 rotPers.push({ id: p.id, gorev: p.gorev });
               }
@@ -9916,7 +9972,7 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
     const effCId = (isSA && reqCId) ? reqCId : getCompanyId(user);
 
     const ckv = companyKvFor(effCId);
-    const [tumKayitlar, mekanlarList, costAlbumsRaw, exRatesRaw, maaslarRaw, tumRotasyonlar, kidemPersonelRaw, kidemCarpanlarRaw] = await Promise.all([
+    const [tumKayitlar, mekanlarList, costAlbumsRaw, exRatesRaw, maaslarRaw, tumRotasyonlar, kidemPersonelRaw, kidemCarpanlarRaw, hakedisDahilRaw] = await Promise.all([
       ckv.getByPrefix("stok_gunluk_"),
       getMekanlarFor(effCId),
       ckv.get("cost_albums"),
@@ -9925,7 +9981,11 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
       ckv.getByPrefix("rotation_task_").catch(() => []),
       ckv.getByPrefix("kidem_personel_").catch(() => []),
       ckv.get("kidem_carpanlari").catch(() => null),
+      ckv.get(HAKEDIS_DAHIL_KEY).catch(() => []),
     ]);
+
+    // Hakediş dahil kişiler (kişi bazlı, rol bağımsız — listede olmayanlar hakediş almaz)
+    const hakedisDahilSet = new Set<string>(hakedisDahilRaw || []);
 
     const mekanMap: Record<string, any> = {};
     for (const m of (mekanlarList || [])) mekanMap[m.id] = m;
@@ -10160,7 +10220,7 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
         for (const task of rotasyonlar) {
           if (task.date !== kayit.tarih || !["sent", "revised"].includes(task.status) || task.location !== mekanAdi) continue;
           for (const p of (task.personnel || [])) {
-            if (p.id && p.name && !seenIds.has(p.id) && !["ust-mudur", "yonetici"].includes(p.role || "")) {
+            if (p.id && p.name && !seenIds.has(p.id) && hakedisDahilSet.has(p.id)) {
               seenIds.add(p.id);
               rotPersoneller.push({ id: p.id, gorev: p.gorev });
             }
@@ -10230,7 +10290,7 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
         for (const task of (tumRotasyonlar || [])) {
           if (task.date !== kayit.tarih || !["sent", "revised"].includes(task.status) || task.location !== mekanAdi) continue;
           for (const p of (task.personnel || [])) {
-            if (p.id && p.name && !seenIds.has(p.id) && !["ust-mudur", "yonetici"].includes(p.role || "")) {
+            if (p.id && p.name && !seenIds.has(p.id) && hakedisDahilSet.has(p.id)) {
               seenIds.add(p.id);
               rotPersoneller.push({ id: p.id, name: p.name, gorev: p.gorev });
             }

@@ -92,6 +92,13 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
   const [kidemMap, setKidemMap] = useState<Record<string, KidemObj>>({});
   const [kidemSaving, setKidemSaving] = useState<Record<string, boolean>>({});
 
+  // ── Hakediş Dahil ─────────────────────────────────────────────
+  const HAKEDIS_ELIGIBLE_ROLES: UserRole[] = ['ust-mudur', 'mudur', 'operasyon', 'personel', 'idari'];
+  const canViewHakedis = ['yonetici', 'ust-mudur'].includes(currentUserRole);
+  const canEditHakedis = currentUserRole === 'yonetici';
+  const [hakedisDahilSet, setHakedisDahilSet] = useState<Set<string>>(new Set());
+  const [hakedisSaving, setHakedisSaving] = useState<Record<string, boolean>>({});
+
   const getCurrentUserEmail = async (): Promise<string> => {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.user?.email || '';
@@ -130,6 +137,52 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
         .catch(e => console.error('kidem yükleme hatası:', e));
     }
   }, [canViewKidem, accessToken]);
+
+  /* ── Hakediş dahil: yükle (sayfa açılışında) ── */
+  useEffect(() => {
+    if (canViewHakedis) {
+      fetch(`${SERVER_URL}/hakedis/dahil`, { headers: buildHeaders(accessToken) })
+        .then(r => r.json())
+        .then(data => {
+          if (data.userIds) setHakedisDahilSet(new Set<string>(data.userIds));
+        })
+        .catch(e => console.error('hakediş dahil yükleme hatası:', e));
+    }
+  }, [canViewHakedis, accessToken]);
+
+  /* ── Hakediş dahil toggle ── */
+  const handleToggleHakedis = async (userId: string) => {
+    if (!canEditHakedis) return;
+    setHakedisSaving(prev => ({ ...prev, [userId]: true }));
+    try {
+      // Güncel state'i oku (stale closure'dan kaçın)
+      let currentIds: string[] = [];
+      setHakedisDahilSet(prev => { currentIds = Array.from(prev); return prev; });
+
+      const isCurrentlyDahil = currentIds.includes(userId);
+      const newIds = isCurrentlyDahil
+        ? currentIds.filter(id => id !== userId)
+        : [...currentIds, userId];
+
+      const res = await fetch(`${SERVER_URL}/hakedis/dahil`, {
+        method: 'POST',
+        headers: buildHeaders(accessToken),
+        body: JSON.stringify({ userIds: newIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Hakediş güncellenemedi');
+      setHakedisDahilSet(new Set(newIds));
+      const userName = users.find(u => u.id === userId)?.full_name || '';
+      const durumText = !isCurrentlyDahil ? 'DAHİL' : 'HARİÇ';
+      setSuccessMessage(`💰 ${userName} → Hakediş ${durumText}`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (e: any) {
+      setSuccessMessage(`❌ ${e.message}`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } finally {
+      setHakedisSaving(prev => ({ ...prev, [userId]: false }));
+    }
+  };
 
   /* ── Kıdem ata ── */
   const handleAssignKidem = async (user: UserData, seviye: KidemSeviye) => {
@@ -472,6 +525,17 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
                                           🎖️ Kıdem yok
                                         </span>
                                       )}
+                                      {/* Hakediş dahil badge */}
+                                      {canViewHakedis && HAKEDIS_ELIGIBLE_ROLES.includes(user.role) && (
+                                        <span style={{
+                                          fontSize: 8, padding: '1px 5px', borderRadius: 5, fontWeight: 800,
+                                          background: hakedisDahilSet.has(user.id) ? 'rgba(52,211,153,0.12)' : 'rgba(239,68,68,0.10)',
+                                          border: `1px solid ${hakedisDahilSet.has(user.id) ? 'rgba(52,211,153,0.30)' : 'rgba(239,68,68,0.25)'}`,
+                                          color: hakedisDahilSet.has(user.id) ? '#34d399' : '#ef4444',
+                                        }}>
+                                          {hakedisDahilSet.has(user.id) ? '💰 Hakediş Dahil' : '⛔ Hakediş Hariç'}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                   {currentUserRole !== 'operasyon' && (
@@ -588,6 +652,59 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
                                             {kidemMap[user.id]?.atanmaTarihi && (
                                               <p style={{ fontSize: 8, color: 'rgba(255,255,255,0.18)', marginTop: 5, textAlign: 'right' }}>
                                                 🕐 {new Date(kidemMap[user.id].atanmaTarihi).toLocaleDateString('tr-TR')} — {kidemMap[user.id].atayanKisi}
+                                              </p>
+                                            )}
+                                          </div>
+                                        )}
+
+                                        {/* ── Hakediş Dahil/Hariç Toggle ── */}
+                                        {canViewHakedis && HAKEDIS_ELIGIBLE_ROLES.includes(user.role) && (
+                                          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(52,211,153,0.12)' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                                              <Briefcase style={{ width: 11, height: 11, color: '#34d399' }} />
+                                              <p style={{ fontSize: 9, color: 'rgba(52,211,153,0.6)', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 700 }}>
+                                                Hakediş Durumu
+                                              </p>
+                                            </div>
+                                            <motion.button
+                                              whileTap={{ scale: canEditHakedis ? 0.95 : 1 }}
+                                              onClick={() => canEditHakedis && handleToggleHakedis(user.id)}
+                                              disabled={!canEditHakedis || hakedisSaving[user.id]}
+                                              style={{
+                                                width: '100%', padding: '10px 14px', borderRadius: 10,
+                                                cursor: canEditHakedis ? 'pointer' : 'not-allowed',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                                background: hakedisDahilSet.has(user.id)
+                                                  ? 'rgba(52,211,153,0.12)' : 'rgba(239,68,68,0.08)',
+                                                border: `1.5px solid ${hakedisDahilSet.has(user.id)
+                                                  ? 'rgba(52,211,153,0.30)' : 'rgba(239,68,68,0.20)'}`,
+                                                opacity: hakedisSaving[user.id] ? 0.6 : 1,
+                                              }}>
+                                              <span style={{
+                                                fontSize: 12, fontWeight: 800,
+                                                color: hakedisDahilSet.has(user.id) ? '#34d399' : '#ef4444',
+                                              }}>
+                                                {hakedisDahilSet.has(user.id) ? '💰 Hakediş\'e Dahil' : '⛔ Hakediş\'e Dahil Değil'}
+                                              </span>
+                                              <div style={{
+                                                width: 40, height: 22, borderRadius: 11, padding: 2,
+                                                background: hakedisDahilSet.has(user.id)
+                                                  ? 'rgba(52,211,153,0.5)' : 'rgba(255,255,255,0.15)',
+                                                transition: 'background 0.2s',
+                                                display: 'flex', alignItems: 'center',
+                                                justifyContent: hakedisDahilSet.has(user.id) ? 'flex-end' : 'flex-start',
+                                              }}>
+                                                <div style={{
+                                                  width: 18, height: 18, borderRadius: 9,
+                                                  background: hakedisDahilSet.has(user.id) ? '#34d399' : 'rgba(255,255,255,0.3)',
+                                                  boxShadow: hakedisDahilSet.has(user.id) ? '0 0 6px rgba(52,211,153,0.4)' : 'none',
+                                                  transition: 'all 0.2s',
+                                                }} />
+                                              </div>
+                                            </motion.button>
+                                            {!canEditHakedis && (
+                                              <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', marginTop: 5, textAlign: 'center' }}>
+                                                🔒 Hakediş ayarı yalnızca yönetici yapabilir
                                               </p>
                                             )}
                                           </div>
