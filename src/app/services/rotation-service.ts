@@ -37,7 +37,7 @@ export interface Personnel {
   name: string;
   avatar: string;
   role: 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari';
-  gorev?: 'fotograf-satis' | 'baski' | 'album'; // Takım görev etiketi (2+ kişide)
+  gorev?: 'fotograf-satis' | 'baski' | 'album' | 'gozlemci'; // Takım görev etiketi (2+ kişide)
 }
 
 export type UserRole = 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen';

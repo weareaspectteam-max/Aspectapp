@@ -35,6 +35,7 @@ interface MekanOzet {
   id: string; name: string; emoji: string; color: string;
   vardiyaDurumu: 'acik' | 'kapandi' | 'yok' | 'onceki_kapanis';
   albumSayilari: Record<string, number>;
+  ribonlar?: Record<string, number>;
   stokRibonAdet: number;
   makinaKalan: number;
   toplamRibonKapasite: number;
@@ -46,6 +47,7 @@ interface DepoOzet {
   albumSayilari: Record<string, number>;
   ribonTakim: number;
   ribonAdet: number;
+  ribonlar?: Record<string, number>;
 }
 interface GenelDurum {
   tarih: string;
@@ -406,10 +408,12 @@ function DepoAlbumCard({
 
 // ─── Stok Güncelle Modalı (sadece yönetici) ───────────────────────────────────
 function StokGuncelleModal({
-  mekanId, mekanAdi, mekanEmoji, mevcutAlbumSayilari, mevcutRibonTakim, onClose, onSuccess,
+  mekanId, mekanAdi, mekanEmoji, mevcutAlbumSayilari, mevcutRibonTakim, mevcutRibonlar, kagitTipleri, onClose, onSuccess,
 }: {
   mekanId: string; mekanAdi: string; mekanEmoji: string;
   mevcutAlbumSayilari: Record<string, number>; mevcutRibonTakim: number;
+  mevcutRibonlar?: Record<string, number>;
+  kagitTipleri: Array<{ id: string; name: string }>;
   onClose: () => void; onSuccess: () => void;
 }) {
   const [albumDegerleri, setAlbumDegerleri] = useState<Record<string, string>>(() => {
@@ -417,9 +421,22 @@ function StokGuncelleModal({
     SADECE_ALBUMLER.forEach(a => { init[a] = String(mevcutAlbumSayilari[a] || 0); });
     return init;
   });
-  const [ribonTakim, setRibonTakim] = useState(String(mevcutRibonTakim || 0));
+  // Kağıt tipine göre ribon değerleri
+  const [ribonlarDegerleri, setRibonlarDegerleri] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    if (mevcutRibonlar && Object.keys(mevcutRibonlar).length > 0) {
+      for (const [k, v] of Object.entries(mevcutRibonlar)) init[k] = String(v || 0);
+    } else if (kagitTipleri.length === 1) {
+      init[kagitTipleri[0].id] = String(mevcutRibonTakim || 0);
+    } else if (kagitTipleri.length === 0) {
+      init['_bilinmeyen'] = String(mevcutRibonTakim || 0);
+    }
+    return init;
+  });
   const [yukleniyor, setYukleniyor] = useState(false);
   const [hata, setHata] = useState('');
+
+  const aktifKagitTipleri = kagitTipleri.length > 0 ? kagitTipleri : [{ id: '_bilinmeyen', name: 'Ribon' }];
 
   const kaydet = async () => {
     setYukleniyor(true); setHata('');
@@ -427,9 +444,15 @@ function StokGuncelleModal({
       const headers = await authHeaders();
       const albumSayilari: Record<string, number> = {};
       SADECE_ALBUMLER.forEach(a => { albumSayilari[a] = Math.max(0, parseInt(albumDegerleri[a] || '0') || 0); });
+      // ribonlar objesi oluştur
+      const ribonlar: Record<string, number> = {};
+      for (const [k, v] of Object.entries(ribonlarDegerleri)) {
+        ribonlar[k] = Math.max(0, parseInt(v || '0') || 0);
+      }
+      const ribonToplam = Object.values(ribonlar).reduce((s, v) => s + v, 0);
       const res = await fetch(`${API_BASE}/stok/mekan/guncelle`, {
         method: 'POST', headers,
-        body: JSON.stringify({ mekanId, albumSayilari, ribonTakim: Math.max(0, parseInt(ribonTakim || '0') || 0) }),
+        body: JSON.stringify({ mekanId, albumSayilari, ribonTakim: ribonToplam, ribonlar }),
       });
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
@@ -472,18 +495,17 @@ function StokGuncelleModal({
             ))}
           </div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mt-3 mb-1">Ribon (takım)</p>
-          <div className="rounded-xl border border-pink-500/25 bg-pink-500/6 px-3 py-2.5 flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-pink-400 flex-shrink-0" />
-            <span className="text-xs text-pink-300/70 flex-1">Ribon Takımı</span>
-            <input type="number" min={0} value={ribonTakim}
-              onChange={e => setRibonTakim(e.target.value)}
-              className="w-16 text-right text-sm font-bold text-pink-300 bg-transparent outline-none" />
-          </div>
-          {parseInt(ribonTakim || '0') > 0 && (
-            <p className="text-[10px] text-pink-400/50 text-right">
-              = {(parseInt(ribonTakim) * RIBON_PER_TAKIM).toLocaleString('tr-TR')} baskı kapasitesi
-            </p>
-          )}
+          {aktifKagitTipleri.map(kt => (
+            <div key={kt.id}>
+              <div className="rounded-xl border border-pink-500/25 bg-pink-500/6 px-3 py-2.5 flex items-center gap-2 mb-1">
+                <div className="w-2 h-2 rounded-full bg-pink-400 flex-shrink-0" />
+                <span className="text-xs text-pink-300/70 flex-1">{kt.name} Ribon</span>
+                <input type="number" min={0} value={ribonlarDegerleri[kt.id] || ''}
+                  onChange={e => setRibonlarDegerleri(v => ({ ...v, [kt.id]: e.target.value }))}
+                  className="w-16 text-right text-sm font-bold text-pink-300 bg-transparent outline-none" />
+              </div>
+            </div>
+          ))}
           {hata && <div className="rounded-xl bg-red-500/12 border border-red-500/20 px-4 py-3 text-xs text-red-300">{hata}</div>}
         </div>
         {/* Footer */}
@@ -867,17 +889,19 @@ function DepoModal({
 
 // ─── Aktarım Modalı ──────────────────────────────────────────────────────────
 function AktarimModal({
-  onClose, onSuccess, mekanlar, depo,
+  onClose, onSuccess, mekanlar, depo, kagitTipleri,
 }: {
   onClose: () => void;
   onSuccess: () => void;
   mekanlar: MekanOzet[];
   depo: DepoOzet;
+  kagitTipleri: Array<{ id: string; name: string }>;
 }) {
   const [sekme, setSekme] = useState<'aktarim' | 'gecmis'>('aktarim');
   const [kaynakId, setKaynakId] = useState('depo');
   const [hedefId, setHedefId] = useState(mekanlar[0]?.id || '');
   const [alan, setAlan] = useState('album3');
+  const [secilenKagitTipiId, setSecilenKagitTipiId] = useState(kagitTipleri[0]?.id || '');
   const [miktar, setMiktar] = useState('');
   const [not, setNot] = useState('');
   const [yukleniyor, setYukleniyor] = useState(false);
@@ -894,17 +918,23 @@ function AktarimModal({
   ];
 
   // Kaynak mekanın seçili ürün için mevcut stoğunu hesapla (frontend'deki data'dan)
-  const getKaynakStok = (kId: string, a: string): { adet: number; veriVar: boolean } => {
+  const getKaynakStok = (kId: string, a: string, kagitId?: string): { adet: number; veriVar: boolean } => {
     if (kId === 'depo') {
+      if (a === 'ribon' && kagitId && depo.ribonlar?.[kagitId] !== undefined) {
+        return { adet: depo.ribonlar[kagitId] || 0, veriVar: true };
+      }
       if (a === 'ribon') return { adet: depo.ribonTakim, veriVar: true };
       return { adet: depo.albumSayilari[a] || 0, veriVar: true };
     }
     const mekan = mekanlar.find(m => m.id === kId);
     if (!mekan) return { adet: 0, veriVar: false };
+    if (a === 'ribon' && kagitId && mekan.ribonlar?.[kagitId] !== undefined) {
+      return { adet: mekan.ribonlar[kagitId] || 0, veriVar: mekan.veriVar };
+    }
     return { adet: mekan.albumSayilari[a] || 0, veriVar: mekan.veriVar };
   };
 
-  const kaynakStokBilgi = getKaynakStok(kaynakId, alan);
+  const kaynakStokBilgi = getKaynakStok(kaynakId, alan, alan === 'ribon' ? secilenKagitTipiId : undefined);
   const miktarNum = Number(miktar) || 0;
   const yetersiz = miktarNum > 0 && miktarNum > kaynakStokBilgi.adet;
   const stokSifir = kaynakStokBilgi.adet === 0;
@@ -941,7 +971,7 @@ function AktarimModal({
       const headers = await authHeaders();
       const res = await fetch(`${API_BASE}/stok/transfer`, {
         method: 'POST', headers,
-        body: JSON.stringify({ kaynakId, hedefId, alan, miktar: Number(miktar), not }),
+        body: JSON.stringify({ kaynakId, hedefId, alan, miktar: Number(miktar), not, kagitTipiId: alan === 'ribon' ? secilenKagitTipiId : undefined }),
       });
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
@@ -1117,6 +1147,25 @@ function AktarimModal({
                   })}
                 </div>
               </div>
+
+              {/* Ribon seçildiğinde kağıt tipi seçimi */}
+              {alan === 'ribon' && kagitTipleri.length > 0 && (
+                <div>
+                  <label className="text-[11px] font-semibold text-pink-300/60 uppercase tracking-wider block mb-2">Ribon Tipi</label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {kagitTipleri.map(kt => (
+                      <button key={kt.id} onClick={() => { setSecilenKagitTipiId(kt.id); setMiktar(''); }}
+                        className={`py-2 px-2 rounded-xl text-xs font-semibold border transition-all ${
+                          secilenKagitTipiId === kt.id
+                            ? 'border-pink-400/60 bg-pink-500/20 text-pink-200'
+                            : 'border-white/8 bg-white/4 text-white/50 active:bg-white/8'
+                        }`}>
+                        🎞️ {kt.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Kaynak stok durumu göstergesi */}
               <div className={`rounded-xl px-4 py-3 border flex items-center gap-3 ${
@@ -1351,10 +1400,11 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
   const [transferYukleniyor, setTransferYukleniyor] = useState(false);
 
   // Yönetici stok güncelle / sıfırla modalları
-  type GuncelleHedef = { mekanId: string; mekanAdi: string; mekanEmoji: string; albumSayilari: Record<string,number>; ribonTakim: number } | null;
+  type GuncelleHedef = { mekanId: string; mekanAdi: string; mekanEmoji: string; albumSayilari: Record<string,number>; ribonTakim: number; ribonlar?: Record<string, number> } | null;
   type SifirlaHedef = { mekanId: string; mekanAdi: string; mekanEmoji: string } | null;
   const [guncelleHedef, setGuncelleHedef] = useState<GuncelleHedef>(null);
   const [sifirlaHedef, setSifirlaHedef] = useState<SifirlaHedef>(null);
+  const [kagitTipleri, setKagitTipleri] = useState<Array<{ id: string; name: string }>>([]);
 
   const canManageStok = ['yonetici', 'ust-mudur', 'mudur'].includes(userRole);
   const isYonetici = canManageStok;
@@ -1367,12 +1417,21 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
     setHata(false);
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${API_BASE}/stok/genel-durum${ghostParams()}`, { headers });
+      const [res, maliyetRes] = await Promise.all([
+        fetch(`${API_BASE}/stok/genel-durum${ghostParams()}`, { headers }),
+        fetch(`${API_BASE}/maliyetler${ghostParams()}`, { headers }).catch(() => null),
+      ]);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (!json.mekanlar) throw new Error('Geçersiz yanıt');
       setVeri(json as GenelDurum);
       setSonGuncelleme(new Date());
+      // Kağıt tiplerini yükle (ribon tip bazlı stok için)
+      if (maliyetRes?.ok) {
+        const maliyetJson = await maliyetRes.json();
+        const papers = (maliyetJson.papers || []).filter((p: any) => p.id && p.name && p.pcsPerBox);
+        setKagitTipleri(papers.map((p: any) => ({ id: p.id, name: p.name })));
+      }
     } catch (err) {
       console.error('[StokDagilimi] Veri yüklenemedi:', err);
       setHata(true);
@@ -1502,6 +1561,7 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
                   onGuncelle={mekan => setGuncelleHedef({
                     mekanId: mekan.id, mekanAdi: mekan.name, mekanEmoji: mekan.emoji,
                     albumSayilari: mekan.albumSayilari, ribonTakim: mekan.albumSayilari['ribon'] || 0,
+                    ribonlar: mekan.ribonlar,
                   })}
                   onSifirla={mekan => setSifirlaHedef({ mekanId: mekan.id, mekanAdi: mekan.name, mekanEmoji: mekan.emoji })}
                 />
@@ -1512,6 +1572,7 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
                 onGuncelle={() => setGuncelleHedef({
                   mekanId: 'depo', mekanAdi: 'Depo', mekanEmoji: '🏪',
                   albumSayilari: veri.depo.albumSayilari, ribonTakim: veri.depo.ribonTakim,
+                  ribonlar: veri.depo.ribonlar,
                 })}
                 onSifirla={() => setSifirlaHedef({ mekanId: 'depo', mekanAdi: 'Depo', mekanEmoji: '🏪' })}
               />
@@ -1525,6 +1586,7 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
         <AktarimModal
           mekanlar={veri.mekanlar}
           depo={veri.depo}
+          kagitTipleri={kagitTipleri}
           onClose={() => setAktarimModalAcik(false)}
           onSuccess={() => { yukle(); transferleriYukle(); }}
         />
@@ -1547,6 +1609,8 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
           mekanEmoji={guncelleHedef.mekanEmoji}
           mevcutAlbumSayilari={guncelleHedef.albumSayilari}
           mevcutRibonTakim={guncelleHedef.ribonTakim}
+          mevcutRibonlar={guncelleHedef.ribonlar}
+          kagitTipleri={kagitTipleri}
           onClose={() => setGuncelleHedef(null)}
           onSuccess={() => { setGuncelleHedef(null); yukle(); }}
         />

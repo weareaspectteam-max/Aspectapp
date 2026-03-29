@@ -273,6 +273,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
     if (gorev === 'fotograf-satis') return '📸';
     if (gorev === 'baski') return '🖨️';
     if (gorev === 'album') return '📒';
+    if (gorev === 'gozlemci') return '👁️';
     return '';
   };
 

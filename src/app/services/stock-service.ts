@@ -18,13 +18,22 @@ export interface StokSayim {
   album13: number;
   album15: number;
   paspartu: number;
-  ribon: number;
+  ribon: number;                          // Toplam (geriye uyumluluk + sum of ribonlar)
+  ribonlar?: Record<string, number>;      // kagitTipiId → takım sayısı
 }
 
 export const bosStok = (): StokSayim => ({
   album3: 0, album5: 0, album7: 0, album9: 0,
-  album11: 0, album13: 0, album15: 0, paspartu: 0, ribon: 0,
+  album11: 0, album13: 0, album15: 0, paspartu: 0, ribon: 0, ribonlar: {},
 });
+
+/** ribonlar varsa ribon toplamını yeniden hesaplar */
+export const normalizeRibon = (sayim: StokSayim): StokSayim => {
+  if (sayim.ribonlar && Object.keys(sayim.ribonlar).length > 0) {
+    sayim.ribon = Object.values(sayim.ribonlar).reduce((s, v) => s + (v || 0), 0);
+  }
+  return sayim;
+};
 
 export interface VardiyaSatis {
   id: string;

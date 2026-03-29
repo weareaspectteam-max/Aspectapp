@@ -36,6 +36,18 @@ const ALAN_EMOJI: Record<string, string> = {
   paspartu: '🖼️', ribon: '🎀',
 };
 
+/** ribonlar.{kagitTipiId} key'leri için dinamik etiket */
+const getAlanAdi = (alan: string): string => {
+  if (ALAN_ADI[alan]) return ALAN_ADI[alan];
+  if (alan.startsWith('ribonlar.')) return `${alan.replace('ribonlar.', '')} Ribon`;
+  return alan;
+};
+const getAlanEmoji = (alan: string): string => {
+  if (ALAN_EMOJI[alan]) return ALAN_EMOJI[alan];
+  if (alan.startsWith('ribonlar.')) return '🎞️';
+  return '📦';
+};
+
 function formatDate(d: Date) {
   return d.toISOString().split('T')[0];
 }
@@ -469,7 +481,7 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
                                 key={alan}
                                 className="text-[10px] px-2 py-0.5 rounded-lg bg-white/10 text-gray-300 font-mono"
                               >
-                                {ALAN_EMOJI[alan]}{ALAN_ADI[alan] || alan}: {fark > 0 ? '+' : ''}{fark}
+                                {getAlanEmoji(alan)}{getAlanAdi(alan)}: {fark > 0 ? '+' : ''}{fark}
                               </span>
                             ))}
                           </div>

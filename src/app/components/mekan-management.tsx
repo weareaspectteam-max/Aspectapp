@@ -34,11 +34,12 @@ export interface Location {
 
 export interface KotaKademe {
   hedef: number;
-  primTek: number;      // Solo prim (1 kişi)
-  primFotograf: number; // Takım - Fotoğrafçı/Satışçı
-  primBaski: number;    // Takım - Baskıcı
-  primAlbum: number;    // Takım - Albümcü
-  primCoklu?: number;   // Eski format uyumluluğu
+  primTek: number;        // Solo prim (1 kişi)
+  primFotograf: number;   // Takım - Fotoğrafçı/Satışçı
+  primBaski: number;      // Takım - Baskıcı
+  primAlbum: number;      // Takım - Albümcü
+  primGozlemci: number;   // Takım - Gözlemci
+  primCoklu?: number;     // Eski format uyumluluğu
 }
 
 type UserRole =
@@ -707,7 +708,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                           <div className="ml-0 mt-1 mb-1">
                             <span className="text-[9px] text-white/30 font-bold uppercase tracking-wide">Takım Primleri</span>
                           </div>
-                          <div className="grid grid-cols-3 gap-1.5">
+                          <div className="grid grid-cols-4 gap-1.5">
                             <div className="flex flex-col gap-1">
                               <span className="text-[9px] text-green-400/70 font-bold text-center">📸 Fotoğraf</span>
                               <input
@@ -750,11 +751,25 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                                 placeholder="₺"
                               />
                             </div>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-[9px] text-cyan-400/70 font-bold text-center">👁️ Gözlemci</span>
+                              <input
+                                type="number"
+                                value={kota.primGozlemci || ''}
+                                onChange={(e) => {
+                                  const arr = [...formKotaKademeleri];
+                                  arr[index] = { ...arr[index], primGozlemci: parseFloat(e.target.value) || 0 };
+                                  setFormKotaKademeleri(arr);
+                                }}
+                                className="w-full px-2 py-1.5 bg-white/10 border-2 border-cyan-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-400 transition-all text-xs text-center"
+                                placeholder="₺"
+                              />
+                            </div>
                           </div>
                         </div>
 
                         {/* Kıdem Bazlı Prim Önizlemesi — sadece yönetici + üst-müdür */}
-                        {canViewKidem && (kota.primTek > 0 || kota.primFotograf > 0 || kota.primBaski > 0 || kota.primAlbum > 0) && (
+                        {canViewKidem && (kota.primTek > 0 || kota.primFotograf > 0 || kota.primBaski > 0 || kota.primAlbum > 0 || kota.primGozlemci > 0) && (
                           <div style={{ marginTop: 10, background: 'rgba(157,217,234,0.05)', border: '1px solid rgba(157,217,234,0.15)', borderRadius: 12, padding: '10px 12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
                               <span style={{ fontSize: 11 }}>🎖️</span>
@@ -769,6 +784,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                                 { rlabel: '📸 Fotoğraf/Satış', base: kota.primFotograf, color: '#9dd9ea' },
                                 { rlabel: '🖨️ Baskı', base: kota.primBaski, color: '#ffd4a3' },
                                 { rlabel: '📒 Albüm', base: kota.primAlbum, color: '#d4b5f7' },
+                                { rlabel: '👁️ Gözlemci', base: kota.primGozlemci, color: '#67e8f9' },
                               ] as { rlabel: string; base: number; color: string }[]).filter(r => r.base > 0).map(({ rlabel, base, color }) => (
                                 <div key={rlabel} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                   <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 9, fontWeight: 700, minWidth: 92 }}>{rlabel}</span>
@@ -796,7 +812,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
 
                 {formKotaKademeleri.length < 6 ? (
                   <button
-                    onClick={() => setFormKotaKademeleri([...formKotaKademeleri, { hedef: 0, primTek: 0, primFotograf: 0, primBaski: 0, primAlbum: 0 }])}
+                    onClick={() => setFormKotaKademeleri([...formKotaKademeleri, { hedef: 0, primTek: 0, primFotograf: 0, primBaski: 0, primAlbum: 0, primGozlemci: 0 }])}
                     className="mt-3 flex items-center gap-2 px-4 py-2 bg-yellow-600/30 border border-yellow-500/40 rounded-xl text-yellow-200 text-sm font-semibold hover:bg-yellow-600/50 transition-all active:scale-95"
                   >
                     <Plus className="w-4 h-4" />

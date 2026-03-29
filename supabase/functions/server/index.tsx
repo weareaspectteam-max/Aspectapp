@@ -3027,6 +3027,14 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
         const fark = (sayim[alan] || 0) - (dunKapanis[alan] || 0);
         if (fark !== 0) anomali[alan] = fark;
       }
+      // ribonlar tip bazlı anomali
+      const sayimRibonlar: Record<string, number> = sayim.ribonlar || {};
+      const dunRibonlar: Record<string, number> = dunKapanis.ribonlar || {};
+      const tumRibonTipler = new Set([...Object.keys(sayimRibonlar), ...Object.keys(dunRibonlar)]);
+      for (const tip of tumRibonTipler) {
+        const fark = (sayimRibonlar[tip] || 0) - (dunRibonlar[tip] || 0);
+        if (fark !== 0) anomali[`ribonlar.${tip}`] = fark;
+      }
     }
 
     // ── Yazıcı sayaç anomali tespiti ──────────────────────────────────────
@@ -3145,6 +3153,16 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       (sum: number, pr: any) => sum + (Number(pr.ribonDegisim) || 0), 0
     );
 
+    // Ribon değişimlerini kağıt tipine göre grupla (yazıcının kagitTipiId'si üzerinden)
+    const ribonDegisimByTip: Record<string, number> = {};
+    for (const pr of (printerData || [])) {
+      const degisim = Number(pr.ribonDegisim) || 0;
+      if (degisim <= 0) continue;
+      const ekipmanKaydi: any = await ckv.get(pr.ekipmanId || pr.id).catch(() => null);
+      const kagitTipiId: string = ekipmanKaydi?.kagitTipiId || pr.kagitTipiId || "_bilinmeyen";
+      ribonDegisimByTip[kagitTipiId] = (ribonDegisimByTip[kagitTipiId] || 0) + degisim;
+    }
+
     const alanlar = ["album3","album5","album7","album9","album11","album13","album15","paspartu","ribon"];
 
     // Günlük iptal olmayan satışlardan albüm stok düşümü
@@ -3178,10 +3196,26 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       beklenen[alan] = Math.max(0, toplam);
     }
 
+    // ribonlar tip bazlı beklenen hesabı
+    const acilisRibonlar: Record<string, number> = existing.acilis?.ribonlar || {};
+    const beklenenRibonlar: Record<string, number> = {};
+    const tumRibonTiplerKap = new Set([...Object.keys(acilisRibonlar), ...Object.keys(ribonDegisimByTip)]);
+    for (const tip of tumRibonTiplerKap) {
+      const toplam = (acilisRibonlar[tip] || 0) - (ribonDegisimByTip[tip] || 0);
+      beklenenRibonlar[tip] = Math.max(0, toplam);
+    }
+
     const anomali: Record<string, number> = {};
     for (const alan of alanlar) {
       const fark = (sayim[alan] || 0) - (beklenen[alan] || 0);
       if (fark !== 0) anomali[alan] = fark;
+    }
+    // ribonlar tip bazlı anomali
+    const sayimRibonlarKap: Record<string, number> = sayim.ribonlar || {};
+    const tumRibonAnomaliTipler = new Set([...Object.keys(sayimRibonlarKap), ...Object.keys(beklenenRibonlar)]);
+    for (const tip of tumRibonAnomaliTipler) {
+      const fark = (sayimRibonlarKap[tip] || 0) - (beklenenRibonlar[tip] || 0);
+      if (fark !== 0) anomali[`ribonlar.${tip}`] = fark;
     }
 
     // ── Vardiya Baskı & Maliyet Hesaplamaları ──
@@ -3329,9 +3363,11 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       kapanisYapanAd: user.user_metadata?.full_name || user.email,
       kapanisAnomali: anomali,
       kapanisBeklenen: beklenen,
+      kapanisBeklenenRibonlar: beklenenRibonlar,
       // Yazıcı verileri — hesaplamalar dahil
       printerData: enrichedPrinterData,
       toplamRibonDegisim,
+      ribonDegisimByTip,
       // Vardiya baskı & maliyet özeti
       vardiyaToplam,
       // Bitiş sayacı anomalisi (yazıcı net satılan vs satış toplamı)
@@ -4013,6 +4049,7 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
         if (!isCoklu) return Number(kademe.primTek) || 0;
         if (gorev === 'baski') return Number(kademe.primBaski) || Number(kademe.primCoklu) || 0;
         if (gorev === 'album') return Number(kademe.primAlbum) || Number(kademe.primCoklu) || 0;
+        if (gorev === 'gozlemci') return Number(kademe.primGozlemci) || 0;
         return Number(kademe.primFotograf) || Number(kademe.primCoklu) || 0; // fotograf-satis veya varsayılan
       };
 
@@ -4160,6 +4197,7 @@ app.get("/make-server-4da0b637/primler/kendi-rapor", async (c) => {
         if (!isCoklu) return Number(kademe.primTek) || 0;
         if (gorev === 'baski') return Number(kademe.primBaski) || Number(kademe.primCoklu) || 0;
         if (gorev === 'album') return Number(kademe.primAlbum) || Number(kademe.primCoklu) || 0;
+        if (gorev === 'gozlemci') return Number(kademe.primGozlemci) || 0;
         return Number(kademe.primFotograf) || Number(kademe.primCoklu) || 0;
       };
 
@@ -4303,6 +4341,7 @@ app.get("/make-server-4da0b637/shift/prim-bilgi", async (c) => {
       if (!isCoklu) return Number(kademe.primTek) || 0;
       if (gorev === 'baski') return Number(kademe.primBaski) || Number(kademe.primCoklu) || 0;
       if (gorev === 'album') return Number(kademe.primAlbum) || Number(kademe.primCoklu) || 0;
+      if (gorev === 'gozlemci') return Number(kademe.primGozlemci) || 0;
       return Number(kademe.primFotograf) || Number(kademe.primCoklu) || 0;
     };
 
@@ -5000,6 +5039,9 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
 
       const toplamRibonKapasite = stokRibonAdet + makinaKalan;
 
+      // Mekan ribonlar (tip bazlı)
+      const mekanRibonlar: Record<string, number> = stok?.ribonlar || {};
+
       return {
         id: mekan.id,
         name: mekan.name,
@@ -5007,6 +5049,7 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
         color: mekan.color || "#9dd9ea",
         vardiyaDurumu,
         albumSayilari,
+        ribonlar: mekanRibonlar,
         stokRibonAdet,
         makinaKalan,
         toplamRibonKapasite,
@@ -5033,6 +5076,7 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
       depoAlbumSayilari[alan] = Number(depoStok[alan]) || 0;
     }
     const depoRibonTakim = Number(depoStok.ribon) || 0;
+    const depoRibonlar: Record<string, number> = depoStok.ribonlar || {};
     const depoRibonAdet = depoRibonTakim * RIBON_PER_TAKIM;
 
     // Genel toplam albüm dağılımına depo da dahil et
@@ -5063,6 +5107,7 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
         albumSayilari: depoAlbumSayilari,
         ribonTakim: depoRibonTakim,
         ribonAdet: depoRibonAdet,
+        ribonlar: depoRibonlar,
       },
     });
   } catch (err) {
@@ -5219,13 +5264,16 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
     const role = user.user_metadata?.role;
     if (!["yonetici", "ust-mudur", "mudur"].includes(role)) return c.json({ error: "Yalnızca yönetici ve müdür stok güncelleyebilir." }, 403);
 
-    const { mekanId, albumSayilari, ribonTakim } = await c.req.json();
+    const { mekanId, albumSayilari, ribonTakim, ribonlar: bodyRibonlar } = await c.req.json();
     if (!mekanId) return c.json({ error: "mekanId zorunludur." }, 400);
 
     const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15"];
     const stokObj: Record<string, number> = {};
     for (const alan of albumAlanlari) stokObj[alan] = Number(albumSayilari?.[alan]) || 0;
-    stokObj.ribon = Number(ribonTakim) || 0;
+    // ribonlar varsa toplam hesapla, yoksa eski ribonTakim kullan
+    const ribonlarObj: Record<string, number> = bodyRibonlar && typeof bodyRibonlar === "object" ? bodyRibonlar : {};
+    const ribonlarToplam = Object.values(ribonlarObj).reduce((s: number, v: any) => s + (Number(v) || 0), 0);
+    stokObj.ribon = ribonlarToplam > 0 ? ribonlarToplam : (Number(ribonTakim) || 0);
     const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
 
     const ckv = companyKvFor(getCompanyId(user));
@@ -5233,6 +5281,7 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
       const depoStok: any = await ckv.get("depo_stok") || {};
       for (const alan of albumAlanlari) depoStok[alan] = stokObj[alan];
       depoStok.ribon = stokObj.ribon;
+      if (Object.keys(ribonlarObj).length > 0) depoStok.ribonlar = ribonlarObj;
       depoStok.guncellenmeTarihi = new Date().toISOString();
       await ckv.set("depo_stok", depoStok);
       console.log(`Depo stok güncellendi: ${user.user_metadata?.full_name}`);
@@ -5266,7 +5315,9 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
       }
     }
 
-    kayit[aktifField] = { ...(kayit[aktifField] || {}), ...stokObj };
+    const aktifStok = { ...(kayit[aktifField] || {}), ...stokObj };
+    if (Object.keys(ribonlarObj).length > 0) aktifStok.ribonlar = ribonlarObj;
+    kayit[aktifField] = aktifStok;
     kayit.yoneticiGuncelleme = new Date().toISOString();
     await ckv.set(kvKey, kayit);
 
@@ -5357,7 +5408,7 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
       return c.json({ error: "Aktarım için yetkiniz yok." }, 403);
     }
 
-    const { kaynakId, hedefId, alan, miktar, not: notText } = await c.req.json();
+    const { kaynakId, hedefId, alan, miktar, not: notText, kagitTipiId: transferKagitTipiId } = await c.req.json();
     if (!kaynakId || !hedefId || !alan || !miktar || miktar <= 0) {
       return c.json({ error: "Kaynak, hedef, alan ve pozitif miktar zorunludur." }, 400);
     }
@@ -5368,6 +5419,8 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
     if (!albumAlanlari.includes(alan)) {
       return c.json({ error: "Geçersiz alan." }, 400);
     }
+    // Ribon transferinde kagitTipiId zorunlu (yeni format)
+    const isRibonTransfer = alan === "ribon" && !!transferKagitTipiId;
 
     const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
     const kullaniciAdi = user.user_metadata?.full_name || user.email || "Bilinmeyen";
@@ -5427,40 +5480,88 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
     let eskiKaynakDeger = 0, yeniKaynakDeger = 0;
     let eskiHedefDeger = 0, yeniHedefDeger = 0;
 
+    // Helper: ribonlar objesini güncelle + ribon toplamını yeniden hesapla
+    const updateRibonlar = (stokObj: any, kagitId: string, delta: number) => {
+      if (!stokObj.ribonlar || typeof stokObj.ribonlar !== "object") stokObj.ribonlar = {};
+      stokObj.ribonlar[kagitId] = Math.max(0, (Number(stokObj.ribonlar[kagitId]) || 0) + delta);
+      // ribon toplamını yeniden hesapla
+      stokObj.ribon = Object.values(stokObj.ribonlar as Record<string, number>).reduce((s: number, v: number) => s + (Number(v) || 0), 0);
+    };
+
     // Kaynak: stok azalt
     if (kaynakId === "depo") {
       const depoStok: any = await ckv.get("depo_stok") || {};
-      eskiKaynakDeger = Number(depoStok[alan]) || 0;
+      if (isRibonTransfer) {
+        eskiKaynakDeger = Number(depoStok.ribonlar?.[transferKagitTipiId]) || 0;
+      } else {
+        eskiKaynakDeger = Number(depoStok[alan]) || 0;
+      }
       if (eskiKaynakDeger < miktar) {
         return c.json({ error: `Depo stoğu yetersiz. Mevcut: ${eskiKaynakDeger}, İstenen: ${miktar}` }, 400);
       }
       yeniKaynakDeger = eskiKaynakDeger - miktar;
-      depoStok[alan] = yeniKaynakDeger;
+      if (isRibonTransfer) {
+        updateRibonlar(depoStok, transferKagitTipiId, -miktar);
+      } else {
+        depoStok[alan] = yeniKaynakDeger;
+      }
       depoStok.guncellenmeTarihi = new Date().toISOString();
       await ckv.set("depo_stok", depoStok);
     } else {
       const { kayit, kvKey, aktif, alan_deger, aktifField } = await getMekanStok(kaynakId);
-      eskiKaynakDeger = alan_deger;
+      if (isRibonTransfer) {
+        eskiKaynakDeger = Number(aktif.ribonlar?.[transferKagitTipiId]) || 0;
+      } else {
+        eskiKaynakDeger = alan_deger;
+      }
       if (eskiKaynakDeger < miktar) {
         return c.json({ error: `${kaynakAdi} stoğu yetersiz. Mevcut: ${eskiKaynakDeger}, İstenen: ${miktar}` }, 400);
       }
       yeniKaynakDeger = eskiKaynakDeger - miktar;
-      await setMekanStok(kaynakId, kvKey, kayit, aktifField, aktif, yeniKaynakDeger);
+      if (isRibonTransfer) {
+        updateRibonlar(aktif, transferKagitTipiId, -miktar);
+        const yeniKayit: any = kayit ? { ...kayit } : { mekanId: kaynakId, tarih: today };
+        yeniKayit[aktifField] = aktif;
+        yeniKayit.stokTransferGuncelleme = new Date().toISOString();
+        await ckv.set(kvKey, yeniKayit);
+      } else {
+        await setMekanStok(kaynakId, kvKey, kayit, aktifField, aktif, yeniKaynakDeger);
+      }
     }
 
     // Hedef: stok artır
     if (hedefId === "depo") {
       const depoStok: any = await ckv.get("depo_stok") || {};
-      eskiHedefDeger = Number(depoStok[alan]) || 0;
+      if (isRibonTransfer) {
+        eskiHedefDeger = Number(depoStok.ribonlar?.[transferKagitTipiId]) || 0;
+      } else {
+        eskiHedefDeger = Number(depoStok[alan]) || 0;
+      }
       yeniHedefDeger = eskiHedefDeger + miktar;
-      depoStok[alan] = yeniHedefDeger;
+      if (isRibonTransfer) {
+        updateRibonlar(depoStok, transferKagitTipiId, miktar);
+      } else {
+        depoStok[alan] = yeniHedefDeger;
+      }
       depoStok.guncellenmeTarihi = new Date().toISOString();
       await ckv.set("depo_stok", depoStok);
     } else {
       const { kayit, kvKey, aktif, alan_deger, aktifField } = await getMekanStok(hedefId);
-      eskiHedefDeger = alan_deger;
+      if (isRibonTransfer) {
+        eskiHedefDeger = Number(aktif.ribonlar?.[transferKagitTipiId]) || 0;
+      } else {
+        eskiHedefDeger = alan_deger;
+      }
       yeniHedefDeger = eskiHedefDeger + miktar;
-      await setMekanStok(hedefId, kvKey, kayit, aktifField, aktif, yeniHedefDeger);
+      if (isRibonTransfer) {
+        updateRibonlar(aktif, transferKagitTipiId, miktar);
+        const yeniKayit: any = kayit ? { ...kayit } : { mekanId: hedefId, tarih: today };
+        yeniKayit[aktifField] = aktif;
+        yeniKayit.stokTransferGuncelleme = new Date().toISOString();
+        await ckv.set(kvKey, yeniKayit);
+      } else {
+        await setMekanStok(hedefId, kvKey, kayit, aktifField, aktif, yeniHedefDeger);
+      }
     }
 
     // Transfer logu kaydet
@@ -5470,6 +5571,7 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
       kaynakId, kaynakAdi, kaynakEmoji,
       hedefId, hedefAdi, hedefEmoji,
       alan, miktar,
+      kagitTipiId: transferKagitTipiId || null,
       not: notText || "",
       tarih: new Date().toISOString(),
       kullaniciId: user.id,
@@ -9306,6 +9408,7 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
               if (!coklu) { topPrim += Number(kademe.primTek) || 0; }
               else if (per.gorev === 'baski') { topPrim += Number(kademe.primBaski) || Number(kademe.primCoklu) || 0; }
               else if (per.gorev === 'album') { topPrim += Number(kademe.primAlbum) || Number(kademe.primCoklu) || 0; }
+              else if (per.gorev === 'gozlemci') { topPrim += Number(kademe.primGozlemci) || 0; }
               else { topPrim += Number(kademe.primFotograf) || Number(kademe.primCoklu) || 0; }
             }
           }
@@ -9346,6 +9449,7 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
               if (!coklu) primMiktar = Number(kademe.primTek) || 0;
               else if (per.gorev === 'baski') primMiktar = Number(kademe.primBaski) || Number(kademe.primCoklu) || 0;
               else if (per.gorev === 'album') primMiktar = Number(kademe.primAlbum) || Number(kademe.primCoklu) || 0;
+              else if (per.gorev === 'gozlemci') primMiktar = Number(kademe.primGozlemci) || 0;
               else primMiktar = Number(kademe.primFotograf) || Number(kademe.primCoklu) || 0;
               personelPrimMap[per.id] = (personelPrimMap[per.id] || 0) + primMiktar;
             }

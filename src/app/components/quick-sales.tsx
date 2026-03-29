@@ -1794,10 +1794,10 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     </div>
                   )}
                   <div className="space-y-2">
-                    {(Object.keys(stokAlanAdi) as Array<keyof StokSayim>).map((alan) => {
+                    {(Object.keys(stokAlanAdi) as Array<keyof StokSayim>).filter(a => a !== 'ribon' && a !== 'ribonlar').map((alan) => {
                       const beklenen = dunKapanis?.[alan] ?? null;
                       const gercek = acilisSayim[alan] ?? 0;
-                      const fark = beklenen !== null ? gercek - beklenen : 0;
+                      const fark = beklenen !== null ? gercek - (beklenen as number) : 0;
                       const sapmaVar = beklenen !== null && fark !== 0;
                       return (
                         <div key={alan} className="flex items-center justify-between bg-black/30 border border-white/10 rounded-xl px-4 py-3">
@@ -1806,7 +1806,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                             <div>
                               <span className="text-sm font-semibold text-white">{stokAlanAdi[alan]}</span>
                               {beklenen !== null && (
-                                <p className="text-xs text-gray-500">Beklenen: {beklenen}</p>
+                                <p className="text-xs text-gray-500">Beklenen: {beklenen as number}</p>
                               )}
                             </div>
                           </div>
@@ -1831,6 +1831,96 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                         </div>
                       );
                     })}
+
+                    {/* ── Kağıt tipine göre dinamik ribon satırları ── */}
+                    {(() => {
+                      // Mekandaki yazıcıların kağıt tiplerinden benzersiz tipleri çıkar
+                      const ribonTipleri = new Map<string, string>(); // kagitTipiId → name
+                      for (const pr of printers) {
+                        if (pr.kagitTipiId) {
+                          const paper = availablePapers.find((p: any) => p.id === pr.kagitTipiId);
+                          ribonTipleri.set(pr.kagitTipiId, paper?.name || pr.kagitTipiId);
+                        }
+                      }
+                      // Kağıt tipi olmayan yazıcı varsa "Bilinmeyen" ekle
+                      if (printers.some(pr => !pr.kagitTipiId) && printers.length > 0 && ribonTipleri.size === 0) {
+                        ribonTipleri.set('_bilinmeyen', 'Ribon');
+                      }
+                      // Hiç yazıcı yoksa eski tek ribon alanını göster
+                      if (ribonTipleri.size === 0) {
+                        const beklenen = dunKapanis?.ribon ?? null;
+                        const gercek = acilisSayim.ribon ?? 0;
+                        const fark = beklenen !== null ? gercek - beklenen : 0;
+                        const sapmaVar = beklenen !== null && fark !== 0;
+                        return (
+                          <div className="flex items-center justify-between bg-black/30 border border-white/10 rounded-xl px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <span className="text-xl">🎞️</span>
+                              <div>
+                                <span className="text-sm font-semibold text-white">Ribon Takımı</span>
+                                {beklenen !== null && <p className="text-xs text-gray-500">Beklenen: {beklenen}</p>}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {sapmaVar && (
+                                <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${fark > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                  {fark > 0 ? '+' : ''}{fark}
+                                </span>
+                              )}
+                              <input type="number" inputMode="numeric"
+                                value={acilisSayim.ribon || ''}
+                                onChange={e => setAcilisSayim(p => ({ ...p, ribon: parseInt(e.target.value) || 0 }))}
+                                placeholder="0" disabled={!!stokGunluk?.acilisYapildi}
+                                className={`w-20 px-2 py-2 border rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#9dd9ea]/50 text-center font-bold text-lg disabled:opacity-60 ${
+                                  sapmaVar ? (fark < 0 ? 'bg-red-500/10 border-red-500/40' : 'bg-green-500/10 border-green-500/40') : 'bg-white/10 border-white/20'
+                                }`}
+                              />
+                            </div>
+                          </div>
+                        );
+                      }
+                      const acilisRibonlar = acilisSayim.ribonlar || {};
+                      const dunRibonlar = dunKapanis?.ribonlar || {};
+                      return Array.from(ribonTipleri.entries()).map(([tipId, tipAdi]) => {
+                        const beklenen = dunRibonlar[tipId] ?? (dunKapanis?.ribon != null && ribonTipleri.size === 1 ? dunKapanis.ribon : null);
+                        const gercek = acilisRibonlar[tipId] ?? 0;
+                        const fark = beklenen !== null ? gercek - beklenen : 0;
+                        const sapmaVar = beklenen !== null && fark !== 0;
+                        return (
+                          <div key={`ribon_${tipId}`} className="flex items-center justify-between bg-pink-500/5 border border-pink-500/15 rounded-xl px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <span className="text-xl">🎞️</span>
+                              <div>
+                                <span className="text-sm font-semibold text-pink-200">{tipAdi} Ribon</span>
+                                {beklenen !== null && <p className="text-xs text-gray-500">Beklenen: {beklenen}</p>}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {sapmaVar && (
+                                <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${fark > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                  {fark > 0 ? '+' : ''}{fark}
+                                </span>
+                              )}
+                              <input type="number" inputMode="numeric"
+                                value={acilisRibonlar[tipId] || ''}
+                                onChange={e => {
+                                  const val = parseInt(e.target.value) || 0;
+                                  setAcilisSayim(p => {
+                                    const yeniRibonlar = { ...(p.ribonlar || {}), [tipId]: val };
+                                    const toplam = Object.values(yeniRibonlar).reduce((s, v) => s + (v || 0), 0);
+                                    return { ...p, ribonlar: yeniRibonlar, ribon: toplam };
+                                  });
+                                }}
+                                placeholder="0" disabled={!!stokGunluk?.acilisYapildi}
+                                className={`w-20 px-2 py-2 border rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-pink-400/50 text-center font-bold text-lg disabled:opacity-60 ${
+                                  sapmaVar ? (fark < 0 ? 'bg-red-500/10 border-red-500/40' : 'bg-green-500/10 border-green-500/40') : 'bg-pink-500/10 border-pink-500/20'
+                                }`}
+                              />
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
 
                   {/* Anomali uyarı bandı */}
@@ -2993,46 +3083,67 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                               );
                             })}
 
-                            {/* ── Ribon Takımı (reyon modunda ayrı satır) ── */}
+                            {/* ── Kağıt tipine göre ribon satırları (kapanış) ── */}
                             {(() => {
-                              const toplamRibonDegisim = printers.reduce(
-                                (sum, pr) => sum + Number(printerRibbonChanges[pr.ekipmanId] || 0), 0
-                              );
-                              const ribonAcilis = acilisSayim.ribon || 0;
-                              const ribonBeklenen = Math.max(0, ribonAcilis - toplamRibonDegisim);
-                              const ribonKapanis = reyonKapanisSayim.ribon || 0;
-                              const ribonFark = ribonKapanis - ribonBeklenen;
-                              const ribonSapma = ribonFark !== 0;
-                              return (
-                                <div className="bg-black/30 border border-white/10 rounded-xl px-4 py-3 space-y-2">
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-xl">🎞️</span>
-                                    <span className="text-sm font-semibold text-white flex-1">Ribon Takımı</span>
-                                    {ribonSapma && (
-                                      <span className={`text-xs font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 ${ribonFark > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                                        {ribonFark > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                                        {ribonFark > 0 ? '+' : ''}{ribonFark}
-                                      </span>
-                                    )}
+                              // Yazıcıları kağıt tipine göre grupla
+                              const ribonTipleri = new Map<string, string>();
+                              for (const pr of printers) {
+                                if (pr.kagitTipiId) {
+                                  const paper = availablePapers.find((p: any) => p.id === pr.kagitTipiId);
+                                  ribonTipleri.set(pr.kagitTipiId, paper?.name || pr.kagitTipiId);
+                                }
+                              }
+                              if (ribonTipleri.size === 0) ribonTipleri.set('_bilinmeyen', 'Ribon');
+
+                              const acilisRibonlar = acilisSayim.ribonlar || {};
+                              const kapanisRibonlar = reyonKapanisSayim.ribonlar || {};
+
+                              return Array.from(ribonTipleri.entries()).map(([tipId, tipAdi]) => {
+                                // Bu tipteki yazıcıların ribon değişim toplamı
+                                const tipDegisim = printers
+                                  .filter(pr => (pr.kagitTipiId || '_bilinmeyen') === tipId)
+                                  .reduce((sum, pr) => sum + Number(printerRibbonChanges[pr.ekipmanId] || 0), 0);
+                                const ribonAcilis = acilisRibonlar[tipId] ?? (ribonTipleri.size === 1 ? (acilisSayim.ribon || 0) : 0);
+                                const ribonBeklenen = Math.max(0, ribonAcilis - tipDegisim);
+                                const ribonKapanis = kapanisRibonlar[tipId] || 0;
+                                const ribonFark = ribonKapanis - ribonBeklenen;
+                                const ribonSapma = ribonFark !== 0;
+                                return (
+                                  <div key={`ribon_kap_${tipId}`} className="bg-pink-500/5 border border-pink-500/15 rounded-xl px-4 py-3 space-y-2">
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-xl">🎞️</span>
+                                      <span className="text-sm font-semibold text-pink-200 flex-1">{tipAdi} Ribon</span>
+                                      {ribonSapma && (
+                                        <span className={`text-xs font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 ${ribonFark > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                          {ribonFark > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                          {ribonFark > 0 ? '+' : ''}{ribonFark}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-[#9dd9ea]/80">
+                                      Açılış <span className="font-bold text-white">{ribonAcilis}</span>
+                                      {' − '}Değişim <span className="font-bold text-[#ffd4a3]">{tipDegisim}</span>
+                                      {' = '}Beklenen <span className="font-bold text-[#9dd9ea]">{ribonBeklenen}</span>
+                                    </p>
+                                    <input
+                                      type="number" inputMode="numeric"
+                                      value={kapanisRibonlar[tipId] || ''}
+                                      onChange={e => {
+                                        const val = parseInt(e.target.value) || 0;
+                                        setReyonKapanisSayim(p => {
+                                          const yeniRibonlar = { ...(p.ribonlar || {}), [tipId]: val };
+                                          const toplam = Object.values(yeniRibonlar).reduce((s, v) => s + (v || 0), 0);
+                                          return { ...p, ribonlar: yeniRibonlar, ribon: toplam };
+                                        });
+                                      }}
+                                      placeholder="0" disabled={shiftEndDone}
+                                      className={`w-full px-3 py-2.5 border rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-pink-400/50 text-center font-bold text-lg disabled:opacity-60 ${
+                                        ribonSapma ? (ribonFark < 0 ? 'bg-red-500/10 border-red-500/40' : 'bg-green-500/10 border-green-500/40') : 'bg-pink-500/10 border-pink-500/20'
+                                      }`}
+                                    />
                                   </div>
-                                  <p className="text-xs text-[#9dd9ea]/80">
-                                    Açılış <span className="font-bold text-white">{ribonAcilis}</span>
-                                    {' − '}Değişim <span className="font-bold text-[#ffd4a3]">{toplamRibonDegisim}</span>
-                                    {' = '}Beklenen <span className="font-bold text-[#9dd9ea]">{ribonBeklenen}</span>
-                                  </p>
-                                  <input
-                                    type="number"
-                                    inputMode="numeric"
-                                    value={reyonKapanisSayim.ribon || ''}
-                                    onChange={e => setReyonKapanisSayim(p => ({ ...p, ribon: parseInt(e.target.value) || 0 }))}
-                                    placeholder="0"
-                                    disabled={shiftEndDone}
-                                    className={`w-full px-3 py-2.5 border rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#9dd9ea]/50 text-center font-bold text-lg disabled:opacity-60 ${
-                                      ribonSapma ? (ribonFark < 0 ? 'bg-red-500/10 border-red-500/40' : 'bg-green-500/10 border-green-500/40') : 'bg-white/10 border-white/20'
-                                    }`}
-                                  />
-                                </div>
-                              );
+                                );
+                              });
                             })()}
 
                             {/* Toplam satış özeti */}
@@ -3071,11 +3182,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                               </div>
                             )}
 
-                            {(Object.keys(stokAlanAdi) as Array<keyof StokSayim>).map((alan) => {
-                              // Ribon için yazıcı değişim verilerinden client-side beklenen hesapla
-                              const toplamRibonDegisim = printers.reduce((sum, pr) => sum + Number(printerRibbonChanges[pr.ekipmanId] || 0), 0);
-                              const clientBeklenenRibon = Math.max(0, (acilisSayim.ribon || 0) - toplamRibonDegisim);
-
+                            {(Object.keys(stokAlanAdi) as Array<keyof StokSayim>).filter(a => a !== 'ribon' && a !== 'ribonlar').map((alan) => {
                               // Albümler için client-side beklenen: açılış + eklemeler − satılan
                               const albumAcilis = (acilisSayim[alan] || 0);
                               const albumEkleme = stokEklemeler.reduce((s, ek) => s + ((ek.miktar as Record<string, number>)[alan] || 0), 0);
@@ -3085,11 +3192,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                               // Kapanış öncesi: her zaman client hesabını göster; sonrası: server değeri
                               let beklenen: number | null = kapanisBeklenen?.[alan] ?? null;
                               if (!shiftEndDone) {
-                                if (alan === 'ribon') {
-                                  beklenen = clientBeklenenRibon;
-                                } else {
-                                  beklenen = stokGunluk?.acilisYapildi ? clientBeklenenAlbum : null;
-                                }
+                                beklenen = stokGunluk?.acilisYapildi ? clientBeklenenAlbum : null;
                               }
 
                               const gercek = kapanisSayim[alan] ?? 0;
@@ -3102,13 +3205,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                                       <span className="text-xl">{stokAlanEmoji[alan]}</span>
                                       <div>
                                         <span className="text-sm font-semibold text-white">{stokAlanAdi[alan]}</span>
-                                        {alan === 'ribon' ? (
-                                          <p className="text-xs text-[#9dd9ea]/80 mt-0.5">
-                                            Açılış <span className="font-bold text-white">{acilisSayim.ribon || 0}</span>
-                                            {' − '}Değişim <span className="font-bold text-[#ffd4a3]">{toplamRibonDegisim}</span>
-                                            {' = '}Beklenen <span className="font-bold text-[#9dd9ea]">{clientBeklenenRibon}</span>
-                                          </p>
-                                        ) : beklenen !== null ? (
+                                        {beklenen !== null ? (
                                           <p className="text-xs text-[#9dd9ea]/70 mt-0.5">
                                             <span className="text-white">{albumAcilis}</span>
                                             {albumEkleme > 0 && <span className="text-[#ffd4a3]"> +{albumEkleme}</span>}
@@ -3142,14 +3239,74 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                               );
                             })}
 
+                            {/* ── Kağıt tipine göre ribon kapanış (tam stok modu) ── */}
+                            {(() => {
+                              const ribonTipleri = new Map<string, string>();
+                              for (const pr of printers) {
+                                if (pr.kagitTipiId) {
+                                  const paper = availablePapers.find((p: any) => p.id === pr.kagitTipiId);
+                                  ribonTipleri.set(pr.kagitTipiId, paper?.name || pr.kagitTipiId);
+                                }
+                              }
+                              if (ribonTipleri.size === 0) ribonTipleri.set('_bilinmeyen', 'Ribon');
+                              const acilisRibonlar = acilisSayim.ribonlar || {};
+                              const kapRibonlar = kapanisSayim.ribonlar || {};
+                              return Array.from(ribonTipleri.entries()).map(([tipId, tipAdi]) => {
+                                const tipDegisim = printers
+                                  .filter(pr => (pr.kagitTipiId || '_bilinmeyen') === tipId)
+                                  .reduce((sum, pr) => sum + Number(printerRibbonChanges[pr.ekipmanId] || 0), 0);
+                                const ribonAcilis = acilisRibonlar[tipId] ?? (ribonTipleri.size === 1 ? (acilisSayim.ribon || 0) : 0);
+                                const ribonBeklenen = Math.max(0, ribonAcilis - tipDegisim);
+                                const gercek = kapRibonlar[tipId] || 0;
+                                const fark = gercek - ribonBeklenen;
+                                const sapmaVar = fark !== 0;
+                                return (
+                                  <div key={`ribon_full_${tipId}`} className="bg-pink-500/5 border border-pink-500/15 rounded-xl px-4 py-3">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                        <span className="text-xl">🎞️</span>
+                                        <div>
+                                          <span className="text-sm font-semibold text-pink-200">{tipAdi} Ribon</span>
+                                          <p className="text-xs text-[#9dd9ea]/80 mt-0.5">
+                                            Açılış <span className="font-bold text-white">{ribonAcilis}</span>
+                                            {' − '}Değişim <span className="font-bold text-[#ffd4a3]">{tipDegisim}</span>
+                                            {' = '}Beklenen <span className="font-bold text-[#9dd9ea]">{ribonBeklenen}</span>
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        {sapmaVar && (
+                                          <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${fark > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                            {fark > 0 ? '+' : ''}{fark}
+                                          </span>
+                                        )}
+                                        <input type="number" inputMode="numeric"
+                                          value={kapRibonlar[tipId] || ''}
+                                          onChange={e => {
+                                            const val = parseInt(e.target.value) || 0;
+                                            setKapanisSayim(p => {
+                                              const yeniRibonlar = { ...(p.ribonlar || {}), [tipId]: val };
+                                              const toplam = Object.values(yeniRibonlar).reduce((s, v) => s + (v || 0), 0);
+                                              return { ...p, ribonlar: yeniRibonlar, ribon: toplam };
+                                            });
+                                          }}
+                                          placeholder="0" disabled={shiftEndDone}
+                                          className={`w-20 px-2 py-2 border rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-pink-400/50 text-center font-bold text-lg disabled:opacity-60 ${
+                                            sapmaVar ? (fark < 0 ? 'bg-red-500/10 border-red-500/40' : 'bg-green-500/10 border-green-500/40') : 'bg-pink-500/10 border-pink-500/20'
+                                          }`}
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              });
+                            })()}
+
                             {!shiftEndDone && !reyonAcik && stokGunluk?.acilis &&
-                              (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).some(a => {
+                              (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).filter(a => a !== 'ribon' && a !== 'ribonlar').some(a => {
                                 let bek = (stokGunluk!.acilis as StokSayim)[a] || 0;
                                 for (const ek of stokEklemeler) bek += (ek.miktar as Record<string, number>)[a] || 0;
-                                // Satışlardan albüm düşümü (backend ile tutarlı)
                                 bek -= kapanisSatisAlbumDusum[a] || 0;
-                                // Ribon: değiştirilen takım adedi (10 - 1 = 9)
-                                if (a === 'ribon') bek -= printers.reduce((s, pr) => s + (Number(printerRibbonChanges[pr.ekipmanId] || 0)), 0);
                                 return (kapanisSayim[a] ?? 0) !== Math.max(0, bek);
                               }) && (
                               <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center gap-2">
@@ -3233,7 +3390,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                                   <p className="text-base font-black text-[#a8e6cf]">{vt.toplamSatılanFotograf}</p>
                                   <p className="text-[10px] text-gray-600">net fotoğraf</p>
                                 </div>
-                                {vt.toplamMaliyet > 0 && (
+                                {vt.toplamMaliyet > 0 && userRole === 'yonetici' && (
                                   <div className={`bg-black/20 rounded-xl px-3 py-2 text-center ${vt.toplamIadeFotograf > 0 ? '' : 'col-span-2'}`}>
                                     <p className="text-[10px] text-gray-500 mb-0.5">Toplam Maliyet</p>
                                     <p className="text-base font-black text-[#ffd4a3]">

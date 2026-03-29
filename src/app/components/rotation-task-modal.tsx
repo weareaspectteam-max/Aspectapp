@@ -52,7 +52,7 @@ export function RotationTaskModal({
   const [startTime, setStartTime] = useState<string>('09:00');
   const [endTime, setEndTime] = useState<string>('17:00');
   const [selectedPersonnel, setSelectedPersonnel] = useState<string[]>([]);
-  const [gorevMap, setGorevMap] = useState<Record<string, 'fotograf-satis' | 'baski' | 'album'>>({});
+  const [gorevMap, setGorevMap] = useState<Record<string, 'fotograf-satis' | 'baski' | 'album' | 'gozlemci'>>({});
   const [notes, setNotes] = useState<string>('');
   const [showWarning, setShowWarning] = useState<string>('');
   const [doubleAssignWarning, setDoubleAssignWarning] = useState<string>(''); // amber, kaydetmeyi engellemez
@@ -105,7 +105,7 @@ export function RotationTaskModal({
         });
       setSelectedPersonnel(filteredIds);
       // Mevcut görev atamalarını yükle
-      const existingGorevMap: Record<string, 'fotograf-satis' | 'baski' | 'album'> = {};
+      const existingGorevMap: Record<string, 'fotograf-satis' | 'baski' | 'album' | 'gozlemci'> = {};
       editingTask.personnel.forEach(p => {
         if (p.gorev) existingGorevMap[p.id] = p.gorev;
       });
@@ -608,6 +608,7 @@ export function RotationTaskModal({
                                 { key: 'fotograf-satis', label: '📸', title: 'Fotoğraf/Satış' },
                                 { key: 'baski', label: '🖨️', title: 'Baskı' },
                                 { key: 'album', label: '📒', title: 'Albüm' },
+                                { key: 'gozlemci', label: '👁️', title: 'Gözlemci' },
                               ] as const).map(g => (
                                 <button
                                   key={g.key}
@@ -629,7 +630,7 @@ export function RotationTaskModal({
                       );
                     })}
                     <p className="text-[10px] text-gray-500 mt-1">
-                      📸 Fotoğrafçı/Satış · 🖨️ Baskı · 📒 Albüm — seçilmezse Fotoğraf primi uygulanır
+                      📸 Fotoğrafçı/Satış · 🖨️ Baskı · 📒 Albüm · 👁️ Gözlemci — seçilmezse Fotoğraf primi uygulanır
                     </p>
                   </div>
                 </div>
