@@ -371,7 +371,7 @@ export function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => voi
             {v.printType && (
               <>
                 <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>·</span>
-                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 10, background: 'rgba(167,139,250,0.15)', color: '#a78bfa', fontWeight: 700 }}>
+                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 10, background: 'rgba(var(--app-accent-rgb),0.15)', color: 'var(--app-accent, #a855f7)', fontWeight: 700 }}>
                   {v.printType === 'tam' ? 'Tam Boy' : 'Yarım Boy'}
                 </span>
               </>
@@ -436,9 +436,9 @@ export function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => voi
               </div>
             )}
 
-            <div className="flex items-center justify-between" style={{ background: 'rgba(167,139,250,0.1)', borderRadius: 10, padding: '10px 14px', border: '1px solid rgba(167,139,250,0.25)' }}>
+            <div className="flex items-center justify-between" style={{ background: 'rgba(var(--app-accent-rgb),0.1)', borderRadius: 10, padding: '10px 14px', border: '1px solid rgba(var(--app-accent-rgb),0.25)' }}>
               <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: 800 }}>Toplam Ciro</span>
-              <span style={{ fontSize: 19, fontWeight: 900, color: '#a78bfa' }}>{tl(v.toplamCiro)}</span>
+              <span style={{ fontSize: 19, fontWeight: 900, color: 'var(--app-accent, #a855f7)' }}>{tl(v.toplamCiro)}</span>
             </div>
 
             {/* ── Maliyet & Kâr/Zarar özeti ── */}
@@ -461,7 +461,7 @@ export function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => voi
                   {toplamPrim > 0 && (
                     <div className="flex items-center justify-between">
                       <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Hakediş Gideri</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>-{tl(toplamPrim)}</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--app-accent, #a855f7)' }}>-{tl(toplamPrim)}</span>
                     </div>
                   )}
                   {personelMaas > 0 && (
@@ -511,8 +511,8 @@ export function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => voi
             </div>
           )}
           {(v as any).kapanisNot && (
-            <div className="flex gap-2" style={{ background: 'rgba(167,139,250,0.06)', borderRadius: 8, padding: '8px 12px', border: '1px solid rgba(167,139,250,0.15)' }}>
-              <span style={{ fontSize: 9, color: '#a78bfa', fontWeight: 700, flexShrink: 0 }}>Kapanış:</span>
+            <div className="flex gap-2" style={{ background: 'rgba(var(--app-accent-rgb),0.06)', borderRadius: 8, padding: '8px 12px', border: '1px solid rgba(var(--app-accent-rgb),0.15)' }}>
+              <span style={{ fontSize: 9, color: 'var(--app-accent, #a855f7)', fontWeight: 700, flexShrink: 0 }}>Kapanış:</span>
               <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', lineHeight: 1.4 }}>{(v as any).kapanisNot}</span>
             </div>
           )}
@@ -689,7 +689,7 @@ export function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => voi
 
       {/* ── BLOK 3: Hakediş ── */}
       {(v.personeller.length > 0 || (v.kotaKademeleri || []).length > 0) && (() => {
-        const KADEME_COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399', '#f87171', '#fb923c'];
+        const KADEME_COLORS = ['#60a5fa', 'var(--app-accent, #a855f7)', '#fbbf24', '#34d399', '#f87171', '#fb923c'];
         const kkList = v.kotaKademeleri || [];
         const pb = v.primBilgi;
         const hasPrim = !!pb;
@@ -705,13 +705,13 @@ export function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => voi
         return (
           <div style={{
             ...sectionStyle,
-            background: hasPrim ? 'rgba(167,139,250,0.07)' : 'rgba(255,255,255,0.04)',
-            border: hasPrim ? '1px solid rgba(167,139,250,0.22)' : '1px solid rgba(255,255,255,0.08)',
+            background: hasPrim ? 'rgba(var(--app-accent-rgb),0.07)' : 'rgba(255,255,255,0.04)',
+            border: hasPrim ? '1px solid rgba(var(--app-accent-rgb),0.22)' : '1px solid rgba(255,255,255,0.08)',
           }}>
             {/* Başlık */}
             <div className="flex items-center gap-2 mb-3">
-              <Trophy style={{ width: 10, height: 10, color: hasPrim ? '#a78bfa' : 'rgba(255,255,255,0.3)' }} />
-              <span style={{ fontSize: 10, fontWeight: 700, color: hasPrim ? '#a78bfa' : 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const, letterSpacing: '0.08em' }}>
+              <Trophy style={{ width: 10, height: 10, color: hasPrim ? 'var(--app-accent, #a855f7)' : 'rgba(255,255,255,0.3)' }} />
+              <span style={{ fontSize: 10, fontWeight: 700, color: hasPrim ? 'var(--app-accent, #a855f7)' : 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const, letterSpacing: '0.08em' }}>
                 Hakediş{hasPrim ? ' — 🏆 Kazanıldı!' : ''}
               </span>
             </div>
@@ -729,8 +729,8 @@ export function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => voi
                       <div className="flex items-center gap-2">
                         <div style={{
                           width: 26, height: 26, borderRadius: 8,
-                          background: hasPrim ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.06)',
-                          border: hasPrim ? '1px solid rgba(167,139,250,0.28)' : '1px solid rgba(255,255,255,0.1)',
+                          background: hasPrim ? 'rgba(var(--app-accent-rgb),0.15)' : 'rgba(255,255,255,0.06)',
+                          border: hasPrim ? '1px solid rgba(var(--app-accent-rgb),0.28)' : '1px solid rgba(255,255,255,0.1)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13,
                         }}>
                           {p.avatar}
@@ -738,7 +738,7 @@ export function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => voi
                         <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)', fontWeight: 600 }}>{p.ad}</span>
                       </div>
                       {hasPrim
-                        ? <span style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa' }}>{tl(kisiBasiPrim)}</span>
+                        ? <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--app-accent, #a855f7)' }}>{tl(kisiBasiPrim)}</span>
                         : <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontWeight: 600 }}>—</span>
                       }
                     </div>
@@ -778,9 +778,9 @@ export function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => voi
 
             {/* Hakediş VAR → toplam */}
             {hasPrim && (
-              <div style={{ borderTop: '1px solid rgba(167,139,250,0.15)', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ borderTop: '1px solid rgba(var(--app-accent-rgb),0.15)', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>Toplam Hakediş</span>
-                <span style={{ fontSize: 16, fontWeight: 900, color: '#a78bfa' }}>{tl(toplamPrim)}</span>
+                <span style={{ fontSize: 16, fontWeight: 900, color: 'var(--app-accent, #a855f7)' }}>{tl(toplamPrim)}</span>
               </div>
             )}
 
@@ -824,7 +824,7 @@ export function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => voi
                     </p>
                   </div>
                   <div className="text-right">
-                    <p style={{ fontSize: 14, fontWeight: 800, color: '#a78bfa' }}>{tl(p.toplamTL)}</p>
+                    <p style={{ fontSize: 14, fontWeight: 800, color: 'var(--app-accent, #a855f7)' }}>{tl(p.toplamTL)}</p>
                     {(() => {
                       const satirToplam = p.satirlar.reduce((s, sr) => s + sr.toplamTL, 0);
                       const iskonto = Math.round(satirToplam - p.toplamTL);
@@ -866,7 +866,7 @@ export function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => voi
                       {p.satirlar.map((s, i) => (
                         <span key={i} style={{
                           fontSize: 10, padding: '3px 9px', borderRadius: 20,
-                          background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)',
+                          background: 'rgba(var(--app-accent-rgb),0.1)', border: '1px solid rgba(var(--app-accent-rgb),0.2)',
                           color: 'rgba(255,255,255,0.65)',
                         }}>
                           {s.urun} ×{s.adet}{s.toplamTL > 0 ? ` · ${tl(s.toplamTL)}` : ''}

@@ -89,17 +89,19 @@ const categoryLabels = {
   ekipman: '🖨️ Ekipman & Bakım',
   operasyonel: '🏢 Operasyonel',
   ulasim: '🚗 Ulaşım',
-  diger: '📋 Diğer'
-};
+  diger: '📋 Diğer',
+  kira: '🏠 Mekan Kiraları',
+} as Record<string, string>;
 
 const categoryColors = {
-  personel: { bg: 'from-purple-500/20 to-purple-600/20', text: 'text-purple-400', border: 'border-purple-500/30', progress: 'from-purple-500 to-purple-600' },
+  personel: { bg: 'from-ta/20 to-ta/20', text: 'text-ta', border: 'border-ta/30', progress: 'from-ta to-ta' },
   malzeme: { bg: 'from-blue-500/20 to-blue-600/20', text: 'text-blue-400', border: 'border-blue-500/30', progress: 'from-blue-500 to-blue-600' },
   ekipman: { bg: 'from-green-500/20 to-green-600/20', text: 'text-green-400', border: 'border-green-500/30', progress: 'from-green-500 to-green-600' },
   operasyonel: { bg: 'from-orange-500/20 to-orange-600/20', text: 'text-orange-400', border: 'border-orange-500/30', progress: 'from-orange-500 to-orange-600' },
   ulasim: { bg: 'from-cyan-500/20 to-cyan-600/20', text: 'text-cyan-400', border: 'border-cyan-500/30', progress: 'from-cyan-500 to-cyan-600' },
-  diger: { bg: 'from-gray-500/20 to-gray-600/20', text: 'text-gray-400', border: 'border-gray-500/30', progress: 'from-gray-500 to-gray-600' }
-};
+  diger: { bg: 'from-gray-500/20 to-gray-600/20', text: 'text-gray-400', border: 'border-gray-500/30', progress: 'from-gray-500 to-gray-600' },
+  kira: { bg: 'from-yellow-500/20 to-yellow-600/20', text: 'text-yellow-400', border: 'border-yellow-500/30', progress: 'from-yellow-500 to-yellow-600' },
+} as Record<string, { bg: string; text: string; border: string; progress: string }>;
 
 const roleAvatars: Record<string, string> = {
   'yonetici': '👨‍💼', 'ust-mudur': '👩‍💼', 'mudur': '🧑‍💼',
@@ -110,7 +112,7 @@ const roleLabels: Record<string, string> = {
   'operasyon': 'Operasyon', 'personel': 'Personel', 'idari': 'İdari',
 };
 const roleColors: Record<string, string> = {
-  'yonetici': 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+  'yonetici': 'bg-ta/20 text-ta border-ta/30',
   'ust-mudur': 'bg-blue-500/20 text-blue-300 border-blue-500/30',
   'mudur': 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
   'operasyon': 'bg-orange-500/20 text-orange-300 border-orange-500/30',
@@ -172,6 +174,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   const [mekanFilter, setMekanFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [displayLimit, setDisplayLimit] = useState(15);
+  const [showAllMekanGelir, setShowAllMekanGelir] = useState(false);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
@@ -333,28 +336,11 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
     }
   };
 
+  // Sabit giderler: sadece kira (maaş ve düzenli giderler otomatik olarak isletme_gider_'e ekleniyor)
   const computeAutoGider = (days: number): number => {
     if (days <= 0) return 0;
-    const toTRY = (amount: number, cur: string) => {
-      if (cur === 'EUR') return amount * exchangeRates.EUR;
-      if (cur === 'USD') return amount * exchangeRates.USD;
-      if (cur === 'GBP') return amount * exchangeRates.GBP;
-      return amount;
-    };
     let total = 0;
     for (const m of mekanKiralar) total += (m.yearlyRent / 365) * days;
-    for (const r of recurringCosts) {
-      const tryAmt = toTRY(r.amount, r.currency);
-      if (r.frequency === 'daily') total += tryAmt * days;
-      else if (r.frequency === 'weekly') total += (tryAmt / 7) * days;
-      else if (r.frequency === 'monthly') total += (tryAmt / 30) * days;
-      else if (r.frequency === 'yearly') total += (tryAmt / 365) * days;
-    }
-    for (const s of allSalaries) {
-      const tryAmt = toTRY(s.amount, s.currency);
-      const withExtra = tryAmt * (1 + (s.extraCostPercentage || 0) / 100);
-      total += (withExtra / 30) * days;
-    }
     return Math.round(total);
   };
 
@@ -681,9 +667,15 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   };
 
   const filteredExpenses = getFilteredExpenses();
-  const manualGiderToplam = filteredExpenses.reduce((s, e) => s + e.amount, 0);
+  // Sabit giderler: otomatik kayıtlar + elle eklenen maaşlar + operasyonel giderler
+  const isSabitGider = (e: any) => e.otomatik || (e.category === 'personel' && e.odemeTipi === 'maas') || e.category === 'operasyonel';
+  const sabitGiderler = filteredExpenses.filter(isSabitGider);
+  const manuelGiderler = filteredExpenses.filter((e: any) => !isSabitGider(e));
+  const manualGiderToplam = manuelGiderler.reduce((s, e) => s + e.amount, 0);
+  const otomatikGiderToplam = sabitGiderler.reduce((s, e) => s + e.amount, 0);
   const { days: filterDays } = getDateRangeForFilter();
-  const autoGiderToplam = dateFilter !== 'all' ? computeAutoGider(filterDays) : 0;
+  const kiraGiderToplam = dateFilter !== 'all' ? computeAutoGider(filterDays) : 0;
+  const autoGiderToplam = kiraGiderToplam + otomatikGiderToplam;
   const totalExpenses = manualGiderToplam + autoGiderToplam;
   // Gelir kayıtlarını tarih + mekan filtresine göre filtrele
   const filteredGelirler = gelirler.filter(g => {
@@ -712,11 +704,19 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   const netProfit = totalRevenue - totalExpenses;
   const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
-  const categorySummary = Object.keys(categoryLabels).map(cat => {
+  const categorySummaryBase = Object.keys(categoryLabels).map(cat => {
     const items = filteredExpenses.filter(e => e.category === cat);
     const total = items.reduce((s, e) => s + e.amount, 0);
-    return { category: cat as Expense['category'], total, count: items.length, percentage: totalExpenses > 0 ? (total / totalExpenses) * 100 : 0 };
-  }).filter(i => i.total > 0).sort((a, b) => b.total - a.total);
+    return { category: cat, total, count: items.length, percentage: 0 };
+  }).filter(i => i.total > 0);
+  // Kira ekle
+  if (kiraGiderToplam > 0) {
+    categorySummaryBase.push({ category: 'kira', total: kiraGiderToplam, count: mekanKiralar.length, percentage: 0 });
+  }
+  // Yüzdeleri hesapla ve sırala
+  const categorySummary = categorySummaryBase
+    .map(i => ({ ...i, percentage: totalExpenses > 0 ? (i.total / totalExpenses) * 100 : 0 }))
+    .sort((a, b) => b.total - a.total);
 
   // ─── Export ─────────────────────────────
   const exportToPDF = () => {
@@ -832,19 +832,40 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                       {ciroData.toplamSatisAdet} satış
                       {ekGelirToplam > 0 && <span className="text-green-400/60"> + ₺{ekGelirToplam.toLocaleString('tr-TR')} ek gelir</span>}
                     </div>
-                    {ciroData.mekanlar.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {ciroData.mekanlar.slice(0, 3).map(m => (
-                          <div key={m.id} className="flex items-center justify-between">
-                            <span className="text-xs text-gray-400 truncate">{m.emoji} {m.name}</span>
-                            <span className="text-xs font-semibold text-green-300 shrink-0 ml-1">₺{m.ciro.toLocaleString('tr-TR')}</span>
-                          </div>
-                        ))}
-                        {ciroData.mekanlar.length > 3 && (
-                          <div className="text-xs text-gray-600">+{ciroData.mekanlar.length - 3} mekan daha</div>
-                        )}
-                      </div>
-                    )}
+                    {ciroData.mekanlar.length > 0 && (() => {
+                      // Mekan bazlı ek gelirleri hesapla
+                      const mekanEkGelir: Record<string, number> = {};
+                      for (const g of filteredGelirler) {
+                        if (g.mekanId) mekanEkGelir[g.mekanId] = (mekanEkGelir[g.mekanId] || 0) + g.amount;
+                      }
+                      // Ciro + ek gelir birleşimi
+                      const mekanGelirList = ciroData.mekanlar.map(m => ({
+                        ...m,
+                        toplamGelir: m.ciro + (mekanEkGelir[m.id] || 0),
+                        ekGelir: mekanEkGelir[m.id] || 0,
+                      })).filter(m => m.toplamGelir > 0 && m.name && !m.name.match(/^\d{5,}/)).sort((a, b) => b.toplamGelir - a.toplamGelir);
+                      return (
+                        <div className="mt-2 space-y-1">
+                          {mekanGelirList.slice(0, 3).map(m => (
+                            <div key={m.id} className="flex items-center justify-between">
+                              <span className="text-xs text-gray-400 truncate">{m.emoji} {m.name}</span>
+                              <span className="text-xs font-semibold text-green-300 shrink-0 ml-1">₺{Math.round(m.toplamGelir).toLocaleString('tr-TR')}</span>
+                            </div>
+                          ))}
+                          {mekanGelirList.length > 3 && !showAllMekanGelir && (
+                            <button onClick={() => setShowAllMekanGelir(true)} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                              +{mekanGelirList.length - 3} mekan daha
+                            </button>
+                          )}
+                          {showAllMekanGelir && mekanGelirList.slice(3).map(m => (
+                            <div key={m.id} className="flex items-center justify-between">
+                              <span className="text-xs text-gray-400 truncate">{m.emoji} {m.name}</span>
+                              <span className="text-xs font-semibold text-green-300 shrink-0 ml-1">₺{Math.round(m.toplamGelir).toLocaleString('tr-TR')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -861,9 +882,12 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                       <span className="text-xs font-semibold text-red-300">₺{manualGiderToplam.toLocaleString('tr-TR')}</span>
                     </div>
                     {autoGiderToplam > 0 && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-400">⚙️ Sabit giderler</span>
-                        <span className="text-xs font-semibold text-orange-300">₺{autoGiderToplam.toLocaleString('tr-TR')}</span>
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-400">⚙️ Sabit giderler</span>
+                          <span className="text-xs font-semibold text-orange-300">₺{autoGiderToplam.toLocaleString('tr-TR')}</span>
+                        </div>
+                        <div className="text-[9px] text-gray-500 ml-5">Maaş & Kira & Operasyonel</div>
                       </div>
                     )}
                     {dateFilter === 'all' && (
@@ -886,9 +910,9 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                     </div>
                     <div className="text-xs text-gray-500 mt-1">Gelir - Gider</div>
                   </div>
-                  <div className="backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-500/30 rounded-2xl p-4">
+                  <div className="backdrop-blur-xl bg-gradient-to-br from-ta/20 to-ta/20 border border-ta/30 rounded-2xl p-4">
                     <div className="flex items-center gap-2 mb-2">
-                      <TrendingUp className="w-4 h-4 text-purple-400" />
+                      <TrendingUp className="w-4 h-4 text-ta" />
                       <span className="text-xs text-gray-300">Kar Marjı</span>
                     </div>
                     <div className="text-xl font-bold text-white">{profitMargin.toFixed(1)}%</div>
@@ -942,6 +966,9 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
               </div>
             </div>
           )}
+
+          {/* Ayırıcı */}
+          <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '8px 0' }} />
 
           {/* ── Mekan Filtresi ── */}
           {tumMekanlar.length > 0 && (
@@ -1155,10 +1182,10 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
 
               {/* ══ PERSONEL ÖZEL FORMU ══ */}
               {formData.category === 'personel' && (
-                <div className="space-y-4 p-4 bg-purple-500/10 border border-purple-500/20 rounded-2xl">
+                <div className="space-y-4 p-4 bg-ta/10 border border-ta/20 rounded-2xl">
                   <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-purple-400" />
-                    <span className="text-sm font-bold text-purple-300">Personel Ödeme Detayı</span>
+                    <Users className="w-4 h-4 text-ta" />
+                    <span className="text-sm font-bold text-ta">Personel Ödeme Detayı</span>
                   </div>
 
                   {/* Personel Seçici */}
@@ -1168,7 +1195,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                       <button
                         type="button"
                         onClick={() => setShowUserPicker(p => !p)}
-                        className={`w-full px-4 py-3 bg-white/10 border rounded-xl text-left flex items-center justify-between transition-all ${showUserPicker ? 'border-purple-400 ring-1 ring-purple-400/30' : 'border-white/20 hover:border-white/40'}`}
+                        className={`w-full px-4 py-3 bg-white/10 border rounded-xl text-left flex items-center justify-between transition-all ${showUserPicker ? 'border-ta ring-1 ring-ta/30' : 'border-white/20 hover:border-white/40'}`}
                       >
                         {formData.personelAdi ? (
                           <div className="flex items-center gap-2">
@@ -1193,7 +1220,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                               placeholder="İsim ara..."
                               value={userPickerSearch}
                               onChange={e => setUserPickerSearch(e.target.value)}
-                              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-xl text-white text-sm placeholder-gray-500 focus:outline-none focus:border-purple-400"
+                              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-xl text-white text-sm placeholder-gray-500 focus:outline-none focus:border-ta"
                             />
                           </div>
                           <div className="max-h-56 overflow-y-auto py-2">
@@ -1207,9 +1234,9 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                                   key={user.id}
                                   type="button"
                                   onClick={() => selectPersonel(user)}
-                                  className={`w-full px-4 py-3 flex items-center gap-3 hover:bg-white/10 transition-all text-left ${isSelected ? 'bg-purple-500/10' : ''}`}
+                                  className={`w-full px-4 py-3 flex items-center gap-3 hover:bg-white/10 transition-all text-left ${isSelected ? 'bg-ta/10' : ''}`}
                                 >
-                                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 ${isSelected ? 'bg-purple-500/20 border border-purple-500/40' : 'bg-white/10 border border-white/15'}`}>
+                                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 ${isSelected ? 'bg-ta/20 border border-ta/40' : 'bg-white/10 border border-white/15'}`}>
                                     {roleAvatars[user.rol] || '👤'}
                                   </div>
                                   <div className="flex-1 min-w-0">
@@ -1224,7 +1251,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                                       <span className="text-xs text-gray-500 truncate">{user.email}</span>
                                     </div>
                                   </div>
-                                  {isSelected && <Check className="w-4 h-4 text-purple-400 shrink-0" />}
+                                  {isSelected && <Check className="w-4 h-4 text-ta shrink-0" />}
                                 </button>
                               );
                             })}
@@ -1297,10 +1324,10 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                       type="month"
                       value={formData.donem}
                       onChange={e => setFormData(prev => ({ ...prev, donem: e.target.value }))}
-                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-sm focus:outline-none focus:border-purple-400 transition-all"
+                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-sm focus:outline-none focus:border-ta transition-all"
                     />
                     {formData.donem && (
-                      <p className="text-xs text-purple-300 mt-1">📅 {formatDonem(formData.donem)}</p>
+                      <p className="text-xs text-ta mt-1">📅 {formatDonem(formData.donem)}</p>
                     )}
                   </div>
                 </div>
@@ -1400,6 +1427,13 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                     </div>
                   );
                 })}
+                {/* Toplam */}
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 10, marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span className="text-sm font-bold text-white">Toplam</span>
+                  <span className="text-sm font-bold" style={{ color: '#f87171' }}>
+                    -₺{Math.round(categorySummary.reduce((s, c) => s + c.total, 0)).toLocaleString('tr-TR')}
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -1439,7 +1473,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
             <button onClick={exportToCSV} className="bg-green-500/20 border border-green-500/30 text-green-400 font-semibold py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-sm">
               <FileText className="w-4 h-4" /> CSV
             </button>
-            <button onClick={() => window.print()} className="bg-purple-500/20 border border-purple-500/30 text-purple-400 font-semibold py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-sm">
+            <button onClick={() => window.print()} className="bg-ta/20 border border-ta/30 text-ta font-semibold py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-sm">
               <Printer className="w-4 h-4" /> Yazdır
             </button>
           </div>
@@ -1467,7 +1501,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                           {/* ── Personel kategorisi özel görünüm ── */}
                           {expense.category === 'personel' && expense.personelAdi ? (
                             <div className="flex items-center gap-3 mb-2">
-                              <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-xl shrink-0">
+                              <div className="w-10 h-10 rounded-xl bg-ta/20 border border-ta/30 flex items-center justify-center text-xl shrink-0">
                                 {roleAvatars[expense.personelRol || ''] || '👤'}
                               </div>
                               <div className="min-w-0">
@@ -1485,7 +1519,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                                   )}
                                 </div>
                                 {expense.donem && (
-                                  <div className="text-xs text-purple-300 mt-0.5">📅 {formatDonem(expense.donem)}</div>
+                                  <div className="text-xs text-ta mt-0.5">📅 {formatDonem(expense.donem)}</div>
                                 )}
                               </div>
                             </div>
@@ -1600,7 +1634,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
               <div>
                 <h4 className="font-semibold text-white mb-2">Yetki Sistemi</h4>
                 <div className="space-y-1.5 text-xs text-gray-400">
-                  <p><span className="text-purple-300 font-medium">Yönetici:</span> Tüm gelir/giderleri görebilir, ekleyebilir ve silebilir.</p>
+                  <p><span className="text-ta font-medium">Yönetici:</span> Tüm gelir/giderleri görebilir, ekleyebilir ve silebilir.</p>
                   <p><span className="text-blue-300 font-medium">Üst Müdür:</span> Tüm gelir/giderleri görebilir ve ekleyebilir.</p>
                   <p><span className="text-gray-300 font-medium">Diğer roller:</span> Bu sayfaya erişim yok.</p>
                 </div>
@@ -1691,11 +1725,11 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
               </div>
 
               {/* Personel Maaşları */}
-              <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-3">
+              <div className="bg-ta/10 border border-ta/20 rounded-xl p-3">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-base">💰</span>
-                  <span className="text-sm font-semibold text-purple-300">Personel Maaşları</span>
-                  <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 font-medium">→ 💼 Personel</span>
+                  <span className="text-sm font-semibold text-ta">Personel Maaşları</span>
+                  <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-ta/20 border border-ta/30 text-ta font-medium">→ 💼 Personel</span>
                 </div>
                 {allSalaries.length === 0 ? (
                   <p className="text-xs text-gray-500 italic">Maaş tanımlanmamış.</p>
@@ -1711,7 +1745,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                             {roleAvatars[s.userRole || ''] || '👤'} {s.name}
                           </span>
                           <div className="text-right">
-                            <span className="text-xs font-semibold text-purple-200">
+                            <span className="text-xs font-semibold text-ta">
                               ₺{s.amount.toLocaleString('tr-TR')}/ay
                             </span>
                             {s.extraCostPercentage > 0 && (
@@ -1721,9 +1755,9 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                         </div>
                       );
                     })}
-                    <div className="pt-1.5 border-t border-purple-500/20 flex items-center justify-between">
+                    <div className="pt-1.5 border-t border-ta/20 flex items-center justify-between">
                       <span className="text-xs text-gray-400 font-medium">Toplam aylık maaş yükü</span>
-                      <span className="text-sm font-bold text-purple-300">
+                      <span className="text-sm font-bold text-ta">
                         ₺{allSalaries.reduce((s: number, sal: SalaryDef) => s + Math.round(sal.amount * (1 + (sal.extraCostPercentage || 0) / 100)), 0).toLocaleString('tr-TR')}
                       </span>
                     </div>

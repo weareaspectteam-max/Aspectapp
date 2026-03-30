@@ -82,7 +82,7 @@ const QUICK_ACTIONS = [
   { label: 'Satış İstatistik',  icon: BarChart2,      color: '#9dd9ea', tab: 'satis-raporu' },
   { label: 'Anomali İstatistik',icon: AlertTriangle,   color: '#f87171', tab: 'anomali-panosu' },
   { label: 'Vardiya İstatistik',  icon: Clock,       color: '#a8e6cf', tab: 'vardiya-istatistikleri' },
-  { label: 'İndirim İstatistik', icon: Star,        color: '#c4b5fd', tab: 'indirim-istatistik' },
+  { label: 'İndirim İstatistik', icon: Star,        color: 'var(--app-accent, #a855f7)', tab: 'indirim-istatistik' },
   { label: 'Yön. Raporları',     icon: TrendingUp,  color: '#fb923c', tab: 'manager-reports' },
   { label: 'Hakediş Takip',      icon: Trophy,      color: '#fbbf24', tab: 'prim-takip' },
 ];
@@ -130,7 +130,7 @@ export function ManagerDashboard({ userName, roleTitle, onNavigate }: ManagerDas
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-black text-white">Genel Durum</h1>
-              <p className="text-xs mt-0.5" style={{ color: 'rgba(196,181,253,0.5)' }}>
+              <p className="text-xs mt-0.5" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>
                 {userName} · {roleTitle} · {new Date().toLocaleDateString('tr-TR')}
               </p>
             </div>
@@ -192,9 +192,9 @@ export function ManagerDashboard({ userName, roleTitle, onNavigate }: ManagerDas
           </div>
 
           {/* Fotoğraf Karesi */}
-          <div style={{ ...glass, padding: 16, border: '1px solid rgba(196,181,253,0.25)', boxShadow: '0 4px 24px rgba(196,181,253,0.08)' }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(196,181,253,0.15)', border: '1px solid rgba(196,181,253,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-              <Camera className="w-5 h-5" style={{ color: '#c4b5fd' }} />
+          <div style={{ ...glass, padding: 16, border: '1px solid rgba(var(--app-accent-rgb),0.25)', boxShadow: '0 4px 24px rgba(var(--app-accent-rgb),0.08)' }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(var(--app-accent-rgb),0.15)', border: '1px solid rgba(var(--app-accent-rgb),0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+              <Camera className="w-5 h-5" style={{ color: 'var(--app-accent, #a855f7)' }} />
             </div>
             <p className="text-xs font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Fotoğraf Karesi</p>
             {isLoading

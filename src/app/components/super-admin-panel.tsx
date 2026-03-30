@@ -74,7 +74,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 const ROLE_COLORS: Record<string, string> = {
   yonetici:   '#a855f7',
-  'ust-mudur':'#7c3aed',
+  'ust-mudur':'#a855f7',
   mudur:       '#6366f1',
   operasyon:   '#fb923c',
   personel:    '#34d399',
@@ -456,8 +456,8 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompan
             {['🏢','✦','🖼','🔷','📸','🎯','⭐','🌟','💎','🏆'].map(e => (
               <button key={e} onClick={() => setEmoji(e)}
                 style={{ width: 36, height: 36, fontSize: 18, borderRadius: 10, cursor: 'pointer',
-                  background: emoji === e ? 'rgba(168,85,247,0.25)' : 'rgba(255,255,255,0.06)',
-                  border: emoji === e ? '1px solid #a855f7' : '1px solid rgba(255,255,255,0.12)' }}>
+                  background: emoji === e ? 'rgba(var(--app-accent-rgb),0.25)' : 'rgba(255,255,255,0.06)',
+                  border: emoji === e ? '1px solid var(--app-accent, #a855f7)' : '1px solid rgba(255,255,255,0.12)' }}>
                 {e}
               </button>
             ))}
@@ -532,7 +532,7 @@ export function SuperAdminPanel({ userName, onNavigate, onLogout, onSwitchCompan
             {['🏢','✦','🖼','🔷','📸','🎯','⭐','🌟','💎','🏆'].map(e => (
               <button key={e} onClick={() => setEmoji(e)}
                 style={{ width: 36, height: 36, fontSize: 18, borderRadius: 10, cursor: 'pointer',
-                  background: emoji === e ? 'rgba(168,85,247,0.25)' : 'rgba(255,255,255,0.06)',
+                  background: emoji === e ? 'rgba(var(--app-accent-rgb),0.25)' : 'rgba(255,255,255,0.06)',
                   border: emoji === e ? `1px solid ${color}` : '1px solid rgba(255,255,255,0.12)' }}>
                 {e}
               </button>

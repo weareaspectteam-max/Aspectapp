@@ -19,7 +19,7 @@ const glass: React.CSSProperties = {
   borderRadius: 20,
 };
 
-const KADEME_COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399', '#f87171', '#fb923c'];
+const KADEME_COLORS = ['#60a5fa', 'var(--app-accent, #a855f7)', '#fbbf24', '#34d399', '#f87171', '#fb923c'];
 const KADEME_EMOJIS = ['🥉', '🥈', '🥇', '🏅', '💎', '👑'];
 
 function formatTL(val: number): string {
@@ -195,7 +195,7 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
       {/* Arka plan efektleri */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -top-32 -left-32 w-80 h-80 rounded-full blur-3xl" style={{ background: 'rgba(251,191,36,0.04)' }} />
-        <div className="absolute top-1/2 -right-24 w-64 h-64 rounded-full blur-3xl" style={{ background: 'rgba(168,85,247,0.06)' }} />
+        <div className="absolute top-1/2 -right-24 w-64 h-64 rounded-full blur-3xl" style={{ background: 'rgba(var(--app-accent-rgb),0.06)' }} />
         <div className="absolute bottom-1/4 left-1/4 w-56 h-56 rounded-full blur-3xl" style={{ background: 'rgba(52,211,153,0.04)' }} />
       </div>
 
@@ -214,7 +214,7 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
               <Trophy className="w-5 h-5" style={{ color: '#fbbf24' }} />
               Hakedişlerim
             </h1>
-            <p className="text-xs" style={{ color: 'rgba(196,181,253,0.5)' }}>Kişisel hakediş geçmişi</p>
+            <p className="text-xs" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>Kişisel hakediş geçmişi</p>
           </div>
           <button
             onClick={fetchRapor}
@@ -241,7 +241,7 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}
           style={{ ...glass, padding: 14 }}>
           <div className="flex items-center gap-2 mb-3">
-            <Calendar className="w-4 h-4" style={{ color: '#c4b5fd' }} />
+            <Calendar className="w-4 h-4" style={{ color: 'var(--app-accent, #a855f7)' }} />
             <p className="text-sm font-bold text-white">Dönem</p>
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1">
@@ -280,7 +280,7 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
                 className="relative overflow-hidden mb-3"
                 style={{
                   borderRadius: 20,
-                  background: 'linear-gradient(135deg, rgba(251,191,36,0.15) 0%, rgba(168,85,247,0.1) 100%)',
+                  background: 'linear-gradient(135deg, rgba(251,191,36,0.15) 0%, rgba(var(--app-accent-rgb),0.1) 100%)',
                   border: '1px solid rgba(251,191,36,0.25)',
                   padding: '20px 20px',
                 }}
@@ -309,7 +309,7 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
                   {[
                     { label: 'Toplam Kazanç', val: rapor.toplamPrim, color: '#fbbf24', icon: <Trophy className="w-3.5 h-3.5" /> },
                     { label: 'Ödenen', val: rapor.odenenPrim, color: '#34d399', icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
-                    { label: 'Alacağım', val: rapor.bekleyenPrim, color: '#c4b5fd', icon: <Wallet className="w-3.5 h-3.5" /> },
+                    { label: 'Alacağım', val: rapor.bekleyenPrim, color: 'var(--app-accent, #a855f7)', icon: <Wallet className="w-3.5 h-3.5" /> },
                   ].map(c => (
                     <div key={c.label} style={{
                       background: 'rgba(0,0,0,0.2)',
@@ -563,7 +563,7 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
                                             </span>
                                           )}
                                           {kayit.kidemSeviye && kayit.kidemSeviye !== 'kidemsiz' && (
-                                            <span style={{ fontSize: 8, padding: '0px 4px', borderRadius: 4, background: kayit.kidemSeviye === 'kidemliPlus' ? 'rgba(168,85,247,0.12)' : 'rgba(96,165,250,0.12)', border: `1px solid ${kayit.kidemSeviye === 'kidemliPlus' ? 'rgba(168,85,247,0.25)' : 'rgba(96,165,250,0.25)'}`, color: kayit.kidemSeviye === 'kidemliPlus' ? '#c084fc' : '#93c5fd' }}>
+                                            <span style={{ fontSize: 8, padding: '0px 4px', borderRadius: 4, background: kayit.kidemSeviye === 'kidemliPlus' ? 'rgba(var(--app-accent-rgb),0.12)' : 'rgba(96,165,250,0.12)', border: `1px solid ${kayit.kidemSeviye === 'kidemliPlus' ? 'rgba(var(--app-accent-rgb),0.25)' : 'rgba(96,165,250,0.25)'}`, color: kayit.kidemSeviye === 'kidemliPlus' ? 'var(--app-accent, #a855f7)' : '#93c5fd' }}>
                                               {kayit.kidemSeviye === 'kidemliPlus' ? 'Kıdemli+' : 'Kıdemli'}
                                             </span>
                                           )}
@@ -621,19 +621,19 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
                 transition={{ delay: 0.15 }}
                 style={{
                   borderRadius: 18,
-                  background: 'linear-gradient(135deg, rgba(196,181,253,0.1) 0%, rgba(168,85,247,0.08) 100%)',
-                  border: '1px solid rgba(196,181,253,0.2)',
+                  background: 'linear-gradient(135deg, rgba(var(--app-accent-rgb),0.1) 0%, rgba(var(--app-accent-rgb),0.08) 100%)',
+                  border: '1px solid rgba(var(--app-accent-rgb),0.2)',
                   padding: '16px 18px',
                 }}
               >
                 <div className="flex items-center gap-3">
                   <div style={{
                     width: 42, height: 42, borderRadius: 13, flexShrink: 0,
-                    background: 'rgba(196,181,253,0.12)',
-                    border: '1px solid rgba(196,181,253,0.25)',
+                    background: 'rgba(var(--app-accent-rgb),0.12)',
+                    border: '1px solid rgba(var(--app-accent-rgb),0.25)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>
-                    <Wallet className="w-5 h-5" style={{ color: '#c4b5fd' }} />
+                    <Wallet className="w-5 h-5" style={{ color: 'var(--app-accent, #a855f7)' }} />
                   </div>
                   <div className="flex-1">
                     <p style={{ color: 'white', fontWeight: 800, fontSize: 13 }}>Toplam Alacağım</p>
@@ -641,7 +641,7 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
                       Ödeme yönetici tarafından işlenecek
                     </p>
                   </div>
-                  <p style={{ color: '#c4b5fd', fontSize: 22, fontWeight: 900 }}>
+                  <p style={{ color: 'var(--app-accent, #a855f7)', fontSize: 22, fontWeight: 900 }}>
                     {formatTL(rapor.bekleyenPrim)}
                   </p>
                 </div>

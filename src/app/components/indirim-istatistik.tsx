@@ -150,7 +150,7 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
           </button>
           <button
             onClick={() => setShowFiltre(v => !v)}
-            className={`p-2 rounded-xl transition-all active:scale-95 ${showFiltre ? 'bg-violet-600/60 border border-violet-400/40' : 'bg-white/10'}`}
+            className={`p-2 rounded-xl transition-all active:scale-95 ${showFiltre ? 'bg-ta/60 border border-ta/40' : 'bg-white/10'}`}
           >
             <Filter className="w-5 h-5 text-white" />
           </button>
@@ -165,10 +165,10 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
             <button
               key={k}
               onClick={() => setDonem(k)}
-              className={`flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all ${donem === k ? 'bg-violet-600 text-white' : 'text-gray-400'}`}
+              className={`flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all ${donem === k ? 'bg-ta text-white' : 'text-gray-400'}`}
             >
               <div>{label}</div>
-              <div className={`text-[10px] font-normal mt-0.5 ${donem === k ? 'text-violet-200' : 'text-gray-500'}`}>{sub}</div>
+              <div className={`text-[10px] font-normal mt-0.5 ${donem === k ? 'text-ta' : 'text-gray-500'}`}>{sub}</div>
             </button>
           ))}
         </div>
@@ -196,7 +196,7 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
                   ['indirimTL',    '₺ Tutar'],
                 ] as const).map(([k, lbl]) => (
                   <button key={k} onClick={() => setSiralama(k)}
-                    className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-all ${siralama === k ? 'bg-violet-600 text-white' : 'bg-white/10 text-gray-300'}`}>
+                    className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-all ${siralama === k ? 'bg-ta text-white' : 'bg-white/10 text-gray-300'}`}>
                     {lbl}
                   </button>
                 ))}
@@ -204,7 +204,7 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
             </div>
 
             <button onClick={fetchData}
-              className="w-full py-2.5 rounded-xl bg-violet-600 text-white font-semibold text-sm active:scale-[0.98] transition-all">
+              className="w-full py-2.5 rounded-xl bg-ta text-white font-semibold text-sm active:scale-[0.98] transition-all">
               Filtrele
             </button>
           </div>
@@ -238,7 +238,7 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
               <p className="text-[10px] text-gray-400 leading-tight">En Yüksek<br/>İndirim</p>
             </div>
             <div style={glass} className="p-3 text-center">
-              <Users className="w-5 h-5 text-violet-400 mx-auto mb-1" />
+              <Users className="w-5 h-5 text-ta mx-auto mb-1" />
               <p className="text-xl font-bold text-white">{islenmis.length}</p>
               <p className="text-[10px] text-gray-400 leading-tight">Personel<br/>Sayısı</p>
             </div>
@@ -254,7 +254,7 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
 
         {/* ── Toplam indirim özet banner ── */}
         {!loading && !error && ozet && (
-          <div style={{ ...glass, borderColor: 'rgba(139,92,246,0.2)' }} className="p-4">
+          <div style={{ ...glass, borderColor: 'rgba(var(--app-accent-rgb),0.2)' }} className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-[10px] text-gray-400 mb-0.5">
@@ -278,7 +278,7 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
         {/* ── Yükleniyor ── */}
         {loading && (
           <div className="flex items-center justify-center py-16 gap-3">
-            <Loader2 className="w-6 h-6 text-violet-400 animate-spin" />
+            <Loader2 className="w-6 h-6 text-ta animate-spin" />
             <p className="text-gray-400 text-sm">Veriler hesaplanıyor...</p>
           </div>
         )}
@@ -286,7 +286,7 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
         {/* ── Boş durum ── */}
         {!loading && !error && islenmis.length === 0 && (
           <div style={glass} className="p-8 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center mx-auto mb-4">
+            <div className="w-14 h-14 rounded-2xl bg-ta/20 border border-ta/30 flex items-center justify-center mx-auto mb-4">
               <span className="text-3xl">🏷️</span>
             </div>
             <p className="text-white font-bold mb-1">Veri Yok</p>
@@ -369,7 +369,7 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
                         {/* Uzun dönem */}
                         <div className="rounded-xl p-3 bg-white/5 border border-white/10">
                           <p className="text-[10px] text-gray-400 font-semibold mb-2 flex items-center gap-1">
-                            <TrendingDown className="w-3 h-3 text-violet-400" /> UZUN DÖNEM
+                            <TrendingDown className="w-3 h-3 text-ta" /> UZUN DÖNEM
                           </p>
                           <MetrikSatir label="Ort. indirim oranı" deger={`%${fmt(p.uzun.ortalamaIndirimOrani)}`} renk={oranRenk(p.uzun.ortalamaIndirimOrani).text} />
                           <MetrikSatir label="İndirimli satış %" deger={`%${fmt(p.uzun.indirimliSatisOrani)}`} />
@@ -424,11 +424,11 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
 
         {/* ── Açıklama notu ── */}
         {!loading && (
-          <div style={{ ...glass, borderColor: 'rgba(139,92,246,0.2)' }} className="p-4">
+          <div style={{ ...glass, borderColor: 'rgba(var(--app-accent-rgb),0.2)' }} className="p-4">
             <div className="flex items-start gap-3">
-              <Info className="w-4 h-4 text-violet-400 flex-shrink-0 mt-0.5" />
+              <Info className="w-4 h-4 text-ta flex-shrink-0 mt-0.5" />
               <div className="space-y-1">
-                <p className="text-xs text-violet-300 font-semibold">Nasıl Hesaplanır?</p>
+                <p className="text-xs text-ta font-semibold">Nasıl Hesaplanır?</p>
                 <p className="text-xs text-gray-400 leading-relaxed">
                   <span className="text-white font-medium">Ort. indirim oranı</span> = Toplam indirim ₺ ÷ Toplam brüt ciro × 100<br />
                   <span className="text-white font-medium">İndirimli satış %</span> = İndirimli satış adedi ÷ Toplam satış × 100<br />

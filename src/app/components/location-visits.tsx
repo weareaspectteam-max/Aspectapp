@@ -346,7 +346,7 @@ export function LocationVisits({
                 </button>
                 <div className="flex-1">
                   <h1 className="text-xl font-bold text-white flex items-center gap-2">
-                    <FileText className="w-6 h-6 text-purple-400" />
+                    <FileText className="w-6 h-6 text-ta" />
                     Ziyaret Detayı
                   </h1>
                   <p className="text-sm text-gray-400 mt-0.5">{selectedVisit.locationName}</p>
@@ -358,7 +358,7 @@ export function LocationVisits({
 
         <div className="px-4 py-6 space-y-4">
           {/* Location Header */}
-          <div className="backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-400/30 rounded-2xl p-6">
+          <div className="backdrop-blur-xl bg-gradient-to-br from-ta/20 to-ta/20 border border-ta/30 rounded-2xl p-6">
             <h2 className="text-2xl font-bold text-white mb-2">{selectedVisit.locationName}</h2>
             <div className="flex items-center gap-4 text-sm text-gray-300">
               <div className="flex items-center gap-2">
@@ -395,14 +395,14 @@ export function LocationVisits({
               <div className="text-xs text-gray-500">{selectedVisit.managerRole}</div>
             </div>
             <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-4">
-              <Clock className="w-5 h-5 text-purple-400 mb-2" />
+              <Clock className="w-5 h-5 text-ta mb-2" />
               <div className="text-sm text-gray-400">Süre</div>
               <div className="text-white font-medium">{selectedVisit.duration} dakika</div>
             </div>
           </div>
 
           {/* General Score */}
-          <div className="backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-400/30 rounded-2xl p-6 text-center">
+          <div className="backdrop-blur-xl bg-gradient-to-br from-ta/20 to-ta/20 border border-ta/30 rounded-2xl p-6 text-center">
             <div className="text-5xl font-bold text-white mb-3">{selectedVisit.generalScore.toFixed(1)}</div>
             <div className="flex justify-center gap-1 mb-3">
               <StarRating score={selectedVisit.generalScore} readonly />
@@ -424,8 +424,8 @@ export function LocationVisits({
             </div>
             <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-4">
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                  <Camera className="w-4 h-4 text-purple-400" />
+                <div className="w-8 h-8 rounded-lg bg-ta/20 flex items-center justify-center">
+                  <Camera className="w-4 h-4 text-ta" />
                 </div>
                 <span className="text-white font-medium">Ekipman</span>
               </div>
@@ -517,8 +517,8 @@ export function LocationVisits({
           )}
 
           {/* Next Visit */}
-          <div className="backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-400/30 rounded-2xl p-6 text-center">
-            <Calendar className="w-8 h-8 text-purple-400 mx-auto mb-2" />
+          <div className="backdrop-blur-xl bg-gradient-to-br from-ta/20 to-ta/20 border border-ta/30 rounded-2xl p-6 text-center">
+            <Calendar className="w-8 h-8 text-ta mx-auto mb-2" />
             <div className="text-sm text-gray-300 mb-1">Sonraki Ziyaret</div>
             <div className="text-2xl font-bold text-white">{formatDate(selectedVisit.nextVisitDate)}</div>
           </div>
@@ -660,9 +660,9 @@ export function LocationVisits({
           </div>
 
           {/* Scores */}
-          <div className="backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-400/30 rounded-2xl p-4">
+          <div className="backdrop-blur-xl bg-gradient-to-br from-ta/20 to-ta/20 border border-ta/30 rounded-2xl p-4">
             <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-              <Star className="w-5 h-5 text-purple-400" />
+              <Star className="w-5 h-5 text-ta" />
               Değerlendirme Skorları
             </h3>
 
@@ -685,8 +685,8 @@ export function LocationVisits({
               <div className="bg-white/5 rounded-xl p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                      <Camera className="w-4 h-4 text-purple-400" />
+                    <div className="w-8 h-8 rounded-lg bg-ta/20 flex items-center justify-center">
+                      <Camera className="w-4 h-4 text-ta" />
                     </div>
                     <span className="text-white font-medium">Ekipman</span>
                   </div>
@@ -857,16 +857,16 @@ export function LocationVisits({
           </div>
 
           {/* Next Visit Date */}
-          <div className="backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-400/30 rounded-2xl p-4">
+          <div className="backdrop-blur-xl bg-gradient-to-br from-ta/20 to-ta/20 border border-ta/30 rounded-2xl p-4">
             <label className="block text-white font-medium mb-2 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-purple-400" />
+              <Calendar className="w-5 h-5 text-ta" />
               Sonraki Ziyaret Tarihi <span className="text-red-400">*</span>
             </label>
             <input
               type="date"
               value={nextVisitDate}
               onChange={(e) => setNextVisitDate(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-purple-400/50"
+              className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-ta/50"
               style={{ colorScheme: 'dark' }}
             />
           </div>
@@ -961,10 +961,10 @@ export function LocationVisits({
             <div className="text-sm text-gray-300">Açık Aksiyon</div>
           </div>
 
-          <div className="backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-400/30 rounded-2xl p-4">
+          <div className="backdrop-blur-xl bg-gradient-to-br from-ta/20 to-ta/20 border border-ta/30 rounded-2xl p-4">
             <div className="flex items-center justify-between mb-2">
-              <Clock className="w-8 h-8 text-purple-400" />
-              <Calendar className="w-5 h-5 text-purple-300" />
+              <Clock className="w-8 h-8 text-ta" />
+              <Calendar className="w-5 h-5 text-ta" />
             </div>
             <div className="text-3xl font-bold text-white mb-1">{stats.pendingVisits}</div>
             <div className="text-sm text-gray-300">Bekleyen Ziyaret</div>

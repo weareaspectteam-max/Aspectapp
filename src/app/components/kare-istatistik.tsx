@@ -271,7 +271,7 @@ export function KareIstatistik({ userName, userRole, onNavigate }: KareIstatisti
             className="grid grid-cols-3 gap-3">
             {[
               { label: 'Toplam Kare', val: genelToplam.toLocaleString('tr-TR'), color: '#60a5fa', bg: 'rgba(96,165,250,0.1)', border: 'rgba(96,165,250,0.25)' },
-              { label: 'Personel', val: filtrelenmis.length.toString(), color: '#a855f7', bg: 'rgba(168,85,247,0.1)', border: 'rgba(168,85,247,0.25)' },
+              { label: 'Personel', val: filtrelenmis.length.toString(), color: '#a855f7', bg: 'rgba(var(--app-accent-rgb),0.1)', border: 'rgba(var(--app-accent-rgb),0.25)' },
               { label: 'Ort. Kare', val: filtrelenmis.length > 0 ? Math.round(genelToplam / filtrelenmis.length).toLocaleString('tr-TR') : '0', color: '#34d399', bg: 'rgba(52,211,153,0.1)', border: 'rgba(52,211,153,0.25)' },
             ].map(c => (
               <div key={c.label} style={{ ...glass, padding: '12px 10px', background: c.bg, border: `1px solid ${c.border}`, borderRadius: 16, textAlign: 'center' }}>

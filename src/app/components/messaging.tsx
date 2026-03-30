@@ -106,7 +106,7 @@ function InitialAvatar({ name, size = 'md', color = 'violet' }: {
     color === 'teal'    ? 'from-teal-400 to-cyan-500'     :
     color === 'emerald' ? 'from-emerald-400 to-teal-500'  :
     color === 'rose'    ? 'from-rose-500 to-pink-600'     :
-                          'from-violet-500 to-indigo-600';
+                          'from-ta to-indigo-600';
   return (
     <div className={`${sizeMap[size]} rounded-2xl bg-gradient-to-br ${bg} flex items-center justify-center font-bold text-white shrink-0`}>
       {letters}
@@ -158,7 +158,7 @@ function ChannelRow({ channel, onSelect, onDelete, canDelete }: {
         <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0
           ${isProject
             ? 'bg-gradient-to-br from-amber-500 to-orange-500'
-            : 'bg-gradient-to-br from-violet-500/80 to-indigo-600/80'
+            : 'bg-gradient-to-br from-ta/80 to-indigo-600/80'
           }`}
         >
           {channel.emoji && channel.emoji !== '#'
@@ -181,7 +181,7 @@ function ChannelRow({ channel, onSelect, onDelete, canDelete }: {
         {/* Okunmamış rozeti */}
         {channel.unread > 0 && (
           <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-black shrink-0
-            ${isProject ? 'bg-amber-400 text-amber-900' : 'bg-violet-500 text-white'}`}>
+            ${isProject ? 'bg-amber-400 text-amber-900' : 'bg-ta text-white'}`}>
             {channel.unread}
           </div>
         )}
@@ -220,7 +220,7 @@ function DmRow({ conv, onSelect }: { conv: DmConversation; onSelect: () => void 
         <p className="text-xs text-white/40 truncate">{conv.lastMessage || 'Henüz mesaj yok'}</p>
       </div>
       {conv.unread > 0 && (
-        <div className="w-5 h-5 rounded-full bg-violet-500 flex items-center justify-center text-[11px] font-black text-white shrink-0">
+        <div className="w-5 h-5 rounded-full bg-ta flex items-center justify-center text-[11px] font-black text-white shrink-0">
           {conv.unread}
         </div>
       )}
@@ -461,7 +461,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
               <InitialAvatar name={selectedDm.name} size="sm" color={roleColor(selectedDm.role)} />
             ) : (
               <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0
-                ${isProject ? 'bg-gradient-to-br from-amber-500 to-orange-500' : 'bg-gradient-to-br from-violet-500 to-indigo-600'}`}>
+                ${isProject ? 'bg-gradient-to-br from-amber-500 to-orange-500' : 'bg-gradient-to-br from-ta to-indigo-600'}`}>
                 {selectedCh!.emoji && selectedCh!.emoji !== '#'
                   ? <span className="text-base">{selectedCh!.emoji}</span>
                   : <Hash className="w-4 h-4 text-white" />}
@@ -491,7 +491,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
           {msgLoading && messages.length === 0 && (
             <div className="flex items-center justify-center py-16">
-              <div className="w-6 h-6 rounded-full animate-spin border-2 border-violet-500/30 border-t-violet-500" />
+              <div className="w-6 h-6 rounded-full animate-spin border-2 border-ta/30 border-t-ta" />
             </div>
           )}
           {!msgLoading && messages.length === 0 && (
@@ -511,7 +511,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
                   )}
                   <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap
                     ${isOwn
-                      ? 'bg-gradient-to-br from-violet-600 to-indigo-700 text-white rounded-br-sm shadow-lg shadow-violet-900/30'
+                      ? 'bg-gradient-to-br from-ta to-indigo-700 text-white rounded-br-sm shadow-lg shadow-ta/30'
                       : 'bg-white/8 border border-white/12 text-white/90 rounded-bl-sm'
                     }`}>
                     {msg.content}
@@ -535,7 +535,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
               <span className="text-xs text-white/40">Bu kanal salt okunur — sadece satış logları gösterilir</span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 bg-white/5 border border-white/12 rounded-2xl px-3 py-2 focus-within:border-violet-500/40 transition-colors">
+            <div className="flex items-center gap-2 bg-white/5 border border-white/12 rounded-2xl px-3 py-2 focus-within:border-ta/40 transition-colors">
               <input
                 type="text"
                 value={msgInput}
@@ -548,7 +548,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
               <button
                 onClick={handleSend}
                 disabled={!msgInput.trim() || sending}
-                className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-700 flex items-center justify-center shrink-0 active:scale-90 disabled:opacity-40 transition-all shadow-lg"
+                className="w-8 h-8 rounded-xl bg-gradient-to-br from-ta to-indigo-700 flex items-center justify-center shrink-0 active:scale-90 disabled:opacity-40 transition-all shadow-lg"
               >
                 <Send className="w-3.5 h-3.5 text-white" />
               </button>
@@ -573,7 +573,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
       {/* Başlık */}
       <div className="flex items-center justify-between pt-2 pb-4">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-900/40">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-ta to-indigo-600 flex items-center justify-center shadow-lg shadow-ta/40">
             <MessageSquare className="w-4 h-4 text-white" />
           </div>
           <div>
@@ -591,7 +591,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
 
       {listLoading ? (
         <div className="flex items-center justify-center py-20">
-          <div className="w-8 h-8 rounded-full animate-spin border-2 border-violet-500/30 border-t-violet-500" />
+          <div className="w-8 h-8 rounded-full animate-spin border-2 border-ta/30 border-t-ta" />
         </div>
       ) : (
         <>
@@ -613,7 +613,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
                 {canManageChannels && (
                   <button
                     onClick={() => setShowNewCh(true)}
-                    className="ml-auto flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-lg bg-violet-500/15 border border-violet-500/30 text-violet-300 hover:bg-violet-500/25 transition-all active:scale-95"
+                    className="ml-auto flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-lg bg-ta/15 border border-ta/30 text-ta hover:bg-ta/25 transition-all active:scale-95"
                   >
                     <Plus className="w-3 h-3" /> Yeni Kanal
                   </button>
@@ -662,9 +662,9 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
           </div>
 
           <button onClick={openNewDm}
-            className="w-full mt-4 flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-violet-500/10 border border-violet-500/25 hover:bg-violet-500/18 transition-all active:scale-[0.98]">
-            <Plus className="w-4 h-4 text-violet-300" />
-            <span className="text-sm font-semibold text-violet-300">Yeni Mesaj</span>
+            className="w-full mt-4 flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-ta/10 border border-ta/25 hover:bg-ta/18 transition-all active:scale-[0.98]">
+            <Plus className="w-4 h-4 text-ta" />
+            <span className="text-sm font-semibold text-ta">Yeni Mesaj</span>
           </button>
         </>
       )}
@@ -676,7 +676,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
             <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between shrink-0">
               <div>
                 <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <Users className="w-4 h-4 text-violet-400" /> Yeni Mesaj
+                  <Users className="w-4 h-4 text-ta" /> Yeni Mesaj
                 </h2>
                 <p className="text-xs text-white/30 mt-0.5">Mesaj göndermek istediğiniz kişiyi seçin</p>
               </div>
@@ -720,7 +720,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
             <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
               <div>
                 <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <Hash className="w-4 h-4 text-violet-400" /> Yeni Kanal Oluştur
+                  <Hash className="w-4 h-4 text-ta" /> Yeni Kanal Oluştur
                 </h2>
                 <p className="text-xs text-white/30 mt-0.5">Tüm ekip üyeleri bu kanalı görebilir</p>
               </div>
@@ -736,7 +736,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
                 <label className="text-xs font-bold text-white/50 uppercase tracking-widest mb-2 block">
                   Kanal Adı
                 </label>
-                <div className="flex items-center gap-2 bg-white/5 border border-white/12 rounded-xl px-3 py-3 focus-within:border-violet-500/50 transition-colors">
+                <div className="flex items-center gap-2 bg-white/5 border border-white/12 rounded-xl px-3 py-3 focus-within:border-ta/50 transition-colors">
                   <Hash className="w-4 h-4 text-white/25 shrink-0" />
                   <input
                     type="text"
@@ -763,7 +763,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
                       onClick={() => setNewChEmoji(e)}
                       className={`w-10 h-10 rounded-xl text-xl flex items-center justify-center transition-all active:scale-90
                         ${newChEmoji === e
-                          ? 'bg-violet-500/25 border-2 border-violet-500/60 shadow-lg shadow-violet-900/30'
+                          ? 'bg-ta/25 border-2 border-ta/60 shadow-lg shadow-ta/30'
                           : 'bg-white/5 border border-white/10 hover:border-white/20'
                         }`}
                     >
@@ -775,7 +775,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
 
               {/* Önizleme */}
               <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-white/4 border border-white/8">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500/80 to-indigo-600/80 flex items-center justify-center shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-ta/80 to-indigo-600/80 flex items-center justify-center shrink-0">
                   <span className="text-base">{newChEmoji}</span>
                 </div>
                 <div>
@@ -802,7 +802,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
                 <button
                   onClick={handleCreateChannel}
                   disabled={!newChName.trim() || chCreating}
-                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 active:scale-[0.98] transition-all shadow-lg shadow-violet-900/40"
+                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-ta to-indigo-600 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 active:scale-[0.98] transition-all shadow-lg shadow-ta/40"
                 >
                   {chCreating
                     ? <div className="w-4 h-4 rounded-full animate-spin border-2 border-white/30 border-t-white" />

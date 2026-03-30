@@ -509,7 +509,7 @@ export function RotationTaskModal({
                       onClick={() => setTaskType('special')}
                       className={`flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-semibold text-sm transition-all active:scale-95 ${
                         taskType === 'special'
-                          ? 'bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg shadow-purple-500/30 border-2 border-purple-400'
+                          ? 'bg-gradient-to-br from-ta to-ta text-white shadow-lg shadow-ta/30 border-2 border-ta'
                           : 'bg-white/5 border-2 border-white/20 text-gray-300 hover:bg-white/10'
                       }`}
                     >

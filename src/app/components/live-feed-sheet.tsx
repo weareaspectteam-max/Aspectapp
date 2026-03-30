@@ -42,7 +42,7 @@ function clockTime(ts: string) {
 function payLabel(p?: string) {
   if (p === 'cash') return { label: 'NAKİT', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' };
   if (p === 'card') return { label: 'KART', cls: 'bg-blue-500/20 text-blue-300 border-blue-500/30' };
-  if (p === 'iban') return { label: 'IBAN', cls: 'bg-violet-500/20 text-violet-300 border-violet-500/30' };
+  if (p === 'iban') return { label: 'IBAN', cls: 'bg-ta/20 text-ta border-ta/30' };
   return { label: '-', cls: 'bg-white/10 text-white/40 border-white/20' };
 }
 

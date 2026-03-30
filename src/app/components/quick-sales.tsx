@@ -1198,6 +1198,23 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const updatePrinterRibbon = (ekipmanId: string, val: string) =>
     setPrinterRibbonChanges(p => ({ ...p, [ekipmanId]: val }));
   // (per-printer iade kaldırıldı — globalIadePhotos kullanılıyor)
+
+  // ── Fotoğraf küçültme: max 1280px, %70 JPEG ──
+  const resizePhoto = (base64: string, maxW = 1280, quality = 0.7): Promise<string> =>
+    new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const ratio = Math.min(maxW / img.width, maxW / img.height, 1);
+        const w = Math.round(img.width * ratio);
+        const h = Math.round(img.height * ratio);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = base64;
+    });
+
   const handleTeamPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1369,7 +1386,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         serialNumber: pr.serialNumber,
         startCounter: Number(pr.startCounter) || 0,
       }));
-    const result = await postAcilis(mekanId, tarih, acilisSayim, acilisNot, acilisYazicilar);
+    const resizedPhoto = teamPhotoPreview ? await resizePhoto(teamPhotoPreview) : null;
+    const result = await postAcilis(mekanId, tarih, acilisSayim, acilisNot, acilisYazicilar, resizedPhoto);
     setStokKaydediliyor(false);
     if (result) {
       setStokGunluk(result.kayit);
@@ -1431,7 +1449,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     }));
 
     const mekanId = resolvedMekanId || selectedProject.id;
-    const result = await postKapanis(mekanId, tarih, finalKapanisSayim, kapanisNot, printerData);
+    const resizedVenuePhoto = venuePhotoPreview ? await resizePhoto(venuePhotoPreview) : null;
+    const result = await postKapanis(mekanId, tarih, finalKapanisSayim, kapanisNot, printerData, resizedVenuePhoto);
     setStokKaydediliyor(false);
     if (result && !('__hata' in result)) {
       setKapanisAnomali((result as any).anomali || {});

@@ -60,21 +60,21 @@ const PAGE_COLORS: Record<string, string> = {
   'messaging':           '#60a5fa',
   'rotation':            '#fb923c',
   'rotation-system':     '#fb923c',
-  'profile':             '#a78bfa',
+  'profile':             'var(--app-accent, #a855f7)',
   'settings':            '#94a3b8',
   'academy':             '#f472b6',
   'aspect-ai':           '#f472b6',
   'aspect-ai-page':      '#f472b6',
   'business-panel':      '#60a5fa',
   'mekan-management':    '#34d399',
-  'user-management':     '#a78bfa',
+  'user-management':     'var(--app-accent, #a855f7)',
   'isletme-genel-durum': '#fb923c',
   'equipment-page':      '#60a5fa',
   'stock-distribution':  '#34d399',
   'resource-management': '#fbbf24',
   'cost-management':     '#fb923c',
   'location-visits':     '#60a5fa',
-  'manager-reports':     '#a78bfa',
+  'manager-reports':     'var(--app-accent, #a855f7)',
   'birthday-calendar':   '#f472b6',
   'announcements':       '#fb923c',
   'frame-tracking':      '#60a5fa',
@@ -83,8 +83,8 @@ const PAGE_COLORS: Record<string, string> = {
 };
 
 const ROLE_COLORS: Record<UserRole, string> = {
-  'yonetici':   '#a855f7',
-  'ust-mudur':  '#7c3aed',
+  'yonetici':   'var(--app-accent, #a855f7)',
+  'ust-mudur':  'var(--app-accent, #a855f7)',
   'mudur':      '#6366f1',
   'operasyon':  '#fb923c',
   'personel':   '#34d399',
@@ -143,8 +143,8 @@ export function AppHeader({
     ? `${effectiveCompanyId.charAt(0).toUpperCase()}${effectiveCompanyId.slice(1)} AI`
     : 'AI';
   const pageLabel = isAiPage ? companyAiLabel : rawLabel;
-  const pageColor = PAGE_COLORS[activeTab] ?? ROLE_COLORS[userRole] ?? '#a855f7';
-  const roleColor = ROLE_COLORS[userRole]  ?? '#a855f7';
+  const pageColor = PAGE_COLORS[activeTab] ?? ROLE_COLORS[userRole] ?? 'var(--app-accent, #a855f7)';
+  const roleColor = ROLE_COLORS[userRole]  ?? 'var(--app-accent, #a855f7)';
   const roleTitle = ROLE_TITLES[userRole]  ?? 'Kullanıcı';
   const c         = isDash ? roleColor : pageColor;
 
@@ -249,7 +249,7 @@ export function AppHeader({
             style={{
               fontSize:             20,
               letterSpacing:        '0.15em',
-              background:           'linear-gradient(90deg,#c084fc,#e879f9,#818cf8)',
+              background:           'linear-gradient(90deg,var(--app-accent, #c084fc),#e879f9,#818cf8)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor:  'transparent',
               backgroundClip:       'text',

@@ -2452,7 +2452,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
                     onClick={() => setScoresTab(tab)}
                     className="flex-1 py-2 rounded-xl text-xs font-bold transition-all"
                     style={{
-                      background: scoresTab === tab ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : 'rgba(255,255,255,0.06)',
+                      background: scoresTab === tab ? 'linear-gradient(135deg, var(--app-accent, #7c3aed), var(--app-accent, #a855f7))' : 'rgba(255,255,255,0.06)',
                       border: `1px solid ${scoresTab === tab ? 'transparent' : 'rgba(255,255,255,0.10)'}`,
                       color: scoresTab === tab ? '#fff' : 'rgba(255,255,255,0.42)',
                     }}>
@@ -2464,7 +2464,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
               {scoresLoading ? (
                 <div className="flex flex-col items-center py-10 gap-3">
                   <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
-                    <Star size={22} style={{ color: '#a855f7' }} />
+                    <Star size={22} style={{ color: 'var(--app-accent, #a855f7)' }} />
                   </motion.div>
                   <span className="text-white/30 text-xs">Yükleniyor...</span>
                 </div>
@@ -2496,7 +2496,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
                         </p>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <p style={{ color: i === 0 ? '#FFD700' : '#a78bfa', fontSize: 16, fontWeight: 900, margin: 0, fontFamily: 'monospace' }}>{s.skor.toLocaleString()}</p>
+                        <p style={{ color: i === 0 ? '#FFD700' : 'var(--app-accent, #a855f7)', fontSize: 16, fontWeight: 900, margin: 0, fontFamily: 'monospace' }}>{s.skor.toLocaleString()}</p>
                         <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 8, margin: 0 }}>PUAN</p>
                       </div>
                     </motion.div>
@@ -2871,7 +2871,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
           <button
             onClick={() => { setShowScoreboard(true); setScreen('menu'); }}
             className="w-full py-2.5 rounded-xl text-white font-bold flex items-center justify-center gap-2"
-            style={{ background: 'linear-gradient(90deg,#7c3aed,#a855f7)', border: '1px solid rgba(255,255,255,0.18)' }}>
+            style={{ background: 'linear-gradient(90deg, var(--app-accent, #7c3aed), var(--app-accent, #a855f7))', border: '1px solid rgba(255,255,255,0.18)' }}>
             <Trophy size={15} /> Skor Tablosu
           </button>
           <button onClick={() => setScreen('menu')}
@@ -2911,7 +2911,7 @@ export function AspectQuest({ userName, userRole, accessToken, onBack }: AspectQ
           <button
             onClick={() => { setShowScoreboard(true); setScreen('menu'); }}
             className="flex-1 py-3 rounded-xl text-white font-bold flex items-center justify-center gap-2"
-            style={{ background: 'linear-gradient(90deg,#7c3aed,#a855f7)' }}>
+            style={{ background: 'linear-gradient(90deg, var(--app-accent, #7c3aed), var(--app-accent, #a855f7))' }}>
             <Trophy size={15} /> Skor Tablosu
           </button>
           <button onClick={() => setScreen('menu')}

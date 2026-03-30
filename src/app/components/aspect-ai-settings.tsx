@@ -33,7 +33,7 @@ type RoleName = 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'idari' | 'pe
 
 const ROLES: { key: RoleName; label: string; icon: string; color: string }[] = [
   { key: 'yonetici',   label: 'Yönetici',   icon: '👑', color: 'from-yellow-500/20 to-yellow-600/10 border-yellow-500/30' },
-  { key: 'ust-mudur',  label: 'Üst Müdür',  icon: '🎯', color: 'from-purple-500/20 to-purple-600/10 border-purple-500/30' },
+  { key: 'ust-mudur',  label: 'Üst Müdür',  icon: '🎯', color: 'from-ta/20 to-ta/10 border-ta/30' },
   { key: 'mudur',      label: 'Müdür',       icon: '🏢', color: 'from-blue-500/20 to-blue-600/10 border-blue-500/30' },
   { key: 'operasyon',  label: 'Operasyon',   icon: '⚙️', color: 'from-cyan-500/20 to-cyan-600/10 border-cyan-500/30' },
   { key: 'idari',      label: 'İdari',       icon: '📋', color: 'from-green-500/20 to-green-600/10 border-green-500/30' },
@@ -233,7 +233,7 @@ function ChipEditor({
             onClick={() => setOpen(v => !v)}
             className="p-1 rounded-lg hover:bg-white/10 transition-colors"
           >
-            {open ? <ChevronUp className="w-3.5 h-3.5 text-violet-400" /> : <ChevronDown className="w-3.5 h-3.5 text-white/60" />}
+            {open ? <ChevronUp className="w-3.5 h-3.5 text-ta" /> : <ChevronDown className="w-3.5 h-3.5 text-white/60" />}
           </button>
           <button
             onClick={onDelete}
@@ -251,7 +251,7 @@ function ChipEditor({
               <input
                 value={chip.icon}
                 onChange={e => onChange({ ...chip, icon: e.target.value })}
-                className="w-full bg-white/8 border border-white/12 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:outline-none focus:border-violet-500/60"
+                className="w-full bg-white/8 border border-white/12 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:outline-none focus:border-ta/60"
                 maxLength={4}
               />
             </div>
@@ -260,7 +260,7 @@ function ChipEditor({
               <input
                 value={chip.label}
                 onChange={e => onChange({ ...chip, label: e.target.value })}
-                className="w-full bg-white/8 border border-white/12 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-violet-500/60"
+                className="w-full bg-white/8 border border-white/12 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-ta/60"
               />
             </div>
           </div>
@@ -270,10 +270,10 @@ function ChipEditor({
               value={chip.q}
               onChange={e => onChange({ ...chip, q: e.target.value })}
               placeholder="örn: Bugün ciro ne kadar?"
-              className="w-full bg-white/8 border border-white/12 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-violet-500/60"
+              className="w-full bg-white/8 border border-white/12 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-ta/60"
             />
             {chip.q === '__MEKAN_DETAY_MODAL__' && (
-              <p className="text-xs text-violet-400 mt-1">⚡ Özel komut — Mekan Detay modalını açar</p>
+              <p className="text-xs text-ta mt-1">⚡ Özel komut — Mekan Detay modalını açar</p>
             )}
             {chip.q === '__IZIN_GECMISIM__' && (
               <p className="text-xs text-indigo-400 mt-1">⚡ Özel komut — Kullanıcının son 30 gün izin & çalışma geçmişini çeker</p>
@@ -406,7 +406,7 @@ export function AspectAISettings({ userRole, onBack, onSaved }: AspectAISettings
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
+          <Loader2 className="w-8 h-8 text-ta animate-spin" />
           <p className="text-white/60 text-sm">Ayarlar yükleniyor…</p>
         </div>
       </div>
@@ -421,7 +421,7 @@ export function AspectAISettings({ userRole, onBack, onSaved }: AspectAISettings
           <ArrowLeft className="w-5 h-5 text-white/70" />
         </button>
         <div className="flex items-center gap-2 flex-1">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-ta to-indigo-600 flex items-center justify-center">
             <Brain className="w-4 h-4 text-white" />
           </div>
           <div>
@@ -441,7 +441,7 @@ export function AspectAISettings({ userRole, onBack, onSaved }: AspectAISettings
             <button
               onClick={handleSave}
               disabled={saving}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-500/80 text-white text-xs hover:bg-violet-500 transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-ta/80 text-white text-xs hover:bg-ta transition-colors disabled:opacity-50"
             >
               {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
               Kaydet
@@ -535,7 +535,7 @@ export function AspectAISettings({ userRole, onBack, onSaved }: AspectAISettings
           {/* ── KARŞILAMA MESAJI ── */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col gap-3">
             <div className="flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-violet-400" />
+              <MessageSquare className="w-4 h-4 text-ta" />
               <p className="text-xs text-white/50 font-medium uppercase tracking-wider">Karşılama Mesajı</p>
             </div>
             <textarea
@@ -544,12 +544,12 @@ export function AspectAISettings({ userRole, onBack, onSaved }: AspectAISettings
               disabled={!canEdit}
               rows={3}
               placeholder="Merhaba **{name}**! Ben Aspect AI..."
-              className="w-full bg-white/8 border border-white/12 rounded-xl px-3 py-2.5 text-sm text-white resize-none focus:outline-none focus:border-violet-500/60 disabled:opacity-50"
+              className="w-full bg-white/8 border border-white/12 rounded-xl px-3 py-2.5 text-sm text-white resize-none focus:outline-none focus:border-ta/60 disabled:opacity-50"
             />
-            <div className="flex items-start gap-2 px-3 py-2.5 bg-violet-500/10 border border-violet-500/20 rounded-xl">
-              <Eye className="w-4 h-4 text-violet-400 mt-0.5 shrink-0" />
+            <div className="flex items-start gap-2 px-3 py-2.5 bg-ta/10 border border-ta/20 rounded-xl">
+              <Eye className="w-4 h-4 text-ta mt-0.5 shrink-0" />
               <div>
-                <p className="text-xs text-violet-300 font-medium mb-1">Önizleme</p>
+                <p className="text-xs text-ta font-medium mb-1">Önizleme</p>
                 <p className="text-xs text-white/70 leading-relaxed">{previewWelcome}</p>
               </div>
             </div>
@@ -571,7 +571,7 @@ export function AspectAISettings({ userRole, onBack, onSaved }: AspectAISettings
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => setShowChipPool(v => !v)}
-                    className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors"
+                    className="flex items-center gap-1 text-xs text-ta hover:text-ta transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     Havuzdan ekle
@@ -597,7 +597,7 @@ export function AspectAISettings({ userRole, onBack, onSaved }: AspectAISettings
                     <button
                       key={i}
                       onClick={() => addChipFromPool(c)}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/8 border border-white/12 rounded-xl text-xs text-white/70 hover:bg-violet-500/20 hover:border-violet-500/30 transition-all"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/8 border border-white/12 rounded-xl text-xs text-white/70 hover:bg-ta/20 hover:border-ta/30 transition-all"
                     >
                       <span>{c.icon}</span>
                       <span>{c.label}</span>
@@ -696,7 +696,7 @@ export function AspectAISettings({ userRole, onBack, onSaved }: AspectAISettings
                 onChange={e => setCur({ blockedMessage: e.target.value })}
                 disabled={!canEdit}
                 placeholder="🔒 Bu bilgiye erişim yetkiniz yok..."
-                className="w-full bg-white/8 border border-white/12 rounded-xl px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500/60 disabled:opacity-50"
+                className="w-full bg-white/8 border border-white/12 rounded-xl px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-ta/60 disabled:opacity-50"
               />
             </div>
           </div>

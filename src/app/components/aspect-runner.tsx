@@ -1411,10 +1411,10 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
                 transition={{ duration: 3.4, repeat: Infinity, ease: 'easeInOut' }}
                 style={{ textAlign: 'center', marginBottom: 12 }}
               >
-                <div style={{ fontSize: 33, fontFamily: 'monospace', fontWeight: 900, letterSpacing: '0.28em', color: '#fff', textShadow: '0 0 32px #a855f7, 0 0 64px #7c3aed50' }}>
+                <div style={{ fontSize: 33, fontFamily: 'monospace', fontWeight: 900, letterSpacing: '0.28em', color: '#fff', textShadow: '0 0 32px var(--app-accent, #a855f7), 0 0 64px var(--app-accent, #a855f7)' }}>
                   ASPECT
                 </div>
-                <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 700, letterSpacing: '0.55em', color: '#a78bfa', marginTop: 3 }}>
+                <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 700, letterSpacing: '0.55em', color: 'var(--app-accent, #a855f7)', marginTop: 3 }}>
                   RUNNER
                 </div>
               </motion.div>
@@ -1440,7 +1440,7 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
               <motion.button
                 whileTap={{ scale: 0.92 }}
                 onClick={startGame}
-                style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 16, padding: '13px 46px', color: '#fff', fontSize: 15, fontWeight: 800, letterSpacing: '0.1em', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 0 30px rgba(168,85,247,0.52)', marginBottom: 10 }}
+                style={{ background: 'linear-gradient(135deg, var(--app-accent, #7c3aed), var(--app-accent, #a855f7))', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 16, padding: '13px 46px', color: '#fff', fontSize: 15, fontWeight: 800, letterSpacing: '0.1em', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 0 30px rgba(var(--app-accent-rgb),0.52)', marginBottom: 10 }}
               >
                 <Play size={16} /> OYNA
               </motion.button>
@@ -1491,7 +1491,7 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
                 <motion.button
                   whileTap={{ scale: 0.92 }}
                   onClick={startGame}
-                  style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', border: 'none', borderRadius: 14, padding: '11px 28px', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 0 22px rgba(168,85,247,0.42)' }}
+                  style={{ background: 'linear-gradient(135deg, var(--app-accent, #7c3aed), var(--app-accent, #a855f7))', border: 'none', borderRadius: 14, padding: '11px 28px', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 0 22px rgba(var(--app-accent-rgb),0.42)' }}
                 >
                   <RotateCcw size={14} /> Tekrar
                 </motion.button>
@@ -1509,7 +1509,7 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
 
       {/* ── Chat ticker ── */}
       {uiState === 'playing' && (
-        <div style={{ width: '100%', maxWidth: CW, minHeight: 32, background: 'rgba(6,3,18,0.74)', backdropFilter: 'blur(8px)', borderTop: '1px solid rgba(168,85,247,0.16)', borderRadius: '0 0 16px 16px', display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', overflow: 'hidden' }}>
+        <div style={{ width: '100%', maxWidth: CW, minHeight: 32, background: 'rgba(6,3,18,0.74)', backdropFilter: 'blur(8px)', borderTop: '1px solid rgba(var(--app-accent-rgb),0.16)', borderRadius: '0 0 16px 16px', display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', overflow: 'hidden' }}>
           <AnimatePresence mode="wait">
             {speech ? (
               <motion.div
@@ -1519,7 +1519,7 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
                 style={{ display: 'flex', alignItems: 'center', gap: 6 }}
               >
                 <span style={{ fontSize: 13 }}>{speech.who === 'char' ? '🏃' : '🧑‍💼'}</span>
-                <span style={{ color: speech.who === 'coach' ? '#a78bfa' : 'rgba(255,255,255,0.45)', fontSize: 9, fontWeight: 700, letterSpacing: '0.06em', flexShrink: 0 }}>
+                <span style={{ color: speech.who === 'coach' ? 'var(--app-accent, #a855f7)' : 'rgba(255,255,255,0.45)', fontSize: 9, fontWeight: 700, letterSpacing: '0.06em', flexShrink: 0 }}>
                   {speech.who === 'char' ? 'KARAKTER' : 'ÖZGÜR'}
                 </span>
                 <span style={{ color: 'rgba(255,255,255,0.88)', fontSize: 11, fontWeight: 600 }}>{speech.text}</span>
@@ -1561,7 +1561,7 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
                 <button
                   key={tab}
                   onClick={() => setScoresTab(tab)}
-                  style={{ flex: 1, background: scoresTab === tab ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : 'rgba(255,255,255,0.05)', border: `1px solid ${scoresTab === tab ? 'transparent' : 'rgba(255,255,255,0.1)'}`, borderRadius: 10, padding: '8px', color: scoresTab === tab ? '#fff' : 'rgba(255,255,255,0.42)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                  style={{ flex: 1, background: scoresTab === tab ? 'linear-gradient(135deg, var(--app-accent, #7c3aed), var(--app-accent, #a855f7))' : 'rgba(255,255,255,0.05)', border: `1px solid ${scoresTab === tab ? 'transparent' : 'rgba(255,255,255,0.1)'}`, borderRadius: 10, padding: '8px', color: scoresTab === tab ? '#fff' : 'rgba(255,255,255,0.42)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
                 >
                   {tab === 'haftalik' ? '🗓 Bu Hafta' : '🏆 Tüm Zamanlar'}
                 </button>
@@ -1571,7 +1571,7 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
             {scoresLoad ? (
               <div style={{ textAlign: 'center', padding: 40 }}>
                 <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
-                  <Star size={24} style={{ color: '#a855f7' }} />
+                  <Star size={24} style={{ color: 'var(--app-accent, #a855f7)' }} />
                 </motion.div>
                 <p style={{ color: 'rgba(255,255,255,0.32)', fontSize: 12, marginTop: 10 }}>Yükleniyor...</p>
               </div>
@@ -1602,7 +1602,7 @@ export function AspectRunner({ userName, userRole, accessToken, onBack }: Aspect
                       <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: 10, margin: '2px 0 0' }}>{s.tarih}</p>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <p style={{ color: i === 0 ? '#FFD700' : '#a78bfa', fontSize: 18, fontWeight: 900, margin: 0, fontFamily: 'monospace' }}>
+                      <p style={{ color: i === 0 ? '#FFD700' : 'var(--app-accent, #a855f7)', fontSize: 18, fontWeight: 900, margin: 0, fontFamily: 'monospace' }}>
                         {s.skor.toLocaleString()}
                       </p>
                       <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, margin: 0 }}>PUAN</p>

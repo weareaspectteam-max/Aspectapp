@@ -235,9 +235,9 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
           <button
             onClick={aktifSekme === 'gun' ? () => { if (gunSecili) fetchGunDetay(gunSecili); else fetchGunListesi(gunTarihBas, gunTarihBit); } : handleAra}
             className="w-9 h-9 rounded-2xl flex items-center justify-center transition-all active:scale-90"
-            style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)' }}
+            style={{ background: 'rgba(var(--app-accent-rgb),0.1)', border: '1px solid rgba(var(--app-accent-rgb),0.2)' }}
           >
-            <RefreshCw className={`w-4 h-4 text-violet-400 ${(aktifSekme === 'gun' ? gunLoading : loading) ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 text-ta ${(aktifSekme === 'gun' ? gunLoading : loading) ? 'animate-spin' : ''}`} />
           </button>
         )}
       </div>
@@ -252,9 +252,9 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
                 onClick={() => { setAktifSekme(key); if (key === 'gun' && gunListe.length === 0) fetchGunListesi(gunTarihBas, gunTarihBit); if (key === 'ay' && ayData.length === 0) fetchAyRaporu(); }}
                 className="flex-1 py-2 rounded-lg text-xs font-bold transition-all"
                 style={{
-                  background: aktifSekme === key ? 'rgba(167,139,250,0.25)' : 'transparent',
-                  color: aktifSekme === key ? '#c4b5fd' : 'rgba(255,255,255,0.4)',
-                  border: aktifSekme === key ? '1px solid rgba(167,139,250,0.4)' : '1px solid transparent',
+                  background: aktifSekme === key ? 'rgba(var(--app-accent-rgb),0.25)' : 'transparent',
+                  color: aktifSekme === key ? 'var(--app-accent, #a855f7)' : 'rgba(255,255,255,0.4)',
+                  border: aktifSekme === key ? '1px solid rgba(var(--app-accent-rgb),0.4)' : '1px solid transparent',
                 }}
               >{label}</button>
             ))}

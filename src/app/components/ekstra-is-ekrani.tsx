@@ -862,7 +862,7 @@ export function EkstraIsEkrani({ userName, userId, userRole, task, onBack, onLog
           setKapalisHata('');
           setAsama('kapalis');
         }}
-        className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-purple-500/70 to-violet-500/70 border border-purple-400/30 text-white font-bold text-sm shadow-lg active:scale-[0.98] transition-all"
+        className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-ta/70 to-ta/70 border border-ta/30 text-white font-bold text-sm shadow-lg active:scale-[0.98] transition-all"
       >
         Kapanış Yap
       </button>
@@ -874,9 +874,9 @@ export function EkstraIsEkrani({ userName, userId, userRole, task, onBack, onLog
     <div className="space-y-4">
 
       {/* ADIM 1: İade hedefi seç */}
-      <div className="backdrop-blur-xl bg-purple-500/10 rounded-2xl border border-purple-500/25 p-4 space-y-3">
+      <div className="backdrop-blur-xl bg-ta/10 rounded-2xl border border-ta/25 p-4 space-y-3">
         <div className="flex items-center gap-2">
-          <ArrowRightLeft className="w-4 h-4 text-purple-300" />
+          <ArrowRightLeft className="w-4 h-4 text-ta" />
           <h3 className="text-sm font-bold text-white">Kalan Stok Nereye İade Edilecek?</h3>
         </div>
         <p className="text-xs text-white/50">Elinizdeki albümleri hangi yere teslim ediyorsunuz?</p>
@@ -945,7 +945,7 @@ export function EkstraIsEkrani({ userName, userId, userRole, task, onBack, onLog
       {/* ADIM 2: Stok miktarları (sadece hedef seçilince aktif) */}
       <div className={`backdrop-blur-xl bg-white/8 rounded-2xl border border-white/15 p-4 transition-opacity ${!iadeHedef ? 'opacity-40 pointer-events-none' : ''}`}>
         <div className="flex items-center gap-2 mb-1">
-          <Package className="w-4 h-4 text-purple-300" />
+          <Package className="w-4 h-4 text-ta" />
           <h3 className="text-sm font-bold text-white">İade Miktarları</h3>
         </div>
         <p className="text-xs text-white/50 mb-4">Elinizde kalan kaç adet var?</p>
@@ -1030,7 +1030,7 @@ export function EkstraIsEkrani({ userName, userId, userRole, task, onBack, onLog
           onChange={e => setKapalisNot(e.target.value)}
           placeholder="Kapanış notu..."
           rows={2}
-          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-white/20 resize-none outline-none focus:border-purple-400/50"
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-white/20 resize-none outline-none focus:border-ta/50"
         />
       </div>
 
@@ -1051,7 +1051,7 @@ export function EkstraIsEkrani({ userName, userId, userRole, task, onBack, onLog
         <button
           onClick={handleKapalis}
           disabled={kapalisYukleniyor || !iadeHedef}
-          className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-purple-500/80 to-violet-500/80 text-white font-bold text-sm shadow-lg disabled:opacity-40 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+          className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-ta/80 to-ta/80 text-white font-bold text-sm shadow-lg disabled:opacity-40 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
         >
           {kapalisYukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           Kapat & İade Et

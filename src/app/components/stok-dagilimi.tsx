@@ -171,7 +171,7 @@ function GenelAlbumCard({ dagilim, mekanlar, depo, kagitTipleri }: {
     <div className="mx-4 mb-4 rounded-2xl border border-white/12 bg-[rgba(255,255,255,0.04)] backdrop-blur overflow-hidden">
       <div className="px-4 pt-4 pb-3 border-b border-white/8 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Package className="w-4 h-4 text-violet-400" />
+          <Package className="w-4 h-4 text-ta" />
           <span className="text-sm font-bold text-white">Genel Stok Dağılımı</span>
         </div>
         <span className="text-[10px] text-white/30">Tüm mekanlar + depo</span>
@@ -464,7 +464,7 @@ function MekanAlbumCard({
           {isYonetici && (
             <div className="flex gap-2 pt-3 border-t border-white/8 mt-1">
               <button onClick={() => onGuncelle(mekan)}
-                className="flex-1 h-9 rounded-xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center gap-1.5 text-xs font-semibold text-violet-300 active:scale-95 transition-transform">
+                className="flex-1 h-9 rounded-xl bg-ta/15 border border-ta/30 flex items-center justify-center gap-1.5 text-xs font-semibold text-ta active:scale-95 transition-transform">
                 <Edit3 className="w-3.5 h-3.5" /> Stok Güncelle
               </button>
               <button onClick={() => onSifirla(mekan)}
@@ -555,7 +555,7 @@ function DepoAlbumCard({
           {isYonetici && (
             <div className="flex gap-2 pt-3 border-t border-white/8 mt-1">
               <button onClick={onGuncelle}
-                className="flex-1 h-9 rounded-xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center gap-1.5 text-xs font-semibold text-violet-300 active:scale-95 transition-transform">
+                className="flex-1 h-9 rounded-xl bg-ta/15 border border-ta/30 flex items-center justify-center gap-1.5 text-xs font-semibold text-ta active:scale-95 transition-transform">
                 <Edit3 className="w-3.5 h-3.5" /> Stok Güncelle
               </button>
               <button onClick={onSifirla}
@@ -685,7 +685,7 @@ function StokGuncelleModal({
             İptal
           </button>
           <button onClick={kaydet} disabled={yukleniyor}
-            className="flex-1 h-11 rounded-xl bg-gradient-to-r from-violet-600/80 to-purple-600/80 border border-violet-400/30 text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-40">
+            className="flex-1 h-11 rounded-xl bg-gradient-to-r from-ta/80 to-ta/80 border border-ta/30 text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-40">
             {yukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             Kaydet
           </button>
@@ -863,7 +863,7 @@ function DepoModal({
             return (
               <button key={s} onClick={() => { setSekme(s); setHata(''); setBasarili(''); }}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-semibold transition-colors ${
-                  sekme === s ? 'text-white border-b-2 border-violet-400' : 'text-white/35'
+                  sekme === s ? 'text-white border-b-2 border-ta' : 'text-white/35'
                 }`}>
                 <Ikon className="w-3.5 h-3.5" />
                 {labels[s]}
@@ -886,7 +886,7 @@ function DepoModal({
                       <button key={a} onClick={() => setAlan(a)}
                         className={`py-2 px-1 rounded-xl text-xs font-semibold border transition-all flex flex-col items-center gap-0.5 ${
                           alan === a
-                            ? 'border-violet-400/60 bg-violet-500/20 text-violet-200'
+                            ? 'border-ta/60 bg-ta/20 text-ta'
                             : 'border-white/8 bg-white/4 text-white/40 active:bg-white/8'
                         }`}>
                         <span>{ALAN_ETIKET[a]}</span>
@@ -948,7 +948,7 @@ function DepoModal({
                     type="number" min={0} value={miktar}
                     onChange={e => setMiktar(e.target.value)}
                     placeholder="0"
-                    className="flex-1 h-11 rounded-xl bg-white/6 border border-white/12 text-white text-center text-lg font-bold outline-none focus:border-violet-400/50 transition-colors"
+                    className="flex-1 h-11 rounded-xl bg-white/6 border border-white/12 text-white text-center text-lg font-bold outline-none focus:border-ta/50 transition-colors"
                   />
                   <button onClick={() => setMiktar(v => String(Number(v||0) + 1))}
                     className="w-11 h-11 rounded-xl bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-transform">
@@ -974,7 +974,7 @@ function DepoModal({
                       type="button"
                       onClick={() => setHedefAcik(!hedefAcik)}
                       className={`w-full h-11 rounded-xl border flex items-center gap-2.5 px-3 transition-all ${
-                        hedefAcik ? 'border-violet-400/50 bg-violet-500/15' : 'border-white/15 bg-white/8'
+                        hedefAcik ? 'border-ta/50 bg-ta/15' : 'border-white/15 bg-white/8'
                       }`}>
                       {hedefMekan ? (
                         <>
@@ -1017,12 +1017,12 @@ function DepoModal({
                             onClick={() => { setHedefMekan(m.name); setHedefAcik(false); }}
                             className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-white/6 last:border-0 ${
                               hedefMekan === m.name
-                                ? 'bg-violet-500/25 text-violet-100'
+                                ? 'bg-ta/25 text-ta'
                                 : 'text-white/85 hover:bg-white/8 active:bg-white/12'
                             }`}>
                             <span className="text-lg shrink-0">{m.emoji}</span>
                             <span className="text-sm font-semibold">{m.name}</span>
-                            {hedefMekan === m.name && <Check className="w-3.5 h-3.5 text-violet-400 ml-auto shrink-0" />}
+                            {hedefMekan === m.name && <Check className="w-3.5 h-3.5 text-ta ml-auto shrink-0" />}
                           </button>
                         ))}
                       </div>
@@ -1037,7 +1037,7 @@ function DepoModal({
                 <input
                   type="text" value={not} onChange={e => setNot(e.target.value)}
                   placeholder="Örn: Üretim partisi #42"
-                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-violet-400/50 transition-colors placeholder-white/20"
+                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-ta/50 transition-colors placeholder-white/20"
                 />
               </div>
 
@@ -1063,7 +1063,7 @@ function DepoModal({
             <div className="p-4 space-y-2">
               {gecmisYukleniyor ? (
                 <div className="flex items-center justify-center py-8 gap-2">
-                  <Loader2 className="w-5 h-5 text-violet-400 animate-spin" />
+                  <Loader2 className="w-5 h-5 text-ta animate-spin" />
                   <span className="text-xs text-white/30">Yükleniyor...</span>
                 </div>
               ) : hareketler.length === 0 ? (
@@ -1241,7 +1241,7 @@ function AktarimModal({
           type="button"
           onClick={() => { setAcik(!acik); }}
           className={`w-full h-11 rounded-xl border flex items-center gap-2 px-3 transition-all ${
-            acik ? 'border-violet-400/50 bg-violet-500/15' : 'border-white/15 bg-white/8'
+            acik ? 'border-ta/50 bg-ta/15' : 'border-white/15 bg-white/8'
           }`}>
           <span className="text-base shrink-0">{secili?.emoji}</span>
           <span className="text-sm font-bold text-white truncate flex-1 text-left">{secili?.name}</span>
@@ -1261,12 +1261,12 @@ function AktarimModal({
                   onClick={() => { onChange(l.id); setAcik(false); }}
                   className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-white/6 last:border-0 ${
                     l.id === value
-                      ? 'bg-violet-500/25 text-violet-100'
+                      ? 'bg-ta/25 text-ta'
                       : 'text-white/85 hover:bg-white/8 active:bg-white/12'
                   }`}>
                   <span className="text-lg shrink-0">{l.emoji}</span>
                   <span className="text-sm font-semibold">{l.name}</span>
-                  {l.id === value && <Check className="w-3.5 h-3.5 text-violet-400 ml-auto shrink-0" />}
+                  {l.id === value && <Check className="w-3.5 h-3.5 text-ta ml-auto shrink-0" />}
                 </button>
               ))}
             </div>
@@ -1284,8 +1284,8 @@ function AktarimModal({
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/10 rounded-t-3xl overflow-hidden" style={{ background: '#0e0826' }}>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center">
-              <ArrowRightLeft className="w-4 h-4 text-violet-400" />
+            <div className="w-8 h-8 rounded-xl bg-ta/20 border border-ta/30 flex items-center justify-center">
+              <ArrowRightLeft className="w-4 h-4 text-ta" />
             </div>
             <div>
               <h2 className="text-sm font-bold text-white">Stok Aktarımı</h2>
@@ -1306,7 +1306,7 @@ function AktarimModal({
           ] as const).map(({ key, label, Icon }) => (
             <button key={key} onClick={() => { setSekme(key); setHata(''); setBasarili(''); }}
               className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-semibold transition-colors ${
-                sekme === key ? 'text-white border-b-2 border-violet-400' : 'text-white/35'
+                sekme === key ? 'text-white border-b-2 border-ta' : 'text-white/35'
               }`}>
               <Icon className="w-3.5 h-3.5" />
               {label}
@@ -1332,8 +1332,8 @@ function AktarimModal({
                     setAcik={v => { setKaynakAcik(v); if (v) setHedefAcik(false); }}
                   />
                   <div className="w-9 pb-0.5 flex items-center justify-center shrink-0">
-                    <div className="w-8 h-8 rounded-xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center">
-                      <ArrowRightLeft className="w-3.5 h-3.5 text-violet-400" />
+                    <div className="w-8 h-8 rounded-xl bg-ta/20 border border-ta/30 flex items-center justify-center">
+                      <ArrowRightLeft className="w-3.5 h-3.5 text-ta" />
                     </div>
                   </div>
                   <LokasyonDropdown
@@ -1359,7 +1359,7 @@ function AktarimModal({
                       <button key={a} onClick={() => { setAlan(a); setMiktar(''); }}
                         className={`py-2 px-1 rounded-xl text-xs font-semibold border transition-all flex flex-col items-center gap-0.5 ${
                           alan === a
-                            ? 'border-violet-400/60 bg-violet-500/20 text-violet-200'
+                            ? 'border-ta/60 bg-ta/20 text-ta'
                             : adet === 0
                             ? 'border-red-500/20 bg-red-500/5 text-white/25'
                             : 'border-white/8 bg-white/4 text-white/50 active:bg-white/8'
@@ -1467,7 +1467,7 @@ function AktarimModal({
                   {!stokSifir && kaynakStokBilgi.adet > 0 && (
                     <button
                       onClick={() => setMiktar(String(kaynakStokBilgi.adet))}
-                      className="text-[10px] font-bold text-violet-400/70 px-2 py-0.5 rounded-lg bg-violet-500/10 border border-violet-500/20 active:scale-95 transition-transform">
+                      className="text-[10px] font-bold text-ta/70 px-2 py-0.5 rounded-lg bg-ta/10 border border-ta/20 active:scale-95 transition-transform">
                       Tümü ({kaynakStokBilgi.adet})
                     </button>
                   )}
@@ -1482,7 +1482,7 @@ function AktarimModal({
                     onChange={e => setMiktar(e.target.value)}
                     placeholder="0"
                     className={`flex-1 h-11 rounded-xl bg-white/6 border text-white text-center text-lg font-bold outline-none transition-colors ${
-                      yetersiz ? 'border-red-400/50 focus:border-red-400' : 'border-white/12 focus:border-violet-400/50'
+                      yetersiz ? 'border-red-400/50 focus:border-red-400' : 'border-white/12 focus:border-ta/50'
                     }`}
                   />
                   <button onClick={() => setMiktar(v => String(Math.min(kaynakStokBilgi.adet, Number(v || 0) + 1)))}
@@ -1513,7 +1513,7 @@ function AktarimModal({
                 <input
                   type="text" value={not} onChange={e => setNot(e.target.value)}
                   placeholder="Örn: Haftalık dağıtım"
-                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-violet-400/50 transition-colors placeholder-white/20"
+                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-ta/50 transition-colors placeholder-white/20"
                 />
               </div>
 
@@ -1523,7 +1523,7 @@ function AktarimModal({
               <button
                 onClick={aktar}
                 disabled={yukleniyor || !miktar || stokSifir || yetersiz || kaynakId === hedefId}
-                className="w-full h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 bg-gradient-to-r from-violet-600/80 to-purple-600/80 text-white border border-violet-400/30">
+                className="w-full h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 bg-gradient-to-r from-ta/80 to-ta/80 text-white border border-ta/30">
                 {yukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRightLeft className="w-4 h-4" />}
                 {stokSifir ? 'Stok Yok — Aktarılamaz' : yetersiz ? 'Miktar Çok Fazla' : 'Aktarımı Onayla'}
               </button>
@@ -1535,7 +1535,7 @@ function AktarimModal({
             <div className="p-4 space-y-2">
               {gecmisYukleniyor ? (
                 <div className="flex items-center justify-center py-8 gap-2">
-                  <Loader2 className="w-5 h-5 text-violet-400 animate-spin" />
+                  <Loader2 className="w-5 h-5 text-ta animate-spin" />
                   <span className="text-xs text-white/30">Yükleniyor...</span>
                 </div>
               ) : transferler.length === 0 ? (
@@ -1545,7 +1545,7 @@ function AktarimModal({
                   <div key={t.id} className="rounded-xl bg-white/4 border border-white/8 px-4 py-3">
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold text-violet-300">{ALAN_ETIKET[t.alan] || t.alan}</span>
+                        <span className="text-xs font-bold text-ta">{ALAN_ETIKET[t.alan] || t.alan}</span>
                         <span className="text-xs font-black text-white">×{t.miktar}</span>
                       </div>
                       <span className="text-[9px] text-white/25">
@@ -1555,7 +1555,7 @@ function AktarimModal({
                     <div className="flex items-center gap-1.5 mb-1">
                       <span className="text-xs">{t.kaynakEmoji}</span>
                       <span className="text-xs text-white/60 font-semibold">{t.kaynakAdi}</span>
-                      <ArrowRightLeft className="w-3 h-3 text-violet-400/60 shrink-0" />
+                      <ArrowRightLeft className="w-3 h-3 text-ta/60 shrink-0" />
                       <span className="text-xs">{t.hedefEmoji}</span>
                       <span className="text-xs text-white/60 font-semibold">{t.hedefAdi}</span>
                     </div>
@@ -1577,12 +1577,12 @@ function AktarimModal({
 function SonAktarimlarCard({ transferler, yukleniyor }: { transferler: Transfer[]; yukleniyor: boolean }) {
   const [acik, setAcik] = useState(false);
   return (
-    <div className="mx-4 mb-4 rounded-2xl border border-violet-500/20 bg-[rgba(255,255,255,0.04)] backdrop-blur overflow-hidden">
+    <div className="mx-4 mb-4 rounded-2xl border border-ta/20 bg-[rgba(255,255,255,0.04)] backdrop-blur overflow-hidden">
       <button
         onClick={() => setAcik(v => !v)}
         className="w-full px-4 py-3.5 flex items-center gap-3 text-left active:bg-white/4 transition-colors">
-        <div className="w-8 h-8 rounded-xl bg-violet-500/15 border border-violet-500/25 flex items-center justify-center shrink-0">
-          <ArrowRightLeft className="w-4 h-4 text-violet-400" />
+        <div className="w-8 h-8 rounded-xl bg-ta/15 border border-ta/25 flex items-center justify-center shrink-0">
+          <ArrowRightLeft className="w-4 h-4 text-ta" />
         </div>
         <div className="flex-1 min-w-0">
           <span className="text-sm font-bold text-white">Son Aktarımlar</span>
@@ -1596,7 +1596,7 @@ function SonAktarimlarCard({ transferler, yukleniyor }: { transferler: Transfer[
         <div className="border-t border-white/8 px-3 pb-3 pt-2 space-y-2">
           {yukleniyor ? (
             <div className="flex items-center justify-center py-4 gap-2">
-              <Loader2 className="w-4 h-4 text-violet-400 animate-spin" />
+              <Loader2 className="w-4 h-4 text-ta animate-spin" />
               <span className="text-xs text-white/30">Yükleniyor...</span>
             </div>
           ) : transferler.length === 0 ? (
@@ -1606,9 +1606,9 @@ function SonAktarimlarCard({ transferler, yukleniyor }: { transferler: Transfer[
               <div key={t.id} className="rounded-xl bg-white/4 border border-white/8 px-3 py-2.5">
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-violet-400 shrink-0" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-ta shrink-0" />
                     <span className="text-xs font-bold text-white">{ALAN_ETIKET[t.alan] || t.alan}</span>
-                    <span className="text-xs font-black" style={{ color: ALAN_RENK[t.alan] || '#a78bfa' }}>×{t.miktar}</span>
+                    <span className="text-xs font-black" style={{ color: ALAN_RENK[t.alan] || 'var(--app-accent, #a855f7)' }}>×{t.miktar}</span>
                   </div>
                   <span className="text-[9px] text-white/25">
                     {new Date(t.tarih).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -1617,13 +1617,13 @@ function SonAktarimlarCard({ transferler, yukleniyor }: { transferler: Transfer[
                 <div className="flex items-center gap-1 mb-0.5">
                   <span className="text-xs">{t.kaynakEmoji}</span>
                   <span className="text-[11px] text-white/55 font-semibold truncate max-w-[70px]">{t.kaynakAdi}</span>
-                  <ArrowRightLeft className="w-2.5 h-2.5 text-violet-400/50 shrink-0" />
+                  <ArrowRightLeft className="w-2.5 h-2.5 text-ta/50 shrink-0" />
                   <span className="text-xs">{t.hedefEmoji}</span>
                   <span className="text-[11px] text-white/55 font-semibold truncate max-w-[70px]">{t.hedefAdi}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] text-white/25">{t.kullaniciAdi}{t.not ? ` · ${t.not}` : ''}</span>
-                  <span className="text-[10px] text-violet-300/50">{t.eskiKaynakDeger}→{t.yeniKaynakDeger}</span>
+                  <span className="text-[10px] text-ta/50">{t.eskiKaynakDeger}→{t.yeniKaynakDeger}</span>
                 </div>
               </div>
             ))
@@ -1724,9 +1724,9 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
           {canManageStok && (
             <button
               onClick={() => setAktarimModalAcik(true)}
-              className="h-9 px-3 rounded-xl bg-violet-500/20 border border-violet-500/30 flex items-center gap-1.5 active:scale-90 transition-transform">
-              <ArrowRightLeft className="w-3.5 h-3.5 text-violet-300" />
-              <span className="text-xs font-semibold text-violet-300">Aktarım</span>
+              className="h-9 px-3 rounded-xl bg-ta/20 border border-ta/30 flex items-center gap-1.5 active:scale-90 transition-transform">
+              <ArrowRightLeft className="w-3.5 h-3.5 text-ta" />
+              <span className="text-xs font-semibold text-ta">Aktarım</span>
             </button>
           )}
           {canEditDepo && (
@@ -1747,7 +1747,7 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
       {/* Yükleniyor */}
       {yukleniyor && !veri && (
         <div className="flex flex-col items-center justify-center pt-24 gap-3">
-          <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
+          <Loader2 className="w-8 h-8 text-ta animate-spin" />
           <span className="text-sm text-white/30">Stok verileri yükleniyor...</span>
         </div>
       )}

@@ -92,9 +92,9 @@ export function AyTab({
                   )}
 
                   {/* Toplam Ciro */}
-                  <div className="flex items-center justify-between rounded-lg px-3 py-2.5 mb-3" style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)' }}>
+                  <div className="flex items-center justify-between rounded-lg px-3 py-2.5 mb-3" style={{ background: 'rgba(var(--app-accent-rgb),0.1)', border: '1px solid rgba(var(--app-accent-rgb),0.25)' }}>
                     <span className="text-[13px] font-black" style={{ color: 'rgba(255,255,255,0.7)' }}>Toplam Ciro</span>
-                    <span className="text-[19px] font-black" style={{ color: '#a78bfa' }}>{'\u20BA'}{(aySecili.toplamCiro || 0).toLocaleString('tr-TR')}</span>
+                    <span className="text-[19px] font-black" style={{ color: 'var(--app-accent, #a855f7)' }}>{'\u20BA'}{(aySecili.toplamCiro || 0).toLocaleString('tr-TR')}</span>
                   </div>
 
                   {/* Maliyet k{'\u0131'}r{'\u0131'}l{'\u0131'}m{'\u0131'} */}
@@ -275,9 +275,9 @@ export function AyTab({
                             <div key={a.tip} className="flex items-center gap-2">
                               <span className="text-[10px] font-semibold truncate" style={{ color: 'rgba(255,255,255,0.5)', minWidth: 70, maxWidth: 90 }}>{a.tip}</span>
                               <div className="flex-1 rounded-full overflow-hidden" style={{ height: 8, background: 'rgba(255,255,255,0.05)' }}>
-                                <div style={{ width: `${oran}%`, height: '100%', background: 'linear-gradient(90deg, rgba(167,139,250,0.6), rgba(167,139,250,0.3))', borderRadius: 99 }} />
+                                <div style={{ width: `${oran}%`, height: '100%', background: 'linear-gradient(90deg, rgba(var(--app-accent-rgb),0.6), rgba(var(--app-accent-rgb),0.3))', borderRadius: 99 }} />
                               </div>
-                              <span className="text-[11px] font-black" style={{ color: '#a78bfa', minWidth: 24, textAlign: 'right' }}>{a.adet}</span>
+                              <span className="text-[11px] font-black" style={{ color: 'var(--app-accent, #a855f7)', minWidth: 24, textAlign: 'right' }}>{a.adet}</span>
                               <span className="text-[9px] font-semibold" style={{ color: 'rgba(255,255,255,0.25)', minWidth: 28, textAlign: 'right' }}>%{yuzde}</span>
                             </div>
                           );
@@ -323,7 +323,7 @@ export function AyTab({
                           <span style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
                             <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.mekanEmoji || '\uD83D\uDCCD'} {m.mekanAd}</span>
                             {(m.vardiyaSayisi || 0) > 0 && (
-                              <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 5, background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.25)', color: '#a78bfa', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                              <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 5, background: 'rgba(var(--app-accent-rgb),0.12)', border: '1px solid rgba(var(--app-accent-rgb),0.25)', color: 'var(--app-accent, #a855f7)', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
                                 {m.vardiyaSayisi} vardiya
                               </span>
                             )}
@@ -338,8 +338,8 @@ export function AyTab({
                             <span style={{ fontSize: 12, fontWeight: 800, color: mKarMi ? '#34d399' : '#f87171' }}>{mKarMi ? '+' : ''}{tl(m.karZarar)}</span>
                           </span>
                           <span style={{ textAlign: 'right' }}>
-                            <span style={{ fontSize: 9, color: 'rgba(167,139,250,0.5)', fontWeight: 600 }}>Ciro </span>
-                            <span style={{ color: '#a78bfa', fontSize: 12, fontWeight: 800 }}>{tl(m.ciro)}</span>
+                            <span style={{ fontSize: 9, color: 'rgba(var(--app-accent-rgb),0.5)', fontWeight: 600 }}>Ciro </span>
+                            <span style={{ color: 'var(--app-accent, #a855f7)', fontSize: 12, fontWeight: 800 }}>{tl(m.ciro)}</span>
                           </span>
                           {mekanAcikMi
                             ? <ChevronUp className="w-3 h-3" style={{ color: 'rgba(255,255,255,0.25)' }} />
@@ -359,14 +359,14 @@ export function AyTab({
 
                       {/* A{'\u00E7\u0131'}k detay */}
                       {mekanAcikMi && (
-                        <div className="px-3 pb-3 space-y-3" style={{ borderTop: '1px solid rgba(167,139,250,0.25)', background: 'rgba(167,139,250,0.07)' }}>
+                        <div className="px-3 pb-3 space-y-3" style={{ borderTop: '1px solid rgba(var(--app-accent-rgb),0.25)', background: 'rgba(var(--app-accent-rgb),0.07)' }}>
 
                           {/* {'\u00DC'}r{'\u00FC'}n Da{'\u011F\u0131'}l{'\u0131'}m{'\u0131'} */}
                           {mAlbumler.length > 0 && (
                             <div className="pt-2">
                               <div className="text-center mb-2">
-                                <p className="text-[9px] font-bold" style={{ color: 'rgba(167,139,250,0.7)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{'\uD83D\uDCE6'} {'\u00DC'}r{'\u00FC'}n Da{'\u011F\u0131'}l{'\u0131'}m{'\u0131'}</p>
-                                <div style={{ height: 1, background: 'rgba(167,139,250,0.2)', marginTop: 4 }} />
+                                <p className="text-[9px] font-bold" style={{ color: 'rgba(var(--app-accent-rgb),0.7)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{'\uD83D\uDCE6'} {'\u00DC'}r{'\u00FC'}n Da{'\u011F\u0131'}l{'\u0131'}m{'\u0131'}</p>
+                                <div style={{ height: 1, background: 'rgba(var(--app-accent-rgb),0.2)', marginTop: 4 }} />
                               </div>
                               <div className="space-y-1">
                                 {mAlbumler.map((a: any) => {
@@ -375,9 +375,9 @@ export function AyTab({
                                     <div key={a.tip} className="flex items-center gap-2">
                                       <span className="text-[9px] font-semibold truncate" style={{ color: 'rgba(255,255,255,0.45)', minWidth: 60, maxWidth: 80 }}>{a.tip}</span>
                                       <div className="flex-1 rounded-full overflow-hidden" style={{ height: 6, background: 'rgba(255,255,255,0.05)' }}>
-                                        <div style={{ width: `${oran}%`, height: '100%', background: 'linear-gradient(90deg, rgba(167,139,250,0.5), rgba(167,139,250,0.25))', borderRadius: 99 }} />
+                                        <div style={{ width: `${oran}%`, height: '100%', background: 'linear-gradient(90deg, rgba(var(--app-accent-rgb),0.5), rgba(var(--app-accent-rgb),0.25))', borderRadius: 99 }} />
                                       </div>
-                                      <span className="text-[10px] font-bold" style={{ color: '#a78bfa', minWidth: 20, textAlign: 'right' }}>{a.adet}</span>
+                                      <span className="text-[10px] font-bold" style={{ color: 'var(--app-accent, #a855f7)', minWidth: 20, textAlign: 'right' }}>{a.adet}</span>
                                     </div>
                                   );
                                 })}
@@ -523,7 +523,7 @@ export function AyTab({
                         <span className="text-[13px] font-black" style={{ color: '#34d399' }}>{tl(p.ciro)}</span>
                       </div>
                       <div className="flex flex-wrap gap-1.5">
-                        <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 5, background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.25)', color: '#a78bfa', fontWeight: 700 }}>
+                        <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 5, background: 'rgba(var(--app-accent-rgb),0.12)', border: '1px solid rgba(var(--app-accent-rgb),0.25)', color: 'var(--app-accent, #a855f7)', fontWeight: 700 }}>
                           {p.vardiyaSayisi} vardiya
                         </span>
                         <span style={{ fontSize: 8, padding: '1px 5px', borderRadius: 5, background: 'rgba(157,217,234,0.12)', border: '1px solid rgba(157,217,234,0.25)', color: '#9dd9ea', fontWeight: 700 }}>
@@ -571,9 +571,9 @@ export function AyTab({
               <button key={y} onClick={() => { setAySeciliYil(y); fetchAyRaporu(y); }}
                 className="px-3 py-2 rounded-xl text-xs font-bold transition-all"
                 style={{
-                  background: aySeciliYil === y ? 'rgba(167,139,250,0.25)' : 'rgba(255,255,255,0.05)',
-                  border: aySeciliYil === y ? '1px solid rgba(167,139,250,0.4)' : '1px solid rgba(255,255,255,0.1)',
-                  color: aySeciliYil === y ? '#c4b5fd' : 'rgba(255,255,255,0.4)',
+                  background: aySeciliYil === y ? 'rgba(var(--app-accent-rgb),0.25)' : 'rgba(255,255,255,0.05)',
+                  border: aySeciliYil === y ? '1px solid rgba(var(--app-accent-rgb),0.4)' : '1px solid rgba(255,255,255,0.1)',
+                  color: aySeciliYil === y ? 'var(--app-accent, #a855f7)' : 'rgba(255,255,255,0.4)',
                 }}>
                 {y}
               </button>
@@ -582,7 +582,7 @@ export function AyTab({
 
           {ayLoading && (
             <div className="flex justify-center py-12">
-              <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-400 rounded-full animate-spin" />
+              <div className="w-8 h-8 border-4 border-ta/30 border-t-ta rounded-full animate-spin" />
             </div>
           )}
 
@@ -625,7 +625,7 @@ export function AyTab({
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <p className="text-[18px] font-black leading-tight" style={{ color: '#a78bfa' }}>
+                        <p className="text-[18px] font-black leading-tight" style={{ color: 'var(--app-accent, #a855f7)' }}>
                           {tl(ay.toplamCiro)}
                         </p>
                         {ayEkGelir > 0 && (
@@ -724,7 +724,7 @@ export function AyTab({
                       <div className="flex gap-1.5 flex-wrap flex-1 min-w-0">
                         {(ay.mekanLabels || []).slice(0, 5).map((m: string, i: number) => (
                           <span key={i} className="text-[9px] font-semibold px-2 py-0.5 rounded-full truncate"
-                            style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.15)', color: 'rgba(255,255,255,0.5)', maxWidth: 100 }}>
+                            style={{ background: 'rgba(var(--app-accent-rgb),0.08)', border: '1px solid rgba(var(--app-accent-rgb),0.15)', color: 'rgba(255,255,255,0.5)', maxWidth: 100 }}>
                             {m}
                           </span>
                         ))}
@@ -752,8 +752,8 @@ export function AyTab({
                                   <span style={{ fontSize: 12, fontWeight: 800, color: mKarMi ? '#34d399' : '#f87171' }}>{mKarMi ? '+' : ''}{tl(m.karZarar)}</span>
                                 </span>
                                 <span style={{ textAlign: 'right', minWidth: 70 }}>
-                                  <span style={{ fontSize: 10, color: 'rgba(167,139,250,0.5)', fontWeight: 600 }}>Ciro </span>
-                                  <span style={{ color: '#a78bfa', fontSize: 12, fontWeight: 800 }}>{tl(m.ciro)}</span>
+                                  <span style={{ fontSize: 10, color: 'rgba(var(--app-accent-rgb),0.5)', fontWeight: 600 }}>Ciro </span>
+                                  <span style={{ color: 'var(--app-accent, #a855f7)', fontSize: 12, fontWeight: 800 }}>{tl(m.ciro)}</span>
                                 </span>
                               </div>
                             );

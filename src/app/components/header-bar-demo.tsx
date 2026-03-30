@@ -15,14 +15,14 @@ const PAGE_LABELS: Record<string, string> = {
 };
 
 const PAGES = [
-  { key: 'dashboard',   label: 'Dashboard',  icon: BarChart2, color: '#a78bfa' },
+  { key: 'dashboard',   label: 'Dashboard',  icon: BarChart2, color: 'var(--app-accent, #a855f7)' },
   { key: 'quick-sales', label: 'Operasyon',  icon: Zap,       color: '#fb923c' },
   { key: 'live-feed',   label: 'Canlı Feed', icon: Activity,  color: '#34d399' },
   { key: 'aspect-ai',   label: 'Aspect AI',  icon: Sparkles,  color: '#f472b6' },
 ];
 
 const ROLE_COLORS: Record<string, string> = {
-  Yönetici: '#a855f7', Operatör: '#fb923c', Fotoğrafçı: '#34d399',
+  Yönetici: 'var(--app-accent, #a855f7)', Operatör: '#fb923c', Fotoğrafçı: '#34d399',
 };
 
 /* ═══════════════════════════════════════
@@ -32,7 +32,7 @@ function PillBottomNav({ activeTab, onTabChange }: {
   activeTab: string; onTabChange: (k: string) => void;
 }) {
   const tabs = [
-    { key: 'dashboard', icon: Home,          color: '#a78bfa' },
+    { key: 'dashboard', icon: Home,          color: 'var(--app-accent, #a855f7)' },
     { key: 'live-feed', icon: Activity,      color: '#34d399' },
     { key: 'aspect-ai', icon: Sparkles,      color: '#f472b6' },
     { key: 'messaging', icon: MessageSquare, color: '#60a5fa', badge: true },
@@ -87,13 +87,13 @@ function SideMenu({ isOpen, onClose }: { isOpen: boolean; onClose: () => void })
             style={{ background: 'linear-gradient(160deg,#1e0a3c,#2d1b69 60%,#1a1040)' }}>
             <div className="px-4 pt-5 pb-4 border-b border-white/10">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-black text-violet-400 tracking-widest uppercase">Aspect Ops</span>
+                <span className="text-[10px] font-black text-ta tracking-widest uppercase">Aspect Ops</span>
                 <button onClick={onClose} className="w-7 h-7 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center">
                   <X className="w-3.5 h-3.5 text-white" />
                 </button>
               </div>
               <div className="flex items-center gap-3 bg-white/8 border border-white/12 rounded-2xl p-3">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-400 to-fuchsia-500 flex items-center justify-center text-xl flex-shrink-0">👨‍💼</div>
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-ta to-fuchsia-500 flex items-center justify-center text-xl flex-shrink-0">👨‍💼</div>
                 <div>
                   <p className="text-white font-black text-sm">Ahmet Yılmaz</p>
                   <div className="flex items-center gap-1.5 mt-0.5">
@@ -137,7 +137,7 @@ function PhoneContent({ activePage, activeTab, onTabChange, setActivePage, menuO
       <div className="absolute inset-0 overflow-hidden"
         style={{ background: 'linear-gradient(135deg,#1e0a3c 0%,#2d1b69 40%,#0f2027 100%)' }}>
         <div className="absolute top-10 left-5 w-24 h-24 rounded-full blur-2xl opacity-20"
-          style={{ background: 'radial-gradient(circle,#7c3aed,transparent)' }} />
+          style={{ background: 'radial-gradient(circle,var(--app-accent, #a855f7),transparent)' }} />
         <div className="absolute bottom-20 right-5 w-20 h-20 rounded-full blur-2xl opacity-15"
           style={{ background: 'radial-gradient(circle,#db2777,transparent)' }} />
 
@@ -159,7 +159,7 @@ function PhoneContent({ activePage, activeTab, onTabChange, setActivePage, menuO
           <div className="flex flex-col items-center">
             <span className="font-black leading-none" style={{
               fontSize: 11, letterSpacing: '0.15em',
-              background: 'linear-gradient(90deg,#c084fc,#e879f9,#818cf8)',
+              background: 'linear-gradient(90deg,var(--app-accent, #c084fc),#e879f9,#818cf8)',
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
             }}>ASPECT</span>
             <AnimatePresence mode="wait">
@@ -167,7 +167,7 @@ function PhoneContent({ activePage, activeTab, onTabChange, setActivePage, menuO
                 initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -3 }}
                 transition={{ duration: 0.15 }}
                 className="text-[6px] font-semibold"
-                style={{ color: isDash ? 'rgba(196,181,253,0.5)' : page.color + '99' }}>
+                style={{ color: isDash ? 'rgba(var(--app-accent-rgb),0.5)' : page.color + '99' }}>
                 {PAGE_LABELS[activePage]}
               </motion.span>
             </AnimatePresence>
@@ -226,7 +226,7 @@ function PhoneContent({ activePage, activeTab, onTabChange, setActivePage, menuO
           <div className="space-y-1">
             {[
               { name: 'Elif K.', action: 'Satış kaydetti', time: '2dk', color: '#34d399' },
-              { name: 'Mehmet A.', action: '3x Albüm · ₺180', time: '5dk', color: '#a78bfa' },
+              { name: 'Mehmet A.', action: '3x Albüm · ₺180', time: '5dk', color: 'var(--app-accent, #a855f7)' },
             ].map(f => (
               <div key={f.name} className="flex items-center gap-2 rounded-xl px-2.5 py-2 border border-white/6"
                 style={{ background: 'rgba(255,255,255,0.03)' }}>
@@ -288,12 +288,12 @@ function MiniBar({
           <>
             <span className="font-black" style={{
               fontSize: 8.5, letterSpacing: '0.16em',
-              background: 'linear-gradient(90deg,#c084fc,#e879f9,#818cf8)',
+              background: 'linear-gradient(90deg,var(--app-accent, #c084fc),#e879f9,#818cf8)',
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
             }}>{centerLabel}</span>
             {centerSub && (
               <span className="text-[6px] font-semibold whitespace-nowrap"
-                style={{ color: centerSubColor ?? 'rgba(196,181,253,0.45)' }}>{centerSub}</span>
+                style={{ color: centerSubColor ?? 'rgba(var(--app-accent-rgb),0.45)' }}>{centerSub}</span>
             )}
           </>
         ) : (
@@ -331,7 +331,7 @@ function VarA({ isSubPage, onBack, subLabel, subColor }: {
   subLabel?: string;
   subColor?: string;
 }) {
-  const c = isSubPage ? (subColor ?? '#fb923c') : '#a855f7';
+  const c = isSubPage ? (subColor ?? '#fb923c') : 'var(--app-accent, #a855f7)';
   return (
     <div className="flex items-center gap-1.5 rounded-full pl-1 pr-2 py-1 flex-shrink-0"
       style={{
@@ -495,7 +495,7 @@ function LeftPillAlternatives() {
       {/* Başlık */}
       <div className="flex items-center gap-2 mb-5">
         <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
-        <span className="text-[8px] font-black text-violet-400 tracking-widest uppercase">4 Yeni Konsept</span>
+        <span className="text-[8px] font-black text-ta tracking-widest uppercase">4 Yeni Konsept</span>
         <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
       </div>
 
@@ -505,12 +505,12 @@ function LeftPillAlternatives() {
           <button key={a.key} onClick={() => setActiveKey(a.key)}
             className="flex flex-col items-start gap-1 p-3 rounded-2xl border text-left transition-all active:scale-95"
             style={activeKey === a.key
-              ? { background: 'rgba(168,85,247,0.15)', borderColor: 'rgba(168,85,247,0.45)', boxShadow: '0 0 16px rgba(168,85,247,0.15)' }
+              ? { background: 'rgba(var(--app-accent-rgb),0.15)', borderColor: 'rgba(var(--app-accent-rgb),0.45)', boxShadow: '0 0 16px rgba(var(--app-accent-rgb),0.15)' }
               : { background: 'rgba(255,255,255,0.03)', borderColor: 'rgba(255,255,255,0.07)' }
             }>
             <div className="flex items-center gap-1.5">
               <span className="text-base leading-none">{a.emoji}</span>
-              <span className="text-[9px] font-black" style={{ color: activeKey === a.key ? '#c084fc' : '#6b7280' }}>
+              <span className="text-[9px] font-black" style={{ color: activeKey === a.key ? 'var(--app-accent, #a855f7)' : '#6b7280' }}>
                 {a.key}
               </span>
             </div>
@@ -542,7 +542,7 @@ function LeftPillAlternatives() {
               left={renderLeft(activeKey, false)}
               centerLabel="ASPECT"
               centerSub="Dashboard"
-              centerSubColor="rgba(196,181,253,0.5)"
+              centerSubColor="rgba(var(--app-accent-rgb),0.5)"
             />
           </div>
 
@@ -580,7 +580,7 @@ export default function HeaderBarDemo() {
       style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-20 left-10 w-64 h-64 rounded-full blur-3xl opacity-10"
-          style={{ background: 'radial-gradient(circle,#7c3aed,transparent)' }} />
+          style={{ background: 'radial-gradient(circle,var(--app-accent, #a855f7),transparent)' }} />
         <div className="absolute bottom-40 right-10 w-48 h-48 rounded-full blur-3xl opacity-8"
           style={{ background: 'radial-gradient(circle,#db2777,transparent)' }} />
       </div>
@@ -590,14 +590,14 @@ export default function HeaderBarDemo() {
         {/* Başlık */}
         <div className="w-full max-w-[280px] mb-5">
           <div className="flex items-center gap-2 mb-1">
-            <div className="w-6 h-6 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600 flex items-center justify-center">
+            <div className="w-6 h-6 rounded-xl bg-gradient-to-br from-ta to-fuchsia-600 flex items-center justify-center">
               <Sparkles className="w-3 h-3 text-white" />
             </div>
-            <span className="text-[9px] font-black text-violet-400 tracking-widest uppercase">Header Konsept</span>
+            <span className="text-[9px] font-black text-ta tracking-widest uppercase">Header Konsept</span>
           </div>
           <h1 className="text-white font-black text-lg leading-tight">
             Floating{' '}
-            <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-pink-400 bg-clip-text text-transparent">pill nav</span>
+            <span className="bg-gradient-to-r from-ta via-fuchsia-400 to-pink-400 bg-clip-text text-transparent">pill nav</span>
           </h1>
           <p className="text-gray-600 text-[10px] mt-0.5">3-sütun grid · sıfır çakışma</p>
         </div>

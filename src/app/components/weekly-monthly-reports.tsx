@@ -389,7 +389,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
               {/* Title Group */}
               <div className="flex-1">
                 <h1 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Plus className="w-6 h-6 text-purple-400" />
+                  <Plus className="w-6 h-6 text-ta" />
                   Yeni Rapor Kaydı
                 </h1>
                 <p className="text-sm text-gray-400 mt-0.5">
@@ -427,13 +427,13 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
           {/* 1. Rapor Tipi */}
           <div className="backdrop-blur-xl bg-gradient-to-br from-white/5 to-white/5 border border-white/10 rounded-2xl p-5">
             <label className="block text-sm font-semibold text-white mb-2">
-              <FileText className="w-4 h-4 inline mr-2 text-purple-400" />
+              <FileText className="w-4 h-4 inline mr-2 text-ta" />
               Rapor Tipi *
             </label>
             <select
               value={newReport.type}
               onChange={(e) => setNewReport({ ...newReport, type: e.target.value as 'weekly' | 'monthly' })}
-              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-purple-500/50"
+              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-ta/50"
               style={{ colorScheme: 'dark' }}
             >
               <option value="weekly" className="bg-black text-white">📅 Haftalık Rapor</option>
@@ -446,7 +446,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
             {/* Başlangıç Tarihi */}
             <div className="backdrop-blur-xl bg-gradient-to-br from-white/5 to-white/5 border border-white/10 rounded-2xl p-5">
               <label className="block text-sm font-semibold text-white mb-2">
-                <Calendar className="w-4 h-4 inline mr-2 text-purple-400" />
+                <Calendar className="w-4 h-4 inline mr-2 text-ta" />
                 Başlangıç *
               </label>
               <input
@@ -454,14 +454,14 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
                 value={newReport.startDate}
                 onChange={(e) => setNewReport({ ...newReport, startDate: e.target.value })}
                 placeholder="01.03.2026"
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-ta/50"
               />
             </div>
 
             {/* Bitiş Tarihi */}
             <div className="backdrop-blur-xl bg-gradient-to-br from-white/5 to-white/5 border border-white/10 rounded-2xl p-5">
               <label className="block text-sm font-semibold text-white mb-2">
-                <Calendar className="w-4 h-4 inline mr-2 text-purple-400" />
+                <Calendar className="w-4 h-4 inline mr-2 text-ta" />
                 Bitiş *
               </label>
               <input
@@ -469,7 +469,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
                 value={newReport.endDate}
                 onChange={(e) => setNewReport({ ...newReport, endDate: e.target.value })}
                 placeholder="07.03.2026"
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-ta/50"
               />
             </div>
           </div>
@@ -609,7 +609,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
             <select
               value={newReport.status}
               onChange={(e) => setNewReport({ ...newReport, status: e.target.value as Report['status'] })}
-              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-purple-500/50"
+              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-ta/50"
               style={{ colorScheme: 'dark' }}
             >
               <option value="draft" className="bg-black text-white">📝 Taslak</option>
@@ -627,7 +627,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
               onChange={(e) => setNewReport({ ...newReport, notes: e.target.value })}
               placeholder="Ek açıklamalar, gözlemler, gelecek dönem planları..."
               rows={4}
-              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 resize-none"
+              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-ta/50 resize-none"
             />
           </div>
         </div>
@@ -660,7 +660,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
             {/* New Report Button */}
             <button 
               onClick={() => setShowNewReportForm(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 border-2 border-purple-400/30 shadow-lg shadow-purple-500/30 transition-all hover:scale-105 active:scale-95"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-ta to-ta hover:from-ta hover:to-ta border-2 border-ta/30 shadow-lg shadow-ta/30 transition-all hover:scale-105 active:scale-95"
             >
               <Plus className="w-5 h-5 text-white" />
               <span className="text-white font-semibold text-sm">Yeni Rapor</span>
@@ -683,7 +683,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
               onClick={() => setSelectedTab('weekly')}
               className={`px-4 py-3 rounded-xl font-semibold text-sm transition-all ${
                 selectedTab === 'weekly'
-                  ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-lg shadow-purple-500/50 border-2 border-purple-400/30'
+                  ? 'bg-gradient-to-r from-ta to-ta text-white shadow-lg shadow-ta/50 border-2 border-ta/30'
                   : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10'
               }`}
             >
@@ -696,7 +696,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
               onClick={() => setSelectedTab('monthly')}
               className={`px-4 py-3 rounded-xl font-semibold text-sm transition-all ${
                 selectedTab === 'monthly'
-                  ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-lg shadow-purple-500/50 border-2 border-purple-400/30'
+                  ? 'bg-gradient-to-r from-ta to-ta text-white shadow-lg shadow-ta/50 border-2 border-ta/30'
                   : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10'
               }`}
             >
@@ -712,7 +712,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
         {filteredReports.map((report) => (
           <div 
             key={report.id}
-            className="backdrop-blur-xl bg-gradient-to-br from-purple-500/10 to-purple-600/10 border-2 border-purple-500/20 rounded-2xl p-5 hover:scale-[1.02] transition-all duration-200 relative"
+            className="backdrop-blur-xl bg-gradient-to-br from-ta/10 to-ta/10 border-2 border-ta/20 rounded-2xl p-5 hover:scale-[1.02] transition-all duration-200 relative"
           >
             {/* Edit Button - Sadece taslak raporlarda ve yetki varsa */}
             {canEditReport(report) && (
@@ -770,7 +770,7 @@ export function WeeklyMonthlyReports({ onBack, userName = '', userRole = 'mudur'
               {report.locations.map((location, idx) => (
                 <span 
                   key={idx}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/20 border border-purple-500/30 rounded-full text-xs font-medium text-purple-300"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-ta/20 border border-ta/30 rounded-full text-xs font-medium text-ta"
                 >
                   <span>📍</span>
                   {location}

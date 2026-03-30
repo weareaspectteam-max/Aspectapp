@@ -25,7 +25,7 @@ export function Reports() {
   const revenueByProject = locations.map((location, index) => ({
     name: location.name,
     value: index === 0 ? 5600 : index === 1 ? 3800 : 2000,
-    color: location.color || (index === 0 ? '#1e40af' : index === 1 ? '#f59e0b' : '#8b5cf6'),
+    color: location.color || (index === 0 ? '#1e40af' : index === 1 ? '#f59e0b' : 'var(--app-accent, #a855f7)'),
   }));
 
   const dailyRevenue = [

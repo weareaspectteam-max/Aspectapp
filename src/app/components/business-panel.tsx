@@ -28,7 +28,7 @@ export function BusinessPanel({ userName, onNavigate }: BusinessPanelProps) {
       title: 'Müdür Raporları',
       description: 'Ziyaret, haftalık/aylık ve personel görüşmeleri',
       emoji: '📋',
-      color: '#c4b5fd',
+      color: 'var(--app-accent, #a855f7)',
       action: () => onNavigate('manager-reports'),
     },
   ];
@@ -42,7 +42,7 @@ export function BusinessPanel({ userName, onNavigate }: BusinessPanelProps) {
           <h1 className="text-2xl font-black text-white">Yönetici Paneli</h1>
           <span className="text-xl">⚙️</span>
         </div>
-        <p className="text-xs font-medium" style={{ color: 'rgba(196,181,253,0.5)' }}>
+        <p className="text-xs font-medium" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>
           {userName} · İşletme yönetim araçları
         </p>
       </div>

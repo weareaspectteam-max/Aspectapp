@@ -170,7 +170,7 @@ export function ManagerReports({
               <h1 className="text-2xl font-black text-white">Müdür Raporları</h1>
               <span className="text-xl">📋</span>
             </div>
-            <p className="text-xs font-medium" style={{ color: 'rgba(196,181,253,0.5)' }}>
+            <p className="text-xs font-medium" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>
               {userName} · Müdür aktiviteleri ve raporlar
             </p>
           </div>
@@ -367,7 +367,7 @@ function PerformanceTab({ accessToken = '' }: { accessToken?: string }) {
             ))}
           </div>
         </div>
-        <div className="backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-400/30 rounded-2xl p-4 text-center">
+        <div className="backdrop-blur-xl bg-gradient-to-br from-ta/20 to-ta/20 border border-ta/30 rounded-2xl p-4 text-center">
           <div className="text-3xl font-bold text-white mb-1">{totalVisits}</div>
           <div className="text-xs text-gray-300">Toplam Ziyaret</div>
         </div>

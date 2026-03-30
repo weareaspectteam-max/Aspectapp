@@ -18,7 +18,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
 import { authHeaders } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
-import { THEMES, applyTheme, getThemeById } from '../lib/themes';
+import { THEMES, applyTheme, getThemeById, getAccentHex } from '../lib/themes';
 import { Changelog } from './changelog';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -44,7 +44,7 @@ interface Section {
 /* ─────────────────────── Rol meta ──────────────────── */
 const ROLE_COLORS: Record<UserRole, string> = {
   'yonetici':   '#a855f7',
-  'ust-mudur':  '#7c3aed',
+  'ust-mudur':  '#a855f7',
   'mudur':      '#6366f1',
   'operasyon':  '#fb923c',
   'personel':   '#34d399',
@@ -114,7 +114,7 @@ function getSections(
     },
     {
       title: 'GENEL',
-      color: '#a78bfa',
+      color: '#a855f7',
       items: [
         { icon: Home,          label: 'Dashboard',        roles: all,  action: () => go('dashboard')   },
         { icon: MessageCircle, label: 'Mesajlar',          roles: all,  action: () => go('messaging')   },
@@ -330,8 +330,13 @@ export function HamburgerMenu({
     }
   };
 
-  const sections  = getSections(userRole, onNavigate, onLogout, close, activeTab, effectiveCompanyId);
-  const roleColor = ROLE_COLORS[userRole] ?? '#a855f7';
+  const accentHex = getAccentHex();
+  const rawSections = getSections(userRole, onNavigate, onLogout, close, activeTab, effectiveCompanyId);
+  // GENEL section ve accent-bağımlı renkleri runtime hex ile override et
+  const sections = rawSections.map(s =>
+    s.color === '#a855f7' ? { ...s, color: accentHex } : s
+  );
+  const roleColor = (ROLE_COLORS[userRole] === '#a855f7' ? accentHex : ROLE_COLORS[userRole]) ?? accentHex;
   const roleTitle = ROLE_TITLES[userRole] ?? '';
   const roleAvatar= ROLE_AVATARS[userRole] ?? '👤';
 
@@ -608,7 +613,7 @@ export function HamburgerMenu({
                       </div>
                       <span
                         className="font-black tracking-widest uppercase"
-                        style={{ fontSize: 10, color: '#a78bfa', letterSpacing: '0.18em' }}
+                        style={{ fontSize: 10, color: accentHex, letterSpacing: '0.18em' }}
                       >
                         {effectiveCompanyId.toUpperCase()}
                       </span>
@@ -814,9 +819,9 @@ export function HamburgerMenu({
                     <div
                       style={{
                         marginTop: 0,
-                        background: 'linear-gradient(135deg, rgba(168,85,247,0.08), rgba(168,85,247,0.04))',
-                        border: '1px solid rgba(168,85,247,0.22)',
-                        borderLeft: '3px solid rgba(168,85,247,0.65)',
+                        background: 'linear-gradient(135deg, rgba(var(--app-accent-rgb),0.08), rgba(var(--app-accent-rgb),0.04))',
+                        border: '1px solid rgba(var(--app-accent-rgb),0.22)',
+                        borderLeft: '3px solid rgba(var(--app-accent-rgb),0.65)',
                         borderRadius: 14,
                         padding: '10px 8px 8px',
                       }}
@@ -826,26 +831,26 @@ export function HamburgerMenu({
                       <div className="flex items-center gap-2 px-1 mb-2">
                         <div
                           className="h-px flex-1 rounded-full"
-                          style={{ background: 'linear-gradient(to right, #a855f740, transparent)' }}
+                          style={{ background: 'linear-gradient(to right, var(--app-accent, #a855f7), transparent)' }}
                         />
                         <span
                           className="font-black tracking-widest flex-shrink-0"
                           style={{
                             fontSize: 9,
-                            color: '#a855f7',
+                            color: accentHex,
                             letterSpacing: '0.15em',
-                            background: 'rgba(168,85,247,0.18)',
-                            border: '1px solid rgba(168,85,247,0.35)',
+                            background: 'rgba(var(--app-accent-rgb),0.18)',
+                            border: '1px solid rgba(var(--app-accent-rgb),0.35)',
                             borderRadius: 20,
                             padding: '2px 8px',
-                            boxShadow: '0 0 8px rgba(168,85,247,0.2)',
+                            boxShadow: '0 0 8px rgba(var(--app-accent-rgb),0.2)',
                           }}
                         >
                           YÖNETİCİ PANELİ
                         </span>
                         <div
                           className="h-px flex-1 rounded-full"
-                          style={{ background: 'linear-gradient(to left, #a855f740, transparent)' }}
+                          style={{ background: 'linear-gradient(to left, var(--app-accent, #a855f7), transparent)' }}
                         />
                       </div>
 
@@ -853,9 +858,9 @@ export function HamburgerMenu({
                       <div
                         className="rounded-2xl overflow-hidden"
                         style={{
-                          background: adminOpen ? 'rgba(168,85,247,0.10)' : 'rgba(168,85,247,0.05)',
-                          border: adminOpen ? '1px solid rgba(168,85,247,0.35)' : '1px solid rgba(168,85,247,0.18)',
-                          boxShadow: adminOpen ? '0 0 20px rgba(168,85,247,0.15)' : 'none',
+                          background: adminOpen ? 'rgba(var(--app-accent-rgb),0.10)' : 'rgba(var(--app-accent-rgb),0.05)',
+                          border: adminOpen ? '1px solid rgba(var(--app-accent-rgb),0.35)' : '1px solid rgba(var(--app-accent-rgb),0.18)',
+                          boxShadow: adminOpen ? '0 0 20px rgba(var(--app-accent-rgb),0.15)' : 'none',
                           transition: 'all 0.25s',
                         }}
                       >
@@ -868,17 +873,17 @@ export function HamburgerMenu({
                           <div
                             className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
                             style={{
-                              background: adminOpen ? 'rgba(168,85,247,0.30)' : 'rgba(168,85,247,0.18)',
-                              border: adminOpen ? '1px solid rgba(168,85,247,0.60)' : '1px solid rgba(168,85,247,0.35)',
-                              boxShadow: adminOpen ? '0 0 12px rgba(168,85,247,0.45)' : 'none',
+                              background: adminOpen ? 'rgba(var(--app-accent-rgb),0.30)' : 'rgba(var(--app-accent-rgb),0.18)',
+                              border: adminOpen ? '1px solid rgba(var(--app-accent-rgb),0.60)' : '1px solid rgba(var(--app-accent-rgb),0.35)',
+                              boxShadow: adminOpen ? '0 0 12px rgba(var(--app-accent-rgb),0.45)' : 'none',
                               transition: 'all 0.2s',
                             }}
                           >
-                            <Crown style={{ width: 14, height: 14, color: adminOpen ? '#d8b4fe' : '#a855f7' }} strokeWidth={2} />
+                            <Crown style={{ width: 14, height: 14, color: adminOpen ? '#a855f7' : '#a855f7' }} strokeWidth={2} />
                           </div>
                           <span
                             className="flex-1 text-left font-bold"
-                            style={{ fontSize: 13, color: adminOpen ? '#e9d5ff' : '#c084fc', transition: 'color 0.2s' }}
+                            style={{ fontSize: 13, color: adminOpen ? '#a855f7' : '#a855f7', transition: 'color 0.2s' }}
                           >
                             Yönetici Paneli
                           </span>
@@ -902,7 +907,7 @@ export function HamburgerMenu({
                               transition={{ duration: 0.22, ease: 'easeInOut' }}
                               style={{ overflow: 'hidden' }}
                             >
-                              <div style={{ borderTop: '1px solid rgba(168,85,247,0.15)', padding: '8px 8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              <div style={{ borderTop: '1px solid rgba(var(--app-accent-rgb),0.15)', padding: '8px 8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
 
                                 {/* ── 1. Kullanıcı & Erişim ── */}
                                 <SubAccordion
@@ -911,9 +916,9 @@ export function HamburgerMenu({
                                   onToggle={() => setOpenSubSection(p => p === 'kullanici' ? null : 'kullanici')}
                                   icon="👥"
                                   label="Kullanıcı & Erişim"
-                                  color="#a855f7"
+                                  color={accentHex}
                                 >
-                                  <NavItem icon={<Users style={{ width: 13, height: 13, color: '#c084fc' }} />} label="Kullanıcı Yönetimi" desc="Personel ve yöneticileri yönet" color="#a855f7" onClick={() => { onNavigate('user-management'); close(); }} />
+                                  <NavItem icon={<Users style={{ width: 13, height: 13, color: accentHex }} />} label="Kullanıcı Yönetimi" desc="Personel ve yöneticileri yönet" color={accentHex} onClick={() => { onNavigate('user-management'); close(); }} />
                                 </SubAccordion>
 
                                 {/* ── 2. Raporlar & Analizler ── */}
@@ -927,7 +932,7 @@ export function HamburgerMenu({
                                 >
                                   <NavItem icon={<FileBarChart style={{ width: 13, height: 13, color: '#34d399' }} />} label="Müdür Raporları" desc="Satış ve performans analizleri" color="#34d399" onClick={() => { onNavigate('manager-reports'); close(); }} />
                                   <NavItem icon={<BarChart2 style={{ width: 13, height: 13, color: '#a7c7e7' }} />} label="İşletme İstatistikleri" desc="Satış, anomali ve indirim verileri" color="#a7c7e7" onClick={() => { onNavigate('isletme-istatistikleri'); close(); }} />
-                                  {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<Target style={{ width: 13, height: 13, color: '#c084fc' }} />} label="Hedef Takibi" desc="Mekan bazlı ciro ve kâr hedefleri" color="#c084fc" onClick={() => { onNavigate('hedef-takip'); close(); }} />}
+                                  {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<Target style={{ width: 13, height: 13, color: accentHex }} />} label="Hedef Takibi" desc="Mekan bazlı ciro ve kâr hedefleri" color={accentHex} onClick={() => { onNavigate('hedef-takip'); close(); }} />}
                                 </SubAccordion>
 
                                 {/* ── 3. Muhasebe ── */}
@@ -943,7 +948,7 @@ export function HamburgerMenu({
                                   <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#34d399' }} />} label="Hakediş Takip" desc="Hakediş ve performans takibi" color="#34d399" onClick={() => { onNavigate('prim-takip'); close(); }} />
                                   {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#6ee7b7' }} />} label="İşletme Genel Durum" desc="Gelir, gider ve kar/zarar takibi" color="#6ee7b7" onClick={() => { onNavigate('isletme-genel-durum'); close(); }} />}
                                   <NavItem icon={<FileBarChart style={{ width: 13, height: 13, color: '#93c5fd' }} />} label="Vardiya Raporları" desc="Günlük vardiya özet raporları" color="#93c5fd" onClick={() => { onNavigate('vardiya-raporlari'); close(); }} />
-                                  {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<Target style={{ width: 13, height: 13, color: '#c084fc' }} />} label="Hedef Takibi" desc="Mekan bazlı ciro ve kar hedefleri" color="#c084fc" onClick={() => { onNavigate('hedef-takip'); close(); }} />}
+                                  {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<Target style={{ width: 13, height: 13, color: accentHex }} />} label="Hedef Takibi" desc="Mekan bazlı ciro ve kar hedefleri" color={accentHex} onClick={() => { onNavigate('hedef-takip'); close(); }} />}
                                 </SubAccordion>
 
                                 {/* ── 4. Lokasyon & İşletme ── */}
@@ -953,9 +958,9 @@ export function HamburgerMenu({
                                   onToggle={() => setOpenSubSection(p => p === 'lokasyon' ? null : 'lokasyon')}
                                   icon="📍"
                                   label="Lokasyon & İşletme"
-                                  color="#a78bfa"
+                                  color={accentHex}
                                 >
-                                  <NavItem icon={<MapPin style={{ width: 13, height: 13, color: '#a78bfa' }} />} label="Mekan Yönetimi" desc="Proje mekanlarını yönet" color="#a78bfa" onClick={() => { onNavigate('mekan-management'); close(); }} />
+                                  <NavItem icon={<MapPin style={{ width: 13, height: 13, color: accentHex }} />} label="Mekan Yönetimi" desc="Proje mekanlarını yönet" color={accentHex} onClick={() => { onNavigate('mekan-management'); close(); }} />
                                 </SubAccordion>
 
                                 {/* ── 5. Malzeme & Stok ── */}
@@ -986,7 +991,7 @@ export function HamburgerMenu({
                                     <div style={{
                                       borderRadius: 14,
                                       background: 'rgba(255,255,255,0.04)',
-                                      border: '1px solid rgba(168,85,247,0.25)',
+                                      border: '1px solid rgba(var(--app-accent-rgb),0.25)',
                                       overflow: 'hidden',
                                     }}>
                                       <button
@@ -998,8 +1003,8 @@ export function HamburgerMenu({
                                       >
                                         <div style={{
                                           width: 26, height: 26, borderRadius: 8,
-                                          background: 'rgba(168,85,247,0.18)',
-                                          border: '1px solid rgba(168,85,247,0.3)',
+                                          background: 'rgba(var(--app-accent-rgb),0.18)',
+                                          border: '1px solid rgba(var(--app-accent-rgb),0.3)',
                                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                                           fontSize: 13,
                                         }}>🤖</div>
@@ -1011,8 +1016,8 @@ export function HamburgerMenu({
                                         </div>
                                         <span style={{
                                           fontSize: 9, padding: '2px 7px', borderRadius: 6,
-                                          background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.3)',
-                                          color: '#c4b5fd', fontWeight: 700,
+                                          background: 'rgba(var(--app-accent-rgb),0.15)', border: '1px solid rgba(var(--app-accent-rgb),0.3)',
+                                          color: accentHex, fontWeight: 700,
                                         }}>
                                           {[aiPersonal, aiYonetim, aiIdari, aiPersonel, aiOperasyon].filter(Boolean).length}/5 aktif
                                         </span>
@@ -1024,7 +1029,7 @@ export function HamburgerMenu({
                                       </button>
                                       {aiSectionOpen && (
                                         <div style={{ padding: '0 8px 8px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                                          <AiToggleRow label="AI — Benim İçin" desc="Sadece yönetici" enabled={aiPersonal} loading={toggleLoading === 'ai_personal_yonetici'} color="#a855f7" onToggle={handleTogglePersonal} />
+                                          <AiToggleRow label="AI — Benim İçin" desc="Sadece yönetici" enabled={aiPersonal} loading={toggleLoading === 'ai_personal_yonetici'} color={accentHex} onToggle={handleTogglePersonal} />
                                           <AiToggleRow label="AI — Yönetim İçin" desc="Üst müdür + müdür" enabled={aiYonetim} loading={toggleLoading === 'ai_yonetim_enabled'} color="#6366f1" onToggle={handleToggleYonetim} />
                                           <AiToggleRow label="AI — İdari İçin" desc="İdari görevliler" enabled={aiIdari} loading={toggleLoading === 'ai_idari_enabled'} color="#60a5fa" onToggle={handleToggleIdari} />
                                           <AiToggleRow label="AI — Personel İçin" desc="Personel rolü" enabled={aiPersonel} loading={toggleLoading === 'ai_personel_enabled'} color="#34d399" onToggle={handleTogglePersonel} />
@@ -1094,7 +1099,7 @@ export function HamburgerMenu({
                                                 value={companyKeyInput}
                                                 onChange={e => { setCompanyKeyInput(e.target.value); setCompanyKeyMsg(null); }}
                                                 style={{
-                                                  width: '100%', borderRadius: 10, border: '1px solid rgba(139,92,246,0.3)',
+                                                  width: '100%', borderRadius: 10, border: '1px solid rgba(var(--app-accent-rgb),0.3)',
                                                   background: 'rgba(0,0,0,0.25)', color: '#fff',
                                                   padding: '8px 10px', fontSize: 11, outline: 'none',
                                                   fontFamily: 'monospace', boxSizing: 'border-box',
@@ -1105,8 +1110,8 @@ export function HamburgerMenu({
                                                   onClick={handleSaveCompanyKey}
                                                   disabled={companyKeySaving || !companyKeyInput.trim()}
                                                   style={{
-                                                    flex: 1, borderRadius: 10, border: '1px solid rgba(139,92,246,0.4)',
-                                                    background: companyKeySaving || !companyKeyInput.trim() ? 'rgba(139,92,246,0.1)' : 'rgba(139,92,246,0.3)',
+                                                    flex: 1, borderRadius: 10, border: '1px solid rgba(var(--app-accent-rgb),0.4)',
+                                                    background: companyKeySaving || !companyKeyInput.trim() ? 'rgba(var(--app-accent-rgb),0.1)' : 'rgba(var(--app-accent-rgb),0.3)',
                                                     color: '#d4b5f7', padding: '8px', fontSize: 11,
                                                     fontWeight: 700, cursor: companyKeySaving || !companyKeyInput.trim() ? 'not-allowed' : 'pointer',
                                                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,

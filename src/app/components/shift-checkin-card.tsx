@@ -892,7 +892,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
         {/* İç parıltı */}
         <div style={{
           position: 'absolute', inset: 0, pointerEvents: 'none',
-          background: 'linear-gradient(135deg,rgba(157,217,234,0.08),transparent,rgba(167,139,250,0.06))',
+          background: 'linear-gradient(135deg,rgba(157,217,234,0.08),transparent,rgba(var(--app-accent-rgb),0.06))',
         }} />
         {/* Üst ince çizgi */}
         <div style={{
@@ -906,7 +906,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{
                 width: 36, height: 36, borderRadius: 11,
-                background: 'linear-gradient(135deg,rgba(157,217,234,0.30),rgba(167,139,250,0.25))',
+                background: 'linear-gradient(135deg,rgba(157,217,234,0.30),rgba(var(--app-accent-rgb),0.25))',
                 border: '1px solid rgba(157,217,234,0.30)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>

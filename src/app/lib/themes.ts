@@ -24,9 +24,23 @@ export function getThemeById(id: string): Theme {
   return THEMES.find(t => t.id === id) || THEMES[0];
 }
 
+/** Hex (#rrggbb) → "r, g, b" string for use in rgba() */
+function hexToRgbStr(hex: string): string {
+  const h = hex.replace('#', '');
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)].join(',');
+}
+
 export function applyTheme(themeId: string) {
   const theme = getThemeById(themeId);
-  document.documentElement.style.setProperty('--app-bg', theme.bg);
-  document.documentElement.style.setProperty('--app-accent', theme.accent);
+  const root = document.documentElement;
+  root.style.setProperty('--app-bg', theme.bg);
+  root.style.setProperty('--app-accent', theme.accent);
+  root.style.setProperty('--app-accent-rgb', hexToRgbStr(theme.accent));
   localStorage.setItem('aspect_theme', themeId);
+}
+
+/** Mevcut tema accent hex'ini döndür (runtime). String concat (`${color}40`) için güvenli. */
+export function getAccentHex(): string {
+  if (typeof window === 'undefined') return '#a855f7';
+  return getComputedStyle(document.documentElement).getPropertyValue('--app-accent').trim() || '#a855f7';
 }

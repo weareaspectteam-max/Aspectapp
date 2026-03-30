@@ -32,7 +32,7 @@ export function VardiyaTab({
 
             {loading && (
               <div className="flex flex-col items-center justify-center py-20 gap-3">
-                <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
+                <Loader2 className="w-8 h-8 text-ta animate-spin" />
                 <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>Vardiyalar yükleniyor…</p>
               </div>
             )}
@@ -80,12 +80,12 @@ export function VardiyaTab({
                 disabled={loading}
                 className="w-full py-3 rounded-2xl flex items-center justify-center gap-2 mt-1"
                 style={{
-                  background: 'rgba(167,139,250,0.08)',
-                  border: '1px solid rgba(167,139,250,0.2)',
+                  background: 'rgba(var(--app-accent-rgb),0.08)',
+                  border: '1px solid rgba(var(--app-accent-rgb),0.2)',
                 }}
               >
-                <ChevronDown style={{ width: 14, height: 14, color: '#a78bfa' }} />
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#a78bfa' }}>
+                <ChevronDown style={{ width: 14, height: 14, color: 'var(--app-accent, #a855f7)' }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--app-accent, #a855f7)' }}>
                   Önceki Gün
                 </span>
                 <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginLeft: 2 }}>

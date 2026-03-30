@@ -38,7 +38,7 @@ type DurationType = 'single' | 'multiple';
 const LEAVE_TYPE_META: Record<LeaveType, { label: string; icon: string; color: string }> = {
   annual:   { label: 'Yıllık İzin',   icon: '🏖️', color: '#34d399' },
   sick:     { label: 'Hastalık İzni', icon: '🤒', color: '#fb923c' },
-  personal: { label: 'Özel İzin',     icon: '🎯', color: '#a78bfa' },
+  personal: { label: 'Özel İzin',     icon: '🎯', color: 'var(--app-accent, #a855f7)' },
 };
 
 /* ──────────────── Helper ──────────────── */
@@ -238,12 +238,12 @@ export function PersonelIzinTalebi({ userName, userRole, accessToken, onNavigate
           <div style={{ marginLeft: 'auto' }}>
             <div style={{
               padding: '4px 10px',
-              background: 'rgba(167,139,250,0.15)',
-              border: '1px solid rgba(167,139,250,0.3)',
+              background: 'rgba(var(--app-accent-rgb),0.15)',
+              border: '1px solid rgba(var(--app-accent-rgb),0.3)',
               borderRadius: 20,
               fontSize: 10,
               fontWeight: 700,
-              color: '#a78bfa',
+              color: 'var(--app-accent, #a855f7)',
             }}>
               🏖️ {myRequests.length} talep
             </div>
@@ -275,11 +275,11 @@ export function PersonelIzinTalebi({ userName, userRole, accessToken, onNavigate
         </AnimatePresence>
 
         {/* ── Bilgi kartı ── */}
-        <div style={{ ...card, padding: '14px 16px', borderLeft: '3px solid #a78bfa' }}>
+        <div style={{ ...card, padding: '14px 16px', borderLeft: '3px solid var(--app-accent, #a855f7)' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-            <AlertCircle style={{ width: 16, height: 16, color: '#a78bfa', flexShrink: 0, marginTop: 1 }} />
+            <AlertCircle style={{ width: 16, height: 16, color: 'var(--app-accent, #a855f7)', flexShrink: 0, marginTop: 1 }} />
             <div>
-              <p style={{ fontSize: 12, fontWeight: 700, color: '#e9d5ff', margin: '0 0 3px' }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--app-accent, #a855f7)', margin: '0 0 3px' }}>
                 Nasıl çalışır?
               </p>
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', margin: 0, lineHeight: 1.6 }}>
@@ -297,11 +297,11 @@ export function PersonelIzinTalebi({ userName, userRole, accessToken, onNavigate
             width: '100%',
             padding: '14px 16px',
             background: showForm
-              ? 'linear-gradient(135deg, rgba(167,139,250,0.2), rgba(167,139,250,0.1))'
-              : 'linear-gradient(135deg, rgba(167,139,250,0.12), rgba(167,139,250,0.06))',
+              ? 'linear-gradient(135deg, rgba(var(--app-accent-rgb),0.2), rgba(var(--app-accent-rgb),0.1))'
+              : 'linear-gradient(135deg, rgba(var(--app-accent-rgb),0.12), rgba(var(--app-accent-rgb),0.06))',
             border: showForm
-              ? '1px solid rgba(167,139,250,0.5)'
-              : '1px solid rgba(167,139,250,0.25)',
+              ? '1px solid rgba(var(--app-accent-rgb),0.5)'
+              : '1px solid rgba(var(--app-accent-rgb),0.25)',
             borderRadius: 18,
             display: 'flex', alignItems: 'center', gap: 12,
             cursor: 'pointer',
@@ -310,21 +310,21 @@ export function PersonelIzinTalebi({ userName, userRole, accessToken, onNavigate
         >
           <div style={{
             width: 38, height: 38, borderRadius: 12,
-            background: 'rgba(167,139,250,0.25)',
-            border: '1px solid rgba(167,139,250,0.4)',
+            background: 'rgba(var(--app-accent-rgb),0.25)',
+            border: '1px solid rgba(var(--app-accent-rgb),0.4)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
           }}>
             {showForm
-              ? <ChevronUp style={{ width: 18, height: 18, color: '#a78bfa' }} />
-              : <Plus style={{ width: 18, height: 18, color: '#a78bfa' }} />
+              ? <ChevronUp style={{ width: 18, height: 18, color: 'var(--app-accent, #a855f7)' }} />
+              : <Plus style={{ width: 18, height: 18, color: 'var(--app-accent, #a855f7)' }} />
             }
           </div>
           <div style={{ textAlign: 'left', flex: 1 }}>
-            <p style={{ fontSize: 14, fontWeight: 800, color: '#e9d5ff', margin: 0 }}>
+            <p style={{ fontSize: 14, fontWeight: 800, color: 'var(--app-accent, #a855f7)', margin: 0 }}>
               {showForm ? 'Formu Kapat' : 'Yeni İzin Talebi Oluştur'}
             </p>
-            <p style={{ fontSize: 11, color: 'rgba(167,139,250,0.6)', margin: 0 }}>
+            <p style={{ fontSize: 11, color: 'rgba(var(--app-accent-rgb),0.6)', margin: 0 }}>
               {showForm ? 'İptal et' : 'Yıllık, hastalık veya özel izin'}
             </p>
           </div>
@@ -390,12 +390,12 @@ export function PersonelIzinTalebi({ userName, userRole, accessToken, onNavigate
                           flex: 1, padding: '10px',
                           borderRadius: 12,
                           border: durType === t
-                            ? '1px solid rgba(167,139,250,0.5)'
+                            ? '1px solid rgba(var(--app-accent-rgb),0.5)'
                             : '1px solid rgba(255,255,255,0.1)',
                           background: durType === t
-                            ? 'rgba(167,139,250,0.15)'
+                            ? 'rgba(var(--app-accent-rgb),0.15)'
                             : 'rgba(255,255,255,0.04)',
-                          color: durType === t ? '#e9d5ff' : 'rgba(255,255,255,0.4)',
+                          color: durType === t ? 'var(--app-accent, #a855f7)' : 'rgba(255,255,255,0.4)',
                           fontSize: 12, fontWeight: 700, cursor: 'pointer',
                           transition: 'all 0.15s',
                         }}
@@ -483,14 +483,14 @@ export function PersonelIzinTalebi({ userName, userRole, accessToken, onNavigate
                     padding: '14px',
                     borderRadius: 16,
                     background: submitting
-                      ? 'rgba(167,139,250,0.2)'
-                      : 'linear-gradient(135deg, #7c3aed, #a855f7)',
+                      ? 'rgba(var(--app-accent-rgb),0.2)'
+                      : 'linear-gradient(135deg, var(--app-accent, #7c3aed), var(--app-accent, #a855f7))',
                     border: 'none',
                     color: '#fff',
                     fontSize: 14, fontWeight: 800,
                     cursor: submitting ? 'not-allowed' : 'pointer',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    boxShadow: submitting ? 'none' : '0 4px 20px rgba(168,85,247,0.4)',
+                    boxShadow: submitting ? 'none' : '0 4px 20px rgba(var(--app-accent-rgb),0.4)',
                     transition: 'all 0.2s',
                   }}
                 >
@@ -512,20 +512,20 @@ export function PersonelIzinTalebi({ userName, userRole, accessToken, onNavigate
           }}>
             <div style={{
               height: 1, flex: 1,
-              background: 'linear-gradient(to right, rgba(167,139,250,0.4), transparent)',
+              background: 'linear-gradient(to right, rgba(var(--app-accent-rgb),0.4), transparent)',
             }} />
             <span style={{
-              fontSize: 10, fontWeight: 800, color: '#a78bfa',
+              fontSize: 10, fontWeight: 800, color: 'var(--app-accent, #a855f7)',
               letterSpacing: '0.15em', textTransform: 'uppercase',
-              background: 'rgba(167,139,250,0.12)',
-              border: '1px solid rgba(167,139,250,0.28)',
+              background: 'rgba(var(--app-accent-rgb),0.12)',
+              border: '1px solid rgba(var(--app-accent-rgb),0.28)',
               borderRadius: 20, padding: '3px 10px',
             }}>
               Taleplerim
             </span>
             <div style={{
               height: 1, flex: 1,
-              background: 'linear-gradient(to left, rgba(167,139,250,0.4), transparent)',
+              background: 'linear-gradient(to left, rgba(var(--app-accent-rgb),0.4), transparent)',
             }} />
           </div>
 

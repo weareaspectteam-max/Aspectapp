@@ -21,7 +21,7 @@ export function FiltrePaneli({
     <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, marginBottom: 12, overflow: 'hidden' }}>
       <button onClick={() => setAcik(!acik)} className="w-full flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
-          <SlidersHorizontal className="w-3.5 h-3.5" style={{ color: '#a78bfa' }} />
+          <SlidersHorizontal className="w-3.5 h-3.5" style={{ color: 'var(--app-accent, #a855f7)' }} />
           <span className="text-white/70 font-semibold" style={{ fontSize: 12 }}>Filtre & Tarih Aralığı</span>
         </div>
         {acik ? <ChevronUp className="w-3.5 h-3.5 text-white/30" /> : <ChevronDown className="w-3.5 h-3.5 text-white/30" />}
@@ -58,7 +58,7 @@ export function FiltrePaneli({
                 <button
                   onClick={onAra}
                   className="flex-1 py-2 rounded-xl text-white font-bold"
-                  style={{ background: 'rgba(167,139,250,0.2)', border: '1px solid rgba(167,139,250,0.4)', fontSize: 12 }}
+                  style={{ background: 'rgba(var(--app-accent-rgb),0.2)', border: '1px solid rgba(var(--app-accent-rgb),0.4)', fontSize: 12 }}
                 >
                   Ara
                 </button>

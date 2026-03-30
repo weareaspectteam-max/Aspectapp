@@ -17,6 +17,31 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '4.4.0',
+    date: '2026-03-30',
+    title: 'Akademi & Telegram Fotoğraf',
+    changes: [
+      { type: 'new', text: 'Aspect Akademi — video, yazı, PDF, galeri, quiz, link destekli eğitim platformu' },
+      { type: 'new', text: 'Akademi: yönetici kategori/içerik ekler, personel izler ve tamamlar' },
+      { type: 'new', text: 'Akademi: kullanıcı bazlı ilerleme takibi, otomatik motivasyon mesajları' },
+      { type: 'new', text: 'Akademi: yönetici duyuru mesajı yazabilir — tüm personel görür' },
+      { type: 'new', text: 'Akademi: her şirket kendi adıyla kendi içeriklerini görür' },
+      { type: 'new', text: 'Vardiya açılış/kapanış fotoğrafı Telegram grubuna otomatik gönderiliyor' },
+      { type: 'improve', text: 'Fotoğraflar gönderilmeden önce otomatik küçültülüyor (max 1280px, %70 JPEG)' },
+    ],
+  },
+  {
+    version: '4.3.1',
+    date: '2026-03-30',
+    title: 'Tema Renk Uyumluluğu',
+    changes: [
+      { type: 'improve', text: 'Tüm sayfalarda tema accent rengi desteği — tema değiştirildiğinde UI renkleri otomatik uyum sağlıyor' },
+      { type: 'improve', text: '58 bileşende 870+ hardcoded renk referansı dinamik tema değişkenine bağlandı' },
+      { type: 'new', text: 'Tailwind tema rengi: text-ta, bg-ta/20, border-ta/30 gibi sınıflar artık kullanılabilir' },
+      { type: 'new', text: 'CSS değişkeni --app-accent-rgb eklendi — rgba() içinde tema rengi kullanılabilir' },
+    ],
+  },
+  {
     version: '4.3.0',
     date: '2026-03-30',
     title: 'Ay Bazlı Rapor Detay & Personel İstatistikleri',
@@ -28,7 +53,6 @@ const CHANGELOG: ChangelogEntry[] = [
       { type: 'new', text: 'Anomali detayında puan alan personeller gösteriliyor' },
       { type: 'improve', text: 'Mekan detayı renkli bölüm başlıkları (ürün, baskı, gider)' },
       { type: 'improve', text: 'Maliyet kırılımı detaylı: albüm, baskı, hakediş, maaş, kira ayrı ayrı' },
-      { type: 'fix', text: 'Yönetici rolü personel listesinden filtrelendi' },
     ],
   },
   {
@@ -311,8 +335,8 @@ export function Changelog({ isOpen, onClose, userName, userRole, userId, isSuper
                     onClick={() => toggleVersion(entry.version)}
                     style={{
                       width: '100%', padding: '12px 14px', borderRadius: 14, cursor: 'pointer',
-                      background: isLatest ? 'rgba(168,85,247,0.10)' : 'rgba(255,255,255,0.04)',
-                      border: `1px solid ${isLatest ? 'rgba(168,85,247,0.25)' : 'rgba(255,255,255,0.08)'}`,
+                      background: isLatest ? 'rgba(var(--app-accent-rgb),0.10)' : 'rgba(255,255,255,0.04)',
+                      border: `1px solid ${isLatest ? 'rgba(var(--app-accent-rgb),0.25)' : 'rgba(255,255,255,0.08)'}`,
                       display: 'flex', alignItems: 'center', gap: 10,
                       textAlign: 'left',
                     }}
@@ -320,12 +344,12 @@ export function Changelog({ isOpen, onClose, userName, userRole, userId, isSuper
                     <div style={{
                       width: 36, height: 36, borderRadius: 10, flexShrink: 0,
                       background: isLatest
-                        ? 'linear-gradient(135deg, rgba(168,85,247,0.3), rgba(139,92,246,0.15))'
+                        ? 'linear-gradient(135deg, rgba(var(--app-accent-rgb),0.3), rgba(var(--app-accent-rgb),0.15))'
                         : 'rgba(255,255,255,0.06)',
-                      border: `1px solid ${isLatest ? 'rgba(168,85,247,0.4)' : 'rgba(255,255,255,0.1)'}`,
+                      border: `1px solid ${isLatest ? 'rgba(var(--app-accent-rgb),0.4)' : 'rgba(255,255,255,0.1)'}`,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 14, fontWeight: 900,
-                      color: isLatest ? '#c4b5fd' : 'rgba(255,255,255,0.4)',
+                      color: isLatest ? 'var(--app-accent, #a855f7)' : 'rgba(255,255,255,0.4)',
                     }}>
                       {isLatest ? <Sparkles style={{ width: 16, height: 16 }} /> : `v${entry.version.split('.')[0]}`}
                     </div>

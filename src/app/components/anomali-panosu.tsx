@@ -248,7 +248,7 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
           )}
           <button
             onClick={() => setShowFiltre(v => !v)}
-            className={`p-2 rounded-xl transition-all active:scale-95 ${showFiltre ? 'bg-violet-600/60 border border-violet-400/40' : 'bg-white/10'}`}
+            className={`p-2 rounded-xl transition-all active:scale-95 ${showFiltre ? 'bg-ta/60 border border-ta/40' : 'bg-white/10'}`}
           >
             <Filter className="w-5 h-5 text-white" />
           </button>
@@ -268,7 +268,7 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
                   <button
                     key={k}
                     onClick={() => applyFilterKey(k)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${filterKey === k ? 'bg-violet-600 text-white' : 'bg-white/10 text-gray-300'}`}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${filterKey === k ? 'bg-ta text-white' : 'bg-white/10 text-gray-300'}`}
                   >
                     {k === 'bu-ay' ? 'Bu Ay' : k === 'son-3-ay' ? 'Son 3 Ay' : k === 'bu-yil' ? 'Bu Yıl' : 'Özel'}
                   </button>
@@ -301,7 +301,7 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
 
             <button
               onClick={fetchData}
-              className="w-full py-2.5 rounded-xl bg-violet-600 text-white font-semibold text-sm active:scale-[0.98] transition-all"
+              className="w-full py-2.5 rounded-xl bg-ta text-white font-semibold text-sm active:scale-[0.98] transition-all"
             >
               Filtrele
             </button>
@@ -338,7 +338,7 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
               <p className="text-[10px] text-gray-400 leading-tight">Toplam<br/>Anomali</p>
             </div>
             <div style={glass} className="p-3 text-center">
-              <Users className="w-5 h-5 text-violet-400 mx-auto mb-1" />
+              <Users className="w-5 h-5 text-ta mx-auto mb-1" />
               <p className="text-xl font-bold text-white">{etkilenen}</p>
               <p className="text-[10px] text-gray-400 leading-tight">Etkilenen<br/>Personel</p>
             </div>
@@ -355,7 +355,7 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
         {/* ─── Yükleniyor ─── */}
         {loading && (
           <div className="flex items-center justify-center py-16 gap-3">
-            <Loader2 className="w-6 h-6 text-violet-400 animate-spin" />
+            <Loader2 className="w-6 h-6 text-ta animate-spin" />
             <p className="text-gray-400 text-sm">Veriler hesaplanıyor...</p>
           </div>
         )}
@@ -497,11 +497,11 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
 
         {/* ─── Açıklama notu ─── */}
         {!loading && (
-          <div style={{ ...glass, borderColor: 'rgba(139,92,246,0.2)' }} className="p-4">
+          <div style={{ ...glass, borderColor: 'rgba(var(--app-accent-rgb),0.2)' }} className="p-4">
             <div className="flex items-start gap-3">
-              <Info className="w-4 h-4 text-violet-400 flex-shrink-0 mt-0.5" />
+              <Info className="w-4 h-4 text-ta flex-shrink-0 mt-0.5" />
               <div className="space-y-1">
-                <p className="text-xs text-violet-300 font-semibold">Nasıl Hesaplanır?</p>
+                <p className="text-xs text-ta font-semibold">Nasıl Hesaplanır?</p>
                 <p className="text-xs text-gray-400 leading-relaxed">
                   <span className="text-blue-300 font-medium">Açılış anomalisi</span> → önceki günün o mekandaki rotasyon personeline +1 puan.<br />
                   <span className="text-red-300 font-medium">Kapanış anomalisi</span> → aynı günün o mekandaki rotasyon personeline +1 puan.<br />
@@ -560,7 +560,7 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
                       if (k === 'bu-ay') { setSifirlaBaslangic(thisMonthStart); setSifirlasBitis(today); }
                     }}
                     className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                      sifirlaFilterKey === k ? 'bg-violet-600 text-white' : 'bg-white/10 text-gray-300'
+                      sifirlaFilterKey === k ? 'bg-ta text-white' : 'bg-white/10 text-gray-300'
                     }`}
                   >
                     {k === 'bugun' ? 'Bugün' : k === 'bu-ay' ? 'Bu Ay' : 'Özel'}

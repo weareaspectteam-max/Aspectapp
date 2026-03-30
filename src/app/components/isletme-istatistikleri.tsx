@@ -72,7 +72,7 @@ export function IsletmeIstatistikleri({ userName, userRole, onNavigate }: Isletm
               <h1 className="text-2xl font-black text-white">İşletme İstatistikleri</h1>
               <span className="text-xl">🏢</span>
             </div>
-            <p className="text-xs font-medium" style={{ color: 'rgba(196,181,253,0.5)' }}>
+            <p className="text-xs font-medium" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>
               {userName} · Satış, anomali ve indirim verileri
             </p>
           </div>

@@ -707,7 +707,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
               </div>
 
               {/* ── Kota Kademeleri ── */}
-              <div className="p-4 bg-gradient-to-br from-yellow-600/10 to-purple-600/10 border-2 border-yellow-500/30 rounded-xl">
+              <div className="p-4 bg-gradient-to-br from-yellow-600/10 to-ta/10 border-2 border-yellow-500/30 rounded-xl">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-lg">🏆</span>
                   <h5 className="text-sm font-bold text-yellow-300">Hakediş Kota Kademeleri</h5>
@@ -961,7 +961,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
 
               {/* Fiyat Önizleme */}
               {parseFloat(formPhotoPrice) > 0 && (
-                <div className="p-4 bg-gradient-to-br from-pink-600/20 to-purple-600/20 border-2 border-pink-500/40 rounded-xl">
+                <div className="p-4 bg-gradient-to-br from-pink-600/20 to-ta/20 border-2 border-pink-500/40 rounded-xl">
                   <h5 className="text-sm font-bold text-pink-300 mb-3">💰 Albüm Fiyatları Önizleme</h5>
                   <div className="space-y-2 text-xs">
                     <div className="grid grid-cols-3 gap-3">
@@ -1049,12 +1049,12 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
         )}
 
         {/* ─── Mekan Listesi ───────────────────────────────────── */}
-        <div className="backdrop-blur-xl bg-purple-700/20 border-2 border-purple-600/40 rounded-2xl p-5">
+        <div className="backdrop-blur-xl bg-ta/20 border-2 border-ta/40 rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-purple-300" />
+              <MapPin className="w-5 h-5 text-ta" />
               <h3 className="font-semibold text-white">Mekanlar</h3>
-              <span className="text-xs bg-purple-500/30 border border-purple-500/40 text-purple-200 px-2 py-0.5 rounded-full">
+              <span className="text-xs bg-ta/30 border border-ta/40 text-ta px-2 py-0.5 rounded-full">
                 {locations.length}
               </span>
             </div>
@@ -1139,9 +1139,9 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                                 {[...location.kotaKademeleri].sort((a, b) => Number(a.hedef) - Number(b.hedef)).map((k, i) => (
                                   <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-md font-bold"
                                     style={{
-                                      background: i === 0 ? 'rgba(96,165,250,0.15)' : i === 1 ? 'rgba(168,85,247,0.15)' : 'rgba(251,191,36,0.15)',
-                                      color: i === 0 ? '#93c5fd' : i === 1 ? '#c4b5fd' : '#fde68a',
-                                      border: `1px solid ${i === 0 ? 'rgba(96,165,250,0.3)' : i === 1 ? 'rgba(168,85,247,0.3)' : 'rgba(251,191,36,0.3)'}`,
+                                      background: i === 0 ? 'rgba(96,165,250,0.15)' : i === 1 ? 'rgba(var(--app-accent-rgb),0.15)' : 'rgba(251,191,36,0.15)',
+                                      color: i === 0 ? '#93c5fd' : i === 1 ? 'var(--app-accent, #a855f7)' : '#fde68a',
+                                      border: `1px solid ${i === 0 ? 'rgba(96,165,250,0.3)' : i === 1 ? 'rgba(var(--app-accent-rgb),0.3)' : 'rgba(251,191,36,0.3)'}`,
                                     }}
                                   >
                                     {i + 1}. {k.hedef >= 1000 ? `₺${(k.hedef / 1000).toFixed(0)}B` : `₺${k.hedef}`}
@@ -1259,7 +1259,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
         <div className="mb-6">
           <div className="backdrop-blur-xl bg-gradient-to-br from-white/5 to-white/5 border border-white/10 rounded-2xl p-5">
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center flex-shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-ta/20 border border-ta/30 flex items-center justify-center flex-shrink-0">
                 <span className="text-xl">ℹ️</span>
               </div>
               <div className="flex-1">

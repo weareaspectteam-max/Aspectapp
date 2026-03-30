@@ -21,7 +21,7 @@ const glass: React.CSSProperties = {
 };
 
 const COLORS = {
-  violet:  '#a855f7',
+  violet:  'var(--app-accent, #a855f7)',
   emerald: '#34d399',
   orange:  '#fb923c',
   blue:    '#60a5fa',
@@ -228,7 +228,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
               <h1 className="text-xl font-black text-white">Satış İstatistikleri</h1>
               <span className="text-lg">📈</span>
             </div>
-            <p className="text-[10px] font-medium" style={{ color: 'rgba(196,181,253,0.5)' }}>
+            <p className="text-[10px] font-medium" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>
               Ciro · Personel · Albüm kırılımı
             </p>
           </div>
@@ -277,7 +277,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
           )}
           {/* Aktif aralık etiketi */}
           {baslangic && bitis && (
-            <p className="text-[10px] mt-2" style={{ color: 'rgba(196,181,253,0.5)' }}>
+            <p className="text-[10px] mt-2" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>
               📅 {baslangic} — {bitis}
             </p>
           )}
@@ -301,7 +301,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                 <button key={m.id}
                   onClick={() => { setSelectedMekan(m.id); setShowMekanDrop(false); }}
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-left active:scale-95 transition-all"
-                  style={{ background: selectedMekan === m.id ? 'rgba(168,85,247,0.15)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  style={{ background: selectedMekan === m.id ? 'rgba(var(--app-accent-rgb),0.15)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                   <span className="text-sm">{m.emoji}</span>
                   <span className="text-sm font-semibold" style={{ color: selectedMekan === m.id ? COLORS.violet : 'rgba(255,255,255,0.7)' }}>{m.name}</span>
                 </button>
@@ -403,7 +403,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                     const isMekanExpanded = expandedMekanId === m.id;
                     return (
                       <div key={m.id} className="rounded-xl overflow-hidden"
-                        style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${isMekanExpanded ? 'rgba(168,85,247,0.3)' : 'rgba(255,255,255,0.07)'}` }}>
+                        style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${isMekanExpanded ? 'rgba(var(--app-accent-rgb),0.3)' : 'rgba(255,255,255,0.07)'}` }}>
                         <button
                           onClick={() => setExpandedMekanId(isMekanExpanded ? null : m.id)}
                           className="w-full px-3 py-2.5 text-left active:scale-[0.98] transition-all">
@@ -430,7 +430,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                         </button>
                         {isMekanExpanded && m.albumKirilimi && m.albumKirilimi.length > 0 && (
                           <div className="px-3 pb-3 space-y-1.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                            <p className="text-[10px] font-bold pt-2 mb-1" style={{ color: 'rgba(196,181,253,0.5)' }}>Albüm Tipi Kırılımı</p>
+                            <p className="text-[10px] font-bold pt-2 mb-1" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>Albüm Tipi Kırılımı</p>
                             {m.albumKirilimi.map((a) => (
                               <div key={a.tip} className="flex items-center gap-2">
                                 <span className="text-[11px] font-semibold shrink-0 w-24 truncate" style={{ color: 'rgba(255,255,255,0.6)' }}>{a.tip}</span>
@@ -469,7 +469,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                     const isExpanded = expandedPersonel === p.id;
                     return (
                       <div key={p.id} className="rounded-xl overflow-hidden"
-                        style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${isExpanded ? 'rgba(168,85,247,0.3)' : 'rgba(255,255,255,0.07)'}` }}>
+                        style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${isExpanded ? 'rgba(var(--app-accent-rgb),0.3)' : 'rgba(255,255,255,0.07)'}` }}>
                         <button
                           onClick={() => setExpandedPersonel(isExpanded ? null : p.id)}
                           className="w-full flex items-center gap-3 px-3 py-2.5 text-left active:scale-[0.98] transition-all">
@@ -491,7 +491,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                         </button>
                         {isExpanded && p.albumKirilimi && p.albumKirilimi.length > 0 && (
                           <div className="px-3 pb-3 space-y-1.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                            <p className="text-[10px] font-bold pt-2 mb-1" style={{ color: 'rgba(196,181,253,0.5)' }}>Albüm Tipi Kırılımı</p>
+                            <p className="text-[10px] font-bold pt-2 mb-1" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>Albüm Tipi Kırılımı</p>
                             {p.albumKirilimi.map((a) => {
                               const pct = p.satisAdet > 0 ? Math.round((a.adet / p.satisAdet) * 100) : 0;
                               return (

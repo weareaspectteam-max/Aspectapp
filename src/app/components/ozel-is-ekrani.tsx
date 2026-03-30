@@ -164,7 +164,7 @@ export function OzelIsEkrani({ userName, userId, userRole, task, onBack, onLogou
   const BeklyorEkrani = () => (
     <div className="space-y-4">
       <div className="backdrop-blur-xl bg-white/8 rounded-2xl border border-white/15 p-5 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center mx-auto mb-4">
+        <div className="w-16 h-16 rounded-2xl bg-ta/20 border border-ta/30 flex items-center justify-center mx-auto mb-4">
           <span className="text-3xl">{task.locationIcon || '🔧'}</span>
         </div>
         <h3 className="text-base font-bold text-white mb-1">{task.location}</h3>
@@ -181,7 +181,7 @@ export function OzelIsEkrani({ userName, userId, userRole, task, onBack, onLogou
           onChange={e => setBaslamaNot(e.target.value)}
           placeholder="Göreve başlamadan önce notunuzu girin..."
           rows={3}
-          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-white/20 resize-none outline-none focus:border-purple-400/50"
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-white/20 resize-none outline-none focus:border-ta/50"
         />
       </div>
 
@@ -196,7 +196,7 @@ export function OzelIsEkrani({ userName, userId, userRole, task, onBack, onLogou
         onClick={handleBaslat}
         disabled={baslatYukleniyor}
         whileTap={{ scale: 0.97 }}
-        className="w-full py-4 rounded-2xl bg-gradient-to-r from-purple-600/80 to-violet-600/80 border border-purple-400/30 text-white font-bold text-base shadow-xl disabled:opacity-60 flex items-center justify-center gap-3"
+        className="w-full py-4 rounded-2xl bg-gradient-to-r from-ta/80 to-ta/80 border border-ta/30 text-white font-bold text-base shadow-xl disabled:opacity-60 flex items-center justify-center gap-3"
       >
         {baslatYukleniyor
           ? <Loader2 className="w-5 h-5 animate-spin" />
@@ -210,15 +210,15 @@ export function OzelIsEkrani({ userName, userId, userRole, task, onBack, onLogou
   const DevamEkrani = () => (
     <div className="space-y-4">
       {/* Sayaç */}
-      <div className="backdrop-blur-xl bg-purple-500/12 rounded-2xl border border-purple-500/25 p-5 text-center">
-        <p className="text-xs text-purple-300/70 mb-1 font-semibold">GEÇEN SÜRE</p>
+      <div className="backdrop-blur-xl bg-ta/12 rounded-2xl border border-ta/25 p-5 text-center">
+        <p className="text-xs text-ta/70 mb-1 font-semibold">GEÇEN SÜRE</p>
         <p className="text-4xl font-black text-white tracking-widest font-mono">{gecenSure || '00:00:00'}</p>
         <div className="flex items-center justify-center gap-2 mt-2">
           <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-400" />
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-ta opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-ta" />
           </span>
-          <p className="text-xs text-purple-300/60">Devam ediyor</p>
+          <p className="text-xs text-ta/60">Devam ediyor</p>
         </div>
       </div>
 
@@ -241,7 +241,7 @@ export function OzelIsEkrani({ userName, userId, userRole, task, onBack, onLogou
           onChange={e => setTamamlamaNot(e.target.value)}
           placeholder="Yapılan işler, önemli notlar..."
           rows={3}
-          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-white/20 resize-none outline-none focus:border-purple-400/50"
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-white/20 resize-none outline-none focus:border-ta/50"
         />
       </div>
 
@@ -269,7 +269,7 @@ export function OzelIsEkrani({ userName, userId, userRole, task, onBack, onLogou
         ) : (
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="w-full h-28 border-2 border-dashed border-white/20 rounded-xl flex flex-col items-center justify-center gap-2 text-white/40 hover:border-purple-400/40 hover:text-white/60 transition-all"
+            className="w-full h-28 border-2 border-dashed border-white/20 rounded-xl flex flex-col items-center justify-center gap-2 text-white/40 hover:border-ta/40 hover:text-white/60 transition-all"
           >
             <Image className="w-8 h-8" />
             <span className="text-xs">Fotoğraf seç veya çek</span>
@@ -377,23 +377,23 @@ export function OzelIsEkrani({ userName, userId, userRole, task, onBack, onLogou
 
       <div className="px-4 pt-4 pb-8">
         {/* Görev başlığı */}
-        <div className="backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-violet-500/10 rounded-2xl border border-purple-500/30 px-4 py-4 mb-5">
+        <div className="backdrop-blur-xl bg-gradient-to-br from-ta/20 to-ta/10 rounded-2xl border border-ta/30 px-4 py-4 mb-5">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-300">🔧 ÖZEL İŞ</span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-ta/20 border border-ta/30 text-ta">🔧 ÖZEL İŞ</span>
           </div>
           <h2 className="text-base font-bold text-white">{task.location}</h2>
           <div className="flex items-center gap-3 mt-1 text-xs text-white/40">
             <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{task.startTime} – {task.endTime}</span>
           </div>
           {task.notes && (
-            <p className="text-xs text-purple-300/70 mt-2 bg-purple-500/10 rounded-lg px-3 py-1.5">{task.notes}</p>
+            <p className="text-xs text-ta/70 mt-2 bg-ta/10 rounded-lg px-3 py-1.5">{task.notes}</p>
           )}
         </div>
 
         {/* İçerik */}
         {asama === 'yukleniyor' && (
           <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+            <Loader2 className="w-8 h-8 text-ta animate-spin" />
           </div>
         )}
         {asama === 'bekliyor' && BeklyorEkrani()}

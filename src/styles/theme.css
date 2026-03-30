@@ -88,6 +88,8 @@
 }
 
 @theme inline {
+  --color-ta: var(--app-accent, #a855f7);
+  /* --app-accent-rgb: JS tarafından set edilir (applyTheme), default mor */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

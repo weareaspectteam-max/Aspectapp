@@ -1468,14 +1468,14 @@ function renderMDLines(text: string) {
 function TypingIndicator() {
   return (
     <div className="flex items-end gap-2">
-      <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shrink-0">
+      <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-ta to-indigo-600 flex items-center justify-center shrink-0">
         <Brain className="w-3.5 h-3.5 text-white" />
       </div>
       <div className="bg-white/8 border border-white/12 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1.5">
         {[0, 1, 2].map(i => (
           <span
             key={i}
-            className="w-1.5 h-1.5 bg-violet-400 rounded-full animate-bounce"
+            className="w-1.5 h-1.5 bg-ta rounded-full animate-bounce"
             style={{ animationDelay: `${i * 0.15}s`, animationDuration: '0.8s' }}
           />
         ))}
@@ -1488,11 +1488,11 @@ function BriefingCard({ data }: { data: AIOzet }) {
   const [expanded, setExpanded] = useState(false);
   const shown = expanded ? data.mekanlar : data.mekanlar.slice(0, 2);
   return (
-    <div className="mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden">
+    <div className="mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 overflow-hidden">
       <div className="grid grid-cols-3 gap-px bg-white/8 border-b border-white/8">
         {[
           { label: 'Ciro', val: `₺${(data.toplamCiro / 1000).toFixed(1)}K`, color: '#4ade80' },
-          { label: 'Satış', val: `${data.toplamSatisAdet}`, color: '#a78bfa' },
+          { label: 'Satış', val: `${data.toplamSatisAdet}`, color: 'var(--app-accent, #a855f7)' },
           { label: 'Mekan', val: `${data.mekanSayisi}`, color: '#fbbf24' },
         ].map(item => (
           <div key={item.label} className="bg-white/3 px-3 py-2 text-center">
@@ -1514,7 +1514,7 @@ function BriefingCard({ data }: { data: AIOzet }) {
         {data.mekanlar.length > 2 && (
           <button
             onClick={() => setExpanded(!expanded)}
-            className="w-full text-xs text-violet-400 py-1 flex items-center justify-center gap-1"
+            className="w-full text-xs text-ta py-1 flex items-center justify-center gap-1"
           >
             {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
             {expanded ? 'Daha az göster' : `${data.mekanlar.length - 2} mekan daha`}
@@ -1529,9 +1529,9 @@ function StockCard({ data }: { data: { alan: string; name: string; count: number
   const statusColor = (s: string) => s === 'kritik' ? '#f87171' : s === 'az' ? '#fbbf24' : '#4ade80';
   const statusLabel = (s: string) => s === 'kritik' ? 'Kritik' : s === 'az' ? 'Az' : 'İyi';
   return (
-    <div className="mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden">
+    <div className="mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 overflow-hidden">
       <div className="px-4 py-2.5 border-b border-white/8 flex items-center gap-2">
-        <Package className="w-4 h-4 text-violet-400" />
+        <Package className="w-4 h-4 text-ta" />
         <span className="text-xs font-semibold text-white/70">Stok Durumu</span>
       </div>
       <div className="p-3 grid grid-cols-2 gap-2">
@@ -1608,9 +1608,9 @@ function GoldenHourCard({ data }: { data: any }) {
 
 function TipCard({ data }: { data: { title: string; icon: string } }) {
   return (
-    <div className="mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 px-4 py-3 flex items-center gap-3">
+    <div className="mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 px-4 py-3 flex items-center gap-3">
       <span className="text-2xl">{data.icon}</span>
-      <span className="text-xs font-semibold text-violet-300">{data.title}</span>
+      <span className="text-xs font-semibold text-ta">{data.title}</span>
     </div>
   );
 }
@@ -1649,7 +1649,7 @@ function IzinGecmisiCard({ data, onNavigate }: {
   const fmt = (d: string) => new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
 
   return (
-    <div className="mt-3 rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-500/10 to-violet-500/5 overflow-hidden">
+    <div className="mt-3 rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-500/10 to-ta/5 overflow-hidden">
       {/* ── Header ── */}
       <div className="px-4 py-3 border-b border-white/8 flex items-center gap-2">
         <span className="text-base">📅</span>
@@ -1663,7 +1663,7 @@ function IzinGecmisiCard({ data, onNavigate }: {
           <div className="flex items-center gap-2.5">
             <span className="text-lg">💼</span>
             <span className="text-sm text-white/80">
-              <span className="font-bold text-violet-300">{data.workDayCount} gün</span> çalışma
+              <span className="font-bold text-ta">{data.workDayCount} gün</span> çalışma
             </span>
           </div>
           <div className="flex items-center gap-2.5">
@@ -1712,12 +1712,12 @@ function IzinGecmisiCard({ data, onNavigate }: {
 
         {/* ── Kişisel İzin Çizelgesi yönlendirme notu ── */}
         <div
-          className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-violet-500/20 bg-violet-500/8 cursor-pointer hover:bg-violet-500/14 transition-colors"
+          className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-ta/20 bg-ta/8 cursor-pointer hover:bg-ta/14 transition-colors"
           onClick={() => onNavigate?.('kisisel-izin-cetveli')}
         >
           <span className="text-base shrink-0">🗓️</span>
-          <p className="text-[10px] text-violet-300/80 leading-snug flex-1">
-            Detaylı görünüm için menüden <span className="font-semibold text-violet-300">Kişisel İzin Çizelgesi</span>'ne ulaşabilirsiniz.
+          <p className="text-[10px] text-ta/80 leading-snug flex-1">
+            Detaylı görünüm için menüden <span className="font-semibold text-ta">Kişisel İzin Çizelgesi</span>'ne ulaşabilirsiniz.
           </p>
           <span className="text-white/25 text-xs shrink-0">›</span>
         </div>
@@ -1752,7 +1752,7 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate, onDirectSave }
   const fmtDate = (d: string) => new Date(d).toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' });
 
   const btnBase = 'w-full py-2.5 px-3 rounded-xl border text-sm font-semibold transition-all active:scale-95 text-left flex items-center gap-2';
-  const btnPrimary = `${btnBase} bg-violet-500/20 border-violet-500/40 text-violet-200 hover:bg-violet-500/35`;
+  const btnPrimary = `${btnBase} bg-ta/20 border-ta/40 text-ta hover:bg-ta/35`;
   const btnSecondary = `${btnBase} bg-white/5 border-white/15 text-white/75 hover:bg-white/12`;
 
   // ── Done ─────────────────────────────────────────────────────────────────
@@ -1776,7 +1776,7 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate, onDirectSave }
         </div>
         <button
           onClick={() => onNavigate?.('rotation')}
-          className="w-full py-2.5 rounded-xl bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-semibold hover:bg-violet-500/35 transition-colors"
+          className="w-full py-2.5 rounded-xl bg-ta/20 border border-ta/30 text-ta text-xs font-semibold hover:bg-ta/35 transition-colors"
         >
           Rotasyon Sistemine Git →
         </button>
@@ -1787,8 +1787,8 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate, onDirectSave }
   // ── Loading ───────────────────────────────────────────────────────────────
   if (data.step === 'loading') {
     return (
-      <div className="mt-3 rounded-2xl border border-violet-500/20 bg-violet-500/8 px-4 py-5 flex items-center gap-3">
-        <Loader2 className="w-5 h-5 text-violet-400 animate-spin shrink-0" />
+      <div className="mt-3 rounded-2xl border border-ta/20 bg-ta/8 px-4 py-5 flex items-center gap-3">
+        <Loader2 className="w-5 h-5 text-ta animate-spin shrink-0" />
         <div>
           <p className="text-sm text-white/70 font-medium">Personel ve mekanlar yükleniyor...</p>
           <p className="text-[10px] text-white/30">Rotasyon verilerine bağlanılıyor</p>
@@ -1805,7 +1805,7 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate, onDirectSave }
       { label: '📅 Öbür Gün', sub: fmtDate(trDays(2)), date: trDays(2) },
     ];
     return (
-      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+      <div className={`mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
         <div className="px-4 py-2.5 border-b border-white/8 flex items-center gap-2 bg-white/3">
           <span className="text-base">🗓️</span>
           <span className="text-xs font-black text-white uppercase tracking-wider">Rotasyon — Tarih Seç</span>
@@ -1832,7 +1832,7 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate, onDirectSave }
   if (data.step === 'location') {
     const locations = data.locations || [];
     return (
-      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+      <div className={`mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
         <div className="px-4 py-2.5 border-b border-white/8 bg-white/3">
           <div className="flex items-center gap-2">
             <span className="text-base">📍</span>
@@ -1874,13 +1874,13 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate, onDirectSave }
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
     );
     return (
-      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+      <div className={`mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
         <div className="px-4 py-2.5 border-b border-white/8 bg-white/3">
           <div className="flex items-center gap-2">
             <span className="text-base">👥</span>
             <span className="text-xs font-black text-white uppercase tracking-wider">Personel Seç</span>
             {selectedStaff.length > 0 && (
-              <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/30 text-violet-300">{selectedStaff.length} seçili</span>
+              <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-ta/30 text-ta">{selectedStaff.length} seçili</span>
             )}
           </div>
           <p className="text-[10px] text-white/35 mt-0.5">{data.locationIcon} {data.locationName} · {fmtDate(data.date || '')}</p>
@@ -1898,17 +1898,17 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate, onDirectSave }
                   isOnLeave
                     ? 'bg-red-500/5 border-red-500/15 opacity-50 cursor-not-allowed'
                     : isSelected
-                    ? 'bg-violet-500/25 border-violet-500/50'
+                    ? 'bg-ta/25 border-ta/50'
                     : 'bg-white/5 border-white/12 hover:bg-white/10'
                 }`}
               >
                 <div className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${
-                  isSelected ? 'bg-violet-500 border-violet-400' : 'border-white/20 bg-white/5'
+                  isSelected ? 'bg-ta border-ta' : 'border-white/20 bg-white/5'
                 }`}>
                   {isSelected && <span className="text-[10px] text-white font-bold">✓</span>}
                 </div>
                 <div className="text-sm font-medium text-left flex-1">
-                  <span className={isOnLeave ? 'text-white/35' : isSelected ? 'text-violet-200' : 'text-white/75'}>{s.name}</span>
+                  <span className={isOnLeave ? 'text-white/35' : isSelected ? 'text-ta' : 'text-white/75'}>{s.name}</span>
                 </div>
                 {isOnLeave && <span className="text-[10px] text-red-400 shrink-0">izinli 🏖️</span>}
                 <span className="text-[10px] text-white/20 shrink-0">{
@@ -1925,7 +1925,7 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate, onDirectSave }
               onAction(`__ROT_STAFF_DONE_${selectedStaff.join(',')}__`);
             }}
             disabled={selectedStaff.length === 0}
-            className="w-full py-2.5 rounded-xl bg-violet-500/25 border border-violet-500/40 text-violet-200 text-sm font-bold hover:bg-violet-500/40 transition-colors disabled:opacity-30"
+            className="w-full py-2.5 rounded-xl bg-ta/25 border border-ta/40 text-ta text-sm font-bold hover:bg-ta/40 transition-colors disabled:opacity-30"
           >
             {selectedStaff.length === 0 ? 'Personel seç...' : `Devam → (${selectedStaff.length} kişi)`}
           </button>
@@ -1944,7 +1944,7 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate, onDirectSave }
       { label: '11:00 – 19:00', start: '11:00', end: '19:00' },
     ];
     return (
-      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+      <div className={`mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
         <div className="px-4 py-2.5 border-b border-white/8 bg-white/3">
           <div className="flex items-center gap-2">
             <span className="text-base">⏰</span>
@@ -1955,12 +1955,12 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate, onDirectSave }
         <div className="p-3 space-y-2">
           {presets.map(p => (
             <button key={p.label} onClick={() => onAction(`__ROT_TIME_${p.start}|${p.end}__`)} className={btnSecondary}>
-              <Clock className="w-4 h-4 text-violet-400 shrink-0" />
+              <Clock className="w-4 h-4 text-ta shrink-0" />
               <span className="font-semibold">{p.label}</span>
             </button>
           ))}
           {!showCustomTime ? (
-            <button onClick={() => setShowCustomTime(true)} className="w-full text-[11px] text-violet-400/70 hover:text-violet-300 py-1 transition-colors">
+            <button onClick={() => setShowCustomTime(true)} className="w-full text-[11px] text-ta/70 hover:text-ta py-1 transition-colors">
               ✏️ Özel saat gir
             </button>
           ) : (
@@ -1969,16 +1969,16 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate, onDirectSave }
                 <div className="flex-1">
                   <p className="text-[10px] text-white/40 mb-1">Başlangıç</p>
                   <input type="time" value={customStart} onChange={e => setCustomStart(e.target.value)}
-                    className="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-violet-500/50" />
+                    className="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-ta/50" />
                 </div>
                 <div className="flex-1">
                   <p className="text-[10px] text-white/40 mb-1">Bitiş</p>
                   <input type="time" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
-                    className="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-violet-500/50" />
+                    className="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-ta/50" />
                 </div>
               </div>
               <button onClick={() => onAction(`__ROT_TIME_${customStart}|${customEnd}__`)}
-                className="w-full py-2 rounded-xl bg-violet-500/25 border border-violet-500/40 text-violet-200 text-sm font-bold hover:bg-violet-500/40 transition-colors">
+                className="w-full py-2 rounded-xl bg-ta/25 border border-ta/40 text-ta text-sm font-bold hover:bg-ta/40 transition-colors">
                 Özel saati kullan
               </button>
             </div>
@@ -2010,7 +2010,7 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate, onDirectSave }
     };
 
     return (
-      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+      <div className={`mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
         <div className="px-4 py-2.5 border-b border-white/8 bg-white/3 flex items-center gap-2">
           <span className="text-base">✅</span>
           <span className="text-xs font-black text-white uppercase tracking-wider">Görevi Onayla</span>
@@ -2038,7 +2038,7 @@ function RotationFlowCard({ data, onAction, isActive, onNavigate, onDirectSave }
           <button
             onClick={() => handleSave('sent')}
             disabled={saving}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-500/30 to-indigo-500/20 border border-violet-500/40 text-violet-200 text-sm font-bold hover:from-violet-500/45 hover:to-indigo-500/35 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-ta/30 to-indigo-500/20 border border-ta/40 text-ta text-sm font-bold hover:from-ta/45 hover:to-indigo-500/35 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             {saving ? 'Kaydediliyor...' : 'Gönder (Personel Bilgilendirilir)'}
           </button>
@@ -2143,7 +2143,7 @@ function RotationCancelFlowCard({ data, onAction, isActive }: {
 
 function LeaveConfirmCard({ onAction, isActive }: { onAction: (cmd: string) => void; isActive: boolean }) {
   return (
-    <div className="mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden">
+    <div className="mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 overflow-hidden">
       <div className="px-4 py-3 border-b border-white/8 flex items-center gap-2">
         <span className="text-lg">🏖️</span>
         <span className="text-xs font-black text-white uppercase tracking-wider">İzin Talebi</span>
@@ -2154,7 +2154,7 @@ function LeaveConfirmCard({ onAction, isActive }: { onAction: (cmd: string) => v
           <button
             onClick={() => onAction('__LEAVE_CONFIRM_YES__')}
             disabled={!isActive}
-            className="flex-1 py-2.5 rounded-xl bg-violet-500/20 border border-violet-500/30 text-violet-300 text-sm font-semibold hover:bg-violet-500/35 transition-colors disabled:opacity-40"
+            className="flex-1 py-2.5 rounded-xl bg-ta/20 border border-ta/30 text-ta text-sm font-semibold hover:bg-ta/35 transition-colors disabled:opacity-40"
           >
             ✅ Evet, oluştur
           </button>
@@ -2202,7 +2202,7 @@ function LeaveFlowCard({ data, onAction, isActive }: {
   // ── Step: type ──────────────────────────────────────────────────────────────
   if (data.step === 'type') {
     return (
-      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+      <div className={`mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
         <div className="px-4 py-2.5 border-b border-white/8">
           <span className="text-xs font-bold text-white uppercase tracking-wider">İzin Türü Seç</span>
         </div>
@@ -2232,7 +2232,7 @@ function LeaveFlowCard({ data, onAction, isActive }: {
   // ── Step: duration ──────────────────────────────────────────────────────────
   if (data.step === 'duration') {
     return (
-      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+      <div className={`mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
         <div className="px-4 py-2.5 border-b border-white/8">
           <span className="text-xs font-bold text-white uppercase tracking-wider">Süre Tipi</span>
         </div>
@@ -2244,7 +2244,7 @@ function LeaveFlowCard({ data, onAction, isActive }: {
             <button
               key={opt.value}
               onClick={() => onAction(`__LEAVE_DURATION_${opt.value}__`)}
-              className="flex flex-col items-center gap-1.5 py-4 rounded-xl border border-violet-500/30 bg-violet-500/10 hover:bg-violet-500/20 text-violet-200 active:scale-95 transition-all"
+              className="flex flex-col items-center gap-1.5 py-4 rounded-xl border border-ta/30 bg-ta/10 hover:bg-ta/20 text-ta active:scale-95 transition-all"
             >
               <span className="text-2xl">{opt.icon}</span>
               <span className="text-xs font-bold text-white">{opt.label}</span>
@@ -2266,11 +2266,11 @@ function LeaveFlowCard({ data, onAction, isActive }: {
     const cmdPfx   = isStart ? '__LEAVE_STARTDATE_' : '__LEAVE_ENDDATE_';
 
     return (
-      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+      <div className={`mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
         <div className="px-4 py-2.5 border-b border-white/8">
           <span className="text-xs font-bold text-white uppercase tracking-wider">{label}</span>
           {!isStart && data.startDate && (
-            <span className="text-[10px] text-violet-400 ml-2">Başlangıç: {new Date(data.startDate).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })}</span>
+            <span className="text-[10px] text-ta ml-2">Başlangıç: {new Date(data.startDate).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })}</span>
           )}
         </div>
         <div className="p-3 space-y-2.5">
@@ -2279,13 +2279,13 @@ function LeaveFlowCard({ data, onAction, isActive }: {
             min={minDate}
             value={dateVal}
             onChange={e => setDateVal(e.target.value)}
-            className="w-full bg-white/8 border border-white/15 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-violet-500/60 transition-colors"
+            className="w-full bg-white/8 border border-white/15 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-ta/60 transition-colors"
             style={{ colorScheme: 'dark' }}
           />
           <button
             onClick={() => { if (dateVal) onAction(`${cmdPfx}${dateVal}__`); }}
             disabled={!dateVal}
-            className="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold disabled:opacity-30 active:scale-95 transition-all"
+            className="w-full py-3 rounded-xl bg-ta hover:bg-ta text-white text-sm font-bold disabled:opacity-30 active:scale-95 transition-all"
           >
             Devam Et →
           </button>
@@ -2297,7 +2297,7 @@ function LeaveFlowCard({ data, onAction, isActive }: {
   // ── Step: notes ─────────────────────────────────────────────────────────────
   if (data.step === 'notes') {
     return (
-      <div className={`mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+      <div className={`mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
         <div className="px-4 py-2.5 border-b border-white/8">
           <span className="text-xs font-bold text-white uppercase tracking-wider">Not Ekle</span>
           <span className="text-[10px] text-white/35 ml-2">— isteğe bağlı</span>
@@ -2307,7 +2307,7 @@ function LeaveFlowCard({ data, onAction, isActive }: {
             value={noteVal}
             onChange={e => setNoteVal(e.target.value)}
             placeholder="Sebebi veya açıklama yazabilirsin..."
-            className="w-full bg-white/8 border border-white/15 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-violet-500/60 resize-none transition-colors"
+            className="w-full bg-white/8 border border-white/15 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-ta/60 resize-none transition-colors"
             rows={3}
             style={{ colorScheme: 'dark' }}
           />
@@ -2320,7 +2320,7 @@ function LeaveFlowCard({ data, onAction, isActive }: {
             </button>
             <button
               onClick={() => onAction(`__LEAVE_NOTES_${encodeURIComponent(noteVal.trim() || 'SKIP')}__`)}
-              className="py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold active:scale-95 transition-all"
+              className="py-3 rounded-xl bg-ta hover:bg-ta text-white text-sm font-bold active:scale-95 transition-all"
             >
               {noteVal.trim() ? 'Ekle & Devam' : 'Devam Et'}
             </button>
@@ -2337,7 +2337,7 @@ function LeaveFlowCard({ data, onAction, isActive }: {
     const isSingle = data.durationType === 'single';
 
     return (
-      <div className={`mt-3 rounded-2xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/8 to-violet-500/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+      <div className={`mt-3 rounded-2xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/8 to-ta/5 overflow-hidden ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
         <div className="px-4 py-2.5 border-b border-white/8 flex items-center gap-2">
           <span className="text-sm">📋</span>
           <span className="text-xs font-bold text-white uppercase tracking-wider">Talebi İncele & Gönder</span>
@@ -2363,7 +2363,7 @@ function LeaveFlowCard({ data, onAction, isActive }: {
                 <div className="w-full h-px bg-white/8" />
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-white/45">Süre</span>
-                  <span className="text-xs font-bold text-violet-300">
+                  <span className="text-xs font-bold text-ta">
                     {Math.round((new Date(data.endDate).getTime() - new Date(data.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1} gün
                   </span>
                 </div>
@@ -2442,14 +2442,14 @@ function MessageBubble({ msg, onFlowAction, isLastMsg, onNavigate, onDirectSave 
   return (
     <div className={`flex items-end gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       {!isUser && (
-        <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shrink-0">
+        <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-ta to-indigo-600 flex items-center justify-center shrink-0">
           <Brain className="w-3.5 h-3.5 text-white" />
         </div>
       )}
       <div className={`max-w-[85%] ${isUser ? 'items-end' : 'items-start'} flex flex-col`}>
         <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
           isUser
-            ? 'bg-gradient-to-br from-violet-600 to-indigo-600 text-white rounded-br-sm'
+            ? 'bg-gradient-to-br from-ta to-indigo-600 text-white rounded-br-sm'
             : 'bg-white/8 border border-white/12 text-white/90 rounded-bl-sm'
         }`}>
           {renderMDLines(msg.text)}
@@ -2523,12 +2523,12 @@ function DailyBriefingTopCard({
     : 73;
 
   return (
-    <div className="rounded-2xl border border-violet-500/25 bg-gradient-to-br from-[rgba(88,28,235,0.18)] to-[rgba(79,70,229,0.08)] backdrop-blur-sm p-4 mb-1">
+    <div className="rounded-2xl border border-ta/25 bg-gradient-to-br from-[rgba(88,28,235,0.18)] to-[rgba(79,70,229,0.08)] backdrop-blur-sm p-4 mb-1">
       {/* Header row */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-violet-500/30 flex items-center justify-center">
-            <Zap className="w-3.5 h-3.5 text-violet-300" />
+          <div className="w-6 h-6 rounded-lg bg-ta/30 flex items-center justify-center">
+            <Zap className="w-3.5 h-3.5 text-ta" />
           </div>
           <span className="text-xs font-black text-white tracking-wider uppercase">Günlük Brifing</span>
         </div>
@@ -2537,7 +2537,7 @@ function DailyBriefingTopCard({
 
       {loading ? (
         <div className="flex items-center gap-2 py-3">
-          <Loader2 className="w-4 h-4 text-violet-400 animate-spin" />
+          <Loader2 className="w-4 h-4 text-ta animate-spin" />
           <span className="text-xs text-white/40">Veriler yükleniyor...</span>
         </div>
       ) : mekanSayisi > 0 ? (
@@ -2563,7 +2563,7 @@ function DailyBriefingTopCard({
       <div className="flex gap-3 mt-4">
         <button
           onClick={onDetay}
-          className="flex-1 py-3 rounded-full bg-[#7c3aed] hover:bg-[#6d28d9] active:scale-95 active:bg-[#5b21b6] text-white text-sm font-bold shadow-lg shadow-violet-700/40 transition-all"
+          className="flex-1 py-3 rounded-full bg-ta hover:bg-ta/90 active:scale-95 active:bg-ta/80 text-white text-sm font-bold shadow-lg shadow-ta/40 transition-all"
         >
           Detayları Gör
         </button>
@@ -2703,7 +2703,7 @@ function MekanDetayCard({ data }: { data: MekanDetayData }) {
   const vardiyaDurum = !data.acilisYapildi
     ? { label: 'Açılış Yapılmadı', color: '#f87171', bg: 'rgba(239,68,68,0.12)' }
     : data.kapanisYapildi
-    ? { label: 'Kapandı', color: '#a78bfa', bg: 'rgba(139,92,246,0.12)' }
+    ? { label: 'Kapandı', color: 'var(--app-accent, #a855f7)', bg: 'rgba(var(--app-accent-rgb),0.12)' }
     : { label: 'Vardiya Açık', color: '#4ade80', bg: 'rgba(74,222,128,0.12)' };
 
   const breakdown = data.satislar && data.albumMaliyetleri && !data.yukleniyor
@@ -2723,7 +2723,7 @@ function MekanDetayCard({ data }: { data: MekanDetayData }) {
   const toplamGiderMaliyet = toplamMaliyet + personelToplamMaliyet + kiraMaliyeti;
 
   return (
-    <div className="mt-3 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-indigo-500/5 overflow-hidden">
+    <div className="mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 overflow-hidden">
       {/* Başlık */}
       <div className="px-4 py-3 border-b border-white/8 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -2742,7 +2742,7 @@ function MekanDetayCard({ data }: { data: MekanDetayData }) {
       <div className="grid grid-cols-3 gap-px bg-white/5 border-b border-white/8">
         {[
           { label: 'Ciro', val: `₺${data.ciro.toLocaleString('tr-TR')}`, color: '#4ade80' },
-          { label: 'Satış', val: `${data.satisAdet}`, color: '#a78bfa' },
+          { label: 'Satış', val: `${data.satisAdet}`, color: 'var(--app-accent, #a855f7)' },
           { label: 'İskonto', val: `₺${data.iskonto.toLocaleString('tr-TR')}`, color: '#fbbf24' },
         ].map(item => (
           <div key={item.label} className="bg-white/3 px-2 py-2.5 text-center">
@@ -2783,7 +2783,7 @@ function MekanDetayCard({ data }: { data: MekanDetayData }) {
           <span className="text-sm">📦</span>
           <span className="text-[11px] font-bold text-white/60 tracking-wider uppercase">Satılan Albümler & Maliyet</span>
           {data.printType && !data.yukleniyor && (
-            <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/25">
+            <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-ta/20 text-ta border border-ta/25">
               {data.printType === 'tam' ? 'Tam Boy' : 'Yarım Boy'}
             </span>
           )}
@@ -2792,7 +2792,7 @@ function MekanDetayCard({ data }: { data: MekanDetayData }) {
         {/* Yükleniyor */}
         {data.yukleniyor && (
           <div className="flex items-center justify-center gap-2 py-5">
-            <Loader2 className="w-4 h-4 text-violet-400 animate-spin" />
+            <Loader2 className="w-4 h-4 text-ta animate-spin" />
             <span className="text-xs text-white/40">Satış verileri yükleniyor...</span>
           </div>
         )}
@@ -2835,7 +2835,7 @@ function MekanDetayCard({ data }: { data: MekanDetayData }) {
                   </div>
                   {/* Adet */}
                   <div className="text-right self-center">
-                    <span className="text-xs font-bold text-violet-300">{row.quantity}</span>
+                    <span className="text-xs font-bold text-ta">{row.quantity}</span>
                   </div>
                   {/* Maliyet */}
                   <div className="text-right self-center">
@@ -2875,12 +2875,12 @@ function MekanDetayCard({ data }: { data: MekanDetayData }) {
             )}
 
             {/* Toplam satır */}
-            <div className="mt-2 grid grid-cols-4 gap-1 px-2 py-2.5 rounded-xl bg-gradient-to-r from-violet-500/15 to-indigo-500/10 border border-violet-500/20">
+            <div className="mt-2 grid grid-cols-4 gap-1 px-2 py-2.5 rounded-xl bg-gradient-to-r from-ta/15 to-indigo-500/10 border border-ta/20">
               <div className="col-span-2">
                 <span className="text-xs font-bold text-white/70">Toplam Maliyet</span>
               </div>
               <div className="text-right">
-                <span className="text-xs font-bold text-violet-300">{toplamAlbumAdet}</span>
+                <span className="text-xs font-bold text-ta">{toplamAlbumAdet}</span>
               </div>
               <div className="text-right">
                 {toplamMaliyet > 0 ? (
@@ -4139,7 +4139,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       <div className="shrink-0 px-4 pt-3 pb-3 bg-[rgba(0,0,0,0.92)] backdrop-blur-xl border-b border-white/8">
         <div className="flex items-center gap-2">
           {/* Brain icon */}
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/30 shrink-0">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-ta to-indigo-600 flex items-center justify-center shadow-lg shadow-ta/30 shrink-0">
             <Brain className="w-4.5 h-4.5 text-white" />
           </div>
           {/* Title */}
@@ -4148,7 +4148,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
               {companyId ? `${companyId.charAt(0).toUpperCase()}${companyId.slice(1)} AI` : 'Aspect AI'}
             </span>
             {useOpenAI && (
-              <span style={{ fontSize: 9, color: '#a78bfa', fontWeight: 600, letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: 9, color: 'var(--app-accent, #a855f7)', fontWeight: 600, letterSpacing: '0.04em' }}>
                 ✦ GPT-4o mini
               </span>
             )}
@@ -4160,7 +4160,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
             {userRole === 'yonetici' && (
               <button
                 onClick={() => setShowSettings(true)}
-                className="w-8 h-8 rounded-full bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-all hover:bg-violet-500/20 hover:border-violet-500/30"
+                className="w-8 h-8 rounded-full bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-all hover:bg-ta/20 hover:border-ta/30"
                 title="AI Ayarları"
               >
                 <Settings className="w-3.5 h-3.5 text-white/60" />
@@ -4193,7 +4193,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
               onClick={() => setBrifingOpen(v => !v)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
                 brifingOpen
-                  ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/30'
+                  ? 'bg-gradient-to-r from-ta to-indigo-600 text-white shadow-lg shadow-ta/30'
                   : 'bg-white/8 border border-white/15 text-white/55'
               }`}
             >
@@ -4206,7 +4206,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
               onClick={() => setKestirmelerOpen(v => !v)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
                 kestirmelerOpen
-                  ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/30'
+                  ? 'bg-gradient-to-r from-ta to-indigo-600 text-white shadow-lg shadow-ta/30'
                   : 'bg-white/8 border border-white/15 text-white/55'
               }`}
             >
@@ -4331,7 +4331,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
       {/* ── INPUT BAR — sabit, asla kımıldamaz ── */}
       <div className="shrink-0 px-4 pt-2 pb-3 bg-[rgba(0,0,0,0.92)] backdrop-blur-xl border-t border-white/8">
         <div className="flex items-center gap-3 bg-white/6 border border-white/12 rounded-2xl px-4 py-3">
-          <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shrink-0">
+          <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-ta to-indigo-600 flex items-center justify-center shrink-0">
             <Sparkles className="w-3.5 h-3.5 text-white" />
           </div>
           <input
@@ -4374,7 +4374,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
           <button
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
-            className="w-10 h-10 rounded-full bg-[#8b5cf6] flex items-center justify-center disabled:opacity-30 transition-all active:scale-90 shadow-lg shadow-violet-500/40 shrink-0"
+            className="w-10 h-10 rounded-full bg-ta flex items-center justify-center disabled:opacity-30 transition-all active:scale-90 shadow-lg shadow-ta/40 shrink-0"
           >
             {isLoading
               ? <Loader2 className="w-4 h-4 text-white animate-spin" />

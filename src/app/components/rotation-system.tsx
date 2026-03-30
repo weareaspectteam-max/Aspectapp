@@ -695,7 +695,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
     // SENT durumu için taskType'a göre renk
     if (task.taskType === 'special') {
       // 🟣 MOR - Özel Görev
-      return 'bg-purple-500/10 border-purple-500/30';
+      return 'bg-ta/10 border-ta/30';
     } else if (task.taskType === 'extra') {
       // 🩷 PEMBE - Ekstra İş
       return 'bg-pink-500/10 border-pink-500/30';
@@ -730,7 +730,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
     // SENT durumu için taskType'a göre renk
     if (task.taskType === 'special') {
       // 🟣 MOR - Özel Görev
-      return 'bg-purple-500/10 border-purple-500/30';
+      return 'bg-ta/10 border-ta/30';
     } else if (task.taskType === 'extra') {
       // 🩷 PEMBE - Ekstra İş
       return 'bg-pink-500/10 border-pink-500/30';
@@ -766,12 +766,12 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
     if (hasStandby) return 'border-l-yellow-400';
     
     // ✅ YENİ: taskType field'ına göre renk seç
-    if (task.taskType === 'special') return 'border-l-purple-500'; // 🟣 MOR - Özel Görev
+    if (task.taskType === 'special') return 'border-l-ta'; // 🟣 MOR - Özel Görev
     if (task.taskType === 'extra') return 'border-l-pink-500'; // 🩷 PEMBE - Ekstra İş
     if (task.taskType === 'regular') return 'border-l-green-500'; // 🟢 YEŞİL - Sabit Görev
     
     // Fallback (eski görevler için)
-    if (task.type === 'special') return 'border-l-purple-500';
+    if (task.type === 'special') return 'border-l-ta';
     return 'border-l-green-500';
   };
 
@@ -858,7 +858,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
 
               {/* Tarih Input */}
               <div className="flex items-center gap-2 bg-white/5 rounded-xl p-3 border border-white/10">
-                <Calendar className="w-5 h-5 text-violet-400" />
+                <Calendar className="w-5 h-5 text-ta" />
                 <input
                   type="date"
                   value={selectedDate}
@@ -1653,7 +1653,7 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                   <div className="absolute right-4 top-4 pointer-events-none z-0">
                     {task.taskType === 'regular' && <Repeat className="w-20 h-20 text-green-500/10" />}
                     {task.taskType === 'extra' && <Zap className="w-20 h-20 text-pink-500/10" />}
-                    {task.taskType === 'special' && <Star className="w-20 h-20 text-purple-500/10" />}
+                    {task.taskType === 'special' && <Star className="w-20 h-20 text-ta/10" />}
                   </div>
                   {task.revisionCount && task.revisionCount > 0 && (
                     <div className="absolute -top-3 -right-3 flex flex-col items-center gap-1.5 z-10">

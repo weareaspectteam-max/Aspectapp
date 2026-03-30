@@ -487,7 +487,7 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel', 
             </div>
             <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-4">
               <label className="block text-white font-medium mb-2 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-purple-400" />
+                <Clock className="w-4 h-4 text-ta" />
                 Süre (dk)
               </label>
               <input
@@ -495,7 +495,7 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel', 
                 value={duration}
                 onChange={(e) => setDuration(Number(e.target.value))}
                 min="1"
-                className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-2 focus:outline-none focus:border-purple-400/50"
+                className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-2 focus:outline-none focus:border-ta/50"
               />
             </div>
           </div>
@@ -532,7 +532,7 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel', 
           </div>
 
           {/* Performance Scores */}
-          <div className="backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-400/30 rounded-2xl p-4">
+          <div className="backdrop-blur-xl bg-gradient-to-br from-ta/20 to-ta/20 border border-ta/30 rounded-2xl p-4">
             <h3 className="text-white font-bold mb-4 flex items-center gap-2">
               ⭐ Performans Değerlendirmesi
             </h3>
@@ -794,7 +794,7 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel', 
               onClick={() => setSelectedType('performance')}
               className={`py-2.5 rounded-xl font-medium text-sm transition-all ${
                 selectedType === 'performance'
-                  ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/50'
+                  ? 'bg-ta text-white shadow-lg shadow-ta/50'
                   : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10'
               }`}
             >
@@ -877,7 +877,7 @@ export function StaffInterviews({ onBack, userName = '', userRole = 'personel', 
                   <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs bg-${typeConfig.color}-500/20 text-${typeConfig.color}-300 border border-${typeConfig.color}-400/30`}>
                     {typeConfig.emoji} {typeConfig.label}
                   </span>
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs bg-purple-500/20 text-purple-300 border border-purple-400/30">
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs bg-ta/20 text-ta border border-ta/30">
                     ⏱️ {interview.duration} dk
                   </span>
                 </div>

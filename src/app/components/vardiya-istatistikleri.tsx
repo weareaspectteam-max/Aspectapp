@@ -203,7 +203,7 @@ export function VardiyaIstatistikleri({ userName, userRole, accessToken, onNavig
               <h1 style={{ fontSize: 22, fontWeight: 900, color: 'white', margin: 0 }}>Vardiya İstatistikleri</h1>
               <span style={{ fontSize: 20 }}>⏱️</span>
             </div>
-            <p style={{ fontSize: 11, color: 'rgba(196,181,253,0.5)', margin: 0 }}>
+            <p style={{ fontSize: 11, color: 'rgba(var(--app-accent-rgb),0.5)', margin: 0 }}>
               {userName} · Personel bazlı aylık giriş/çıkış takibi
             </p>
           </div>
@@ -514,7 +514,7 @@ export function VardiyaIstatistikleri({ userName, userRole, accessToken, onNavig
                     style={{
                       padding: '6px 12px', borderRadius: 10, fontSize: 12, fontWeight: 700,
                       border: 'none', cursor: 'pointer', transition: 'all 0.15s',
-                      background: sifirlaFilterKey === k ? '#7c3aed' : 'rgba(255,255,255,0.10)',
+                      background: sifirlaFilterKey === k ? 'var(--app-accent, #a855f7)' : 'rgba(255,255,255,0.10)',
                       color: sifirlaFilterKey === k ? 'white' : 'rgba(255,255,255,0.6)',
                     }}
                   >

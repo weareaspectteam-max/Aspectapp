@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Target, RefreshCw, Loader2, TrendingUp, ArrowLeft, ChevronDown, ChevronRight, Trophy, AlertTriangle } from 'lucide-react';
+import { Target, RefreshCw, Loader2, TrendingUp, ArrowLeft, ChevronDown, ChevronRight, Trophy, AlertTriangle, BarChart3 } from 'lucide-react';
 import { projectId } from '../lib/supabase-info';
 import { buildHeaders, ghostParams } from '../lib/api';
 
@@ -337,8 +337,56 @@ function EnIyiKotu5({ enIyi5, enKotu5 }: { enIyi5: Array<{ tarih: string; ciro: 
   );
 }
 
+function MekanOzetListesi({ mekanlar }: { mekanlar: MekanData[] }) {
+  const [acik, setAcik] = useState(false);
+  if (mekanlar.length === 0) return null;
+  const sirali = [...mekanlar].sort((a, b) => b.toplamCiro - a.toplamCiro);
+  const tl = (n: number) => `₺${Math.round(n).toLocaleString('tr-TR')}`;
+  return (
+    <div>
+      <button onClick={() => setAcik(!acik)}
+        className="flex items-center gap-1.5 text-[11px] text-white/30 hover:text-white/50 transition-colors">
+        {acik ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        Mekan Bazlı Özet
+      </button>
+      {acik && (
+        <div className="mt-2 space-y-1.5">
+          {sirali.map(m => {
+            const aylikKira = Math.round(m.yearlyRent / 12);
+            const aylikGider = Math.round(m.toplamGider / Math.max(new Date().getMonth(), 1));
+            const aylikCiro = Math.round(m.toplamCiro / Math.max(new Date().getMonth(), 1));
+            const karMi = m.netKarKiraDahil >= 0;
+            return (
+              <div key={m.id} className="flex flex-col gap-0.5" style={{ padding: '6px 8px', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: `1px solid rgba(255,255,255,0.06)` }}>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs">{m.emoji}</span>
+                  <span className="text-[10px] font-bold text-white flex-1 truncate">{m.name}</span>
+                  <span className="text-[10px] font-bold" style={{ color: karMi ? '#34d399' : '#f87171' }}>
+                    {karMi ? '+' : ''}{tl(m.netKarKiraDahil)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span style={{ fontSize: 9, color: 'rgba(52,211,153,0.5)' }}>Ciro: {tl(m.toplamCiro)}</span>
+                  <span style={{ fontSize: 9, color: 'rgba(239,68,68,0.5)' }}>Gider: {tl(m.toplamGider)}</span>
+                  <span style={{ fontSize: 9, color: 'rgba(251,191,36,0.4)' }}>Kira: {tl(m.yearlyRent)}</span>
+                </div>
+                <div className="flex items-center gap-2" style={{ borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: 3, marginTop: 2 }}>
+                  <span style={{ fontSize: 8, color: 'rgba(157,217,234,0.4)' }}>Aylık ort:</span>
+                  <span style={{ fontSize: 8, color: 'rgba(52,211,153,0.5)' }}>Ciro {tl(aylikCiro)}</span>
+                  <span style={{ fontSize: 8, color: 'rgba(239,68,68,0.5)' }}>Gider {tl(aylikGider)}</span>
+                  <span style={{ fontSize: 8, color: 'rgba(251,191,36,0.4)' }}>Kira {tl(aylikKira)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Tek Kart (genel veya mekan) ──────────────────────────────────────────
-function HedefKart({ data, baslik, emoji, color, yearlyRent, profitTarget, isGenel }: {
+function HedefKart({ data, baslik, emoji, color, yearlyRent, profitTarget, isGenel, mekanlar }: {
   data: MekanData | GenelData;
   baslik: string;
   emoji?: string;
@@ -346,6 +394,7 @@ function HedefKart({ data, baslik, emoji, color, yearlyRent, profitTarget, isGen
   yearlyRent: number;
   profitTarget: number;
   isGenel?: boolean;
+  mekanlar?: MekanData[];
 }) {
   const aylikKira = Math.round(yearlyRent / 12);
 
@@ -355,7 +404,7 @@ function HedefKart({ data, baslik, emoji, color, yearlyRent, profitTarget, isGen
       {/* Başlık */}
       <div className="px-4 pt-4 pb-3 border-b border-white/8 flex items-center gap-2">
         {emoji && <span className="text-lg">{emoji}</span>}
-        {isGenel && <TrendingUp className="w-4 h-4 text-purple-400" />}
+        {isGenel && <TrendingUp className="w-4 h-4 text-ta" />}
         <div className="flex-1 min-w-0">
           <span className="text-sm font-bold text-white truncate block">{baslik}</span>
           <span className="text-[10px] text-white/25">
@@ -420,6 +469,7 @@ function HedefKart({ data, baslik, emoji, color, yearlyRent, profitTarget, isGen
 
         {/* En iyi/kötü */}
         <EnIyiKotu5 enIyi5={data.enIyi5} enKotu5={data.enKotu5} />
+
       </div>
     </div>
   );
@@ -480,7 +530,7 @@ export default function HedefTakip({ userName, userRole, accessToken, onNavigate
             </button>
             <div>
               <h1 className="text-base font-bold text-white flex items-center gap-2">
-                <Target className="w-4 h-4 text-purple-400" />
+                <Target className="w-4 h-4 text-ta" />
                 Hedef Takibi
               </h1>
               <p className="text-[10px] text-white/30">{veri?.yil || '...'} Yılı</p>
@@ -516,7 +566,7 @@ export default function HedefTakip({ userName, userRole, accessToken, onNavigate
 
       {yukleniyor && !veri ? (
         <div className="flex flex-col items-center justify-center py-20 gap-3">
-          <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+          <Loader2 className="w-8 h-8 text-ta animate-spin" />
           <p className="text-xs text-white/30">Yükleniyor...</p>
         </div>
       ) : hata ? (
@@ -532,6 +582,7 @@ export default function HedefTakip({ userName, userRole, accessToken, onNavigate
             yearlyRent={veri.genel.yearlyRent}
             profitTarget={veri.genel.profitTarget}
             isGenel
+            mekanlar={veri.mekanlar}
           />
 
           {/* Mekan Kartları */}
@@ -546,6 +597,69 @@ export default function HedefTakip({ userName, userRole, accessToken, onNavigate
               profitTarget={mekan.profitTarget}
             />
           ))}
+
+          {/* ── Mekan Özeti — Kârlılık Sıralaması ── */}
+          {veri.mekanlar.length > 1 && (() => {
+            const sirali = [...veri.mekanlar]
+              .map(m => ({
+                ...m,
+                netKar: m.netKarKiraDahil,
+                marj: m.toplamCiro > 0 ? (m.netKarKiraDahil / m.toplamCiro) * 100 : 0,
+              }))
+              .sort((a, b) => b.netKar - a.netKar);
+            const maxCiro = Math.max(...sirali.map(m => m.toplamCiro), 1);
+
+            return (
+              <div className="mx-4 rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.10)', backdropFilter: 'blur(20px)' }}>
+                <div className="px-4 pt-4 pb-3 border-b border-white/8">
+                  <p className="text-sm font-bold text-white flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-blue-400" />
+                    Mekan Özeti — {seciliYil}
+                  </p>
+                  <p className="text-[10px] text-white/25 mt-0.5">En kârlıdan en zararlıya</p>
+                </div>
+                <div className="p-3 space-y-2">
+                  {sirali.map((m, i) => {
+                    const karMi = m.netKar >= 0;
+                    const barWidth = maxCiro > 0 ? Math.max((m.toplamCiro / maxCiro) * 100, 3) : 0;
+                    return (
+                      <div key={m.id} className="rounded-xl" style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.03)', border: `1px solid ${karMi ? 'rgba(52,211,153,0.12)' : 'rgba(239,68,68,0.12)'}` }}>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="text-xs font-bold" style={{ color: 'rgba(255,255,255,0.3)', minWidth: 16 }}>{i + 1}</span>
+                          <span className="text-sm">{m.emoji}</span>
+                          <span className="text-xs font-bold text-white flex-1 truncate">{m.name}</span>
+                          <span className="text-xs font-bold" style={{ color: karMi ? '#34d399' : '#f87171' }}>
+                            {karMi ? '+' : ''}₺{Math.round(m.netKar).toLocaleString('tr-TR')}
+                          </span>
+                        </div>
+                        {/* Bar */}
+                        <div className="flex items-center gap-2">
+                          <div style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                            <div style={{
+                              width: `${barWidth}%`, height: '100%', borderRadius: 3,
+                              background: karMi
+                                ? 'linear-gradient(90deg, #34d399, #22c55e)'
+                                : 'linear-gradient(90deg, #f87171, #ef4444)',
+                              transition: 'width 0.5s ease',
+                            }} />
+                          </div>
+                          <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', minWidth: 30, textAlign: 'right' }}>
+                            %{Math.abs(Math.round(m.marj))}
+                          </span>
+                        </div>
+                        {/* Alt bilgi */}
+                        <div className="flex items-center gap-3 mt-1.5">
+                          <span style={{ fontSize: 9, color: 'rgba(52,211,153,0.6)' }}>Ciro: ₺{Math.round(m.toplamCiro).toLocaleString('tr-TR')}</span>
+                          <span style={{ fontSize: 9, color: 'rgba(239,68,68,0.6)' }}>Gider: ₺{Math.round(m.toplamGider).toLocaleString('tr-TR')}</span>
+                          <span style={{ fontSize: 9, color: 'rgba(251,191,36,0.5)' }}>Kira: ₺{Math.round(m.yearlyRent).toLocaleString('tr-TR')}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>

@@ -405,12 +405,12 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
               const maxHedef = Number(sorted[sorted.length - 1].hedef);
               const barFill = Math.min(ciro / maxHedef, 1.0);
               const formatTLc = (v: number) => v >= 1000 ? `₺${(v / 1000).toFixed(0)}B` : `₺${v}`;
-              const COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399', '#f87171'];
+              const COLORS = ['#60a5fa', 'var(--app-accent, #a855f7)', '#fbbf24', '#34d399', '#f87171'];
 
               const enYuksekAsildi = [...sorted].map((k, i) => ({ k, i })).reverse().find(({ k }) => ciro >= Number(k.hedef));
               const barGrad = enYuksekAsildi
-                ? (enYuksekAsildi.i >= 2 ? 'linear-gradient(90deg,#60a5fa,#a855f7,#fbbf24)'
-                  : enYuksekAsildi.i >= 1 ? 'linear-gradient(90deg,#60a5fa,#a855f7)'
+                ? (enYuksekAsildi.i >= 2 ? 'linear-gradient(90deg,#60a5fa,var(--app-accent, #a855f7),#fbbf24)'
+                  : enYuksekAsildi.i >= 1 ? 'linear-gradient(90deg,#60a5fa,var(--app-accent, #a855f7))'
                   : '#60a5fa')
                 : 'rgba(255,255,255,0.15)';
               const glowColor = enYuksekAsildi ? COLORS[Math.min(enYuksekAsildi.i, 4)] : null;
@@ -597,7 +597,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
       {/* Rotasyon zorunlu roller: yükleniyorsa beklet */}
       {rotasyonZorunlu && rotasyonYukleniyor ? (
         <div className="flex flex-col items-center justify-center py-16 gap-4">
-          <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
+          <Loader2 className="w-8 h-8 text-ta animate-spin" />
           <p className="text-gray-400 text-sm">Rotasyon bilgisi kontrol ediliyor...</p>
         </div>
       ) : rotasyonZorunlu && rotasyonDurumu !== 'tamam' ? (
@@ -762,11 +762,11 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
             <button
               key={task.id}
               onClick={() => onOzelIsSelect?.(task)}
-              className="w-full rounded-2xl p-5 text-white shadow-lg transition-all text-left relative overflow-hidden hover:shadow-xl active:scale-[0.98] border border-purple-500/30"
+              className="w-full rounded-2xl p-5 text-white shadow-lg transition-all text-left relative overflow-hidden hover:shadow-xl active:scale-[0.98] border border-ta/30"
               style={{ background: 'linear-gradient(135deg, #3b0764 0%, #6d28d9 100%)' }}
             >
               {/* Tip etiketi */}
-              <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-purple-500/30 border border-purple-400/40 text-purple-200">
+              <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-ta/30 border border-ta/40 text-ta">
                 🔧 ÖZEL İŞ
               </div>
 
@@ -783,7 +783,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                     </span>
                   </div>
                   {task.notes && (
-                    <p className="text-xs text-purple-200/70 mt-1 truncate">{task.notes}</p>
+                    <p className="text-xs text-ta/70 mt-1 truncate">{task.notes}</p>
                   )}
                 </div>
               </div>

@@ -288,6 +288,43 @@ const sendTelegramMessage = async (text: string, parseMode: string = "HTML", com
 };
 
 // ──────────────────────────────────────────
+// TELEGRAM HELPER: Fotoğraf gönder (base64 → multipart)
+// ──────────────────────────────────────────
+const sendTelegramPhoto = async (base64Data: string, caption: string, companyId: string = "aspect"): Promise<void> => {
+  try {
+    const cfg = await getTelegramConfig(companyId);
+    if (!cfg) {
+      console.log(`[Telegram] Config eksik (${companyId}) — fotoğraf atlandı.`);
+      return;
+    }
+    // base64 → Uint8Array
+    const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
+    const binaryStr = atob(base64Clean);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+
+    const form = new FormData();
+    form.append("chat_id", cfg.chatId);
+    form.append("caption", caption);
+    form.append("parse_mode", "HTML");
+    form.append("photo", new Blob([bytes], { type: "image/jpeg" }), "vardiya.jpg");
+
+    const res = await fetch(`https://api.telegram.org/bot${cfg.token}/sendPhoto`, {
+      method: "POST",
+      body: form,
+    });
+    const result = await res.json();
+    if (!result.ok) {
+      console.log("[Telegram] Fotoğraf gönderilemedi:", JSON.stringify(result));
+    } else {
+      console.log("[Telegram] Fotoğraf gönderildi:", result.result?.message_id);
+    }
+  } catch (e) {
+    console.log("[Telegram] sendTelegramPhoto error:", e);
+  }
+};
+
+// ──────────────────────────────────────────
 // TELEGRAM HELPER: Inline keyboard ile mesaj gönder
 // ──────────────────────────────────────────
 const sendTelegramWithInlineKeyboard = async (
@@ -3219,7 +3256,7 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
     const companyId = getCompanyId(user);
     const ckv = companyKvFor(companyId);
 
-    const { mekanId, tarih, sayim, not: acilisNot, printerData } = await c.req.json();
+    const { mekanId, tarih, sayim, not: acilisNot, printerData, photo: acilisPhoto } = await c.req.json();
     if (!mekanId || !tarih || !sayim) {
       return c.json({ error: "mekanId, tarih ve sayim zorunludur." }, 400);
     }
@@ -3299,15 +3336,19 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
     await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
     console.log(`Stok açılışı: ${mekanId} / ${tarih} by ${user.id} | ${printerData?.length || 0} yazıcı | ${printerAnomali.length} yazıcı anomali`);
 
-    // ── Telegram: Açılış bildirimi ─────────────
+    // ── Telegram: Açılış bildirimi (fotoğraflı veya metin) ─────────────
     try {
       const mekanObj: any = await ckv.get(`mekan_${mekanId}`) || await ckv.get(mekanId);
       const mekanAdi = mekanObj?.name || mekanId;
       const mekanEmoji = mekanObj?.emoji || "🏪";
       const kullanici = user.user_metadata?.full_name || user.email || "Bilinmiyor";
       const saatTR = new Date().toLocaleTimeString("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" });
-      const msg = `${mekanEmoji} AÇILIŞ 🟢 ${mekanAdi} ⏰ ${saatTR} 👤 ${kullanici}`;
-      sendTelegramMessage(msg, "HTML", getCompanyId(user));
+      const msg = `${mekanEmoji} AÇILIŞ 🟢 ${mekanAdi}\n⏰ ${saatTR} 👤 ${kullanici}`;
+      if (acilisPhoto) {
+        sendTelegramPhoto(acilisPhoto, msg, getCompanyId(user));
+      } else {
+        sendTelegramMessage(msg, "HTML", getCompanyId(user));
+      }
     } catch (tgErr) {
       console.log("[Telegram] Açılış bildirimi gönderilemedi:", tgErr);
     }
@@ -3333,7 +3374,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     const companyId = getCompanyId(user);
     const ckv = companyKvFor(companyId);
 
-    const { mekanId, tarih, sayim, not: kapanisNot, printerData } = await c.req.json();
+    const { mekanId, tarih, sayim, not: kapanisNot, printerData, photo: kapanisPhoto } = await c.req.json();
     if (!mekanId || !tarih || !sayim) {
       return c.json({ error: "mekanId, tarih ve sayim zorunludur." }, 400);
     }
@@ -3593,15 +3634,19 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
 
     await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
 
-    // ── Telegram: Kapanış bildirimi ─────────────────────────────────────────
+    // ── Telegram: Kapanış bildirimi (fotoğraflı veya metin) ─────────────────
     try {
       const mekanObjKap: any = await ckv.get(`mekan_${mekanId}`) || await ckv.get(mekanId);
       const mekanAdiKap = mekanObjKap?.name || mekanId;
       const mekanEmojiKap = mekanObjKap?.emoji || "🏪";
       const kullaniciKap = user.user_metadata?.full_name || user.email || "Bilinmiyor";
       const saatTRKap = new Date().toLocaleTimeString("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" });
-      const msgKap = `${mekanEmojiKap} KAPANIŞ 🔴 ${mekanAdiKap} ⏰ ${saatTRKap} 👤 ${kullaniciKap}`;
-      sendTelegramMessage(msgKap, "HTML", getCompanyId(user));
+      const msgKap = `${mekanEmojiKap} KAPANIŞ 🔴 ${mekanAdiKap}\n⏰ ${saatTRKap} 👤 ${kullaniciKap}`;
+      if (kapanisPhoto) {
+        sendTelegramPhoto(kapanisPhoto, msgKap, getCompanyId(user));
+      } else {
+        sendTelegramMessage(msgKap, "HTML", getCompanyId(user));
+      }
     } catch (tgErr) {
       console.log("[Telegram] Kapanış bildirimi gönderilemedi:", tgErr);
     }
@@ -14366,6 +14411,236 @@ app.get("/make-server-4da0b637/xox/leaderboard", async (c) => {
 // Kare Coin & TKM Oyunu route'larını kaydet
 registerKareTkmRoutes(app, verifyToken);
 
+
+// ══════════════════════════════════════════
+// ═══ AKADEMİ SİSTEMİ ═══════════════════
+// ══════════════════════════════════════════
+// KV: academy_categories → [{ id, name, emoji, order }]
+// KV: academy_content_{id} → { id, categoryId, type, title, description, data, order, createdAt, createdBy }
+// KV: academy_progress_{userId} → { [contentId]: { watched: bool, date: string } }
+// İçerik tipleri: video (youtubeId), text (html/markdown), pdf (url), gallery (images[]), quiz (questions[]), link (url)
+
+// GET /academy — Tüm kategoriler + içerikler + kullanıcı ilerlemesi
+app.get("/make-server-4da0b637/academy", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    const reqCId = c.req.query("company_id");
+    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+
+    const [categories, allContent, progress, announcement] = await Promise.all([
+      ckv.get("academy_categories"),
+      ckv.getByPrefix("academy_content_"),
+      ckv.get(`academy_progress_${user.id}`),
+      ckv.get("academy_announcement"),
+    ]);
+
+    const cats = (categories || []).sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+    const contents = (allContent || []).sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+
+    return c.json({ categories: cats, contents, progress: progress || {}, announcement: announcement || null });
+  } catch (err) {
+    console.log("Academy GET error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /academy/category — Kategori ekle/güncelle (yönetici)
+app.post("/make-server-4da0b637/academy/category", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    if (!["yonetici", "ust-mudur"].includes(role)) return c.json({ error: "Yetkiniz yok." }, 403);
+
+    const body = await c.req.json();
+    const { id, name, emoji, order } = body;
+    if (!name?.trim()) return c.json({ error: "Kategori adı zorunlu." }, 400);
+
+    const ckv = companyKvFor(getCompanyId(user));
+    const cats = (await ckv.get("academy_categories")) || [];
+    const catId = id || `cat_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+    const existing = cats.findIndex((c: any) => c.id === catId);
+    const cat = { id: catId, name: name.trim(), emoji: emoji || "📚", order: order ?? cats.length };
+    if (existing >= 0) cats[existing] = cat;
+    else cats.push(cat);
+
+    await ckv.set("academy_categories", cats);
+    return c.json({ category: cat });
+  } catch (err) {
+    console.log("Academy category POST error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// DELETE /academy/category/:id — Kategori sil
+app.delete("/make-server-4da0b637/academy/category/:id", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    if (!["yonetici", "ust-mudur"].includes(role)) return c.json({ error: "Yetkiniz yok." }, 403);
+
+    const catId = c.req.param("id");
+    const ckv = companyKvFor(getCompanyId(user));
+    const cats = (await ckv.get("academy_categories")) || [];
+    const filtered = cats.filter((cat: any) => cat.id !== catId);
+    await ckv.set("academy_categories", filtered);
+
+    // İlgili içerikleri de sil
+    const allContent = (await ckv.getByPrefix("academy_content_")) || [];
+    const toDelete = allContent.filter((ct: any) => ct.categoryId === catId);
+    for (const ct of toDelete) {
+      await ckv.del(`academy_content_${ct.id}`);
+    }
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("Academy category DELETE error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /academy/content — İçerik ekle/güncelle (yönetici)
+app.post("/make-server-4da0b637/academy/content", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    if (!["yonetici", "ust-mudur"].includes(role)) return c.json({ error: "Yetkiniz yok." }, 403);
+
+    const body = await c.req.json();
+    const { id, categoryId, type, title, description, data, order } = body;
+
+    if (!categoryId || !type || !title?.trim()) {
+      return c.json({ error: "categoryId, type ve title zorunlu." }, 400);
+    }
+
+    const validTypes = ["video", "text", "pdf", "gallery", "quiz", "link"];
+    if (!validTypes.includes(type)) return c.json({ error: `Geçersiz tip: ${type}` }, 400);
+
+    const ckv = companyKvFor(getCompanyId(user));
+    const contentId = id || `cnt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+    const content = {
+      id: contentId,
+      categoryId,
+      type,
+      title: title.trim(),
+      description: description?.trim() || "",
+      data: data || {},
+      order: order ?? 0,
+      createdAt: id ? undefined : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdBy: user.user_metadata?.full_name || user.email || "",
+    };
+
+    // Eğer güncelleme ise createdAt'i koru
+    if (id) {
+      const existing = await ckv.get(`academy_content_${id}`);
+      if (existing) content.createdAt = existing.createdAt;
+    }
+    if (!content.createdAt) content.createdAt = new Date().toISOString();
+
+    await ckv.set(`academy_content_${contentId}`, content);
+    return c.json({ content });
+  } catch (err) {
+    console.log("Academy content POST error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// DELETE /academy/content/:id — İçerik sil
+app.delete("/make-server-4da0b637/academy/content/:id", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    if (!["yonetici", "ust-mudur"].includes(role)) return c.json({ error: "Yetkiniz yok." }, 403);
+
+    const contentId = c.req.param("id");
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del(`academy_content_${contentId}`);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("Academy content DELETE error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /academy/progress — İçerik tamamlandı işaretle
+app.post("/make-server-4da0b637/academy/progress", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+
+    const { contentId, watched } = await c.req.json();
+    if (!contentId) return c.json({ error: "contentId zorunlu." }, 400);
+
+    const ckv = companyKvFor(getCompanyId(user));
+    const key = `academy_progress_${user.id}`;
+    const progress = (await ckv.get(key)) || {};
+
+    if (watched === false) {
+      delete progress[contentId];
+    } else {
+      progress[contentId] = { watched: true, date: new Date().toISOString() };
+    }
+
+    await ckv.set(key, progress);
+    return c.json({ progress });
+  } catch (err) {
+    console.log("Academy progress POST error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /academy/announcement — Yönetici duyuru mesajı yaz/güncelle
+app.post("/make-server-4da0b637/academy/announcement", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    if (!["yonetici", "ust-mudur"].includes(role)) return c.json({ error: "Yetkiniz yok." }, 403);
+
+    const { message } = await c.req.json();
+    if (!message?.trim()) return c.json({ error: "Mesaj zorunlu." }, 400);
+
+    const ckv = companyKvFor(getCompanyId(user));
+    const announcement = {
+      message: message.trim(),
+      updatedAt: new Date().toISOString(),
+      updatedBy: user.user_metadata?.full_name || user.email || "",
+    };
+    await ckv.set("academy_announcement", announcement);
+    return c.json({ announcement });
+  } catch (err) {
+    console.log("Academy announcement POST error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// DELETE /academy/announcement — Duyuru sil
+app.delete("/make-server-4da0b637/academy/announcement", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    if (!["yonetici", "ust-mudur"].includes(role)) return c.json({ error: "Yetkiniz yok." }, 403);
+
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del("academy_announcement");
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("Academy announcement DELETE error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
 
 Deno.serve(async (req) => {
   // Supabase Edge Functions'da OPTIONS preflight istekleri gateway tarafından kesilebilir.

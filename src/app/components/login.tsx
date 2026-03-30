@@ -170,7 +170,7 @@ export function Login({ onLogin }: LoginProps) {
       {/* ── Arka plan orb'ları ── */}
       <motion.div
         className="absolute pointer-events-none"
-        style={{ width: 380, height: 380, borderRadius: '50%', top: -120, left: -120, background: 'radial-gradient(circle, rgba(168,85,247,0.18) 0%, transparent 70%)', filter: 'blur(40px)' }}
+        style={{ width: 380, height: 380, borderRadius: '50%', top: -120, left: -120, background: 'radial-gradient(circle, rgba(var(--app-accent-rgb),0.18) 0%, transparent 70%)', filter: 'blur(40px)' }}
         animate={{ scale: [1, 1.15, 1], opacity: [0.6, 1, 0.6] }}
         transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
       />
@@ -232,7 +232,7 @@ export function Login({ onLogin }: LoginProps) {
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
-          backgroundImage: 'linear-gradient(rgba(168,85,247,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(168,85,247,0.04) 1px, transparent 1px)',
+          backgroundImage: 'linear-gradient(rgba(var(--app-accent-rgb),0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--app-accent-rgb),0.04) 1px, transparent 1px)',
           backgroundSize: '48px 48px',
         }}
       />
@@ -258,16 +258,16 @@ export function Login({ onLogin }: LoginProps) {
               className="relative flex items-center justify-center"
               style={{
                 width: 52, height: 52, borderRadius: 16,
-                background: 'linear-gradient(135deg, rgba(168,85,247,0.4), rgba(157,217,234,0.25))',
-                border: '1px solid rgba(168,85,247,0.5)',
-                boxShadow: '0 0 24px rgba(168,85,247,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
+                background: 'linear-gradient(135deg, rgba(var(--app-accent-rgb),0.4), rgba(157,217,234,0.25))',
+                border: '1px solid rgba(var(--app-accent-rgb),0.5)',
+                boxShadow: '0 0 24px rgba(var(--app-accent-rgb),0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
               }}
             >
               <Camera style={{ width: 26, height: 26, color: '#d4b5f7' }} strokeWidth={1.5} />
               {/* Glow halkası */}
               <motion.div
                 className="absolute inset-0 rounded-2xl"
-                style={{ border: '1px solid rgba(168,85,247,0.6)' }}
+                style={{ border: '1px solid rgba(var(--app-accent-rgb),0.6)' }}
                 animate={{ opacity: [0.3, 0.9, 0.3], scale: [1, 1.08, 1] }}
                 transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
               />
@@ -277,7 +277,7 @@ export function Login({ onLogin }: LoginProps) {
             <div className="text-left">
               <div
                 className="font-black tracking-widest uppercase"
-                style={{ fontSize: 11, color: 'rgba(168,85,247,0.7)', letterSpacing: '0.22em' }}
+                style={{ fontSize: 11, color: 'rgba(var(--app-accent-rgb),0.7)', letterSpacing: '0.22em' }}
               >
                 Operasyon
               </div>
@@ -358,7 +358,7 @@ export function Login({ onLogin }: LoginProps) {
           {/* Kart üst ışığı */}
           <div
             className="absolute inset-x-0 top-0 h-px rounded-full"
-            style={{ background: 'linear-gradient(90deg, transparent, rgba(168,85,247,0.5), rgba(157,217,234,0.4), transparent)' }}
+            style={{ background: 'linear-gradient(90deg, transparent, rgba(var(--app-accent-rgb),0.5), rgba(157,217,234,0.4), transparent)' }}
           />
 
           {/* Hata / Başarı mesajları */}
@@ -435,7 +435,7 @@ export function Login({ onLogin }: LoginProps) {
                 <ShimmerButton
                   onClick={handleSignIn}
                   disabled={loading}
-                  gradient="linear-gradient(135deg, #9dd9ea, #b8d4f1, #a78bfa)"
+                  gradient="linear-gradient(135deg, #9dd9ea, #b8d4f1, var(--app-accent, #a855f7))"
                   label={loading ? 'Giriş yapılıyor...' : 'Giriş Yap →'}
                   loading={loading}
                 />

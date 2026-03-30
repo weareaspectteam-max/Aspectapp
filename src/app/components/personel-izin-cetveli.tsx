@@ -274,9 +274,9 @@ function CellPopup({
                       className="px-2 py-0.5 rounded-full"
                       style={{
                         fontSize: 10,
-                        background: cell.taskType === 'special' ? 'rgba(168,85,247,0.2)' : 'rgba(99,102,241,0.2)',
-                        color: cell.taskType === 'special' ? '#c084fc' : '#818cf8',
-                        border: `1px solid ${cell.taskType === 'special' ? 'rgba(168,85,247,0.3)' : 'rgba(99,102,241,0.3)'}`,
+                        background: cell.taskType === 'special' ? 'rgba(var(--app-accent-rgb),0.2)' : 'rgba(99,102,241,0.2)',
+                        color: cell.taskType === 'special' ? 'var(--app-accent, #a855f7)' : '#818cf8',
+                        border: `1px solid ${cell.taskType === 'special' ? 'rgba(var(--app-accent-rgb),0.3)' : 'rgba(99,102,241,0.3)'}`,
                       }}
                     >
                       {cell.taskType === 'special' ? 'Özel Görev' : cell.taskType === 'extra' ? 'Ekstra' : 'Normal Rotasyon'}
@@ -694,7 +694,7 @@ export function PersonelIzinCetveli({
       {loading && staffList.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
-            <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+            <Loader2 className="w-8 h-8 text-ta animate-spin" />
             <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>Yükleniyor...</span>
           </div>
         </div>
@@ -758,9 +758,9 @@ export function PersonelIzinCetveli({
                         top: 0,
                         zIndex: 20,
                         background: isToday
-                          ? 'rgba(168,85,247,0.15)'
+                          ? 'rgba(var(--app-accent-rgb),0.15)'
                           : 'linear-gradient(170deg, #120830 0%, #1a0a3c 100%)',
-                        borderBottom: `1px solid ${isToday ? 'rgba(168,85,247,0.4)' : 'rgba(255,255,255,0.07)'}`,
+                        borderBottom: `1px solid ${isToday ? 'rgba(var(--app-accent-rgb),0.4)' : 'rgba(255,255,255,0.07)'}`,
                         padding: '4px 2px',
                         minWidth: 30,
                         width: 30,
@@ -784,7 +784,7 @@ export function PersonelIzinCetveli({
                           style={{
                             fontSize: 11,
                             fontWeight: isToday ? 800 : 600,
-                            color: isToday ? '#c084fc' : isWeekend ? 'rgba(248,113,113,0.8)' : 'rgba(255,255,255,0.6)',
+                            color: isToday ? 'var(--app-accent, #a855f7)' : isWeekend ? 'rgba(248,113,113,0.8)' : 'rgba(255,255,255,0.6)',
                             lineHeight: 1,
                           }}
                         >
@@ -861,7 +861,7 @@ export function PersonelIzinCetveli({
                           key={col.dateStr}
                           style={{
                             background: isToday
-                              ? 'rgba(168,85,247,0.07)'
+                              ? 'rgba(var(--app-accent-rgb),0.07)'
                               : isEven
                                 ? 'rgba(15,6,32,0.6)'
                                 : 'rgba(26,10,60,0.6)',

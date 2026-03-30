@@ -575,7 +575,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
 
       {yukleniyor && liste.length === 0 && (
         <div className="flex flex-col items-center justify-center pt-24 gap-3">
-          <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
+          <Loader2 className="w-8 h-8 text-ta animate-spin" />
           <span className="text-sm text-white/30">Ekipmanlar yükleniyor...</span>
         </div>
       )}
@@ -686,7 +686,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
               <input
                 type="text" value={arama} onChange={e => setArama(e.target.value)}
                 placeholder="Marka, model veya seri no..."
-                className="w-full h-9 rounded-xl bg-white/6 border border-white/12 text-white text-xs pl-9 pr-3 outline-none placeholder-white/20 focus:border-violet-400/40"
+                className="w-full h-9 rounded-xl bg-white/6 border border-white/12 text-white text-xs pl-9 pr-3 outline-none placeholder-white/20 focus:border-ta/40"
               />
             </div>
           </div>
@@ -787,12 +787,12 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
 
                       {/* Flash bağlantısı — flash tarafı */}
                       {eq.category === 'flash' && atandigiMakina && (
-                        <div className="rounded-xl bg-violet-500/10 border border-violet-500/25 px-3 py-2 mb-3 flex items-center gap-2">
+                        <div className="rounded-xl bg-ta/10 border border-ta/25 px-3 py-2 mb-3 flex items-center gap-2">
                           <span className="text-base">📷</span>
                           <div>
-                            <p className="text-[10px] text-violet-300">Atandığı Makina</p>
+                            <p className="text-[10px] text-ta">Atandığı Makina</p>
                             <p className="text-xs font-bold text-white">{atandigiMakina.brand} {atandigiMakina.model}</p>
-                            <p className="text-[10px] text-violet-200/50 font-mono">{atandigiMakina.serialNumber}</p>
+                            <p className="text-[10px] text-ta/50 font-mono">{atandigiMakina.serialNumber}</p>
                           </div>
                         </div>
                       )}
@@ -810,13 +810,13 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                       {eq.gecmis && eq.gecmis.length > 0 && (() => {
                         const son = [...eq.gecmis].sort((a, b) => b.tarih.localeCompare(a.tarih))[0];
                         return (
-                          <div className="rounded-xl bg-violet-500/8 border border-violet-500/20 px-3 py-2 mb-3">
+                          <div className="rounded-xl bg-ta/8 border border-ta/20 px-3 py-2 mb-3">
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-[10px] font-bold text-violet-300/70 uppercase tracking-wider">📋 Geçmiş</span>
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-500/20 border border-violet-400/25 text-violet-300">{eq.gecmis.length} kayıt</span>
+                              <span className="text-[10px] font-bold text-ta/70 uppercase tracking-wider">📋 Geçmiş</span>
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-ta/20 border border-ta/25 text-ta">{eq.gecmis.length} kayıt</span>
                             </div>
                             <p className="text-xs text-white/60 leading-relaxed truncate">{son.not}</p>
-                            <p className="text-[9px] text-violet-300/50 mt-0.5">
+                            <p className="text-[9px] text-ta/50 mt-0.5">
                               {new Date(son.tarih).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' })}
                             </p>
                           </div>
@@ -891,7 +891,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                         )}
                         {canAssign && (
                           <button onClick={() => zimmetBas(eq)}
-                            className="bg-violet-500/15 border border-violet-500/25 text-violet-400 font-semibold py-2 rounded-xl text-xs transition-all active:scale-95 flex items-center justify-center gap-1">
+                            className="bg-ta/15 border border-ta/25 text-ta font-semibold py-2 rounded-xl text-xs transition-all active:scale-95 flex items-center justify-center gap-1">
                             <User className="w-3.5 h-3.5" />Zimmet
                           </button>
                         )}
@@ -959,7 +959,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                     <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2 px-4">
                       <button
                         onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600/80 border border-violet-400/40 text-white text-xs font-semibold backdrop-blur active:scale-95 transition-all"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-ta/80 border border-ta/40 text-white text-xs font-semibold backdrop-blur active:scale-95 transition-all"
                       >
                         <Camera className="w-3.5 h-3.5" />
                         Değiştir
@@ -976,7 +976,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                     {/* Yükleniyor overlay */}
                     {fotoYukleniyor && (
                       <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                        <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
+                        <Loader2 className="w-8 h-8 text-ta animate-spin" />
                       </div>
                     )}
                   </div>
@@ -984,10 +984,10 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                   /* Fotoğraf seç butonu */
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full h-36 rounded-2xl border-2 border-dashed border-white/15 bg-white/3 hover:border-violet-500/40 hover:bg-violet-500/5 transition-all flex flex-col items-center justify-center gap-2 active:scale-[0.98]"
+                    className="w-full h-36 rounded-2xl border-2 border-dashed border-white/15 bg-white/3 hover:border-ta/40 hover:bg-ta/5 transition-all flex flex-col items-center justify-center gap-2 active:scale-[0.98]"
                   >
-                    <div className="w-12 h-12 rounded-2xl bg-violet-500/15 border border-violet-500/25 flex items-center justify-center">
-                      <Camera className="w-6 h-6 text-violet-400" />
+                    <div className="w-12 h-12 rounded-2xl bg-ta/15 border border-ta/25 flex items-center justify-center">
+                      <Camera className="w-6 h-6 text-ta" />
                     </div>
                     <div className="text-center">
                       <p className="text-sm font-semibold text-white/50">Fotoğraf Ekle</p>
@@ -1022,7 +1022,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                     <button key={k.id} onClick={() => setForm(f => ({ ...f, category: k.id as any }))}
                       className={`py-2 rounded-xl text-xs font-semibold border transition-all flex flex-col items-center gap-1 ${
                         form.category === k.id
-                          ? 'border-violet-400/60 bg-violet-500/20 text-violet-200'
+                          ? 'border-ta/60 bg-ta/20 text-ta'
                           : 'border-white/8 bg-white/4 text-white/40'
                       }`}>
                       <span className="text-base">{k.icon}</span>
@@ -1037,7 +1037,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                 <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Marka *</label>
                 <input type="text" value={form.brand} onChange={e => setForm(f => ({ ...f, brand: e.target.value }))}
                   placeholder="Örn: Canon, Sony"
-                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-violet-400/50 placeholder-white/20" />
+                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-ta/50 placeholder-white/20" />
               </div>
 
               {/* Model */}
@@ -1045,7 +1045,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                 <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Model *</label>
                 <input type="text" value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))}
                   placeholder="Örn: EOS R5"
-                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-violet-400/50 placeholder-white/20" />
+                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-ta/50 placeholder-white/20" />
               </div>
 
               {/* Seri No */}
@@ -1053,7 +1053,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                 <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Seri Numarası *</label>
                 <input type="text" value={form.serialNumber} onChange={e => setForm(f => ({ ...f, serialNumber: e.target.value }))}
                   placeholder="Örn: CN1234567"
-                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-violet-400/50 placeholder-white/20 font-mono" />
+                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-ta/50 placeholder-white/20 font-mono" />
               </div>
 
               {/* Durum */}
@@ -1068,7 +1068,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                     <button key={d.id} onClick={() => setForm(f => ({ ...f, status: d.id as any }))}
                       className={`py-2 rounded-xl text-xs font-semibold border transition-all ${
                         form.status === d.id
-                          ? 'border-violet-400/60 bg-violet-500/20 text-violet-200'
+                          ? 'border-ta/60 bg-ta/20 text-ta'
                           : 'border-white/8 bg-white/4 text-white/40'
                       }`}>
                       {d.icon} {d.label}
@@ -1090,7 +1090,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                       onClick={() => setForm(f => ({ ...f, locationType: tip.id, locationId: '' }))}
                       className={`py-2.5 rounded-xl text-xs font-semibold border transition-all flex flex-col items-center gap-1 ${
                         form.locationType === tip.id
-                          ? 'border-violet-400/60 bg-violet-500/20 text-violet-200'
+                          ? 'border-ta/60 bg-ta/20 text-ta'
                           : 'border-white/8 bg-white/4 text-white/40 active:bg-white/8'
                       }`}>
                       <span className="text-base">{tip.icon}</span>
@@ -1112,13 +1112,13 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                           onClick={() => setForm(f => ({ ...f, locationId: m.id }))}
                           className={`w-full px-3 py-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all ${
                             form.locationId === m.id
-                              ? 'border-violet-400/50 bg-violet-500/15'
+                              ? 'border-ta/50 bg-ta/15'
                               : 'border-white/8 bg-white/4 active:bg-white/8'
                           }`}>
                           <span className="text-lg w-7 text-center shrink-0">{m.emoji}</span>
-                          <span className={`text-sm font-semibold ${form.locationId === m.id ? 'text-violet-200' : 'text-white/70'}`}>{m.name}</span>
+                          <span className={`text-sm font-semibold ${form.locationId === m.id ? 'text-ta' : 'text-white/70'}`}>{m.name}</span>
                           {form.locationId === m.id && (
-                            <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-500/30 border border-violet-400/40 text-violet-300">✓</span>
+                            <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-ta/30 border border-ta/40 text-ta">✓</span>
                           )}
                         </button>
                       ))}
@@ -1135,7 +1135,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                   <input type="text" value={form.locationText}
                     onChange={e => setForm(f => ({ ...f, locationText: e.target.value }))}
                     placeholder="Örn: Ofis katı 2, Araç, Kiralık depo..."
-                    className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-violet-400/50 placeholder-white/20" />
+                    className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-ta/50 placeholder-white/20" />
                 )}
               </div>
 
@@ -1146,11 +1146,11 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                   <button
                     onClick={() => setForm(f => ({ ...f, flashId: '' }))}
                     className={`w-full px-3 py-2.5 rounded-xl border text-left flex items-center gap-2.5 mb-1.5 transition-all ${
-                      form.flashId === '' ? 'border-violet-400/50 bg-violet-500/15' : 'border-white/8 bg-white/4 active:bg-white/8'
+                      form.flashId === '' ? 'border-ta/50 bg-ta/15' : 'border-white/8 bg-white/4 active:bg-white/8'
                     }`}>
                     <span className="text-lg w-7 text-center shrink-0">🚫</span>
-                    <span className={`text-sm font-semibold ${form.flashId === '' ? 'text-violet-200' : 'text-white/50'}`}>Flash yok</span>
-                    {form.flashId === '' && <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-500/30 border border-violet-400/40 text-violet-300">✓</span>}
+                    <span className={`text-sm font-semibold ${form.flashId === '' ? 'text-ta' : 'text-white/50'}`}>Flash yok</span>
+                    {form.flashId === '' && <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-ta/30 border border-ta/40 text-ta">✓</span>}
                   </button>
                   {secilebilirFlashlar.length === 0 ? (
                     <div className="rounded-xl bg-white/4 border border-white/8 px-3 py-2.5 flex items-center gap-2">
@@ -1270,7 +1270,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                 <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Not (opsiyonel)</label>
                 <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                   placeholder="Örn: Kağıt sıkışması, bakım gerekiyor"
-                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-violet-400/50 placeholder-white/20" />
+                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-ta/50 placeholder-white/20" />
               </div>
 
               {/* Malzeme Geçmişi */}
@@ -1282,7 +1282,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                     <span className="text-base">📋</span>
                     <span className="text-[11px] font-semibold text-white/60 uppercase tracking-wider">Malzeme Geçmişi</span>
                     {gecmisForm.length > 0 && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-violet-500/25 border border-violet-400/30 text-violet-300">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-ta/25 border border-ta/30 text-ta">
                         {gecmisForm.length}
                       </span>
                     )}
@@ -1299,12 +1299,12 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                         {[...gecmisForm].reverse().map((kayit, idx) => (
                           <div key={kayit.id} className="flex gap-3 items-start group">
                             <div className="flex flex-col items-center shrink-0 pt-0.5">
-                              <div className="w-2 h-2 rounded-full bg-violet-400/60 shrink-0" />
+                              <div className="w-2 h-2 rounded-full bg-ta/60 shrink-0" />
                               {idx < gecmisForm.length - 1 && <div className="w-px flex-1 bg-white/8 mt-1 min-h-[16px]" />}
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-0.5">
-                                <span className="text-[10px] font-bold text-violet-300/80 bg-violet-500/12 border border-violet-500/20 px-1.5 py-0.5 rounded">
+                                <span className="text-[10px] font-bold text-ta/80 bg-ta/12 border border-ta/20 px-1.5 py-0.5 rounded">
                                   {new Date(kayit.tarih).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' })}
                                 </span>
                               </div>
@@ -1320,18 +1320,18 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                         ))}
                       </div>
                     )}
-                    <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-3 space-y-2">
-                      <p className="text-[10px] font-semibold text-violet-300/70 uppercase tracking-wider">➕ Yeni Kayıt</p>
+                    <div className="rounded-xl border border-ta/20 bg-ta/5 p-3 space-y-2">
+                      <p className="text-[10px] font-semibold text-ta/70 uppercase tracking-wider">➕ Yeni Kayıt</p>
                       <input
                         type="date" value={yeniTarih} onChange={e => setYeniTarih(e.target.value)}
-                        className="w-full h-9 rounded-xl bg-black/30 border border-white/12 text-white text-xs px-3 outline-none focus:border-violet-400/50"
+                        className="w-full h-9 rounded-xl bg-black/30 border border-white/12 text-white text-xs px-3 outline-none focus:border-ta/50"
                         style={{ colorScheme: 'dark' }}
                       />
                       <textarea
                         value={yeniNot} onChange={e => setYeniNot(e.target.value)}
                         placeholder="Örn: Tamire gönderildi, objektif değiştirildi..."
                         rows={2}
-                        className="w-full rounded-xl bg-black/30 border border-white/12 text-white text-xs px-3 py-2 outline-none focus:border-violet-400/50 placeholder-white/20 resize-none"
+                        className="w-full rounded-xl bg-black/30 border border-white/12 text-white text-xs px-3 py-2 outline-none focus:border-ta/50 placeholder-white/20 resize-none"
                       />
                       <button
                         onClick={() => {
@@ -1341,7 +1341,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                           setYeniTarih(new Date().toISOString().split('T')[0]);
                         }}
                         disabled={!yeniNot.trim()}
-                        className="w-full h-9 rounded-xl bg-violet-500/25 border border-violet-500/35 text-violet-200 text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-30 active:scale-95 transition-all">
+                        className="w-full h-9 rounded-xl bg-ta/25 border border-ta/35 text-ta text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-30 active:scale-95 transition-all">
                         <Plus className="w-3.5 h-3.5" />Kayıt Ekle
                       </button>
                     </div>
@@ -1357,7 +1357,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
               )}
 
               <button onClick={kaydet} disabled={kayitYukleniyor || fotoYukleniyor}
-                className="w-full h-12 rounded-xl bg-gradient-to-r from-violet-500/80 to-purple-500/80 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40">
+                className="w-full h-12 rounded-xl bg-gradient-to-r from-ta/80 to-ta/80 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40">
                 {(kayitYukleniyor || fotoYukleniyor)
                   ? <><Loader2 className="w-4 h-4 animate-spin" />{fotoYukleniyor ? 'Fotoğraf yükleniyor...' : 'Kaydediliyor...'}</>
                   : <><Save className="w-4 h-4" />{duzenleHedef ? 'Güncelle' : 'Ekipman Ekle'}</>
@@ -1393,19 +1393,19 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                     <p className="text-sm font-semibold text-white">Genel Havuz</p>
                     <p className="text-[10px] text-white/30">Zimmeti kaldır</p>
                   </div>
-                  {!zimmetHedef.assignedTo && <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-md bg-violet-500/20 border border-violet-500/30 text-violet-300">Mevcut</span>}
+                  {!zimmetHedef.assignedTo && <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-md bg-ta/20 border border-ta/30 text-ta">Mevcut</span>}
                 </div>
               </button>
               {kullanicilar.map(k => (
                 <button key={k.id} onClick={() => zimmetAta(k)}
                   className="w-full px-4 py-3 rounded-xl border border-white/8 bg-white/4 text-left active:bg-white/8 transition-colors">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-base">👤</div>
+                    <div className="w-9 h-9 rounded-full bg-ta/20 border border-ta/30 flex items-center justify-center text-base">👤</div>
                     <div>
                       <p className="text-sm font-semibold text-white">{k.ad}</p>
                       <p className="text-[10px] text-white/30">{k.rol}</p>
                     </div>
-                    {zimmetHedef.assignedTo === k.ad && <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-md bg-violet-500/20 border border-violet-500/30 text-violet-300">Mevcut</span>}
+                    {zimmetHedef.assignedTo === k.ad && <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-md bg-ta/20 border border-ta/30 text-ta">Mevcut</span>}
                   </div>
                 </button>
               ))}

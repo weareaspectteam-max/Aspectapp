@@ -54,7 +54,7 @@ export function OzetKart({
           </div>
         </div>
         <div className="text-right flex-shrink-0" style={{ paddingRight: canDelete ? 30 : 0 }}>
-          <p className="text-[18px] font-black leading-tight" style={{ color: '#a78bfa' }}>
+          <p className="text-[18px] font-black leading-tight" style={{ color: 'var(--app-accent, #a855f7)' }}>
             {tl(v.toplamCiro)}
           </p>
         </div>

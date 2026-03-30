@@ -44,7 +44,7 @@ const glass: React.CSSProperties = {
   borderRadius:         20,
 };
 
-const VIOLET  = '#a855f7';
+const VIOLET  = 'var(--app-accent, #a855f7)';
 const CYAN    = '#9dd9ea';
 const PEACH   = '#ffd4a3';
 const LAVEND  = '#d4b5f7';
@@ -52,7 +52,7 @@ const LBLUE   = '#a7c7e7';
 const EMERALD = '#34d399';
 
 const roleConfig = {
-  yonetici:   { label: 'Yönetici',  emoji: '👑', color: '#a855f7', accent: 'rgba(168,85,247,0.18)',  border: 'rgba(168,85,247,0.40)',  glow: 'rgba(168,85,247,0.12)', headerBg: 'linear-gradient(135deg,rgba(168,85,247,0.25),rgba(139,92,246,0.12))' },
+  yonetici:   { label: 'Yönetici',  emoji: '👑', color: 'var(--app-accent, #a855f7)', accent: 'rgba(var(--app-accent-rgb),0.18)',  border: 'rgba(var(--app-accent-rgb),0.40)',  glow: 'rgba(var(--app-accent-rgb),0.12)', headerBg: 'linear-gradient(135deg,rgba(var(--app-accent-rgb),0.25),rgba(var(--app-accent-rgb),0.12))' },
   'ust-mudur':{ label: 'Üst Müdür', emoji: '🏢', color: '#e879f9', accent: 'rgba(232,121,249,0.15)', border: 'rgba(232,121,249,0.35)', glow: 'rgba(232,121,249,0.10)', headerBg: 'linear-gradient(135deg,rgba(232,121,249,0.20),rgba(192,132,252,0.10))' },
   mudur:      { label: 'Müdür',     emoji: '💼', color: '#60a5fa', accent: 'rgba(96,165,250,0.15)',  border: 'rgba(96,165,250,0.35)',  glow: 'rgba(96,165,250,0.10)',  headerBg: 'linear-gradient(135deg,rgba(96,165,250,0.20),rgba(59,130,246,0.10))' },
   operasyon:  { label: 'Operasyon', emoji: '⚡', color: '#fb923c', accent: 'rgba(251,146,60,0.15)',  border: 'rgba(251,146,60,0.35)',  glow: 'rgba(251,146,60,0.10)',  headerBg: 'linear-gradient(135deg,rgba(251,146,60,0.20),rgba(234,88,12,0.10))' },
@@ -335,7 +335,7 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
               <motion.button
                 whileTap={{ scale: 0.9 }}
                 onClick={() => onNavigate('resource-management')}
-                style={{ ...glass, padding: 10, borderRadius: 14, border: '1px solid rgba(168,85,247,0.25)' }}
+                style={{ ...glass, padding: 10, borderRadius: 14, border: '1px solid rgba(var(--app-accent-rgb),0.25)' }}
               >
                 <ArrowLeft className="w-4 h-4" style={{ color: VIOLET }} />
               </motion.button>
@@ -344,7 +344,7 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
                   <h1 className="text-2xl font-black text-white">Kullanıcı Yönetimi</h1>
                   <span className="text-xl">👥</span>
                 </div>
-                <p className="text-xs" style={{ color: 'rgba(196,181,253,0.5)' }}>
+                <p className="text-xs" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>
                   Personel ve yöneticileri yönetin
                 </p>
               </div>
@@ -374,10 +374,10 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
         {/* ── Loading ── */}
         {loading && (
           <div className="flex flex-col items-center gap-3 py-16">
-            <div style={{ ...glass, padding: 18, borderRadius: 18, border: `1px solid rgba(168,85,247,0.25)` }}>
+            <div style={{ ...glass, padding: 18, borderRadius: 18, border: `1px solid rgba(var(--app-accent-rgb),0.25)` }}>
               <RefreshCw className="w-6 h-6 animate-spin" style={{ color: VIOLET }} />
             </div>
-            <p className="text-xs" style={{ color: 'rgba(196,181,253,0.5)' }}>Kullanıcılar yükleniyor...</p>
+            <p className="text-xs" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>Kullanıcılar yükleniyor...</p>
           </div>
         )}
 
@@ -545,8 +545,8 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
                                           onClick={() => setEditingUserId(isEditing ? null : user.id)}
                                           style={{
                                             width: 30, height: 30, borderRadius: 8, cursor: 'pointer',
-                                            background: isEditing ? 'rgba(255,255,255,0.07)' : 'rgba(168,85,247,0.15)',
-                                            border: isEditing ? '1px solid rgba(255,255,255,0.12)' : `1px solid rgba(168,85,247,0.35)`,
+                                            background: isEditing ? 'rgba(255,255,255,0.07)' : 'rgba(var(--app-accent-rgb),0.15)',
+                                            border: isEditing ? '1px solid rgba(255,255,255,0.12)' : `1px solid rgba(var(--app-accent-rgb),0.35)`,
                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                                           }}>
                                           {isEditing
@@ -576,8 +576,8 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
                                       initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
                                       exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}
                                     >
-                                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(168,85,247,0.15)' }}>
-                                        <p style={{ fontSize: 9, color: 'rgba(196,181,253,0.5)', marginBottom: 8, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(var(--app-accent-rgb),0.15)' }}>
+                                        <p style={{ fontSize: 9, color: 'rgba(var(--app-accent-rgb),0.5)', marginBottom: 8, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
                                           Rol Ata
                                         </p>
                                         <div className="grid grid-cols-3 gap-1.5">
@@ -756,7 +756,7 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
                       </div>
                       {currentUserRole !== 'operasyon' && canEdit && (
                         <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,212,163,0.15)' }}>
-                          <p style={{ fontSize: 9, color: 'rgba(196,181,253,0.5)', marginBottom: 8, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Rol Ata</p>
+                          <p style={{ fontSize: 9, color: 'rgba(var(--app-accent-rgb),0.5)', marginBottom: 8, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Rol Ata</p>
                           <div className="grid grid-cols-3 gap-1.5 mb-2">
                             {getAssignableRoles().filter(r => r !== 'bekleyen').map(ar => {
                               const ac = roleConfig[ar];
@@ -802,7 +802,7 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
                       <motion.button key={fb.key} whileTap={{ scale: 0.95 }} onClick={() => setStaffListFilter(fb.key)}
                         style={{
                           padding: '6px 12px', borderRadius: 10, cursor: 'pointer', fontSize: 11, fontWeight: 600,
-                          background: isActive ? 'rgba(168,85,247,0.18)' : 'rgba(255,255,255,0.05)',
+                          background: isActive ? 'rgba(var(--app-accent-rgb),0.18)' : 'rgba(255,255,255,0.05)',
                           border: isActive ? `1px solid ${VIOLET}55` : '1px solid rgba(255,255,255,0.08)',
                           color: isActive ? LAVEND : 'rgba(255,255,255,0.4)',
                           whiteSpace: 'nowrap',
@@ -875,18 +875,18 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
             {/* ── Yetki Bilgi Kartı ── */}
             {currentUserRole === 'yonetici' && (
             <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-              style={{ ...glass, padding: 16, border: '1px solid rgba(168,85,247,0.20)', background: 'rgba(168,85,247,0.06)' }}
+              style={{ ...glass, padding: 16, border: '1px solid rgba(var(--app-accent-rgb),0.20)', background: 'rgba(var(--app-accent-rgb),0.06)' }}
             >
               <div className="flex gap-3 items-start">
                 <div style={{
                   width: 38, height: 38, borderRadius: 10, flexShrink: 0, fontSize: 18,
-                  background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.30)',
+                  background: 'rgba(var(--app-accent-rgb),0.15)', border: '1px solid rgba(var(--app-accent-rgb),0.30)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>🛡️</div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
                     <p className="font-bold text-white" style={{ fontSize: 13 }}>Yetki Sistemi</p>
-                    <span style={{ fontSize: 9, fontWeight: 700, color: VIOLET, background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.30)', borderRadius: 6, padding: '2px 6px', letterSpacing: '0.06em' }}>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: VIOLET, background: 'rgba(var(--app-accent-rgb),0.15)', border: '1px solid rgba(var(--app-accent-rgb),0.30)', borderRadius: 6, padding: '2px 6px', letterSpacing: '0.06em' }}>
                       SADECE YÖNETİCİ
                     </span>
                   </div>

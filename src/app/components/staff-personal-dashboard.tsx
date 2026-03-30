@@ -321,7 +321,7 @@ export function StaffPersonalDashboard({
     skor >= 90 ? { text: 'Mükemmel', emoji: '🏆', color: '#ffd4a3' } :
     skor >= 75 ? { text: 'Harika',   emoji: '⭐', color: '#9dd9ea' } :
     skor >= 60 ? { text: 'İyi',      emoji: '👍', color: '#a8e6cf' } :
-                 { text: 'Gelişiyor', emoji: '📈', color: '#c084fc' };
+                 { text: 'Gelişiyor', emoji: '📈', color: 'var(--app-accent, #a855f7)' };
 
   /* ── Duyuru rengi ── */
   const annColor =
@@ -339,7 +339,7 @@ export function StaffPersonalDashboard({
       {/* Arka plan glow blob'ları */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -top-32 -left-32 w-80 h-80 rounded-full blur-3xl"
-          style={{ background: 'rgba(168,85,247,0.10)' }} />
+          style={{ background: 'rgba(var(--app-accent-rgb),0.10)' }} />
         <div className="absolute top-1/3 -right-24 w-64 h-64 rounded-full blur-3xl"
           style={{ background: 'rgba(157,217,234,0.08)' }} />
         <div className="absolute bottom-1/4 left-1/4 w-56 h-56 rounded-full blur-3xl"
@@ -359,7 +359,7 @@ export function StaffPersonalDashboard({
           {/* İç parıltı */}
           <div style={{
             position: 'absolute', inset: 0, pointerEvents: 'none',
-            background: 'linear-gradient(135deg,rgba(167,139,250,0.10),transparent,rgba(157,217,234,0.08))',
+            background: 'linear-gradient(135deg,rgba(var(--app-accent-rgb),0.10),transparent,rgba(157,217,234,0.08))',
           }} />
           {/* Üst ince çizgi */}
           <div style={{
@@ -373,10 +373,10 @@ export function StaffPersonalDashboard({
               <div style={{ position: 'relative', flexShrink: 0 }}>
                 <div style={{
                   width: 56, height: 56, borderRadius: 16,
-                  background: 'linear-gradient(135deg,#7c3aed,#22d3ee)',
+                  background: 'linear-gradient(135deg,var(--app-accent, #a855f7),#22d3ee)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: 24,
-                  boxShadow: '0 8px 24px rgba(124,58,237,0.30)',
+                  boxShadow: '0 8px 24px rgba(var(--app-accent-rgb),0.30)',
                   border: '1px solid rgba(255,255,255,0.20)',
                 }}>😊</div>
                 <div style={{
@@ -525,7 +525,7 @@ export function StaffPersonalDashboard({
         }}>
           <div style={{
             position: 'absolute', inset: 0, pointerEvents: 'none',
-            background: 'linear-gradient(135deg,rgba(192,132,252,0.08),transparent,rgba(167,139,250,0.08))',
+            background: 'linear-gradient(135deg,rgba(192,132,252,0.08),transparent,rgba(var(--app-accent-rgb),0.08))',
           }} />
           <div style={{
             position: 'absolute', top: 0, left: 32, right: 32, height: 1,
@@ -537,12 +537,12 @@ export function StaffPersonalDashboard({
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
               <div style={{
                 width: 40, height: 40, borderRadius: 12,
-                background: 'linear-gradient(135deg,rgba(167,139,250,0.40),rgba(192,132,252,0.30))',
-                border: '1px solid rgba(167,139,250,0.30)',
+                background: 'linear-gradient(135deg,rgba(var(--app-accent-rgb),0.40),rgba(192,132,252,0.30))',
+                border: '1px solid rgba(var(--app-accent-rgb),0.30)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: '0 4px 16px rgba(167,139,250,0.20)',
+                boxShadow: '0 4px 16px rgba(var(--app-accent-rgb),0.20)',
               }}>
-                <Award style={{ width: 20, height: 20, color: '#c084fc' }} />
+                <Award style={{ width: 20, height: 20, color: 'var(--app-accent, #a855f7)' }} />
               </div>
               <div style={{ flex: 1 }}>
                 <h2 style={{ fontSize: 14, fontWeight: 900, color: 'white', margin: 0 }}>Aylık Performans</h2>
@@ -567,7 +567,7 @@ export function StaffPersonalDashboard({
             {/* ── İçerik: Yükleniyor ── */}
             {perfLoading && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '28px 0', gap: 12 }}>
-                <Loader2 style={{ width: 32, height: 32, color: '#a78bfa', animation: 'spin 1s linear infinite' }} />
+                <Loader2 style={{ width: 32, height: 32, color: 'var(--app-accent, #a855f7)', animation: 'spin 1s linear infinite' }} />
                 <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)' }}>Performans yükleniyor…</span>
                 {/* Skeleton barlar */}
                 <div style={{ width: '100%', marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -603,7 +603,7 @@ export function StaffPersonalDashboard({
                   >
                     <defs>
                       <linearGradient id="perfGradStaff" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%"   stopColor="#a78bfa" />
+                        <stop offset="0%"   stopColor="var(--app-accent, #a855f7)" />
                         <stop offset="50%"  stopColor="#9dd9ea" />
                         <stop offset="100%" stopColor="#a8e6cf" />
                       </linearGradient>
@@ -716,7 +716,7 @@ export function StaffPersonalDashboard({
                                 {mo.isCurrent && (
                                   <span style={{
                                     marginLeft: 4, fontSize: 8,
-                                    color: '#a78bfa', fontWeight: 900,
+                                    color: 'var(--app-accent, #a855f7)', fontWeight: 900,
                                   }}>● bu ay</span>
                                 )}
                               </div>
@@ -766,8 +766,8 @@ export function StaffPersonalDashboard({
                               dataKey="rankVal"
                               stroke="url(#trendLineGrad)"
                               strokeWidth={2.5}
-                              dot={{ r: 4, fill: '#1a0a3c', stroke: '#a78bfa', strokeWidth: 2 }}
-                              activeDot={{ r: 5, fill: '#a78bfa', stroke: 'white', strokeWidth: 1.5 }}
+                              dot={{ r: 4, fill: '#1a0a3c', stroke: 'var(--app-accent, #a855f7)', strokeWidth: 2 }}
+                              activeDot={{ r: 5, fill: 'var(--app-accent, #a855f7)', stroke: 'white', strokeWidth: 1.5 }}
                               connectNulls={false}
                             />
                           </LineChart>
@@ -931,7 +931,7 @@ export function StaffPersonalDashboard({
           }}>
             <span style={{
               width: 4, height: 16, borderRadius: 9999,
-              background: 'linear-gradient(to bottom,#a78bfa,#9dd9ea)',
+              background: 'linear-gradient(to bottom,var(--app-accent, #a855f7),#9dd9ea)',
               display: 'inline-block',
             }} />
             Hızlı Erişim

@@ -252,22 +252,22 @@ export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, acce
         return {
           bg: d.leaveType === 'annual' ? 'bg-blue-500/25' : d.leaveType === 'sick' ? 'bg-red-500/25' : 'bg-amber-500/25',
           text: d.leaveType === 'annual' ? 'text-blue-200' : d.leaveType === 'sick' ? 'text-red-200' : 'text-amber-200',
-          border: isToday ? 'ring-2 ring-violet-400' : d.leaveType === 'annual' ? 'border border-blue-500/30' : d.leaveType === 'sick' ? 'border border-red-500/30' : 'border border-amber-500/30',
+          border: isToday ? 'ring-2 ring-ta' : d.leaveType === 'annual' ? 'border border-blue-500/30' : d.leaveType === 'sick' ? 'border border-red-500/30' : 'border border-amber-500/30',
           dot: d.leaveType === 'annual' ? 'bg-blue-400' : d.leaveType === 'sick' ? 'bg-red-400' : 'bg-amber-400',
         };
       case 'daily_leave':
-        return { bg: 'bg-teal-500/20', text: 'text-teal-200', border: isToday ? 'ring-2 ring-violet-400' : 'border border-teal-500/30', dot: 'bg-teal-400' };
+        return { bg: 'bg-teal-500/20', text: 'text-teal-200', border: isToday ? 'ring-2 ring-ta' : 'border border-teal-500/30', dot: 'bg-teal-400' };
       case 'status_leave':
-        return { bg: 'bg-amber-500/20', text: 'text-amber-200', border: isToday ? 'ring-2 ring-violet-400' : 'border border-amber-500/30', dot: 'bg-amber-400' };
+        return { bg: 'bg-amber-500/20', text: 'text-amber-200', border: isToday ? 'ring-2 ring-ta' : 'border border-amber-500/30', dot: 'bg-amber-400' };
       case 'pending':
-        return { bg: 'bg-amber-500/12', text: 'text-amber-300/70', border: isToday ? 'ring-2 ring-violet-400' : 'border border-amber-500/20 border-dashed', dot: 'bg-amber-400/60' };
+        return { bg: 'bg-amber-500/12', text: 'text-amber-300/70', border: isToday ? 'ring-2 ring-ta' : 'border border-amber-500/20 border-dashed', dot: 'bg-amber-400/60' };
       case 'future':
         return { bg: 'bg-transparent', text: 'text-white/20', border: 'border border-white/5' };
       default: // work
         return {
-          bg: isToday ? 'bg-violet-500/20' : 'bg-white/5',
-          text: isToday ? 'text-violet-200' : 'text-white/60',
-          border: isToday ? 'ring-2 ring-violet-400' : 'border border-white/8',
+          bg: isToday ? 'bg-ta/20' : 'bg-white/5',
+          text: isToday ? 'text-ta' : 'text-white/60',
+          border: isToday ? 'ring-2 ring-ta' : 'border border-white/8',
         };
     }
   }
@@ -328,7 +328,7 @@ export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, acce
               {TR_MONTHS[viewMonth]} {viewYear}
             </p>
             {isCurrentMonth && (
-              <span className="text-[9px] text-violet-400/70 font-semibold uppercase tracking-widest">Bu Ay</span>
+              <span className="text-[9px] text-ta/70 font-semibold uppercase tracking-widest">Bu Ay</span>
             )}
             {isPrevMonth && (
               <span className="text-[9px] text-white/30 font-semibold uppercase tracking-widest">Geçen Ay</span>
@@ -349,7 +349,7 @@ export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, acce
         {!loading && (
           <div className="grid grid-cols-3 gap-2">
             {[
-              { label: 'Çalışma', value: stats.work, color: 'text-violet-300', bg: 'bg-violet-500/10', border: 'border-violet-500/20' },
+              { label: 'Çalışma', value: stats.work, color: 'text-ta', bg: 'bg-ta/10', border: 'border-ta/20' },
               { label: 'İzin', value: stats.approved, color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
               { label: 'Bekleyen', value: stats.pending, color: stats.pending > 0 ? 'text-amber-300' : 'text-white/25', bg: stats.pending > 0 ? 'bg-amber-500/10' : 'bg-white/5', border: stats.pending > 0 ? 'border-amber-500/20' : 'border-white/8' },
             ].map(item => (
@@ -364,7 +364,7 @@ export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, acce
         {/* ── Takvim ── */}
         {loading ? (
           <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-6 h-6 text-violet-400 animate-spin" />
+            <Loader2 className="w-6 h-6 text-ta animate-spin" />
           </div>
         ) : monthData ? (
           <AnimatePresence mode="wait">
@@ -429,7 +429,7 @@ export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, acce
                 { color: 'bg-teal-500/60',    label: 'Günlük İzin' },
                 { color: 'bg-amber-400/30 border border-amber-500/30 border-dashed', label: 'Bekliyor' },
                 { color: 'bg-white/10',       label: 'Çalışma Günü' },
-                { color: 'bg-violet-500/25 ring-2 ring-violet-400', label: 'Bugün' },
+                { color: 'bg-ta/25 ring-2 ring-ta', label: 'Bugün' },
               ].map(item => (
                 <div key={item.label} className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-md flex-shrink-0 ${item.color}`} />

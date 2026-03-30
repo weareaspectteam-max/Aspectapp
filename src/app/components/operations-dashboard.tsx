@@ -31,7 +31,7 @@ const glass = {
 const COLORS = {
   orange:  '#fb923c',
   emerald: '#34d399',
-  violet:  '#a855f7',
+  violet:  'var(--app-accent, #a855f7)',
   blue:    '#60a5fa',
   pink:    '#f472b6',
   yellow:  '#fbbf24',

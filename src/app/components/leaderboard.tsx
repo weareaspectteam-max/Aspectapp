@@ -21,7 +21,7 @@ const C = {
   silver:  '#d6e0ec',
   bronze:  '#ffcba4',
   green:   '#a8e6cf',
-  purple:  '#c084fc',
+  purple:  '#a855f7',
 };
 
 const glassCard: React.CSSProperties = {
@@ -272,7 +272,7 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
     >
       {/* ── Arka plan glow blob'ları ── */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -top-40 -left-20 w-96 h-96 rounded-full blur-3xl" style={{ background: 'rgba(168,85,247,0.08)' }} />
+        <div className="absolute -top-40 -left-20 w-96 h-96 rounded-full blur-3xl" style={{ background: 'rgba(var(--app-accent-rgb),0.08)' }} />
         <div className="absolute top-1/2 -right-32 w-80 h-80 rounded-full blur-3xl" style={{ background: 'rgba(157,217,234,0.06)' }} />
         <div className="absolute bottom-1/3 left-1/3 w-64 h-64 rounded-full blur-3xl" style={{ background: 'rgba(192,132,252,0.05)' }} />
         {/* Büyük Trophy silüeti — çok hafif */}
@@ -327,7 +327,7 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
               onClick={() => setPeriod(p)}
               className="flex-shrink-0 px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all active:scale-95"
               style={period === p
-                ? { background: `linear-gradient(135deg, ${C.violet}, #7c3aed)`, color: '#fff', boxShadow: `0 4px 16px ${C.violet}40` }
+                ? { background: `linear-gradient(135deg, ${C.violet}, var(--app-accent, #a855f7))`, color: '#fff', boxShadow: `0 4px 16px ${C.violet}40` }
                 : { background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.08)' }
               }
             >

@@ -29,7 +29,7 @@ interface KotaKademe {
 
 const KADEMELER: KotaKademe[] = [
   { hedef: 10_000, label: '1. Kademe', primTek: 500,   primCoklu: 300,  color: '#60a5fa', glow: 'rgba(96,165,250,',  emoji: '🥉' },
-  { hedef: 20_000, label: '2. Kademe', primTek: 1_000, primCoklu: 600,  color: '#a855f7', glow: 'rgba(168,85,247,',  emoji: '🥈' },
+  { hedef: 20_000, label: '2. Kademe', primTek: 1_000, primCoklu: 600,  color: 'var(--app-accent, #a855f7)', glow: 'rgba(var(--app-accent-rgb),',  emoji: '🥈' },
   { hedef: 30_000, label: '3. Kademe', primTek: 2_000, primCoklu: 1_200, color: '#fbbf24', glow: 'rgba(251,191,36,', emoji: '🥇' },
 ];
 
@@ -50,7 +50,7 @@ function MultiTierBar({ ciro, compact = false }: { ciro: number; compact?: boole
   // Mevcut aktif kademe rengi (hangi bölgedeyiz)
   const aktifKademe = [...kademeDurumlari].reverse().find(k => ciro >= k.hedef * 0.5);
   const barColor = ciro >= MAX_KOTA ? '#fbbf24'
-    : ciro >= KADEMELER[1].hedef * 0.5 ? '#a855f7'
+    : ciro >= KADEMELER[1].hedef * 0.5 ? 'var(--app-accent, #a855f7)'
     : ciro >= KADEMELER[0].hedef * 0.5 ? '#60a5fa'
     : '#f87171';
 
@@ -105,9 +105,9 @@ function MultiTierBar({ ciro, compact = false }: { ciro: number; compact?: boole
               height: '100%',
               borderRadius: 99,
               background: ciro >= MAX_KOTA
-                ? 'linear-gradient(90deg, #60a5fa, #a855f7, #fbbf24)'
+                ? 'linear-gradient(90deg, #60a5fa, var(--app-accent, #a855f7), #fbbf24)'
                 : ciro >= KADEMELER[1].hedef
-                ? 'linear-gradient(90deg, #60a5fa, #a855f7)'
+                ? 'linear-gradient(90deg, #60a5fa, var(--app-accent, #a855f7))'
                 : barColor,
               boxShadow: `0 0 10px ${barColor}80`,
               transition: 'background 0.5s ease, box-shadow 0.5s ease',
@@ -368,7 +368,7 @@ export function KotaProgressDemo({ onBack }: KotaProgressDemoProps) {
           </button>
           <div>
             <h1 className="text-xl font-black text-white">Çok Kademeli Kota</h1>
-            <p className="text-xs" style={{ color: 'rgba(196,181,253,0.5)' }}>Slider ile kademeleri geç ve görüntüle</p>
+            <p className="text-xs" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>Slider ile kademeleri geç ve görüntüle</p>
           </div>
         </motion.div>
 
@@ -456,9 +456,9 @@ export function KotaProgressDemo({ onBack }: KotaProgressDemoProps) {
                   onClick={() => setPersonelSayisi(n)}
                   style={{
                     flex: 1, padding: '7px 0', borderRadius: 10, fontSize: 12, fontWeight: 800,
-                    background: personelSayisi === n ? 'rgba(168,85,247,0.25)' : 'rgba(255,255,255,0.05)',
-                    border: personelSayisi === n ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.1)',
-                    color: personelSayisi === n ? '#c4b5fd' : 'rgba(255,255,255,0.4)',
+                    background: personelSayisi === n ? 'rgba(var(--app-accent-rgb),0.25)' : 'rgba(255,255,255,0.05)',
+                    border: personelSayisi === n ? '1px solid rgba(var(--app-accent-rgb),0.5)' : '1px solid rgba(255,255,255,0.1)',
+                    color: personelSayisi === n ? 'var(--app-accent, #a855f7)' : 'rgba(255,255,255,0.4)',
                     transition: 'all 0.2s ease',
                   }}
                 >

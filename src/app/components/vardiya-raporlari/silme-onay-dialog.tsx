@@ -54,7 +54,7 @@ export function SilmeOnayDialog({
               {formatTarih(v.tarih)} · {v.acilisSaat}–{v.kapanisSaat}
             </p>
           </div>
-          <span style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa' }}>{tl(v.toplamCiro)}</span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--app-accent, #a855f7)' }}>{tl(v.toplamCiro)}</span>
         </div>
 
         {/* Uyarı metni */}

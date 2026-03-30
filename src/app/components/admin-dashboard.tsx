@@ -72,7 +72,7 @@ const glass: React.CSSProperties = {
 };
 
 const COLORS = {
-  violet:  '#a855f7',
+  violet:  'var(--app-accent, #a855f7)',
   emerald: '#34d399',
   orange:  '#fb923c',
   blue:    '#60a5fa',
@@ -92,7 +92,7 @@ const QUICK_ACTIONS = [
   { label: 'Satış İstatistik', icon: BarChart2,     color: '#9dd9ea', tab: 'satis-raporu'         },
   { label: 'Anomali İstatistik', icon: AlertTriangle, color: '#f87171', tab: 'anomali-panosu'       },
   { label: 'Vardiya İstatistik', icon: Clock,         color: '#a8e6cf', tab: 'vardiya-istatistikleri' },
-  { label: 'İndirim İstatistik', icon: Star,          color: '#c4b5fd', tab: 'indirim-istatistik'   },
+  { label: 'İndirim İstatistik', icon: Star,          color: 'var(--app-accent, #a855f7)', tab: 'indirim-istatistik'   },
   { label: 'Yön. Raporları',     icon: TrendingUp,    color: '#fb923c', tab: 'manager-reports'      },
   { label: 'Hakediş Takip',      icon: Trophy,        color: '#fbbf24', tab: 'prim-takip'           },
 ];
@@ -156,7 +156,7 @@ function SaatlikChart({ data }: { data: ChartPoint[] }) {
             y={toYadet(tick) + 3}
             textAnchor="end"
             fontSize={8}
-            fill="rgba(167,139,250,0.7)"
+            fill="rgba(var(--app-accent-rgb),0.7)"
           >{tick}</text>
         ))}
 
@@ -169,8 +169,8 @@ function SaatlikChart({ data }: { data: ChartPoint[] }) {
             <rect
               key={`va${i}`}
               x={x} y={y} width={bW} height={bh}
-              fill="rgba(168,85,247,0.5)"
-              stroke="rgba(168,85,247,0.85)"
+              fill="rgba(var(--app-accent-rgb),0.5)"
+              stroke="rgba(var(--app-accent-rgb),0.85)"
               strokeWidth={0.5}
               rx={2}
               style={{ cursor: 'pointer' }}
@@ -248,7 +248,7 @@ function SaatlikChart({ data }: { data: ChartPoint[] }) {
             {tooltipItem.saat}
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#a855f7' }} />
+            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--app-accent, #a855f7)' }} />
             <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10 }}>Satış:</span>
             <span style={{ color: 'white', fontSize: 10, fontWeight: 700 }}>{tooltipItem.adet}</span>
           </div>
@@ -361,7 +361,7 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
                 <h1 className="text-2xl font-black text-white">Genel Durum</h1>
                 <span className="text-xl">📊</span>
               </div>
-              <p className="text-xs font-medium" style={{ color: 'rgba(196,181,253,0.5)' }}>
+              <p className="text-xs font-medium" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>
                 {userName} · {roleLabel} · {new Date().toLocaleDateString('tr-TR')}
               </p>
             </div>
@@ -421,9 +421,9 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
           </button>
 
           {/* Fotoğraf Karesi */}
-          <div style={{ ...glass, padding: 16, border: '1px solid rgba(196,181,253,0.25)', boxShadow: '0 4px 24px rgba(196,181,253,0.08)' }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(196,181,253,0.15)', border: '1px solid rgba(196,181,253,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-              <Camera className="w-5 h-5" style={{ color: '#c4b5fd' }} />
+          <div style={{ ...glass, padding: 16, border: '1px solid rgba(var(--app-accent-rgb),0.25)', boxShadow: '0 4px 24px rgba(var(--app-accent-rgb),0.08)' }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(var(--app-accent-rgb),0.15)', border: '1px solid rgba(var(--app-accent-rgb),0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+              <Camera className="w-5 h-5" style={{ color: 'var(--app-accent, #a855f7)' }} />
             </div>
             <p className="text-xs font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Fotoğraf Karesi</p>
             {isLoading ? <div className="h-6 w-16 rounded-lg bg-white/10 animate-pulse" />
@@ -561,7 +561,7 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
                       const sorted = [...mekan.kotaKademeleri].sort((a, b) => Number(a.hedef) - Number(b.hedef));
                       const idx = [...sorted].map((k, i) => ({ k, i })).reverse().find(({ k }) => mekan.ciro >= k.hedef)?.i;
                       if (idx === undefined) return null;
-                      const colors = ['#60a5fa', '#a855f7', '#fbbf24'];
+                      const colors = ['#60a5fa', 'var(--app-accent, #a855f7)', '#fbbf24'];
                       const emojis = ['🥉', '🥈', '🥇'];
                       return (
                         <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 6, background: `${colors[Math.min(idx, 2)]}20`, border: `1px solid ${colors[Math.min(idx, 2)]}40` }}>
@@ -582,10 +582,10 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
           <button
             onClick={() => onNavigate('prim-takip')}
             className="w-full text-left transition-all active:scale-95"
-            style={{ background: 'linear-gradient(135deg, rgba(168,85,247,0.15) 0%, rgba(251,191,36,0.12) 100%)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 16, padding: '14px 16px', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
+            style={{ background: 'linear-gradient(135deg, rgba(var(--app-accent-rgb),0.15) 0%, rgba(251,191,36,0.12) 100%)', border: '1px solid rgba(var(--app-accent-rgb),0.35)', borderRadius: 16, padding: '14px 16px', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 44, height: 44, borderRadius: 13, background: 'rgba(168,85,247,0.2)', border: '1px solid rgba(168,85,247,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🏆</div>
+              <div style={{ width: 44, height: 44, borderRadius: 13, background: 'rgba(var(--app-accent-rgb),0.2)', border: '1px solid rgba(var(--app-accent-rgb),0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🏆</div>
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                   <span style={{ color: 'white', fontSize: 13, fontWeight: 800 }}>Hakediş Takip</span>
@@ -593,7 +593,7 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
                 </div>
                 <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>Aylık kota hakedişlerini yönet · Toplu ödeme →</p>
               </div>
-              <ChevronRight className="w-4 h-4" style={{ color: 'rgba(168,85,247,0.7)', flexShrink: 0 }} />
+              <ChevronRight className="w-4 h-4" style={{ color: 'rgba(var(--app-accent-rgb),0.7)', flexShrink: 0 }} />
             </div>
           </button>
         </motion.div>
@@ -622,7 +622,7 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
           {isLoading ? (
             <div className="h-44 flex items-center justify-center gap-1.5">
               {[0, 1, 2].map(i => (
-                <div key={i} className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
+                <div key={i} className="w-2 h-2 bg-ta rounded-full animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
               ))}
             </div>
           ) : !chartData || chartData.length === 0 ? (
@@ -782,7 +782,7 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.36 }}
         >
-          <p className="text-xs font-black uppercase tracking-widest mb-3" style={{ color: 'rgba(196,181,253,0.5)' }}>
+          <p className="text-xs font-black uppercase tracking-widest mb-3" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>
             Diğer İşlemler
           </p>
           <div className="grid grid-cols-4 gap-2">
@@ -829,7 +829,7 @@ function KotaBar({ ciro, kademeler }: { ciro: number; kademeler: { hedef: number
   const enYuksekAsildi = [...sorted].reverse().find(k => ciro >= k.hedef);
   const barColor = enYuksekAsildi
     ? (sorted.indexOf(enYuksekAsildi) === sorted.length - 1 ? '#fbbf24'
-      : sorted.indexOf(enYuksekAsildi) === 1 ? '#a855f7'
+      : sorted.indexOf(enYuksekAsildi) === 1 ? 'var(--app-accent, #a855f7)'
       : '#60a5fa')
     : '#f87171';
 
@@ -842,9 +842,9 @@ function KotaBar({ ciro, kademeler }: { ciro: number; kademeler: { hedef: number
           width: `${Math.min(barFill * 100, 100)}%`,
           background: enYuksekAsildi
             ? (sorted.length >= 3 && sorted.indexOf(enYuksekAsildi) >= 2
-              ? 'linear-gradient(90deg,#60a5fa,#a855f7,#fbbf24)'
+              ? 'linear-gradient(90deg,#60a5fa,var(--app-accent, #a855f7),#fbbf24)'
               : sorted.length >= 2 && sorted.indexOf(enYuksekAsildi) >= 1
-              ? 'linear-gradient(90deg,#60a5fa,#a855f7)'
+              ? 'linear-gradient(90deg,#60a5fa,var(--app-accent, #a855f7))'
               : '#60a5fa')
             : barColor,
           boxShadow: enYuksekAsildi ? `0 0 8px ${barColor}80` : 'none',
@@ -853,7 +853,7 @@ function KotaBar({ ciro, kademeler }: { ciro: number; kademeler: { hedef: number
         {sorted.map((k, i) => {
           const pos = k.hedef / maxHedef;
           const achieved = ciro >= k.hedef;
-          const dotColor = i === 0 ? '#60a5fa' : i === 1 ? '#a855f7' : '#fbbf24';
+          const dotColor = i === 0 ? '#60a5fa' : i === 1 ? 'var(--app-accent, #a855f7)' : '#fbbf24';
           return (
             <div key={i} style={{
               position: 'absolute', top: '50%', left: `${pos * 100}%`,
@@ -872,7 +872,7 @@ function KotaBar({ ciro, kademeler }: { ciro: number; kademeler: { hedef: number
         {sorted.map((k, i) => {
           const pos = k.hedef / maxHedef;
           const achieved = ciro >= k.hedef;
-          const dotColor = i === 0 ? '#60a5fa' : i === 1 ? '#a855f7' : '#fbbf24';
+          const dotColor = i === 0 ? '#60a5fa' : i === 1 ? 'var(--app-accent, #a855f7)' : '#fbbf24';
           const label = k.hedef >= 1000 ? `₺${(k.hedef / 1000).toFixed(0)}B` : `₺${k.hedef}`;
           return (
             <span key={i} style={{

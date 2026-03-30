@@ -62,7 +62,7 @@ export function GunTab({
             style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }} />
           <button onClick={() => fetchGunListesi(gunTarihBas, gunTarihBit)}
             className="px-3 py-2 rounded-xl text-xs font-bold active:scale-95"
-            style={{ background: 'rgba(167,139,250,0.2)', border: '1px solid rgba(167,139,250,0.4)', color: '#c4b5fd' }}>
+            style={{ background: 'rgba(var(--app-accent-rgb),0.2)', border: '1px solid rgba(var(--app-accent-rgb),0.4)', color: 'var(--app-accent, #a855f7)' }}>
             Ara
           </button>
         </div>
@@ -120,7 +120,7 @@ export function GunTab({
       {gunSecili && (
         <button onClick={() => { setGunSecili(null); setGunDetay(null); }}
           className="flex items-center gap-2 mb-4 text-xs font-bold active:scale-95"
-          style={{ color: '#c4b5fd' }}>
+          style={{ color: 'var(--app-accent, #a855f7)' }}>
           <ChevronLeft style={{ width: 14, height: 14 }} /> Listeye D{'\u00F6'}n
         </button>
       )}
@@ -128,7 +128,7 @@ export function GunTab({
       {/* Yükleniyor */}
       {gunLoading && (
         <div className="flex items-center justify-center py-16">
-          <Loader2 className="w-7 h-7 text-violet-400 animate-spin" />
+          <Loader2 className="w-7 h-7 text-ta animate-spin" />
         </div>
       )}
 
@@ -185,7 +185,7 @@ export function GunTab({
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-[18px] font-black leading-tight" style={{ color: '#a78bfa' }}>
+                    <p className="text-[18px] font-black leading-tight" style={{ color: 'var(--app-accent, #a855f7)' }}>
                       {tl(ciro)}
                     </p>
                   </div>
@@ -280,7 +280,7 @@ export function GunTab({
                   <div className="flex gap-1.5 flex-wrap flex-1 min-w-0">
                     {(g.mekanlar || []).slice(0, 5).map((m: string, i: number) => (
                       <span key={i} className="text-[9px] font-semibold px-2 py-0.5 rounded-full truncate"
-                        style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.15)', color: 'rgba(255,255,255,0.5)', maxWidth: 100 }}>
+                        style={{ background: 'rgba(var(--app-accent-rgb),0.08)', border: '1px solid rgba(var(--app-accent-rgb),0.15)', color: 'rgba(255,255,255,0.5)', maxWidth: 100 }}>
                         {m}
                       </span>
                     ))}
@@ -308,8 +308,8 @@ export function GunTab({
                               <span style={{ fontSize: 12, fontWeight: 800, color: mKarMi ? '#34d399' : '#f87171' }}>{mKarMi ? '+' : ''}{tl(m.karZarar)}</span>
                             </span>
                             <span style={{ textAlign: 'right', minWidth: 70 }}>
-                              <span style={{ fontSize: 10, color: 'rgba(167,139,250,0.5)', fontWeight: 600 }}>Ciro </span>
-                              <span style={{ color: '#a78bfa', fontSize: 12, fontWeight: 800 }}>{tl(m.ciro)}</span>
+                              <span style={{ fontSize: 10, color: 'rgba(var(--app-accent-rgb),0.5)', fontWeight: 600 }}>Ciro </span>
+                              <span style={{ color: 'var(--app-accent, #a855f7)', fontSize: 12, fontWeight: 800 }}>{tl(m.ciro)}</span>
                             </span>
                           </div>
                         );
@@ -352,10 +352,10 @@ export function GunTab({
               }}
               disabled={gunLoading}
               className="w-full py-3 rounded-2xl flex items-center justify-center gap-2 mt-1"
-              style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.15)' }}
+              style={{ background: 'rgba(var(--app-accent-rgb),0.08)', border: '1px solid rgba(var(--app-accent-rgb),0.15)' }}
             >
-              <ChevronDown style={{ width: 14, height: 14, color: '#a78bfa' }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#a78bfa' }}>
+              <ChevronDown style={{ width: 14, height: 14, color: 'var(--app-accent, #a855f7)' }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--app-accent, #a855f7)' }}>
                 {'\u00D6'}nceki Hafta
               </span>
             </motion.button>
@@ -368,7 +368,7 @@ export function GunTab({
         <div>
           {gunDetayLoading && (
             <div className="flex items-center justify-center py-16">
-              <Loader2 className="w-7 h-7 text-violet-400 animate-spin" />
+              <Loader2 className="w-7 h-7 text-ta animate-spin" />
             </div>
           )}
           {!gunDetayLoading && gunDetay && !gunDetay.bos && (
@@ -458,9 +458,9 @@ export function GunTab({
                     )}
 
                     {/* Toplam Ciro */}
-                    <div className="flex items-center justify-between rounded-lg px-3 py-2.5 mb-3" style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)' }}>
+                    <div className="flex items-center justify-between rounded-lg px-3 py-2.5 mb-3" style={{ background: 'rgba(var(--app-accent-rgb),0.1)', border: '1px solid rgba(var(--app-accent-rgb),0.25)' }}>
                       <span className="text-[13px] font-black" style={{ color: 'rgba(255,255,255,0.7)' }}>Toplam Ciro</span>
-                      <span className="text-[19px] font-black" style={{ color: '#a78bfa' }}>{'\u20BA'}{(oz.toplamCiro || 0).toLocaleString('tr-TR')}</span>
+                      <span className="text-[19px] font-black" style={{ color: 'var(--app-accent, #a855f7)' }}>{'\u20BA'}{(oz.toplamCiro || 0).toLocaleString('tr-TR')}</span>
                     </div>
 
                     {/* Maliyet kırılımı */}

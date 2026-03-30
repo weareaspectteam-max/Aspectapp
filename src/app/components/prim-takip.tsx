@@ -89,7 +89,7 @@ interface PrimTakipProps {
 }
 
 // ── Sabitler ─────────────────────────────────────────
-const KADEME_COLORS = ['#60a5fa', '#a855f7', '#fbbf24', '#34d399', '#f87171', '#fb923c'];
+const KADEME_COLORS = ['#60a5fa', 'var(--app-accent, #a855f7)', '#fbbf24', '#34d399', '#f87171', '#fb923c'];
 const KADEME_EMOJIS = ['🥉', '🥈', '🥇', '🏅', '💎', '👑'];
 
 function getAylar(): { value: string; label: string }[] {
@@ -371,7 +371,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
               <Trophy className="w-5 h-5" style={{ color: '#fbbf24' }} />
               Hakediş Takip
             </h1>
-            <p className="text-xs" style={{ color: 'rgba(196,181,253,0.5)' }}>İsim bazlı prim yönetimi</p>
+            <p className="text-xs" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>İsim bazlı prim yönetimi</p>
           </div>
           <button
             onClick={fetchRapor}
@@ -406,7 +406,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
           style={{ ...glass, padding: 14 }}>
           <div className="flex items-center gap-2 mb-3">
-            <Calendar className="w-4 h-4" style={{ color: '#c4b5fd' }} />
+            <Calendar className="w-4 h-4" style={{ color: 'var(--app-accent, #a855f7)' }} />
             <p className="text-sm font-bold text-white">Dönem</p>
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1">
@@ -416,9 +416,9 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                 onClick={() => setSeciliAy(ay.value)}
                 className="shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all"
                 style={{
-                  background: seciliAy === ay.value ? 'rgba(168,85,247,0.25)' : 'rgba(255,255,255,0.05)',
-                  border: seciliAy === ay.value ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.1)',
-                  color: seciliAy === ay.value ? '#c4b5fd' : 'rgba(255,255,255,0.4)',
+                  background: seciliAy === ay.value ? 'rgba(var(--app-accent-rgb),0.25)' : 'rgba(255,255,255,0.05)',
+                  border: seciliAy === ay.value ? '1px solid rgba(var(--app-accent-rgb),0.5)' : '1px solid rgba(255,255,255,0.1)',
+                  color: seciliAy === ay.value ? 'var(--app-accent, #a855f7)' : 'rgba(255,255,255,0.4)',
                 }}
               >
                 {ay.label}
@@ -595,7 +595,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
             className="grid grid-cols-3 gap-3">
             {[
-              { label: 'Toplam', val: rapor.toplamPrim, color: '#c4b5fd', bg: 'rgba(168,85,247,0.1)', border: 'rgba(168,85,247,0.25)' },
+              { label: 'Toplam', val: rapor.toplamPrim, color: 'var(--app-accent, #a855f7)', bg: 'rgba(var(--app-accent-rgb),0.1)', border: 'rgba(var(--app-accent-rgb),0.25)' },
               { label: 'Ödenen', val: rapor.odenenPrim, color: '#34d399', bg: 'rgba(52,211,153,0.1)', border: 'rgba(52,211,153,0.25)' },
               { label: 'Bekleyen', val: rapor.bekleyenPrim, color: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.25)' },
             ].map(c => (
@@ -627,7 +627,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
             {seciliArray.length > 0 && (
               <>
                 <span className="text-xs font-bold px-2 py-1.5 rounded-lg flex items-center gap-1"
-                  style={{ background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.3)', color: '#c4b5fd' }}>
+                  style={{ background: 'rgba(var(--app-accent-rgb),0.15)', border: '1px solid rgba(var(--app-accent-rgb),0.3)', color: 'var(--app-accent, #a855f7)' }}>
                   <User className="w-3 h-3" />
                   {seciliArray.length} · {formatTL(seciliToplam)}
                 </span>
@@ -655,7 +655,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
         {/* ── Yükleniyor ── */}
         {loading && (
           <div className="flex flex-col items-center py-12 gap-3">
-            <div className="w-10 h-10 border-4 border-purple-500/30 border-t-purple-400 rounded-full animate-spin" />
+            <div className="w-10 h-10 border-4 border-ta/30 border-t-ta rounded-full animate-spin" />
             <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>Primler hesaplanıyor...</p>
           </div>
         )}
@@ -676,7 +676,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
         {!loading && kisiGruplari.length > 0 && (
           <div className="space-y-3">
             {/* Ay başlığı */}
-            <p style={{ color: 'rgba(196,181,253,0.6)', fontSize: 11, fontWeight: 700, textAlign: 'center' }}>
+            <p style={{ color: 'rgba(var(--app-accent-rgb),0.6)', fontSize: 11, fontWeight: 700, textAlign: 'center' }}>
               📅 {aylar.find(a => a.value === seciliAy)?.label} Hakediş Raporu
             </p>
 
@@ -707,7 +707,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                     className="flex items-center gap-2.5"
                     style={{
                       padding: '12px 14px',
-                      background: hepsiSecili ? 'rgba(168,85,247,0.08)' : kisimSecili ? 'rgba(168,85,247,0.04)' : 'transparent',
+                      background: hepsiSecili ? 'rgba(var(--app-accent-rgb),0.08)' : kisimSecili ? 'rgba(var(--app-accent-rgb),0.04)' : 'transparent',
                     }}
                   >
                     {/* Checkbox */}
@@ -715,12 +715,12 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                       <button onClick={() => toggleKisiSecim(kg)} className="shrink-0">
                         <div style={{
                           width: 18, height: 18, borderRadius: 5,
-                          border: `1.5px solid ${hepsiSecili ? '#a855f7' : kisimSecili ? 'rgba(168,85,247,0.5)' : 'rgba(255,255,255,0.2)'}`,
-                          background: hepsiSecili ? 'rgba(168,85,247,0.3)' : kisimSecili ? 'rgba(168,85,247,0.1)' : 'transparent',
+                          border: `1.5px solid ${hepsiSecili ? 'var(--app-accent, #a855f7)' : kisimSecili ? 'rgba(var(--app-accent-rgb),0.5)' : 'rgba(255,255,255,0.2)'}`,
+                          background: hepsiSecili ? 'rgba(var(--app-accent-rgb),0.3)' : kisimSecili ? 'rgba(var(--app-accent-rgb),0.1)' : 'transparent',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}>
-                          {hepsiSecili && <Check className="w-2.5 h-2.5" style={{ color: '#c4b5fd' }} />}
-                          {!hepsiSecili && kisimSecili && <div style={{ width: 6, height: 6, borderRadius: 1, background: '#a855f7' }} />}
+                          {hepsiSecili && <Check className="w-2.5 h-2.5" style={{ color: 'var(--app-accent, #a855f7)' }} />}
+                          {!hepsiSecili && kisimSecili && <div style={{ width: 6, height: 6, borderRadius: 1, background: 'var(--app-accent, #a855f7)' }} />}
                         </div>
                       </button>
                     )}
@@ -847,7 +847,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
                                       </span>
                                     )}
                                     {kayit.kidemSeviye && kayit.kidemSeviye !== 'kidemsiz' && (
-                                      <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 4, background: kayit.kidemSeviye === 'kidemliPlus' ? 'rgba(168,85,247,0.12)' : 'rgba(96,165,250,0.12)', border: `1px solid ${kayit.kidemSeviye === 'kidemliPlus' ? 'rgba(168,85,247,0.25)' : 'rgba(96,165,250,0.25)'}`, color: kayit.kidemSeviye === 'kidemliPlus' ? '#c084fc' : '#93c5fd' }}>
+                                      <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 4, background: kayit.kidemSeviye === 'kidemliPlus' ? 'rgba(var(--app-accent-rgb),0.12)' : 'rgba(96,165,250,0.12)', border: `1px solid ${kayit.kidemSeviye === 'kidemliPlus' ? 'rgba(var(--app-accent-rgb),0.25)' : 'rgba(96,165,250,0.25)'}`, color: kayit.kidemSeviye === 'kidemliPlus' ? 'var(--app-accent, #a855f7)' : '#93c5fd' }}>
                                         {kayit.kidemSeviye === 'kidemliPlus' ? 'Kıdemli+' : 'Kıdemli'}
                                       </span>
                                     )}
@@ -925,7 +925,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
             style={{
               position: 'fixed', bottom: 80, left: 16, right: 16, zIndex: 50,
               background: 'rgba(15,10,30,0.93)',
-              border: '1px solid rgba(168,85,247,0.4)',
+              border: '1px solid rgba(var(--app-accent-rgb),0.4)',
               backdropFilter: 'blur(24px)',
               WebkitBackdropFilter: 'blur(24px)',
               borderRadius: 18, padding: '12px 16px',
@@ -933,7 +933,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
           >
             <div className="flex items-center gap-3">
               <div className="flex-1 min-w-0">
-                <p style={{ color: '#c4b5fd', fontSize: 12, fontWeight: 800 }}>
+                <p style={{ color: 'var(--app-accent, #a855f7)', fontSize: 12, fontWeight: 800 }}>
                   {seciliArray.length} kayıt seçili
                 </p>
                 <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>

@@ -164,13 +164,14 @@ export const postAcilis = async (
     model?: string;
     serialNumber?: string;
     startCounter: number;
-  }>
+  }>,
+  photo?: string | null
 ): Promise<{ kayit: StokGunluk; anomali: Partial<StokSayim>; printerAnomali?: any[] } | null> => {
   try {
     const res = await fetch(`${API_BASE}/stok/acilis`, {
       method: 'POST',
       headers: await authHeaders(),
-      body: JSON.stringify({ mekanId, tarih, sayim, not, printerData: printerData || [] }),
+      body: JSON.stringify({ mekanId, tarih, sayim, not, printerData: printerData || [], photo: photo || undefined }),
     });
     if (!res.ok) {
       console.error('postAcilis error:', res.status, await res.text());
@@ -203,13 +204,14 @@ export const postKapanis = async (
   tarih: string,
   sayim: StokSayim,
   not?: string,
-  printerData?: PrinterKapanis[]
+  printerData?: PrinterKapanis[],
+  photo?: string | null
 ): Promise<{ kayit: StokGunluk; anomali: Partial<StokSayim>; beklenen: StokSayim } | { __hata: string } | null> => {
   try {
     const res = await fetch(`${API_BASE}/stok/kapanis`, {
       method: 'POST',
       headers: await authHeaders(),
-      body: JSON.stringify({ mekanId, tarih, sayim, not, printerData: printerData || [] }),
+      body: JSON.stringify({ mekanId, tarih, sayim, not, printerData: printerData || [], photo: photo || undefined }),
     });
     if (!res.ok) {
       let errMsg = `HTTP ${res.status}`;
