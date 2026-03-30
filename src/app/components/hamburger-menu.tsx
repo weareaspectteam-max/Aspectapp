@@ -1423,12 +1423,9 @@ export function HamburgerMenu({
 
                 {/* ── Footer versiyon notu ── */}
                 <div
-                  className="px-4 py-3 flex-shrink-0 flex items-center justify-between"
+                  className="px-4 py-3 flex-shrink-0 flex items-center gap-3"
                   style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
                 >
-                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.08em' }}>
-                    {effectiveCompanyId.toUpperCase()} OPERATIONS
-                  </span>
                   {['yonetici', 'ust-mudur'].includes(userRole) ? (
                     <button
                       onClick={() => setChangelogOpen(true)}
@@ -1439,13 +1436,16 @@ export function HamburgerMenu({
                         transition: 'all 0.2s',
                       }}
                     >
-                      v2.0
+                      v4.3
                     </button>
                   ) : (
                     <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.15)' }}>
-                      v2.0
+                      v4.3
                     </span>
                   )}
+                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.08em' }}>
+                    {effectiveCompanyId.toUpperCase()} OPERATIONS
+                  </span>
                 </div>
                 <Changelog isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} userName={userName} userRole={userRole} userId={userId} isSuperAdmin={isSuperAdmin} />
               </motion.div>

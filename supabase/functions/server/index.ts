@@ -359,7 +359,10 @@ const ensureOtomatikGiderler = async (companyId: string): Promise<void> => {
 
     // Son kontrol tarihini oku — aynı gün tekrar çalışmasın
     const lastCheck: string | null = await ckv.get("otomatik_gider_son_kontrol");
-    if (lastCheck === today) return; // bugün zaten çalıştı
+    // Backfill kontrolü: eğer yıl başından bu yana eksik gün varsa tekrar çalıştır
+    const yilBasiCheck = `${today.slice(0, 4)}-01-01`;
+    const isFullyBackfilled = lastCheck === today && await ckv.get("otomatik_gider_backfill_done_" + today.slice(0, 4));
+    if (isFullyBackfilled) return;
 
     // Maaşlar ve düzenli giderler
     const [maaslar, duzenliler, tumGiderler] = await Promise.all([
@@ -387,9 +390,9 @@ const ensureOtomatikGiderler = async (companyId: string): Promise<void> => {
     }
 
     // Son kontrol tarihinden bugüne eksik günleri bul
-    // İlk çalışmada: bugünden geriye max 7 gün kontrol et
+    // İlk çalışmada: yıl başından itibaren tüm günleri ekle
     const yilBasi = `${today.slice(0, 4)}-01-01`;
-    const baslangic = lastCheck && lastCheck >= yilBasi ? lastCheck : today; // ilk sefer sadece bugün
+    const baslangic = lastCheck && lastCheck >= yilBasi ? lastCheck : yilBasi;
     const baslangicDate = new Date(baslangic + "T00:00:00Z");
     const todayDate = new Date(today + "T00:00:00Z");
 
@@ -461,7 +464,8 @@ const ensureOtomatikGiderler = async (companyId: string): Promise<void> => {
     }
 
     await ckv.set("otomatik_gider_son_kontrol", today);
-    if (eklenen > 0) console.log(`[OtomatikGider] ${companyId}: ${eklenen} gider kaydı oluşturuldu (${gunler.length} gün)`);
+    await ckv.set("otomatik_gider_backfill_done_" + today.slice(0, 4), true);
+    if (eklenen > 0) console.log(`[OtomatikGider] ${companyId}: ${eklenen} gider kaydı oluşturuldu (${gunler.length} gün, backfill: ${yilBasiCheck}→${today})`);
   } catch (e) {
     console.log("[OtomatikGider] Hata:", e);
   }
@@ -6990,8 +6994,9 @@ app.get("/make-server-4da0b637/isletme/satis-raporu", async (c) => {
     const odemeMap: Record<string, { adet: number; ciro: number }> = {};
 
     for (const kayit of filtrelenmis) {
+      const mekan = mekanMap[kayit.mekanId];
+      if (!mekan) continue;
       const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
-      const mekan = mekanMap[kayit.mekanId] || { name: kayit.mekanId, emoji: "📍", color: "#9dd9ea" };
 
       if (!mekanOzetMap[kayit.mekanId]) {
         mekanOzetMap[kayit.mekanId] = {
@@ -9566,6 +9571,19 @@ app.get("/make-server-4da0b637/hedef-takip", async (c) => {
       }
     }
 
+    // Tarih → personelId → kaç mekanda çalıştı haritası (maaş bölüştürme için)
+    const gunPersonelMekan: Record<string, Record<string, number>> = {};
+    for (const k of (tumKayitlarRaw || [])) {
+      if (!k.tarih || !k.satislar) continue;
+      if (!gunPersonelMekan[k.tarih]) gunPersonelMekan[k.tarih] = {};
+      const pIds = new Set<string>();
+      for (const s of (k.satislar || [])) { if (s.kaydedenId) pIds.add(s.kaydedenId); if (s.satisciId) pIds.add(s.satisciId); }
+      for (const kk of (k.kareKayitlari || [])) { if (kk.photographerId) pIds.add(kk.photographerId); }
+      for (const pid of pIds) {
+        gunPersonelMekan[k.tarih][pid] = (gunPersonelMekan[k.tarih][pid] || 0) + 1;
+      }
+    }
+
     // Bu yılın kayıtlarını filtrele
     const yilKayitlar = (tumKayitlar || []).filter((k: any) => k.tarih && k.tarih.startsWith(buYil));
 
@@ -9610,12 +9628,13 @@ app.get("/make-server-4da0b637/hedef-takip", async (c) => {
           }
         }
 
-        // Personel maaş (o gün çalışan personelden)
+        // Personel maaş (o gün çalışan personelden — mekan sayısına bölünür)
         const personelIds = new Set<string>();
         for (const s of satislar) { if (s.kaydedenId) personelIds.add(s.kaydedenId); }
         for (const k of (kayit.kareKayitlari || [])) { if (k.photographerId) personelIds.add(k.photographerId); }
         for (const pid of personelIds) {
-          ay.maas += gunlukMaasById[pid] || 0;
+          const mekanSayisi = gunPersonelMekan[kayit.tarih]?.[pid] || 1;
+          ay.maas += (gunlukMaasById[pid] || 0) / mekanSayisi;
         }
       }
 
@@ -9784,7 +9803,7 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
     const effCIdVardiya = (isSAVardiya && reqCIdVardiya) ? reqCIdVardiya : getCompanyId(user);
 
     const ckv = companyKvFor(effCIdVardiya);
-    const [tumKayitlarRaw, mekanlarList, costAlbumsRaw, exRatesRaw, maaslarRaw, tumRotasyonlarVR, hakedisDahilRawVR] = await Promise.all([
+    const [tumKayitlarRaw, mekanlarList, costAlbumsRaw, exRatesRaw, maaslarRaw, tumRotasyonlarVR, hakedisDahilRawVR, tumCheckinsVR, kidemPersonelRawVR, kidemCarpanlarRawVR] = await Promise.all([
       ckv.getByPrefix("stok_gunluk_"),
       getMekanlarFor(effCIdVardiya),
       ckv.get("cost_albums"),
@@ -9792,8 +9811,32 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
       ckv.getByPrefix("cost_salary_"),
       ckv.getByPrefix("rotation_task_").catch(() => []),
       ckv.get(HAKEDIS_DAHIL_KEY).catch(() => []),
+      ckv.getByPrefix("checkin_").catch(() => []),
+      ckv.getByPrefix("kidem_personel_").catch(() => []),
+      ckv.get("kidem_carpanlari").catch(() => null),
     ]);
     const hakedisDahilSetVR = new Set<string>(hakedisDahilRawVR || []);
+
+    // Kıdem verileri (hakediş çarpanı için)
+    const kidemMapVR: Record<string, string> = {};
+    for (const kp of (kidemPersonelRawVR || [])) {
+      if (kp.key && kp.value) {
+        const uid = kp.key.replace("kidem_personel_", "");
+        kidemMapVR[uid] = String(kp.value);
+      }
+    }
+    const defaultCarpanlarVR: Record<string, number> = { kidemsiz: 1.0, kidemli: 1.0, kidemliPlus: 1.0 };
+    const carpanlarVR: Record<string, number> = kidemCarpanlarRawVR
+      ? { ...defaultCarpanlarVR, ...(typeof kidemCarpanlarRawVR === 'object' ? kidemCarpanlarRawVR : {}) }
+      : defaultCarpanlarVR;
+
+    // Geç giriş: tarih_mekanAdi → sayı
+    const gecGirisByTarihMekan: Record<string, number> = {};
+    for (const ci of (tumCheckinsVR || [])) {
+      if (!ci?.tarih || !(ci.lateMin > 0) || !ci.location) continue;
+      const key = `${ci.tarih}_${ci.location}`;
+      gecGirisByTarihMekan[key] = (gecGirisByTarihMekan[key] || 0) + 1;
+    }
 
     const mekanMap: Record<string, any> = {};
     for (const m of (mekanlarList || [])) mekanMap[m.id] = m;
@@ -9823,36 +9866,19 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
 
     // Maaş yardımcıları
     const maaslar: any[] = maaslarRaw || [];
-    // userId → günlük maaş (TRY) haritası
-    const maasById: Record<string, number> = {};
+    // userId → aylık maaş (TRY) haritası
+    const aylikMaasByIdVR: Record<string, number> = {};
     for (const m of maaslar) {
       if (!m.userId) continue;
-      const aylik = (() => {
-        const amt = toTL2(Number(m.amount) || 0, m.currency || "TRY");
-        const extra = amt * ((Number(m.extraCostPercentage) || 0) / 100);
-        const total = amt + extra;
-        if (m.frequency === "daily")   return total * 30;
-        if (m.frequency === "weekly")  return total * 4.33;
-        if (m.frequency === "yearly")  return total / 12;
-        return total; // monthly
-      })();
-      maasById[m.userId] = Math.round(aylik / 30);
+      const amt = toTL2(Number(m.amount) || 0, m.currency || "TRY");
+      const extra = amt * ((Number(m.extraCostPercentage) || 0) / 100);
+      const total = amt + extra;
+      const aylik = m.frequency === "daily" ? total * 30 : m.frequency === "weekly" ? total * 4.33 : m.frequency === "yearly" ? total / 12 : total;
+      aylikMaasByIdVR[m.userId] = Math.round(aylik);
     }
+    // Günlük maaş: gunlukMaasForVR kullanılıyor (aşağıda tanımlı)
 
-    // Tarih → personelId → kaç mekanda çalıştı haritası (tüm kayıtlardan)
-    const tumKayitlarTmp: any[] = tumKayitlarRaw || [];
-    const gunPersonelMekan: Record<string, Record<string, number>> = {};
-    for (const k of tumKayitlarTmp) {
-      if (!k.tarih || !k.satislar) continue;
-      const gun = k.tarih;
-      if (!gunPersonelMekan[gun]) gunPersonelMekan[gun] = {};
-      const pIds = new Set<string>();
-      for (const s of (k.satislar || [])) { if (s.satisciId) pIds.add(s.satisciId); }
-      for (const kk of (k.kareKayitlari || [])) { if (kk.photographerId) pIds.add(kk.photographerId); }
-      for (const pid of pIds) {
-        gunPersonelMekan[gun][pid] = (gunPersonelMekan[gun][pid] || 0) + 1;
-      }
-    }
+    // gunPersonelMekan zaten yukarıda tanımlı (hesaplaMekan'dan önce)
 
     const isFotoPaspartu = (n: string): boolean => {
       const lc = String(n || "").toLowerCase();
@@ -9871,6 +9897,29 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
         .reduce((s: number, k: string) => s + (Number(obj[k]) || 0), 0);
     };
 
+    // Personel maaş: tarih bazlı günlük hesaplama (ayın gün sayısına göre)
+    const gunlukMaasForVR = (userId: string, tarih: string): number => {
+      const aylik = aylikMaasByIdVR[userId] || 0;
+      if (aylik <= 0) return 0;
+      const ayIdx = parseInt(tarih.slice(5, 7));
+      const yilNum = parseInt(tarih.slice(0, 4));
+      const ayGunSayisi = new Date(yilNum, ayIdx, 0).getDate();
+      return Math.round(aylik / ayGunSayisi);
+    };
+
+    // Personel gün-mekan haritası (maaş bölüştürme için)
+    const gunPersonelMekanVR: Record<string, Record<string, number>> = {};
+    for (const k of (tumKayitlarRaw || [])) {
+      if (!k.tarih || !k.satislar) continue;
+      if (!gunPersonelMekanVR[k.tarih]) gunPersonelMekanVR[k.tarih] = {};
+      const pIds = new Set<string>();
+      for (const s of (k.satislar || [])) { if (s.kaydedenId) pIds.add(s.kaydedenId); }
+      for (const kk of (k.kareKayitlari || [])) { if (kk.photographerId) pIds.add(kk.photographerId); }
+      for (const pid of pIds) {
+        gunPersonelMekanVR[k.tarih][pid] = (gunPersonelMekanVR[k.tarih][pid] || 0) + 1;
+      }
+    }
+
     const filtrelenmis: any[] = (tumKayitlarRaw || [])
       .filter((k: any) => {
         if (!k.kapanisYapildi) return false;
@@ -9882,8 +9931,8 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
       })
       .sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
 
-    const raporlar = filtrelenmis.map((kayit: any) => {
-      const mekan = mekanMap[kayit.mekanId] || { name: kayit.mekanId, emoji: "📍", color: "#9dd9ea", printType: "yarim" };
+    const raporlar = filtrelenmis.filter((kayit: any) => mekanMap[kayit.mekanId]).map((kayit: any) => {
+      const mekan = mekanMap[kayit.mekanId];
       const printType: string = mekan.printType || "yarim";
 
       const satislar: any[] = (kayit.satislar || []).filter((s: any) => !s.iptal);
@@ -9935,6 +9984,7 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
         const satilanFotograf = Number(pr["satılanFotograf"] ?? pr.satilanFotograf) || 0;
         return {
           ad: pr.ad || pr.label || "Yazici",
+          serialNumber: pr.serialNumber || "",
           baslangic,
           bitis,
           ribonDegisim,
@@ -9949,14 +9999,34 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
         };
       });
 
+      // Kağıt tipi ID → ad eşleştirmesi (anomali açıklamalarında kullanılır)
+      const kagitTipiAdMap: Record<string, string> = {};
+      for (const pr of (kayit.printerData || [])) {
+        if (pr.kagitTipiId && pr.kagitTipiAdi) kagitTipiAdMap[pr.kagitTipiId] = pr.kagitTipiAdi;
+      }
+      const anomDetayStrVR = (detay: Record<string, any>, tip: string): string => {
+        return Object.entries(detay).map(([k, v]) => {
+          const val = Number(v);
+          const farkStr = val > 0 ? `${val} fazla` : `${Math.abs(val)} eksik`;
+          if (k.startsWith("ribonlar.")) {
+            const tipId = k.replace("ribonlar.", "");
+            const ad = kagitTipiAdMap[tipId];
+            return `${tip === "acilis" ? "Acilista" : "Kapanista"} ${farkStr} takim sayildi${ad ? ` (${ad} kagidi)` : ""}`;
+          }
+          if (k.startsWith("album")) return `${k.replace("album", "")} Fotograf albumu: ${farkStr}`;
+          if (k === "paspartu") return `Paspartu: ${farkStr}`;
+          return `${k}: ${val > 0 ? "+" : ""}${val}`;
+        }).join(", ");
+      };
+
       const anomaliler: any[] = [];
       const acA = kayit.acilisAnomali || {};
       if (Object.keys(acA).length > 0) {
-        anomaliler.push({ tip: "stok", aciklama: "Acilis stok anomalisi: " + Object.entries(acA).map(([k, v]) => `${k}: ${Number(v) > 0 ? "+" : ""}${v}`).join(", ") });
+        anomaliler.push({ tip: "stok", aciklama: anomDetayStrVR(acA, "acilis") });
       }
       const kpA = kayit.kapanisAnomali || {};
       if (Object.keys(kpA).length > 0) {
-        anomaliler.push({ tip: "stok", aciklama: "Kapanis stok anomalisi: " + Object.entries(kpA).map(([k, v]) => `${k}: ${Number(v) > 0 ? "+" : ""}${v}`).join(", ") });
+        anomaliler.push({ tip: "stok", aciklama: anomDetayStrVR(kpA, "kapanis") });
       }
       if (kayit.kapanisYaziciAnomali) {
         const fark = kayit.kapanisYaziciAnomali.fark;
@@ -10000,13 +10070,22 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
       const toplamCiro = personeller.reduce((s, p) => s + p.toplamTL, 0);
       const toplamIskonto = satislar.reduce((s: number, sat: any) => s + (Number(sat.discount) || 0), 0);
 
-      // Personel günlük maaş hesabı + kişi bazlı hakediş
+      // Personel günlük maaş hesabı + kişi bazlı hakediş + geç giriş
       // hakedisDahilSetVR zaten üstte tanımlı
+      // Geç giriş: bu tarih + bu mekan için checkin kayıtları
+      const gecGirisPersonelMapVR: Record<string, number> = {};
+      for (const ci of (tumCheckinsVR || [])) {
+        if (ci?.tarih === kayit.tarih && ci.location === (mekan.name || '') && ci.lateMin > 0 && ci.userId) {
+          gecGirisPersonelMapVR[ci.userId] = ci.lateMin;
+        }
+      }
       const personellerWithMaas = personeller.map((p: any) => {
-        const mekanSayisi = gunPersonelMekan[kayit.tarih]?.[p.id] || 1;
-        const gunlukMaas = maasById[p.id] ? Math.round(maasById[p.id] / mekanSayisi) : 0;
+        const mekanSayisi = gunPersonelMekanVR[kayit.tarih]?.[p.id] || 1;
+        const gunlukMaas = gunlukMaasForVR(p.id, kayit.tarih) ? Math.round(gunlukMaasForVR(p.id, kayit.tarih) / mekanSayisi) : 0;
         const hakedisDahil = hakedisDahilSetVR.has(p.id);
-        return { ...p, gunlukMaas, hakedisDahil };
+        const gecGiris = !!gecGirisPersonelMapVR[p.id];
+        const gecGirisDk = gecGirisPersonelMapVR[p.id] || 0;
+        return { ...p, gunlukMaas, hakedisDahil, gecGiris, gecGirisDk };
       });
       const personelMaasGideri = personellerWithMaas.reduce((s: number, p: any) => s + p.gunlukMaas, 0);
 
@@ -10023,6 +10102,8 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
         personeller: personellerWithMaas,
         yazicilar,
         anomaliler,
+        acilisNot: kayit.acilisNot || "",
+        kapanisNot: kayit.kapanisNot || "",
         albumler,
         toplamKare: Number(kayit.vardiyaToplam?.toplamKullanilanBaskI) || Number(kayit.vardiyaToplam?.toplamKullanilanBaskı) || 0,
         toplamIade: iptalSatislar.length,
@@ -10035,6 +10116,7 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
         krediToplamTL: Math.round(personeller.reduce((s, p) => s + p.krediTL, 0)),
         albumMaliyeti: Math.round(albumMaliyeti),
         baskiMaliyeti: Math.round(baskiMaliyeti),
+        gecGirisSayisi: gecGirisByTarihMekan[`${kayit.tarih}_${mekan.name}`] || 0,
         personelMaasGideri: Math.round(personelMaasGideri),
         baskiPaperName,
         kotaKademeleri: mekan.kotaKademeleri || [],
@@ -10095,16 +10177,24 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
             if (g === 'gozlemci') return Number(kademe.primGozlemci) || 0;
             return Number(kademe.primFotograf) || Number(kademe.primCoklu) || 0;
           };
-          // Toplam hakediş: her personel × her kademe
+          // Toplam hakediş: her personel × her kademe × kıdem çarpanı
           let toplamPrimTutar = 0;
           for (const kademe of gecilenKademeler) {
             for (const per of rotPers) {
-              toplamPrimTutar += getVRHakedis(kademe, per.gorev, soloMu);
+              const baseTutar = getVRHakedis(kademe, per.gorev, soloMu);
+              const kidemSeviye = kidemMapVR[per.id] || 'kidemsiz';
+              const kidemCarpan = Number(carpanlarVR[kidemSeviye]) ?? 1.0;
+              toplamPrimTutar += Math.round(baseTutar * kidemCarpan);
             }
           }
           // topKademePrim: kişi başı ortalama (UI'da gösterim)
           const topKademePerPersonel = Math.round(toplamPrimTutar > 0 && gecilenKademeler.length > 0
-            ? rotPers.reduce((s, p) => s + getVRHakedis(topKademe, p.gorev, soloMu), 0) / personelSayisi
+            ? rotPers.reduce((s, p) => {
+                const bt = getVRHakedis(topKademe, p.gorev, soloMu);
+                const ks = kidemMapVR[p.id] || 'kidemsiz';
+                const kc = Number(carpanlarVR[ks]) ?? 1.0;
+                return s + Math.round(bt * kc);
+              }, 0) / personelSayisi
             : 0);
           return {
             kademeIndex: topKademe.index,
@@ -10163,6 +10253,684 @@ app.delete("/make-server-4da0b637/vardiya/sil", async (c) => {
 });
 
 // ──────────────────────────────────────────────────────────────
+// AY RAPORU — GET /make-server-4da0b637/vardiya/ay-raporu?yil=2026
+// Aylık kırılım: ciro, satış, kare, ödeme dağılımı, kâr/zarar, mekan detayı
+// ──────────────────────────────────────────────────────────────
+app.get("/make-server-4da0b637/vardiya/ay-raporu", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur", "mudur"].includes(callerRole)) {
+      return c.json({ error: "Bu raporu yalnızca yöneticiler görebilir." }, 403);
+    }
+
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    const reqCId = c.req.query("company_id");
+    const effCId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(effCId);
+
+    const today = bizDateTR();
+    const yil = c.req.query("yil") || today.slice(0, 4);
+
+    const [tumKayitlar, mekanlarList, costAlbumsRaw, exRatesRaw, maaslarRaw, tumGiderlerRaw, tumGelirlerRaw, tumRotasyonlar, tumEkipmanlar, hakedisDahilRawAR, kidemPersonelRawAR, kidemCarpanlarRawAR, tumIzinlerAR] = await Promise.all([
+      ckv.getByPrefix("stok_gunluk_").catch(() => []),
+      getMekanlarFor(effCId),
+      ckv.get("cost_albums").catch(() => null),
+      ckv.get("cost_exchange_rates").catch(() => null),
+      ckv.getByPrefix("cost_salary_").catch(() => []),
+      ckv.getByPrefix("isletme_gider_").catch(() => []),
+      ckv.getByPrefix("isletme_gelir_").catch(() => []),
+      ckv.getByPrefix("rotation_task_").catch(() => []),
+      ckv.getByPrefix("ekipman_").catch(() => []),
+      ckv.get(HAKEDIS_DAHIL_KEY).catch(() => []),
+      ckv.getByPrefix("kidem_personel_").catch(() => []),
+      ckv.get("kidem_carpanlari").catch(() => null),
+      ckv.getByPrefix("rotation_leave_").catch(() => []),
+    ]);
+
+    const mekanMap: Record<string, any> = {};
+
+    // Ekipman → mekan bazlı kağıt tipi haritası (güncel atanmış kağıt)
+    // mekanId → kagitTipiAdi (varsayılan kağıt — birden fazla yazıcı varsa ilkini al)
+    const costPapers: any[] = costAlbumsRaw || [];
+    const findPaperName = (kagitTipiId: string | null): string => {
+      if (!kagitTipiId) return 'Citizen';
+      const p = costPapers.find((cp: any) => cp.id === kagitTipiId);
+      return p?.name || 'Citizen';
+    };
+    const mekanVarsayilanKagit: Record<string, string> = {};
+    for (const eq of (tumEkipmanlar || [])) {
+      if (eq.category !== 'printer' || eq.status === 'broken' || !eq.locationId) continue;
+      if (!mekanVarsayilanKagit[eq.locationId]) {
+        mekanVarsayilanKagit[eq.locationId] = findPaperName(eq.kagitTipiId);
+      }
+    }
+    for (const m of (mekanlarList || [])) mekanMap[m.id] = m;
+
+    const albums: any[] = costAlbumsRaw || [];
+    const exRates: any = exRatesRaw || { EUR: 38, USD: 33, GBP: 41.20 };
+    const toTL = (v: number, cur: string) =>
+      cur === "EUR" ? v * (Number(exRates.EUR) || 38) :
+      cur === "USD" ? v * (Number(exRates.USD) || 33) :
+      cur === "GBP" ? v * (Number(exRates.GBP) || 41.2) : v;
+
+    // Maaş aylık haritası
+    const aylikMaasById: Record<string, number> = {};
+    for (const m of (maaslarRaw || [])) {
+      if (!m.userId) continue;
+      const amt = toTL(Number(m.amount) || 0, m.currency || "TRY");
+      const extra = amt * ((Number(m.extraCostPercentage) || 0) / 100);
+      const total = amt + extra;
+      const aylik = m.frequency === "daily" ? total * 30 : m.frequency === "weekly" ? total * 4.33 : m.frequency === "yearly" ? total / 12 : total;
+      aylikMaasById[m.userId] = Math.round(aylik);
+    }
+
+    // Rotasyondan: personelin hangi gün hangi mekanlarda çalıştığı
+    // mekan adı → mekan ID eşleştirmesi
+    const mekanAdToIdRot: Record<string, string> = {};
+    for (const m of (mekanlarList || [])) mekanAdToIdRot[m.name] = m.id;
+
+    // tarih_personelId → Set<mekanId>
+    const personelGunMekan: Record<string, Set<string>> = {};
+    // ay_mekanId_personelId → gün sayısı (maaş hesabı için)
+    const personelAyMekanGun: Record<string, number> = {};
+
+    for (const task of (tumRotasyonlar || [])) {
+      if (!task.date || !task.date.startsWith(yil)) continue;
+      if (!["sent", "revised"].includes(task.status || "")) continue;
+      if (!Array.isArray(task.personnel)) continue;
+      const mekanId = mekanAdToIdRot[task.location] || "";
+      if (!mekanId || !mekanMap[mekanId]) continue;
+
+      for (const p of task.personnel) {
+        if (!p.id) continue;
+        const key = `${task.date}_${p.id}`;
+        if (!personelGunMekan[key]) personelGunMekan[key] = new Set();
+        personelGunMekan[key].add(mekanId);
+
+        const ayKey = task.date.slice(0, 7);
+        const pamKey = `${ayKey}_${mekanId}_${p.id}`;
+        personelAyMekanGun[pamKey] = (personelAyMekanGun[pamKey] || 0) + 1;
+      }
+    }
+
+    // Geç giriş verileri
+    const gecGirisRaw: any[] = await ckv.getByPrefix("checkin_").catch(() => []) || [];
+    const gecGirisByAy: Record<string, number> = {};
+    const gecGirisByAyMekan: Record<string, number> = {}; // "ay_mekanAdi" → sayı
+    for (const ci of gecGirisRaw) {
+      if (!(ci.lateMin > 0) || !ci.tarih) continue;
+      const ayKey = ci.tarih.slice(0, 7);
+      if (!ayKey.startsWith(yil)) continue;
+      gecGirisByAy[ayKey] = (gecGirisByAy[ayKey] || 0) + 1;
+      if (ci.location) {
+        gecGirisByAyMekan[`${ayKey}_${ci.location}`] = (gecGirisByAyMekan[`${ayKey}_${ci.location}`] || 0) + 1;
+      }
+    }
+
+    // isletme_gider_ kayıtlarını ay + mekan bazlı grupla
+    // mekanAdi ile mekan eşleştirmesi
+    const mekanAdToId: Record<string, string> = {};
+    for (const m of (mekanlarList || [])) mekanAdToId[m.name] = m.id;
+
+    // ay_mekanId → { maas, hakedis, operasyonel, diger }
+    const giderByAyMekan: Record<string, { maas: number; hakedis: number; operasyonel: number; diger: number }> = {};
+    // ay → { maas, hakedis, operasyonel, diger } (mekan ataması olmayan)
+    const giderByAy: Record<string, { maas: number; hakedis: number; operasyonel: number; diger: number }> = {};
+
+    for (const g of (tumGiderlerRaw || [])) {
+      if (!g.date || !g.date.startsWith(yil)) continue;
+      const ayKey = g.date.slice(0, 7);
+      const tutar = Number(g.amount) || 0;
+      const mekanId = g.mekanId || (g.mekanAdi ? mekanAdToId[g.mekanAdi] : null);
+      const isPersonelMaas = g.category === 'personel' && g.odemeTipi === 'maas';
+      const isHakedis = g.category === 'personel' && g.odemeTipi === 'prim';
+      const isOps = g.category === 'operasyonel';
+
+      if (mekanId) {
+        const key = `${ayKey}_${mekanId}`;
+        if (!giderByAyMekan[key]) giderByAyMekan[key] = { maas: 0, hakedis: 0, operasyonel: 0, diger: 0 };
+        if (isPersonelMaas) giderByAyMekan[key].maas += tutar;
+        else if (isHakedis) giderByAyMekan[key].hakedis += tutar;
+        else if (isOps) giderByAyMekan[key].operasyonel += tutar;
+        else giderByAyMekan[key].diger += tutar;
+      }
+      // Genel ay toplamına da ekle
+      if (!giderByAy[ayKey]) giderByAy[ayKey] = { maas: 0, hakedis: 0, operasyonel: 0, diger: 0 };
+      if (isPersonelMaas) giderByAy[ayKey].maas += tutar;
+      else if (isHakedis) giderByAy[ayKey].hakedis += tutar;
+      else if (isOps) giderByAy[ayKey].operasyonel += tutar;
+      else giderByAy[ayKey].diger += tutar;
+    }
+
+    // ── Otomatik hakediş hesaplama (vardiya/gün bazlıyla tutarlı) ──
+    const hakedisDahilSetAR = new Set<string>(hakedisDahilRawAR || []);
+    const kidemMapAR: Record<string, string> = {};
+    for (const kp of (kidemPersonelRawAR || [])) {
+      if (kp.key && kp.value) {
+        const uid = kp.key.replace("kidem_personel_", "");
+        kidemMapAR[uid] = String(kp.value);
+      }
+    }
+    const defaultCarpanlarAR: Record<string, number> = { kidemsiz: 1.0, kidemli: 1.0, kidemliPlus: 1.0 };
+    const carpanlarAR: Record<string, number> = kidemCarpanlarRawAR
+      ? { ...defaultCarpanlarAR, ...(typeof kidemCarpanlarRawAR === 'object' ? kidemCarpanlarRawAR : {}) }
+      : defaultCarpanlarAR;
+
+    // Her gün × her mekan için otomatik hakediş hesapla
+    const otomatikHakedisByAyMekan: Record<string, number> = {}; // "ay_mekanId" → tutar
+    const otomatikHakedisByAy: Record<string, number> = {}; // "ay" → tutar
+    for (const kayit of (tumKayitlar || [])) {
+      if (!kayit.tarih || !kayit.tarih.startsWith(yil) || !kayit.kapanisYapildi) continue;
+      const mekan = mekanMap[kayit.mekanId];
+      if (!mekan || !mekan.kotaKademeleri || mekan.kotaKademeleri.length === 0) continue;
+      const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
+      const ciro = satislar.reduce((sum: number, s: any) => sum + (Number(s.finalPrice) || 0), 0);
+      const mekanAdi = mekan.name || "";
+      const seenIds = new Set<string>();
+      const rotPersoneller: Array<{id: string; gorev?: string}> = [];
+      for (const task of (tumRotasyonlar || [])) {
+        if (task.date !== kayit.tarih || !["sent", "revised"].includes(task.status) || task.location !== mekanAdi) continue;
+        for (const p of (task.personnel || [])) {
+          if (p.id && p.name && !seenIds.has(p.id) && hakedisDahilSetAR.has(p.id)) {
+            seenIds.add(p.id);
+            rotPersoneller.push({ id: p.id, gorev: p.gorev });
+          }
+        }
+      }
+      if (rotPersoneller.length === 0) continue;
+      const soloMu = rotPersoneller.length === 1 && !rotPersoneller[0].gorev;
+      const gorevSayilari: Record<string, number> = {};
+      for (const per of rotPersoneller) {
+        const g = per.gorev || 'fotograf-satis';
+        gorevSayilari[g] = (gorevSayilari[g] || 0) + 1;
+      }
+      const sortedK = [...mekan.kotaKademeleri].sort((a: any, b: any) => Number(a.hedef) - Number(b.hedef));
+      let vardiyaPrim = 0;
+      for (const kademe of sortedK) {
+        if (ciro >= Number(kademe.hedef)) {
+          for (const per of rotPersoneller) {
+            let baseTutar = 0;
+            if (soloMu) {
+              baseTutar = Number(kademe.primTek) || 0;
+            } else {
+              const gorev = per.gorev || 'fotograf-satis';
+              const gorevKisiSayisi = gorevSayilari[gorev] || 1;
+              const bantKey = gorev === 'baski' ? 'baskiBantlar' : gorev === 'album' ? 'albumBantlar' : gorev === 'gozlemci' ? 'gozlemciBantlar' : 'fotografBantlar';
+              const bantlar: any[] = kademe[bantKey];
+              if (bantlar && Array.isArray(bantlar) && bantlar.length > 0) {
+                const bant = bantlar.find((b: any) => gorevKisiSayisi >= Number(b.min) && gorevKisiSayisi <= Number(b.max));
+                baseTutar = bant ? Number(bant.tutar) || 0 : 0;
+              } else {
+                if (gorev === 'baski') baseTutar = Number(kademe.primBaski) || Number(kademe.primCoklu) || 0;
+                else if (gorev === 'album') baseTutar = Number(kademe.primAlbum) || Number(kademe.primCoklu) || 0;
+                else if (gorev === 'gozlemci') baseTutar = Number(kademe.primGozlemci) || 0;
+                else baseTutar = Number(kademe.primFotograf) || Number(kademe.primCoklu) || 0;
+              }
+            }
+            const kidemSeviye = kidemMapAR[per.id] || 'kidemsiz';
+            const kidemCarpan = Number(carpanlarAR[kidemSeviye]) ?? 1.0;
+            vardiyaPrim += Math.round(baseTutar * kidemCarpan);
+          }
+        }
+      }
+      if (vardiyaPrim > 0) {
+        const ayKey = kayit.tarih.slice(0, 7);
+        const amKey = `${ayKey}_${kayit.mekanId}`;
+        otomatikHakedisByAyMekan[amKey] = (otomatikHakedisByAyMekan[amKey] || 0) + vardiyaPrim;
+        otomatikHakedisByAy[ayKey] = (otomatikHakedisByAy[ayKey] || 0) + vardiyaPrim;
+      }
+    }
+
+    // isletme_gelir_ kayıtlarını ay + mekan bazlı grupla
+    const gelirByAyMekan: Record<string, number> = {}; // "ay_mekanId" → tutar
+    for (const g of (tumGelirlerRaw || [])) {
+      if (!g.date || !g.date.startsWith(yil) || !g.mekanId) continue;
+      const ayKey = g.date.slice(0, 7);
+      const key = `${ayKey}_${g.mekanId}`;
+      gelirByAyMekan[key] = (gelirByAyMekan[key] || 0) + (Number(g.amount) || 0);
+    }
+
+    // Yıl kayıtlarını filtrele
+    const yilKayitlar = (tumKayitlar || []).filter((k: any) => k.tarih && k.tarih.startsWith(yil));
+
+    const ayLabels = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+
+    // Aylık gruplama
+    const ayMap: Record<string, any> = {};
+
+    for (const kayit of yilKayitlar) {
+      const mekan = mekanMap[kayit.mekanId];
+      if (!mekan) continue;
+      const ayKey = kayit.tarih.slice(0, 7);
+      if (!ayMap[ayKey]) {
+        const ayIndex = parseInt(ayKey.split('-')[1]) - 1;
+        ayMap[ayKey] = {
+          ay: ayKey,
+          label: ayLabels[ayIndex] + ' ' + yil,
+          toplamCiro: 0, toplamSatis: 0, toplamKare: 0, toplamIskonto: 0,
+          nakitToplam: 0, ibanToplam: 0, krediToplam: 0,
+          toplamGider: 0, karZarar: 0, karMarji: 0,
+          toplamBasilan: 0, toplamSatilanFotograf: 0, toplamIadeFotograf: 0, toplamKullanilanBaski: 0,
+          anomaliSayisi: 0, gecGirisSayisi: 0, gunSayisi: 0, anomaliler: [] as any[],
+          mekanlar: {} as Record<string, any>,
+          mekanLabels: [] as string[],
+          _gunler: new Set<string>(),
+          _personelIds: new Set<string>(),
+          _baskiMaliyet: 0, _albumMaliyet: 0, _kira: 0, _maas: 0, _hakedis: 0,
+          _albumMap: {} as Record<string, { tip: string; adet: number }>,
+          _personelMap: {} as Record<string, { id: string; ad: string; ciro: number; kare: number; vardiya: number; satisAdet: number }>,
+        };
+      }
+      const am = ayMap[ayKey];
+      am._gunler.add(kayit.tarih);
+
+      // Kira
+      const kayitYili = kayit.tarih.slice(0, 4);
+      const yillikKira = Number(mekan.yearlyRents?.[kayitYili]) || Number(mekan.yearlyRent) || 0;
+      am._kira += Math.round(yillikKira / 365);
+
+      // Baskı maliyeti + fotoğraf metrikleri
+      if (kayit.vardiyaToplam) {
+        am._baskiMaliyet += Number(kayit.vardiyaToplam.toplamMaliyet) || 0;
+        am.toplamBasilan += Number(kayit.vardiyaToplam.toplamCikisAdedi) || 0;
+        am.toplamSatilanFotograf += Number(kayit.vardiyaToplam["toplamSatılanFotograf"]) || 0;
+        am.toplamIadeFotograf += Number(kayit.vardiyaToplam.toplamIadeFotograf) || 0;
+        am.toplamKullanilanBaski += Number(kayit.vardiyaToplam["toplamKullanilanBaskı"]) || 0;
+        // Baskı detay (son vardiyadan al — aynı ay genelde aynı kağıt/boyut)
+        if (kayit.vardiyaToplam.printType) am.baskiBoyutu = kayit.vardiyaToplam.printType;
+        if (kayit.vardiyaToplam.paperName) am.baskiKagitAdi = kayit.vardiyaToplam.paperName;
+      }
+
+      // Kare
+      const kareKayitlari = kayit.kareKayitlari || [];
+      am.toplamKare += kareKayitlari.reduce((s: number, k: any) => s + (Number(k.frameCount) || 0), 0);
+
+      // Anomali (stok + yazıcı — gün raporuyla aynı mantık + detay)
+      const kagitAdMapAR: Record<string, string> = {};
+      for (const pr of (kayit.printerData || [])) {
+        if (pr.kagitTipiId && pr.kagitTipiAdi) kagitAdMapAR[pr.kagitTipiId] = pr.kagitTipiAdi;
+      }
+      const anomDetayAR = (detay: Record<string, any>, tip: string): string => {
+        return Object.entries(detay).map(([k, v]) => {
+          const val = Number(v);
+          const farkStr = val > 0 ? `${val} fazla` : `${Math.abs(val)} eksik`;
+          if (k.startsWith("ribonlar.")) {
+            const tipId = k.replace("ribonlar.", "");
+            const ad = kagitAdMapAR[tipId];
+            return `${tip === "acilis" ? "Acilista" : "Kapanista"} ${farkStr} takim sayildi${ad ? ` (${ad})` : ""}`;
+          }
+          if (k.startsWith("album")) return `${k.replace("album", "")} Fotograf albumu: ${farkStr}`;
+          if (k === "paspartu") return `Paspartu: ${farkStr}`;
+          return `${k}: ${val > 0 ? "+" : ""}${val}`;
+        }).join(", ");
+      };
+      const hasStokAnomali = (kayit.acilisAnomali && Object.keys(kayit.acilisAnomali).length > 0) || (kayit.kapanisAnomali && Object.keys(kayit.kapanisAnomali).length > 0);
+      const hasYaziciAnomali = (Array.isArray(kayit.acilisYaziciAnomali) && kayit.acilisYaziciAnomali.length > 0) || (kayit.kapanisYaziciAnomali && kayit.kapanisYaziciAnomali.fark !== undefined);
+      if (hasStokAnomali || hasYaziciAnomali) {
+        am.anomaliSayisi++;
+        if (kayit.acilisAnomali && Object.keys(kayit.acilisAnomali).length > 0) {
+          // Açılış anomalisi → önceki günün personeline puan
+          const oncekiGun = new Date(kayit.tarih);
+          oncekiGun.setDate(oncekiGun.getDate() - 1);
+          const oncekiGunStr = oncekiGun.toISOString().split("T")[0];
+          const acilisPersoneller = (tumRotasyonlar || [])
+            .filter((t: any) => t.date === oncekiGunStr && ["sent","revised"].includes(t.status) && t.location === mekan.name)
+            .flatMap((t: any) => (t.personnel || []).filter((p: any) => p.name).map((p: any) => p.name));
+          am.anomaliler.push({ mekan: mekan.name, mekanEmoji: mekan.emoji, tarih: kayit.tarih, tip: "acilis", aciklama: anomDetayAR(kayit.acilisAnomali, "acilis"), personeller: [...new Set(acilisPersoneller)] });
+        }
+        if (kayit.kapanisAnomali && Object.keys(kayit.kapanisAnomali).length > 0) {
+          // Kapanış anomalisi → aynı günün personeline puan
+          const kapanisPersoneller = (tumRotasyonlar || [])
+            .filter((t: any) => t.date === kayit.tarih && ["sent","revised"].includes(t.status) && t.location === mekan.name)
+            .flatMap((t: any) => (t.personnel || []).filter((p: any) => p.name).map((p: any) => p.name));
+          am.anomaliler.push({ mekan: mekan.name, mekanEmoji: mekan.emoji, tarih: kayit.tarih, tip: "kapanis", aciklama: anomDetayAR(kayit.kapanisAnomali, "kapanis"), personeller: [...new Set(kapanisPersoneller)] });
+        }
+        if (kayit.kapanisYaziciAnomali && kayit.kapanisYaziciAnomali.fark !== undefined) {
+          const fark = kayit.kapanisYaziciAnomali.fark;
+          // Yazıcı anomalisi → aynı günün personeline puan
+          const yaziciPersoneller = (tumRotasyonlar || [])
+            .filter((t: any) => t.date === kayit.tarih && ["sent","revised"].includes(t.status) && t.location === mekan.name)
+            .flatMap((t: any) => (t.personnel || []).filter((p: any) => p.name).map((p: any) => p.name));
+          am.anomaliler.push({ mekan: mekan.name, mekanEmoji: mekan.emoji, tarih: kayit.tarih, tip: "yazici", aciklama: `Net basilan ile satis farki: ${fark > 0 ? "+" : ""}${fark} kare`, personeller: [...new Set(yaziciPersoneller)] });
+        }
+      }
+
+      // Mekan detay
+      if (!am.mekanlar[kayit.mekanId]) {
+        am.mekanlar[kayit.mekanId] = { mekanId: kayit.mekanId, mekanAd: mekan.name, mekanEmoji: mekan.emoji || '📍', ciro: 0, satis: 0, gider: 0, karZarar: 0, baskiMaliyet: 0, baskiAdet: 0, baskiBoyutu: '', baskiKagitAdi: '', vardiyaSayisi: 0, _albumMap: {} as Record<string, { tip: string; adet: number }>, _personelMap: {} as Record<string, string> };
+        am.mekanLabels.push(`${mekan.emoji || '📍'} ${mekan.name}`);
+      }
+      const md = am.mekanlar[kayit.mekanId];
+      md.vardiyaSayisi++;
+      // Kare kayıtlarından personel toplama
+      for (const kk of kareKayitlari) {
+        if (kk.photographerId && kk.photographerName) {
+          md._personelMap[kk.photographerId] = kk.photographerName;
+          const pid = kk.photographerId;
+          if (!am._personelMap[pid]) am._personelMap[pid] = { id: pid, ad: kk.photographerName, ciro: 0, kare: 0, vardiya: 0, satisAdet: 0 };
+          am._personelMap[pid].kare += Number(kk.frameCount) || 0;
+        }
+      }
+
+      // Mekan baskı bilgileri — kağıt tipi bazlı
+      if (kayit.vardiyaToplam) {
+        md.baskiMaliyet = (md.baskiMaliyet || 0) + (Number(kayit.vardiyaToplam.toplamMaliyet) || 0);
+        md.baskiAdet = (md.baskiAdet || 0) + (Number(kayit.vardiyaToplam.toplamCikisAdedi) || 0);
+        if (kayit.vardiyaToplam.printType) md.baskiBoyutu = kayit.vardiyaToplam.printType;
+      }
+      // Yazıcı bazlı detay (ekipmanId ile gruplama)
+      if (!md.yazicilar) md.yazicilar = {} as Record<string, any>;
+      for (const pr of (kayit.printerData || [])) {
+        const eid = pr.ekipmanId || pr.id || 'bilinmiyor';
+        // Ekipman kaydından marka/model/seri no
+        const ekipman = (tumEkipmanlar || []).find((eq: any) => eq.id === eid);
+        const marka = ekipman?.brand || pr.brand || '';
+        const model = ekipman?.model || pr.model || '';
+        const seriNo = ekipman?.serialNumber || pr.serialNumber || '';
+        const kagitAdi = pr.kagitTipiAdi || findPaperName(ekipman?.kagitTipiId) || mekanVarsayilanKagit[kayit.mekanId] || 'Citizen';
+        const boyut = kayit.vardiyaToplam?.printType || 'yarim';
+
+        if (!md.yazicilar[eid]) md.yazicilar[eid] = { ekipmanId: eid, marka, model, seriNo, kagitAdi, boyut, baskiAdet: 0, maliyet: 0, birimMaliyet: 0 };
+        const yz = md.yazicilar[eid];
+        yz.baskiAdet += Number(pr.cikisAdedi) || 0;
+        yz.maliyet += Number(pr.toplamMaliyet) || 0;
+        if (pr.birimMaliyet > 0) yz.birimMaliyet = Number(pr.birimMaliyet);
+        // Güncel bilgileri güncelle
+        if (marka) yz.marka = marka;
+        if (model) yz.model = model;
+        if (seriNo) yz.seriNo = seriNo;
+        if (pr.kagitTipiAdi) yz.kagitAdi = pr.kagitTipiAdi;
+      }
+
+      // Mekan gider: baskı + kira payı
+      let mekanBaskiMaliyet = 0;
+      if (kayit.vardiyaToplam) mekanBaskiMaliyet = Number(kayit.vardiyaToplam.toplamMaliyet) || 0;
+      const mekanGunlukKira = Math.round(yillikKira / 365);
+      let mekanAlbumMaliyet = 0;
+      // Satışlar
+      const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
+      for (const satis of satislar) {
+        const tutar = Number(satis.finalPrice) || 0;
+        const iskonto = Number(satis.discount) || 0;
+        // Personel toplama (mekan + ay bazlı)
+        if (satis.kaydedenId && satis.kaydeden) {
+          md._personelMap[satis.kaydedenId] = satis.kaydeden;
+          const pid = satis.kaydedenId;
+          if (!am._personelMap[pid]) am._personelMap[pid] = { id: pid, ad: satis.kaydeden, ciro: 0, kare: 0, vardiya: 0, satisAdet: 0 };
+          am._personelMap[pid].ciro += tutar;
+          am._personelMap[pid].satisAdet++;
+        }
+        am.toplamCiro += tutar;
+        am.toplamSatis++;
+        am.toplamIskonto += iskonto;
+        md.ciro += tutar;
+        md.satis++;
+
+        // Ödeme dağılımı
+        const pm = String(satis.paymentMethod || "").toLowerCase();
+        if (pm.includes("iban") || pm.includes("havale") || pm.includes("transfer")) am.ibanToplam += tutar;
+        else if (pm.includes("kart") || pm.includes("card") || pm.includes("kredi")) am.krediToplam += tutar;
+        else am.nakitToplam += tutar;
+
+        // Albüm maliyeti + ürün dökümü
+        for (const item of (satis.items || [])) {
+          const urunAdi = String(item.product || "");
+          const adet = Number(item.quantity) || 1;
+          const match = urunAdi.match(/^(\d+)/);
+          if (match) {
+            const sz = parseInt(match[1]);
+            const al = albums.find((a: any) => Number(a.size) === sz);
+            if (al) {
+              const printType = mekan.printType || "yarim";
+              const birim = printType === "tam" ? Number(al.tamBoy) : Number(al.yarimBoy);
+              const albumCost = adet * toTL(birim, al.currency || "TRY");
+              am._albumMaliyet += albumCost;
+              mekanAlbumMaliyet += albumCost;
+            }
+          }
+          // Ürün dökümü (tüm ürünler — satış grafiği için)
+          if (urunAdi) {
+            if (!am._albumMap[urunAdi]) am._albumMap[urunAdi] = { tip: urunAdi, adet: 0 };
+            am._albumMap[urunAdi].adet += adet;
+            // Mekan bazlı ürün dökümü
+            if (!md._albumMap) md._albumMap = {};
+            if (!md._albumMap[urunAdi]) md._albumMap[urunAdi] = { tip: urunAdi, adet: 0 };
+            md._albumMap[urunAdi].adet += adet;
+          }
+        }
+
+        // Personel
+        if (satis.kaydedenId) am._personelIds.add(satis.kaydedenId);
+      }
+      for (const k of kareKayitlari) { if (k.photographerId) am._personelIds.add(k.photographerId); }
+
+      // Mekan maaş: rotasyondan o gün o mekanda çalışan personelin maaşı
+      // Vardiya raporlarıyla aynı mantık: maasById (sabit günlük/30) × mekan sayısına böl
+      let mekanMaas = 0;
+      // Rotasyondan o gün bu mekada atanan personeller
+      for (const task of (tumRotasyonlar || [])) {
+        if (task.date !== kayit.tarih) continue;
+        if (!["sent", "revised"].includes(task.status || "")) continue;
+        const taskMekanId = mekanAdToIdRot[task.location] || "";
+        if (taskMekanId !== kayit.mekanId) continue;
+        for (const p of (task.personnel || [])) {
+          if (!p.id) continue;
+          const gunluk = aylikMaasById[p.id] ? Math.round(aylikMaasById[p.id] / 30) : 0;
+          if (gunluk <= 0) continue;
+          const pgmKey = `${kayit.tarih}_${p.id}`;
+          const mekanSayisi = personelGunMekan[pgmKey]?.size || 1;
+          mekanMaas += gunluk / mekanSayisi;
+        }
+      }
+
+      // Mekan giderini tamamla: baskı + kira + albüm + maaş
+      md.gider += mekanBaskiMaliyet + mekanGunlukKira + mekanAlbumMaliyet + mekanMaas;
+      md.albumMaliyet = Math.round((md.albumMaliyet || 0) + mekanAlbumMaliyet);
+      md.kiraMaliyet = Math.round((md.kiraMaliyet || 0) + mekanGunlukKira);
+      md.maasMaliyet = Math.round((md.maasMaliyet || 0) + mekanMaas);
+      am._kira += mekanGunlukKira;
+      am._maas += mekanMaas;
+    }
+
+    // Hesaplamaları tamamla
+    const aylarResult = [];
+    let yoneticiIdSetAR: Set<string> | null = null;
+    for (const am of Object.values(ayMap)) {
+      am.gunSayisi = am._gunler.size;
+      am.gecGirisSayisi = gecGirisByAy[am.ay] || 0;
+
+      // isletme_gider_ kayıtlarından gelen giderler
+      const ayGider = giderByAy[am.ay] || { maas: 0, hakedis: 0, operasyonel: 0, diger: 0 };
+
+      // Mekan kâr/zarar — isletme_gider_ + isletme_gelir_ kayıtlarından
+      let ayEkGelir = 0;
+      for (const md of Object.values(am.mekanlar) as any[]) {
+        const mgKey = `${am.ay}_${md.mekanId}`;
+        // Giderler (hakediş + operasyonel — maaş rotasyondan zaten eklendi)
+        const mgGider = giderByAyMekan[mgKey] || { maas: 0, hakedis: 0, operasyonel: 0, diger: 0 };
+        // Hakediş: otomatik hesaplanan (isletme_gider_ yerine — hesaplandığı anda gidere dahil)
+        const mekanOtomatikHakedis = otomatikHakedisByAyMekan[mgKey] || 0;
+        md.gider += mekanOtomatikHakedis + mgGider.operasyonel;
+        md.hakedisMaliyet = Math.round((md.hakedisMaliyet || 0) + mekanOtomatikHakedis);
+        am._hakedis += mekanOtomatikHakedis;
+        // Ek gelirler
+        const ekGelir = gelirByAyMekan[mgKey] || 0;
+        md.ciro += ekGelir;
+        md.ekGelir = Math.round(ekGelir);
+        ayEkGelir += ekGelir;
+        // Geç giriş (mekan bazlı)
+        md.gecGirisSayisi = gecGirisByAyMekan[`${am.ay}_${md.mekanAd}`] || 0;
+        // Kâr
+        md.karZarar = Math.round(md.ciro - md.gider);
+        md.ciro = Math.round(md.ciro);
+        md.gider = Math.round(md.gider);
+        md.baskiMaliyet = Math.round(md.baskiMaliyet || 0);
+        md.baskiBirimMaliyet = md.baskiAdet > 0 ? Math.round(((md.baskiMaliyet || 0) / md.baskiAdet) * 100) / 100 : 0;
+        md.yazicilar = Object.values(md.yazicilar || {}).map((yz: any) => ({ ...yz, maliyet: Math.round(yz.maliyet) }));
+        md.personeller = Object.entries(md._personelMap || {}).map(([id, ad]: [string, any]) => ({ id, ad }));
+        delete md._personelMap;
+        md.albumler = Object.values(md._albumMap || {}).sort((a: any, b: any) => {
+          const sA = parseInt(String(a.tip).match(/^(\d+)/)?.[1] || '999');
+          const sB = parseInt(String(b.tip).match(/^(\d+)/)?.[1] || '999');
+          return sA - sB;
+        });
+        delete md._albumMap;
+        delete md.kagitTipleri;
+      }
+      // Ek gelirleri genel ciroya ekle
+      am.toplamCiro += Math.round(ayEkGelir);
+      // Genel toplam = mekan detaylarının toplamı (tutarlılık)
+      am.toplamGider = Object.values(am.mekanlar).reduce((s: number, md: any) => s + md.gider, 0);
+      am.karZarar = Object.values(am.mekanlar).reduce((s: number, md: any) => s + md.karZarar, 0);
+      am.karMarji = am.toplamCiro > 0 ? Math.round((am.karZarar / am.toplamCiro) * 100) : 0;
+
+      // Baskı birim maliyet
+      am.toplamBaskiMaliyet = Math.round(am._baskiMaliyet);
+      am.baskiBirimMaliyet = am.toplamBasilan > 0 ? Math.round((am._baskiMaliyet / am.toplamBasilan) * 100) / 100 : 0;
+
+      // Yuvarlama
+      am.toplamCiro = Math.round(am.toplamCiro);
+      am.toplamIskonto = Math.round(am.toplamIskonto);
+      am.nakitToplam = Math.round(am.nakitToplam);
+      am.ibanToplam = Math.round(am.ibanToplam);
+      am.krediToplam = Math.round(am.krediToplam);
+
+      // Personel listesi: ciro, kare, vardiya, hakediş, izin
+      // Yönetici ID'leri (ilk ay'da bir kere çekilir, cache'lenir)
+      if (!yoneticiIdSetAR) {
+        try {
+          const { data: { users: allUsersAR } } = await getAdminClient().auth.admin.listUsers({ perPage: 1000 });
+          yoneticiIdSetAR = new Set((allUsersAR || []).filter((u: any) => u.user_metadata?.role === 'yonetici').map((u: any) => u.id));
+        } catch { yoneticiIdSetAR = new Set(); }
+      }
+      const personelListesi = Object.values(am._personelMap).map((p: any) => {
+        // Vardiya sayısı: rotasyondan o personel o ay kaç gün çalışmış
+        let vardiyaSayisi = 0;
+        for (const [pamKey, gunSayisi] of Object.entries(personelAyMekanGun)) {
+          if (pamKey.startsWith(`${am.ay}_`) && pamKey.endsWith(`_${p.id}`)) {
+            vardiyaSayisi += gunSayisi as number;
+          }
+        }
+        // Hakediş: otomatik hesaplanan
+        // personel bazlı hakediş ay raporunda ayrı tutulmadı, rotasyondan hesaplayalım
+        let hakedis = 0;
+        for (const kayit of (tumKayitlar || [])) {
+          if (!kayit.tarih?.startsWith(am.ay) || !kayit.kapanisYapildi) continue;
+          const mk = mekanMap[kayit.mekanId];
+          if (!mk || !mk.kotaKademeleri || mk.kotaKademeleri.length === 0) continue;
+          const sSatislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
+          const sCiro = sSatislar.reduce((sum: number, s: any) => sum + (Number(s.finalPrice) || 0), 0);
+          const mAdi = mk.name || "";
+          for (const task of (tumRotasyonlar || [])) {
+            if (task.date !== kayit.tarih || !["sent","revised"].includes(task.status) || task.location !== mAdi) continue;
+            const kisi = (task.personnel || []).find((pp: any) => pp.id === p.id);
+            if (!kisi || !hakedisDahilSetAR.has(p.id)) continue;
+            const rotPers = (task.personnel || []).filter((pp: any) => pp.id && pp.name && hakedisDahilSetAR.has(pp.id));
+            const soloMu = rotPers.length === 1 && !rotPers[0].gorev;
+            const gorevSay: Record<string, number> = {};
+            for (const rp of rotPers) { const g = rp.gorev || 'fotograf-satis'; gorevSay[g] = (gorevSay[g] || 0) + 1; }
+            for (const kademe of mk.kotaKademeleri) {
+              if (sCiro >= Number(kademe.hedef)) {
+                let bt = 0;
+                if (soloMu) { bt = Number(kademe.primTek) || 0; }
+                else {
+                  const gorev = kisi.gorev || 'fotograf-satis';
+                  const gks = gorevSay[gorev] || 1;
+                  const bk = gorev === 'baski' ? 'baskiBantlar' : gorev === 'album' ? 'albumBantlar' : gorev === 'gozlemci' ? 'gozlemciBantlar' : 'fotografBantlar';
+                  const bantlar: any[] = kademe[bk];
+                  if (bantlar && Array.isArray(bantlar) && bantlar.length > 0) {
+                    const bant = bantlar.find((b: any) => gks >= Number(b.min) && gks <= Number(b.max));
+                    bt = bant ? Number(bant.tutar) || 0 : 0;
+                  } else {
+                    if (gorev === 'baski') bt = Number(kademe.primBaski) || Number(kademe.primCoklu) || 0;
+                    else if (gorev === 'album') bt = Number(kademe.primAlbum) || Number(kademe.primCoklu) || 0;
+                    else if (gorev === 'gozlemci') bt = Number(kademe.primGozlemci) || 0;
+                    else bt = Number(kademe.primFotograf) || Number(kademe.primCoklu) || 0;
+                  }
+                }
+                const ks = kidemMapAR[p.id] || 'kidemsiz';
+                const kc = Number(carpanlarAR[ks]) ?? 1.0;
+                hakedis += Math.round(bt * kc);
+              }
+            }
+          }
+        }
+        // İzin sayısı: o ay onaylı + günlük
+        let izinGun = 0;
+        for (const leave of (tumIzinlerAR || [])) {
+          if (leave.personnelId !== p.id || leave.status !== 'approved') continue;
+          const start = leave.startDate || '';
+          const end = leave.endDate || start;
+          // İzin tarih aralığı bu ay ile kesişiyor mu?
+          const ayBas = `${am.ay}-01`;
+          const ayBit = `${am.ay}-31`;
+          if (end < ayBas || start > ayBit) continue;
+          // Kesişen gün sayısı
+          const effStart = start < ayBas ? ayBas : start;
+          const effEnd = end > ayBit ? ayBit : end;
+          const d1 = new Date(effStart);
+          const d2 = new Date(effEnd);
+          const gunFark = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+          izinGun += Math.max(gunFark, 0);
+        }
+        // Geç giriş sayısı (o ay)
+        let gecGirisSayisi = 0;
+        for (const ci of (gecGirisRaw || [])) {
+          if (ci.userId === p.id && ci.lateMin > 0 && ci.tarih?.startsWith(am.ay)) gecGirisSayisi++;
+        }
+        // Anomali sayısı: personelin adı anomali personeller listesinde kaç kez geçiyor
+        let anomaliSayisi = 0;
+        for (const anom of (am.anomaliler || [])) {
+          if ((anom.personeller || []).includes(p.ad)) anomaliSayisi++;
+        }
+        return {
+          id: p.id,
+          ad: p.ad,
+          ciro: Math.round(p.ciro),
+          kare: p.kare,
+          satisAdet: p.satisAdet,
+          vardiyaSayisi,
+          hakedis: Math.round(hakedis),
+          izinGun,
+          gecGirisSayisi,
+          anomaliSayisi,
+        };
+      }).filter((p: any) => p.vardiyaSayisi > 0 && !yoneticiIdSetAR?.has(p.id)).sort((a: any, b: any) => b.ciro - a.ciro);
+      am.personeller = personelListesi;
+      delete am._personelMap;
+
+      // Mekan detayını diziye çevir
+      am.mekanDetay = Object.values(am.mekanlar);
+      delete am.mekanlar;
+      delete am._gunler;
+      delete am._personelIds;
+      delete am._baskiMaliyet;
+      am.albumMaliyet = Math.round(am._albumMaliyet);
+      am.kiraMaliyeti = Math.round(am._kira);
+      am.maasGideri = Math.round(am._maas);
+      am.hakedisGideri = Math.round(am._hakedis);
+      am.albumler = Object.values(am._albumMap).sort((a: any, b: any) => b.adet - a.adet);
+      delete am._albumMaliyet;
+      delete am._albumMap;
+      delete am._kira;
+      delete am._maas;
+      delete am._hakedis;
+
+      aylarResult.push(am);
+    }
+
+    aylarResult.sort((a: any, b: any) => b.ay.localeCompare(a.ay));
+
+    console.log(`Ay raporu: ${yil} — ${aylarResult.length} ay`);
+    return c.json({ yil: Number(yil), aylar: aylarResult });
+  } catch (err) {
+    console.log("Ay raporu error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 // GÜN RAPORU — GET /make-server-4da0b637/vardiya/gun-raporu
 // Query: baslangic=YYYY-MM-DD&bitis=YYYY-MM-DD  (veya tarih= tek gün)
 // Auth: yonetici/ust-mudur/mudur
@@ -10188,7 +10956,7 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
     const effCId = (isSA && reqCId) ? reqCId : getCompanyId(user);
 
     const ckv = companyKvFor(effCId);
-    const [tumKayitlar, mekanlarList, costAlbumsRaw, exRatesRaw, maaslarRaw, tumRotasyonlar, kidemPersonelRaw, kidemCarpanlarRaw, hakedisDahilRaw] = await Promise.all([
+    const [tumKayitlar, mekanlarList, costAlbumsRaw, exRatesRaw, maaslarRaw, tumRotasyonlar, kidemPersonelRaw, kidemCarpanlarRaw, hakedisDahilRaw, tumGiderlerGR] = await Promise.all([
       ckv.getByPrefix("stok_gunluk_"),
       getMekanlarFor(effCId),
       ckv.get("cost_albums"),
@@ -10198,7 +10966,17 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
       ckv.getByPrefix("kidem_personel_").catch(() => []),
       ckv.get("kidem_carpanlari").catch(() => null),
       ckv.get(HAKEDIS_DAHIL_KEY).catch(() => []),
+      ckv.getByPrefix("isletme_gider_").catch(() => []),
     ]);
+
+    // Hakediş giderleri: tarih_mekanAdi → toplam hakediş tutarı
+    const hakedisGiderByTarihMekan: Record<string, number> = {};
+    for (const g of (tumGiderlerGR || [])) {
+      if (g.category !== 'personel' || g.odemeTipi !== 'prim') continue;
+      if (!g.date || !g.mekanAdi) continue;
+      const key = `${g.date}_${g.mekanAdi}`;
+      hakedisGiderByTarihMekan[key] = (hakedisGiderByTarihMekan[key] || 0) + (Number(g.amount) || 0);
+    }
 
     // Hakediş dahil kişiler (kişi bazlı, rol bağımsız — listede olmayanlar hakediş almaz)
     const hakedisDahilSet = new Set<string>(hakedisDahilRaw || []);
@@ -10253,22 +11031,36 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
       cur === "USD" ? v * (Number(exRates.USD) || 33) :
       cur === "GBP" ? v * (Number(exRates.GBP) || 41.2) : v;
 
-    // Maaş günlük haritası
-    const maasById: Record<string, number> = {};
+    // Maaş aylık haritası + tarih bazlı günlük hesaplama
+    const aylikMaasByIdGR: Record<string, number> = {};
     for (const m of maaslar) {
       if (!m.userId) continue;
       const amt = toTL(Number(m.amount) || 0, m.currency || "TRY");
       const extra = amt * ((Number(m.extraCostPercentage) || 0) / 100);
       const total = amt + extra;
       const aylik = m.frequency === "daily" ? total * 30 : m.frequency === "weekly" ? total * 4.33 : m.frequency === "yearly" ? total / 12 : total;
-      maasById[m.userId] = Math.round(aylik / 30);
+      aylikMaasByIdGR[m.userId] = Math.round(aylik);
+    }
+    const gunlukMaasForGR = (userId: string, tarihStr: string): number => {
+      const aylik = aylikMaasByIdGR[userId] || 0;
+      if (aylik <= 0) return 0;
+      const ayIdx = parseInt(tarihStr.slice(5, 7));
+      const yilNum = parseInt(tarihStr.slice(0, 4));
+      const ayGunSayisi = new Date(yilNum, ayIdx, 0).getDate();
+      return Math.round(aylik / ayGunSayisi);
+    };
+    // Eski uyumluluk
+    const maasById: Record<string, number> = {};
+    for (const m of maaslar) {
+      if (!m.userId) continue;
+      maasById[m.userId] = gunlukMaasForGR(m.userId, tarih);
     }
 
     // Toplam metrikler
     let toplamCiro = 0, toplamSatisAdet = 0, toplamIskonto = 0, toplamKare = 0;
     let toplamBaskiMaliyet = 0, toplamAlbumMaliyet = 0, toplamKira = 0;
     let acilanMekan = 0, kapananMekan = 0;
-    let toplamSatilanFotograf = 0, toplamIadeFotograf = 0, toplamBasilanFotograf = 0;
+    let toplamSatilanFotograf = 0, toplamIadeFotograf = 0, toplamBasilanFotograf = 0, toplamKullanilanBaski = 0;
 
     const mekanOzetleri: any[] = [];
     const personelMap: Record<string, any> = {};
@@ -10278,7 +11070,8 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
     const personelIdSet = new Set<string>();
 
     for (const kayit of gunKayitlar) {
-      const mekan = mekanMap[kayit.mekanId] || { name: kayit.mekanId, emoji: "📍", color: "#9dd9ea" };
+      const mekan = mekanMap[kayit.mekanId];
+      if (!mekan) continue; // Mekan tanımı yoksa (bozuk/silinmiş kayıt) atla
       const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
 
       if (kayit.acilisYapildi) acilanMekan++;
@@ -10296,6 +11089,7 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
         toplamBasilanFotograf += Number(kayit.vardiyaToplam.toplamCikisAdedi) || 0;
         toplamSatilanFotograf += Number(kayit.vardiyaToplam["toplamSatılanFotograf"]) || 0;
         toplamIadeFotograf += Number(kayit.vardiyaToplam.toplamIadeFotograf) || 0;
+        toplamKullanilanBaski += Number(kayit.vardiyaToplam["toplamKullanilanBaskı"]) || 0;
       }
 
       // Kare
@@ -10374,15 +11168,36 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
         personelMap[pid].mekanlar.add(mekan.name);
       }
 
-      // Anomaliler
+      // Anomaliler — kağıt tipi ID → ad çevrimi
+      const kagitAdMapGR: Record<string, string> = {};
+      for (const pr of (kayit.printerData || [])) {
+        if (pr.kagitTipiId && pr.kagitTipiAdi) kagitAdMapGR[pr.kagitTipiId] = pr.kagitTipiAdi;
+      }
+      const anomDetayStrGR = (detay: Record<string, any>, tip: string): string => {
+        return Object.entries(detay).map(([k, v]) => {
+          const val = Number(v);
+          const farkStr = val > 0 ? `${val} fazla` : `${Math.abs(val)} eksik`;
+          if (k.startsWith("ribonlar.")) {
+            const tipId = k.replace("ribonlar.", "");
+            const ad = kagitAdMapGR[tipId];
+            return `${tip === "acilis" ? "Acilista" : "Kapanista"} ${farkStr} takim sayildi${ad ? ` (${ad} kagidi)` : ""}`;
+          }
+          const alanAd = k.replace("album", "").replace("paspartu", "Paspartu");
+          if (k.startsWith("album")) return `${k.replace("album", "")} Fotograf albumu: ${farkStr}`;
+          if (k === "paspartu") return `Paspartu: ${farkStr}`;
+          return `${k}: ${val > 0 ? "+" : ""}${val}`;
+        }).join(", ");
+      };
+
       if (kayit.acilisAnomali && Object.keys(kayit.acilisAnomali).length > 0) {
-        anomaliler.push({ mekan: mekan.name, mekanEmoji: mekan.emoji, tip: "acilis", detay: kayit.acilisAnomali });
+        anomaliler.push({ mekan: mekan.name, mekanEmoji: mekan.emoji, tip: "acilis", aciklama: anomDetayStrGR(kayit.acilisAnomali, "acilis") });
       }
       if (kayit.kapanisAnomali && Object.keys(kayit.kapanisAnomali).length > 0) {
-        anomaliler.push({ mekan: mekan.name, mekanEmoji: mekan.emoji, tip: "kapanis", detay: kayit.kapanisAnomali });
+        anomaliler.push({ mekan: mekan.name, mekanEmoji: mekan.emoji, tip: "kapanis", aciklama: anomDetayStrGR(kayit.kapanisAnomali, "kapanis") });
       }
       if (kayit.kapanisYaziciAnomali && kayit.kapanisYaziciAnomali.fark) {
-        anomaliler.push({ mekan: mekan.name, mekanEmoji: mekan.emoji, tip: "yazici", detay: kayit.kapanisYaziciAnomali });
+        const fark = kayit.kapanisYaziciAnomali.fark;
+        anomaliler.push({ mekan: mekan.name, mekanEmoji: mekan.emoji, tip: "yazici", aciklama: `Net basilan ile satis farki: ${fark > 0 ? "+" : ""}${fark} kare` });
       }
 
       // Baskı detayı (yazıcı metrikleri)
@@ -10414,6 +11229,8 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
         iadeFotograf: mekanIadeFotograf,
         netSatilanFotograf,
         birimBaskiMaliyeti,
+        paperName: vt?.paperName || null,
+        printType: mekan.printType || "yarim",
       });
     }
 
@@ -10555,6 +11372,18 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
       }
     }
 
+    // Geç giriş: personel bazlı (tek gün modu)
+    const gecGirisCheckins: any[] = await ckv.getByPrefix("checkin_").catch(() => []) || [];
+    const gecGirisPersonelSet = new Set<string>();
+    const gecGirisPersonelDk: Record<string, number> = {};
+    for (const ci of gecGirisCheckins) {
+      if (!ci?.tarih || ci.tarih !== tarih) continue;
+      if (ci.lateMin > 0 && ci.userId) {
+        gecGirisPersonelSet.add(ci.userId);
+        gecGirisPersonelDk[ci.userId] = ci.lateMin;
+      }
+    }
+
     // Personel maaş gideri
     let toplamMaasGideri = 0;
     const personelListesi = Object.values(personelMap).map((p: any) => {
@@ -10562,10 +11391,13 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
       const gunlukMaas = maasById[p.id] ? Math.round(maasById[p.id] / mekanSayisi) : 0;
       toplamMaasGideri += gunlukMaas;
       const primToplam = Math.round(personelPrimMap[p.id] || 0);
+      const gecGiris = gecGirisPersonelSet.has(p.id);
+      const gecGirisDk = gecGirisPersonelDk[p.id] || 0;
       return {
         id: p.id, ad: p.ad, ciro: Math.round(p.ciro), satisAdet: p.satisAdet,
         iskonto: Math.round(p.iskonto), kare: p.kare, gunlukMaas, primToplam,
         mekanlar: Array.from(p.mekanlar),
+        gecGiris, gecGirisDk,
       };
     }).sort((a: any, b: any) => b.ciro - a.ciro);
 
@@ -10591,9 +11423,11 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
         let gAcilan = 0, gKapanan = 0, gAnomali = 0, gIadeFotograf = 0;
         let gNakit = 0, gIban = 0, gKredi = 0;
         const gMekanlar: string[] = [];
+        const gMekanDetay: Record<string, { mekanId: string; mekanAd: string; mekanEmoji: string; ciro: number; satis: number; gider: number }> = {};
 
         for (const kayit of gKayitlar) {
-          const mekan = mekanMap[kayit.mekanId] || { name: kayit.mekanId, emoji: "📍" };
+          const mekan = mekanMap[kayit.mekanId];
+          if (!mekan) continue;
           if (kayit.acilisYapildi) gAcilan++;
           if (kayit.kapanisYapildi) gKapanan++;
           gKira += Math.round((Number(mekan.yearlyRents?.[kayit.tarih?.slice(0, 4)]) || Number(mekan.yearlyRent) || 0) / 365);
@@ -10606,12 +11440,23 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
           const hasStokAnomali = (kayit.acilisAnomali && Object.keys(kayit.acilisAnomali).length > 0) || (kayit.kapanisAnomali && Object.keys(kayit.kapanisAnomali).length > 0);
           const hasYaziciAnomali = (Array.isArray(kayit.acilisYaziciAnomali) && kayit.acilisYaziciAnomali.length > 0) || (kayit.kapanisYaziciAnomali && kayit.kapanisYaziciAnomali.fark !== undefined);
           if (hasStokAnomali || hasYaziciAnomali) gAnomali++;
-          gMekanlar.push(`${mekan.emoji || "📍"} ${mekan.name}`);
+          const mekanLabel = `${mekan.emoji || "📍"} ${mekan.name}`;
+          gMekanlar.push(mekanLabel);
+          if (!gMekanDetay[kayit.mekanId]) gMekanDetay[kayit.mekanId] = { mekanId: kayit.mekanId, mekanAd: mekan.name, mekanEmoji: mekan.emoji || "📍", ciro: 0, satis: 0, gider: 0 };
+          // Mekan gider: baskı + kira + hakediş
+          const mdBaskiMaliyet = kayit.vardiyaToplam ? (Number(kayit.vardiyaToplam.toplamMaliyet) || 0) : 0;
+          const mdKayitYili = kayit.tarih?.slice(0, 4);
+          const mdYillikKira = Number(mekan.yearlyRents?.[mdKayitYili]) || Number(mekan.yearlyRent) || 0;
+          const mdGunlukKira = Math.round(mdYillikKira / 365);
+          const mdHakedis = hakedisGiderByTarihMekan[`${kayit.tarih}_${mekan.name}`] || 0;
+          gMekanDetay[kayit.mekanId].gider += mdBaskiMaliyet + mdGunlukKira + mdHakedis;
           const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
           for (const satis of satislar) {
             const sTutar = Number(satis.finalPrice) || 0;
             gCiro += sTutar;
             gSatis++;
+            gMekanDetay[kayit.mekanId].ciro += sTutar;
+            gMekanDetay[kayit.mekanId].satis++;
             gIskonto += Number(satis.discount) || 0;
             // Ödeme dağılımı
             const sPm = String(satis.paymentMethod || "").toLowerCase();
@@ -10627,9 +11472,29 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
                 if (al) {
                   const printType = mekan.printType || "yarim";
                   const birim = printType === "tam" ? Number(al.tamBoy) : Number(al.yarimBoy);
-                  gAlbumMaliyet += (Number(item.quantity) || 1) * toTL(birim, al.currency || "TRY");
+                  const albumCostGun = (Number(item.quantity) || 1) * toTL(birim, al.currency || "TRY");
+                  gAlbumMaliyet += albumCostGun;
+                  gMekanDetay[kayit.mekanId].gider += albumCostGun;
                 }
               }
+            }
+          }
+          // Mekan maaş (personel bazlı — mekan sayısına böl)
+          const mdPIds = new Set<string>();
+          for (const s of satislar) { if (s.kaydedenId) mdPIds.add(s.kaydedenId); }
+          for (const kk of (kayit.kareKayitlari || [])) { if (kk.photographerId) mdPIds.add(kk.photographerId); }
+          for (const pid of mdPIds) {
+            const mdMaas = gunlukMaasForGR(pid, t);
+            if (mdMaas > 0) {
+              // O gün bu personel kaç mekanda?
+              let mdMekanSayisi = 0;
+              for (const k2 of gKayitlar) {
+                const k2Pids = new Set<string>();
+                for (const s2 of ((k2.satislar || []).filter((s2: any) => !s2.iptal))) { if (s2.kaydedenId) k2Pids.add(s2.kaydedenId); }
+                for (const kk2 of (k2.kareKayitlari || [])) { if (kk2.photographerId) k2Pids.add(kk2.photographerId); }
+                if (k2Pids.has(pid)) mdMekanSayisi++;
+              }
+              gMekanDetay[kayit.mekanId].gider += mdMaas / Math.max(mdMekanSayisi, 1);
             }
           }
         }
@@ -10660,6 +11525,7 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
           karMarji: gCiro > 0 ? Math.round((gKar / gCiro) * 100) : 0,
           anomaliSayisi: gAnomali,
           mekanlar: [...new Set(gMekanlar)],
+          mekanDetay: Object.values(gMekanDetay).map((md: any) => ({ ...md, ciro: Math.round(md.ciro), gider: Math.round(md.gider), karZarar: Math.round(md.ciro - md.gider) })).sort((a: any, b: any) => b.ciro - a.ciro),
           nakitToplam: Math.round(gNakit),
           ibanToplam: Math.round(gIban),
           krediToplam: Math.round(gKredi),
@@ -10686,6 +11552,7 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
         toplamBasilanFotograf,
         toplamSatilanFotograf,
         toplamIadeFotograf,
+        toplamKullanilanBaski,
         acilanMekan,
         kapananMekan,
         toplamMekan: gunKayitlar.length,

@@ -17,8 +17,58 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
-    version: '2.0.1',
+    version: '4.3.0',
+    date: '2026-03-30',
+    title: 'Ay Bazlı Rapor Detay & Personel İstatistikleri',
+    changes: [
+      { type: 'new', text: 'Ay bazlı rapor: mekan sıralaması açılır detay — ürün dağılımı, baskı detayı, gider kırılımı' },
+      { type: 'new', text: 'Ay bazlı rapor: personel performansı — ciro, kare, satış, vardiya, hakediş, izin, geç giriş, anomali' },
+      { type: 'new', text: 'Ay bazlı rapor: mekan bazlı albüm kırılımı ve albüm maliyeti' },
+      { type: 'new', text: 'Ay bazlı rapor: mekan bazlı geç giriş badge' },
+      { type: 'new', text: 'Anomali detayında puan alan personeller gösteriliyor' },
+      { type: 'improve', text: 'Mekan detayı renkli bölüm başlıkları (ürün, baskı, gider)' },
+      { type: 'improve', text: 'Maliyet kırılımı detaylı: albüm, baskı, hakediş, maaş, kira ayrı ayrı' },
+      { type: 'fix', text: 'Yönetici rolü personel listesinden filtrelendi' },
+    ],
+  },
+  {
+    version: '4.2.0',
     date: '2026-03-29',
+    title: 'Ay Bazlı Rapor & Gün Bazlı İyileştirmeler',
+    changes: [
+      { type: 'new', text: 'Ay bazlı rapor: Ciro & Kâr/Zarar detaylı maliyet kırılımı eklendi' },
+      { type: 'new', text: 'Ay bazlı rapor: baskı özeti, kullanılan baskı, tam/yarım boy kırılımı' },
+      { type: 'new', text: 'Ay bazlı rapor: satılan dağılımı bar grafiği + mekan bazlı ürün kırılımı' },
+      { type: 'new', text: 'Ay bazlı rapor: mekan sıralaması açılır detay — ürün, baskı, gider kırılımı' },
+      { type: 'new', text: 'Ay bazlı rapor: anomali detayları açılır panel ile gösteriliyor' },
+      { type: 'improve', text: 'Ay bazlı rapor: hakediş otomatik hesaplanıyor (kıdem çarpanlı, onay beklemiyor)' },
+      { type: 'new', text: 'Gün bazlı rapor: baskı özeti, albüm bölümü, anomali açılır panel eklendi' },
+      { type: 'new', text: 'Gün bazlı rapor: Ciro & Kâr/Zarar vardiya stiliyle yeniden tasarlandı' },
+      { type: 'new', text: 'Personel performansında anomali badge eklendi' },
+      { type: 'improve', text: 'PDF export: gün raporu tamamen yeniden tasarlandı' },
+      { type: 'fix', text: 'Silinmiş mekanlar satış istatistiklerinden kaldırıldı' },
+    ],
+  },
+  {
+    version: '4.1.0',
+    date: '2026-03-28',
+    title: 'Vardiya Raporları Yenileme',
+    changes: [
+      { type: 'improve', text: 'Vardiya raporları dosya yapısı düzenlendi — 13 modüler dosyaya bölündü' },
+      { type: 'improve', text: 'Vardiya detay: Ciro & Kâr/Zarar bölümü yeniden tasarlandı' },
+      { type: 'improve', text: 'Baskı maliyet bölümü: yazıcı seri numarası, kağıt tipi özeti eklendi' },
+      { type: 'improve', text: 'Albüm bölümü: maliyet kutusu ve baskı tipi bilgisi eklendi' },
+      { type: 'improve', text: 'Personel detayı: iskonto badge, ödeme kutuları ortalandı' },
+      { type: 'new', text: 'Vardiya notları bölümü — açılış ve kapanış notları gösteriliyor' },
+      { type: 'improve', text: 'PDF export: vardiya raporu tamamen yeniden tasarlandı' },
+      { type: 'fix', text: 'Anomali açıklamaları okunabilir hale getirildi (kağıt tipi adı gösteriliyor)' },
+      { type: 'fix', text: 'Vardiya bazlı hakediş hesabına kıdem çarpanı eklendi (tutarlılık)' },
+      { type: 'fix', text: 'Kullanılmayan kod temizlendi' },
+    ],
+  },
+  {
+    version: '4.0.1',
+    date: '2026-03-26',
     title: 'Hakediş & Tema Güncellemesi',
     changes: [
       { type: 'new', text: 'Hakediş dahil/hariç sistemi — kişi bazlı yönetim, varsayılan hariç' },
@@ -33,7 +83,7 @@ const CHANGELOG: ChangelogEntry[] = [
     ],
   },
   {
-    version: '2.0.0',
+    version: '4.0.0',
     date: '2026-03-25',
     title: 'Bantlı Hakediş & Kıdem Sistemi',
     changes: [
