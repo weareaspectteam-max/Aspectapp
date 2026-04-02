@@ -601,7 +601,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
       });
       if (aksiyonOdendi && giderRes.ok) {
         const giderData = await giderRes.json();
-        const giderId = giderData?.id || giderData?.giderId;
+        const giderId = giderData?.gider?.id || giderData?.id || giderData?.giderId;
         if (giderId) {
           await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/ode`), {
             method: 'POST',
@@ -1300,7 +1300,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
                     const borderColor = islem.tip === 'devir' ? '#34d399' : islem.tip === 'odeme' ? '#f97316' : islem.tip === 'silme' ? '#ef4444' : islem.tip === 'gelir' ? '#60a5fa' : '#f87171';
                     const label = islem.tip === 'devir'
                       ? `${islem.mekanEmoji || '🏪'} ${islem.mekanAdi || ''} · Ciro`
-                      : islem.tip === 'odeme' ? (islem.aciklama || 'Ödeme')
+                      : islem.tip === 'odeme' ? (islem.personelAdi && islem.kategori ? `${islem.kategori.charAt(0).toUpperCase() + islem.kategori.slice(1)}: ${islem.personelAdi}` : islem.personelAdi || islem.kategori || islem.aciklama || 'Ödeme')
                       : islem.tip === 'silme' ? `📝 ${islem.aciklama || 'Silme/İndirim'}`
                       : islem.tip === 'gelir' ? 'Gelir' : 'Gider';
 
@@ -1311,7 +1311,11 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
                         <div className="flex items-center gap-2">
                           <div className="w-1 h-4 rounded-full shrink-0" style={{ background: borderColor }} />
                           <span className="text-[11px] font-medium truncate flex-1" style={{ color: borderColor }}>{label}</span>
-                          <span className="text-[10px] text-white/25 shrink-0">{islem.tarih}</span>
+                          <span className="text-[10px] text-white/25 shrink-0">
+                            {islem.tip === 'odeme' && islem.giderTarih
+                              ? `${islem.giderTarih} → ${islem.tarih}`
+                              : islem.tarih}
+                          </span>
                           <span className={`text-xs font-bold shrink-0 ${islem.tip === 'silme' ? 'text-red-500' : islem.tip === 'gider' ? 'text-red-400' : islem.tip === 'odeme' ? 'text-orange-400' : 'text-emerald-400'}`}>
                             {islem.tip === 'silme' ? '🗑️ -' : (islem.tip === 'gider' || islem.tip === 'odeme') ? '-' : '+'}{formatMoney(islem.tutar)}
                           </span>
@@ -1720,11 +1724,23 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
                                         <span className={`text-[11px] font-bold shrink-0 ${h.tip === 'borc' ? 'text-amber-400' : h.tip === 'odeme' ? 'text-emerald-400' : 'text-red-400'}`}>
                                           {h.tip === 'borc' ? '+' : '-'}{formatMoney(h.tutar)}
                                         </span>
-                                        {isAdmin && h.tip === 'odeme' && h.giderId && (
+                                        {isAdmin && h.giderId && (
                                           <button onClick={async () => {
-                                            if (!confirm('Bu ödemeyi geri almak istiyor musunuz?')) return;
+                                            const msg = h.tip === 'borc' ? 'Bu gider kaydını silmek istiyor musunuz?' : 'Bu ödemeyi geri almak istiyor musunuz?';
+                                            if (!confirm(msg)) return;
                                             try {
-                                              await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/odeme/${h.giderId}`), { method: 'DELETE', headers: await authHeaders() });
+                                              const hdrs = await authHeaders();
+                                              if (h.giderId.startsWith('acilis_')) {
+                                                const borcId = h.giderId.replace('acilis_', '');
+                                                await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/acilis-borc/${borcId}`), { method: 'DELETE', headers: hdrs });
+                                              } else if (h.tip === 'borc') {
+                                                await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/komple-sil`), {
+                                                  method: 'POST', headers: hdrs,
+                                                  body: JSON.stringify({ giderIds: [h.giderId], tutar: h.tutar, personelAdi: cari.kisi, category: cari.tip, ay: selectedMonth }),
+                                                });
+                                              } else {
+                                                await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/odeme/${h.giderId}`), { method: 'DELETE', headers: hdrs });
+                                              }
                                               fetchCariler(); fetchSirket();
                                             } catch {}
                                           }} className="p-1 rounded text-white/15 active:text-red-400 shrink-0">
@@ -1791,6 +1807,41 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
                             className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-red-400/50 border border-red-400/15 bg-red-400/5"
                           >
                             Kısmi Sil
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`${cari.kisi} — ₺${cari.kalanBorc.toLocaleString('tr-TR')} borç komple silinecek. Emin misiniz?`)) return;
+                              try {
+                                const hdrs = await authHeaders();
+                                const borcGiderler = cari.hareketler.filter((h: any) => h.tip === 'borc' && h.giderId);
+                                // Açılış borçlarını ayrı sil
+                                const acilisBorclar = borcGiderler.filter((h: any) => h.giderId.startsWith('acilis_'));
+                                const normalGiderler = borcGiderler.filter((h: any) => !h.giderId.startsWith('acilis_'));
+                                // Açılış borçlarını sil
+                                for (const ab of acilisBorclar) {
+                                  const borcId = ab.giderId.replace('acilis_', '');
+                                  await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/acilis-borc/${borcId}`), { method: 'DELETE', headers: hdrs });
+                                }
+                                // Normal giderleri komple sil
+                                if (normalGiderler.length > 0) {
+                                  await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/komple-sil`), {
+                                    method: 'POST', headers: hdrs,
+                                    body: JSON.stringify({
+                                      giderIds: normalGiderler.map((h: any) => h.giderId),
+                                      tutar: cari.kalanBorc,
+                                      personelAdi: cari.kisi,
+                                      category: cari.tip,
+                                      ay: selectedMonth,
+                                    }),
+                                  });
+                                }
+                                fetchCariler();
+                                fetchSirket();
+                              } catch {}
+                            }}
+                            className="px-2 py-1.5 rounded-lg text-[10px] text-red-400/60 border border-red-400/20 bg-red-400/5"
+                          >
+                            <Trash2 className="w-3 h-3" />
                           </button>
                         </div>
                       )}

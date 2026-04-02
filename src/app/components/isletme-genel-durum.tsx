@@ -99,7 +99,7 @@ const categoryColors = {
   ekipman: { bg: 'from-green-500/20 to-green-600/20', text: 'text-green-400', border: 'border-green-500/30', progress: 'from-green-500 to-green-600' },
   operasyonel: { bg: 'from-orange-500/20 to-orange-600/20', text: 'text-orange-400', border: 'border-orange-500/30', progress: 'from-orange-500 to-orange-600' },
   ulasim: { bg: 'from-cyan-500/20 to-cyan-600/20', text: 'text-cyan-400', border: 'border-cyan-500/30', progress: 'from-cyan-500 to-cyan-600' },
-  diger: { bg: 'from-gray-500/20 to-gray-600/20', text: 'text-gray-400', border: 'border-gray-500/30', progress: 'from-gray-500 to-gray-600' },
+  diger: { bg: 'from-slate-400/20 to-slate-500/20', text: 'text-slate-300', border: 'border-slate-400/40', progress: 'from-slate-400 to-slate-500' },
   kira: { bg: 'from-yellow-500/20 to-yellow-600/20', text: 'text-yellow-400', border: 'border-yellow-500/30', progress: 'from-yellow-500 to-yellow-600' },
 } as Record<string, { bg: string; text: string; border: string; progress: string }>;
 

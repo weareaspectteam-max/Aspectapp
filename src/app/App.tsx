@@ -71,6 +71,8 @@ import { OzelIsEkrani } from './components/ozel-is-ekrani';
 import { NotificationsPanel, useNotificationCount } from './components/notifications-panel';
 import { IptalTalepPanel } from './components/iptal-talep-panel';
 import { SuperAdminPanel } from './components/super-admin-panel';
+import { TedarikciPortal } from './components/tedarikci-portal';
+import { TedarikciYonetimi } from './components/tedarikci-yonetimi';
 import type { UserRole } from './components/login';
 import type { ShiftSetupData } from './components/shift-setup';
 import type { Task } from './services/rotation-service';
@@ -125,6 +127,9 @@ function MainApp() {
   const [showEkstraIs, setShowEkstraIs] = useState(false);
   const [showOzelIs, setShowOzelIs] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  // Tedarikçi çok-şirket desteği
+  const [linkedCompanies, setLinkedCompanies] = useState<Array<{ companyId: string; cariId: string; companyName: string }>>([]);
+  const [activeSupplierCompany, setActiveSupplierCompany] = useState<string>('');
   const sessionApplied = useRef(false); // ← İlk giriş işareti
 
   // Uygulama açılırken localStorage'dan temayı uygula
@@ -241,6 +246,16 @@ function MainApp() {
     setAuthToken(token); // ← Cache'e yaz, authHeaders() için fallback
     setUserAvatar(avatar);
     setUserCompanyId(companyId); // ← Şirket kimliği
+
+    // Tedarikçi: linkedCompanies çıkar
+    if (rawRole === 'tedarikci') {
+      const lc = user.user_metadata?.linkedCompanies || [];
+      setLinkedCompanies(lc);
+      if (lc.length === 1) setActiveSupplierCompany(lc[0].companyId);
+    } else {
+      setLinkedCompanies([]);
+      setActiveSupplierCompany('');
+    }
 
     // Tema uygula — localStorage güncel tutulur (applyTheme her çağrıda yazar)
     // İlk girişte backend'den al, sonraki session refresh'lerde localStorage'a güven
@@ -497,6 +512,7 @@ function MainApp() {
   const isOperationsRole = userRole === 'operasyon';
   const isAdministrativeRole = userRole === 'idari';
   const isStaffRole = userRole === 'personel';
+  const isSupplierRole = userRole === 'tedarikci';
   const isPendingRole = userRole === 'bekleyen';
 
   // Rol isimlerini Türkçeleştir
@@ -508,6 +524,7 @@ function MainApp() {
       'operasyon':  'Operasyon Yöneticisi',
       'personel':   'Personel',
       'idari':      'İdari Görevli',
+      'tedarikci':  'Tedarikçi',
       'bekleyen':   'Bekleyen Kullanıcı',
       'superadmin': 'Yönetici',
     };
@@ -518,6 +535,22 @@ function MainApp() {
     // Bekleyen kullanıcılar için sadece pending dashboard
     if (isPendingRole) {
       return <PendingDashboard userName={userName} onLogout={handleLogout} onNavigate={handleNavigate} />;
+    }
+
+    // Tedarikçi portalı — kendi izole dashboard'u
+    if (isSupplierRole && activeTab !== 'settings') {
+      return (
+        <TedarikciPortal
+          userName={userName}
+          userId={userId}
+          accessToken={accessToken}
+          linkedCompanies={linkedCompanies}
+          activeCompanyId={activeSupplierCompany}
+          onCompanyChange={setActiveSupplierCompany}
+          onLogout={handleLogout}
+          onNavigate={handleNavigate}
+        />
+      );
     }
 
     // ── Ekstra İş ekranı ──
@@ -779,6 +812,17 @@ function MainApp() {
           />
         );
       
+      case 'tedarikci-yonetimi':
+        return (
+          <TedarikciYonetimi
+            userName={userName}
+            userRole={userRole}
+            accessToken={accessToken}
+            onLogout={handleLogout}
+            onNavigate={handleNavigate}
+          />
+        );
+
       case 'business-panel':
         if (['operasyon', 'personel'].includes(userRole)) {
           return (

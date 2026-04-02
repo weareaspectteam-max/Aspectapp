@@ -435,6 +435,69 @@ video (YouTube embed), text (yazi), pdf (dis link), gallery (resimler), quiz (co
 
 ---
 
+## Tedarikci Portali
+
+**Frontend:** `src/app/components/tedarikci-portal.tsx` (tedarikci), `tedarikci-yonetimi.tsx` (admin)
+**Backend:** Tum endpoint'ler `index.ts` icinde `/tedarikci/...` prefix'li
+
+### Genel Mantik
+Tedarikci (albumcu, malzeme saglayici vb.) kendi sifresiyle giris yapar, siparislerini/teslimatlarini/odemelerini takip eder. Admin siparis olusturur, teslimat onaylar, odeme kaydeder.
+
+**Cok sirketli model:** Tedarikci birden fazla sirkete hizmet verebilir. `company_id: "__tedarikci__"` ozel degeri ile kayit olur, `linkedCompanies` array'i ile sirketlere baglanir.
+
+### Roller
+- `tedarikci` rolu: hierarchy 0.5 (personel altinda)
+- Admin rolleri (yonetici, ust-mudur, mudur): siparis/teslimat/odeme yonetimi
+
+### KV Yapisi
+| Key | Icerik |
+|-----|--------|
+| `cost_cari_{id}` | Genisletildi: linkedUserId, linkedUserEmail, products, isActive |
+| `siparis_{id}` | Siparis kaydi: cariId, items, status, totalAmount |
+| `teslimat_{id}` | Teslimat bildirimi: siparisId, lines, status |
+| `tedarikci_odeme_{id}` | Odeme kaydi: siparisId, amount, supplierConfirmed |
+
+### Siparis Durumu (State Machine)
+```
+taslak → gonderildi → onaylandi → kismen_teslim → teslim_edildi → tamamlandi
+                                                                    (odeme tamamlaninca)
+Herhangi asamada → iptal (admin)
+```
+
+### Teslimat Akisi
+1. Tedarikci "Teslimat Bildir" → `teslimat_` kaydi (status: beklemede)
+2. Admin "Onayla" → deliveredQuantity guncellenir, siparis status degisir
+3. Admin "Reddet" → sebep yazilir, tedarikci bilgilendirilir
+
+### Odeme-Kasa Entegrasyonu
+Odeme kaydedildiginde:
+1. `isletme_gider_{id}` olusur (category: "tedarikci")
+2. `kasa_odeme_{giderId}` olusur (odendi isareti)
+3. Kasa → Cariler tabinda otomatik gorulur
+
+### API Endpoint'leri
+| Metod | Route | Aciklama |
+|-------|-------|----------|
+| POST | `/tedarikci/davet` | Tedarikci hesabi olustur/bagla |
+| GET | `/tedarikci/sirketlerim` | Tedarikci: bagli sirketler |
+| GET | `/tedarikci/portal` | Tedarikci: ozet + siparisler |
+| GET | `/tedarikci/ozet` | Admin: genel ozet |
+| GET/POST | `/tedarikci/siparisler` | Listele / olustur |
+| GET | `/tedarikci/siparisler/:id` | Detay + teslimatlar + odemeler |
+| PUT | `/tedarikci/siparisler/:id` | Guncelle (taslak iken) |
+| POST | `/tedarikci/siparisler/:id/gonder` | Tedarikciye gonder |
+| POST | `/tedarikci/siparisler/:id/onayla` | Tedarikci kabul |
+| POST | `/tedarikci/siparisler/:id/iptal` | Iptal |
+| POST | `/tedarikci/teslimat` | Tedarikci: teslimat bildir |
+| GET | `/tedarikci/teslimatlar` | Admin: tum teslimatlar |
+| PUT | `/tedarikci/teslimatlar/:id/onayla` | Admin: onayla |
+| PUT | `/tedarikci/teslimatlar/:id/reddet` | Admin: reddet |
+| POST | `/tedarikci/odemeler` | Admin: odeme kaydet |
+| GET | `/tedarikci/odemeler` | Listele |
+| POST | `/tedarikci/odemeler/:id/onayla` | Tedarikci: odemeyi onayladi |
+
+---
+
 ## Yapilacaklar (sonra)
 - Mekan katkisi (ciro×0.60 + kare×0.40) backend'e kaydedilecek — kapanista hesaplanip KV'ye yazilacak. Sonra istatistik sayfasi + gun raporunda kullanilacak. Su an sadece vardiya bazlida frontend'de hesaplaniyor.
 

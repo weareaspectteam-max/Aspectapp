@@ -49,6 +49,7 @@ const ROLE_COLORS: Record<UserRole, string> = {
   'operasyon':  '#fb923c',
   'personel':   '#34d399',
   'idari':      '#60a5fa',
+  'tedarikci':  '#f97316',
   'bekleyen':   '#9ca3af',
   'superadmin': '#fbbf24',
 };
@@ -60,6 +61,7 @@ const ROLE_TITLES: Record<UserRole, string> = {
   'operasyon':  'Operasyon Yön.',
   'personel':   'Personel',
   'idari':      'İdari Görevli',
+  'tedarikci':  'Tedarikçi',
   'bekleyen':   'Onay Bekliyor',
   'superadmin': 'Yönetici',
 };
@@ -71,6 +73,7 @@ const ROLE_AVATARS: Record<UserRole, string> = {
   'operasyon':  '⚡',
   'personel':   '📸',
   'idari':      '📋',
+  'tedarikci':  '🏭',
   'bekleyen':   '⏳',
   'superadmin': '⚡',
 };
@@ -91,7 +94,7 @@ function getSections(
 ): Section[] {
   const go = (tab: string) => { onNavigate(tab); close(); };
 
-  const all:  UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','personel','bekleyen','superadmin'];
+  const all:  UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','personel','tedarikci','bekleyen','superadmin'];
   const mgmt: UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','superadmin'];
   const ops:  UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','superadmin'];
 
@@ -131,6 +134,7 @@ function getSections(
         { icon: Zap,       label: 'Operasyon Paneli', roles: all, action: () => go('quick-sales')   },
         { icon: RotateCcw, label: 'Rotasyon',          roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('rotation')       },
         { icon: Bell,      label: 'Duyurular',         roles: all,                                                              action: () => go('announcements') },
+        { icon: Package,   label: 'Tedarikçi Yönetimi', roles: ['yonetici','ust-mudur','mudur'] as UserRole[],                   action: () => go('tedarikci-yonetimi') },
       ],
     },
     {

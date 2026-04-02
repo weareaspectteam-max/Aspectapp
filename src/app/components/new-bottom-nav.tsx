@@ -9,7 +9,7 @@
  *   badge: top-0.5 right-0.5 w-1.5 h-1.5  →  top:3 right:3 w:8 h:8
  */
 
-import { Home, Zap, Trophy, MessageCircle, Users, Sparkles, Activity, Megaphone } from 'lucide-react';
+import { Home, Zap, Trophy, MessageCircle, Users, Sparkles, Activity, Megaphone, Settings } from 'lucide-react';
 // Trophy zaten import edildi — aspect-ai yerine kullanılacak
 import { motion } from 'motion/react';
 import type { UserRole } from './login';
@@ -69,6 +69,10 @@ const ROLE_TABS: Record<string, Tab[]> = {
     { key: 'aspect-ai',   icon: Sparkles,      color: '#f472b6' },
     { key: 'messaging',   icon: MessageCircle, color: '#60a5fa', badge: true },
     { key: 'rotation',    icon: Users,         color: '#34d399' },
+  ],
+  'tedarikci': [
+    { key: 'dashboard', icon: Home,     color: '#f97316' },
+    { key: 'settings',  icon: Settings, color: '#9ca3af' },
   ],
   'bekleyen': [
     { key: 'dashboard', icon: Home, color: 'var(--app-accent, #a855f7)' },

@@ -58,6 +58,7 @@ const roleConfig = {
   operasyon:  { label: 'Operasyon', emoji: '⚡', color: '#fb923c', accent: 'rgba(251,146,60,0.15)',  border: 'rgba(251,146,60,0.35)',  glow: 'rgba(251,146,60,0.10)',  headerBg: 'linear-gradient(135deg,rgba(251,146,60,0.20),rgba(234,88,12,0.10))' },
   personel:   { label: 'Personel',  emoji: '📸', color: '#34d399', accent: 'rgba(52,211,153,0.15)',  border: 'rgba(52,211,153,0.35)',  glow: 'rgba(52,211,153,0.10)',  headerBg: 'linear-gradient(135deg,rgba(52,211,153,0.20),rgba(16,185,129,0.10))' },
   idari:      { label: 'İdari',     emoji: '📋', color: '#fbbf24', accent: 'rgba(251,191,36,0.15)',  border: 'rgba(251,191,36,0.35)',  glow: 'rgba(251,191,36,0.10)',  headerBg: 'linear-gradient(135deg,rgba(251,191,36,0.20),rgba(245,158,11,0.10))' },
+  tedarikci:  { label: 'Tedarikçi', emoji: '🏭', color: '#f97316', accent: 'rgba(249,115,22,0.15)',  border: 'rgba(249,115,22,0.35)',  glow: 'rgba(249,115,22,0.10)',  headerBg: 'linear-gradient(135deg,rgba(249,115,22,0.20),rgba(234,88,12,0.10))' },
   bekleyen:   { label: 'Bekleyen',  emoji: '⏳', color: 'rgba(255,255,255,0.45)', accent: 'rgba(255,255,255,0.07)', border: 'rgba(255,255,255,0.15)', glow: 'rgba(255,255,255,0.05)', headerBg: 'linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))' },
 };
 
@@ -225,9 +226,9 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
     return canEditUser(t);
   };
   const getAssignableRoles = (): UserRole[] => {
-    if (currentUserRole === 'yonetici')  return ['ust-mudur','mudur','operasyon','personel','idari','bekleyen'];
-    if (currentUserRole === 'ust-mudur') return ['mudur','operasyon','personel','idari','bekleyen'];
-    if (currentUserRole === 'mudur')     return ['operasyon','personel','idari','bekleyen'];
+    if (currentUserRole === 'yonetici')  return ['ust-mudur','mudur','operasyon','personel','idari','tedarikci','bekleyen'];
+    if (currentUserRole === 'ust-mudur') return ['mudur','operasyon','personel','idari','tedarikci','bekleyen'];
+    if (currentUserRole === 'mudur')     return ['operasyon','personel','idari','tedarikci','bekleyen'];
     return [];
   };
 
@@ -298,7 +299,7 @@ export function UserManagement({ userRole, accessToken, userCompanyId = 'aspect'
   };
 
   const groupBy = (list: UserData[]) => {
-    const g: Record<string, UserData[]> = { yonetici: [], 'ust-mudur': [], mudur: [], operasyon: [], personel: [], idari: [], bekleyen: [] };
+    const g: Record<string, UserData[]> = { yonetici: [], 'ust-mudur': [], mudur: [], operasyon: [], personel: [], idari: [], tedarikci: [], bekleyen: [] };
     list.forEach(u => {
       // superadmin rolü yonetici grubunda gösterilir; bilinmeyen roller yonetici'ye düşer
       const key = u.role === 'superadmin' ? 'yonetici' : u.role;

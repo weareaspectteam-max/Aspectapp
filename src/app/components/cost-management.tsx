@@ -727,6 +727,7 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
                     <div>
                       <h4 className="font-bold text-white">{cari.name}</h4>
                       {cari.description && <p className="text-sm text-gray-400">{cari.description}</p>}
+                      {cari.linkedUserEmail && <p className="text-xs text-green-400 mt-0.5">🏭 {cari.linkedUserEmail}</p>}
                     </div>
                   </div>
                   <button

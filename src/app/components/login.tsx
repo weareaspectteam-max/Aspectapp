@@ -5,7 +5,7 @@ import { supabase, SERVER_URL } from '../lib/supabase';
 import { buildHeaders } from '../lib/api';
 import { publicAnonKey } from '../lib/supabase-info';
 
-export type UserRole = 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'bekleyen' | 'superadmin';
+export type UserRole = 'yonetici' | 'ust-mudur' | 'mudur' | 'operasyon' | 'personel' | 'idari' | 'tedarikci' | 'bekleyen' | 'superadmin';
 
 interface LoginProps {
   onLogin: (role: UserRole, name: string, userId: string, accessToken: string, avatar: string, email: string, companyId: string) => void;

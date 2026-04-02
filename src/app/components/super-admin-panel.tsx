@@ -68,6 +68,7 @@ const ROLE_LABELS: Record<string, string> = {
   operasyon:   'Operasyon',
   personel:    'Personel',
   idari:       'İdari Görevli',
+  tedarikci:   'Tedarikçi',
   bekleyen:    'Bekleyen',
   superadmin:  'Yönetici',
 };
@@ -79,6 +80,7 @@ const ROLE_COLORS: Record<string, string> = {
   operasyon:   '#fb923c',
   personel:    '#34d399',
   idari:       '#60a5fa',
+  tedarikci:   '#f97316',
   bekleyen:    '#9ca3af',
   superadmin:  '#fbbf24',
 };

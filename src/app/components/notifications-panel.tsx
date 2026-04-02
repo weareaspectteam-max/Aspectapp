@@ -41,6 +41,13 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string; bg: string }> =
   izin_reddedildi:   { icon: '🚫', color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
   prim_guncellendi:  { icon: '💰', color: '#fbbf24', bg: 'rgba(251,191,36,0.12)' },
   izin_talebi:       { icon: '📋', color: '#d4b5f7', bg: 'rgba(212,181,247,0.12)' },
+  siparis_yeni:      { icon: '📦', color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
+  siparis_onaylandi: { icon: '✅', color: '#34d399', bg: 'rgba(52,211,153,0.12)' },
+  siparis_iptal:     { icon: '🚫', color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
+  teslimat_beklemede:{ icon: '🚚', color: '#fbbf24', bg: 'rgba(251,191,36,0.12)' },
+  teslimat_onaylandi:{ icon: '✅', color: '#4ade80', bg: 'rgba(74,222,128,0.12)' },
+  teslimat_reddedildi:{ icon: '❌', color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
+  odeme_yapildi:     { icon: '💰', color: '#34d399', bg: 'rgba(52,211,153,0.12)' },
 };
 
 function timeAgo(isoStr: string): string {
