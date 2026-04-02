@@ -12,7 +12,7 @@ import { getToken, buildHeaders, appendGhostParam } from '../lib/api';
 // ─── Types ────────────────────────────────
 interface Expense {
   id: string;
-  category: 'personel' | 'malzeme' | 'ekipman' | 'operasyonel' | 'ulasim' | 'diger';
+  category: string;
   amount: number;
   currency: string;
   description: string;
@@ -157,6 +157,8 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   // Otomatik gider kaynakları
   const [mekanKiralar, setMekanKiralar] = useState<MekanKira[]>([]);
   const [recurringCosts, setRecurringCosts] = useState<RecurringCostItem[]>([]);
+  const [cariler, setCariler] = useState<any[]>([]);
+  const [acikKategori, setAcikKategori] = useState<string | null>(null);
   const [allSalaries, setAllSalaries] = useState<SalaryDef[]>([]);
   const [exchangeRates, setExchangeRates] = useState<{ EUR: number; USD: number; GBP: number }>({ EUR: 35.50, USD: 32.80, GBP: 41.20 });
 
@@ -201,7 +203,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   const defaultDonem = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
   const [formData, setFormData] = useState({
-    category: 'personel' as Expense['category'],
+    category: 'personel' as string,
     amount: '',
     currency: 'TRY',
     description: '',
@@ -213,6 +215,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
     donem: defaultDonem,
     mekanId: '',
     mekanAdi: '',
+    odpiendi: false,
   });
 
   // ─── Auth ───────────────────────────────
@@ -267,6 +270,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
         setSalaryDefs(d.salaries || []);
         setAllSalaries(d.salaries || []);
         setRecurringCosts(d.recurring || []);
+        setCariler(d.cariler || []);
         if (d.exchangeRates) setExchangeRates(d.exchangeRates);
       }
       if (mekanRes.ok) {
@@ -406,7 +410,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
     try {
       const h = await getAuthHeaders();
       const payload: any = {
-        category: formData.category,
+        category: formData.category?.startsWith('cari:') ? formData.category.slice(5) : formData.category,
         amount: parseFloat(formData.amount),
         currency: formData.currency,
         description: formData.description,
@@ -442,6 +446,16 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
         setExpenses(prev => prev.map(e => e.id === gider.id ? gider : e));
       } else {
         setExpenses(prev => [gider, ...prev]);
+      }
+      // Ödendi işaretliyse kasaya ödeme kaydı ekle
+      if (formData.odpiendi && !isEdit && gider?.id) {
+        try {
+          const giderId = gider.otomatikKey || gider.id;
+          await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/ode`), {
+            method: 'POST', headers: await getAuthHeaders(),
+            body: JSON.stringify({ giderId, tutar: parseFloat(formData.amount), aciklama: `İGD'den ödendi olarak eklendi` }),
+          });
+        } catch {}
       }
       cancelEdit();
     } catch (err) {
@@ -661,7 +675,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
       const catMatch = categoryFilter === 'all' || exp.category === categoryFilter;
       const mekanMatch = mekanFilter === 'all' || ((exp as any).mekanId || '') === mekanFilter || (mekanFilter === 'genel' && !(exp as any).mekanId);
       const q = searchQuery.toLowerCase().trim();
-      const searchMatch = !q || exp.description?.toLowerCase().includes(q) || exp.personelAdi?.toLowerCase().includes(q) || categoryLabels[exp.category].toLowerCase().includes(q);
+      const searchMatch = !q || exp.description?.toLowerCase().includes(q) || exp.personelAdi?.toLowerCase().includes(q) || (categoryLabels[exp.category] || exp.category).toLowerCase().includes(q);
       return dateMatch && roleCatMatch && catMatch && mekanMatch && searchMatch;
     });
   };
@@ -704,14 +718,27 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   const netProfit = totalRevenue - totalExpenses;
   const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
-  const categorySummaryBase = Object.keys(categoryLabels).map(cat => {
+  const standardCats = Object.keys(categoryLabels);
+  const categorySummaryBase = standardCats
+    .filter(cat => cat !== 'kira') // kira ayrı hesaplanıyor
+    .map(cat => {
+      const items = filteredExpenses.filter(e => e.category === cat);
+      const total = items.reduce((s, e) => s + e.amount, 0);
+      return { category: cat, total, count: items.length, percentage: 0 };
+    }).filter(i => i.total > 0);
+  // Kira ekle — İGD'deki kira düzeltmelerini de dahil et
+  const kiraDuzeltmeleri = filteredExpenses.filter(e => e.category === 'kira').reduce((s, e) => s + e.amount, 0);
+  const netKira = Math.max(0, kiraGiderToplam + kiraDuzeltmeleri);
+  if (netKira > 0) {
+    categorySummaryBase.push({ category: 'kira', total: netKira, count: mekanKiralar.length, percentage: 0 });
+  }
+  // Cari kategorileri ekle (standart kategorilerde olmayan her şey)
+  const allCats = new Set(filteredExpenses.map(e => e.category));
+  for (const cat of allCats) {
+    if (standardCats.includes(cat) || cat === 'kira' || cat === 'duzeltme') continue;
     const items = filteredExpenses.filter(e => e.category === cat);
     const total = items.reduce((s, e) => s + e.amount, 0);
-    return { category: cat, total, count: items.length, percentage: 0 };
-  }).filter(i => i.total > 0);
-  // Kira ekle
-  if (kiraGiderToplam > 0) {
-    categorySummaryBase.push({ category: 'kira', total: kiraGiderToplam, count: mekanKiralar.length, percentage: 0 });
+    if (total > 0) categorySummaryBase.push({ category: cat, total, count: items.length, percentage: 0 });
   }
   // Yüzdeleri hesapla ve sırala
   const categorySummary = categorySummaryBase
@@ -728,7 +755,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
       autoTable(doc, {
         head: [['Kategori', 'Toplam', 'Yüzde', 'Kayıt']],
         body: categorySummary.map(i => [
-          categoryLabels[i.category].replace(/[^\x00-\x7F]/g, ''),
+          (categoryLabels[i.category] || i.category).replace(/[^\x00-\x7F]/g, ''),
           `${i.total.toLocaleString('tr-TR')} TL`,
           `${i.percentage.toFixed(1)}%`,
           i.count,
@@ -741,7 +768,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
       head: [['Tarih', 'Kategori', 'Personel', 'Tip', 'Tutar', 'Açıklama']],
       body: filteredExpenses.slice(0, 100).map(e => [
         new Date(e.date).toLocaleDateString('tr-TR'),
-        categoryLabels[e.category].replace(/[^\x00-\x7F]/g, ''),
+        (categoryLabels[e.category] || e.category).replace(/[^\x00-\x7F]/g, ''),
         e.personelAdi || '-',
         e.odemeTipi ? odemeTipiLabels[e.odemeTipi].replace(/[^\x00-\x7F]/g, '').trim() : '-',
         `${e.amount.toLocaleString('tr-TR')} ${e.currency || 'TRY'}`,
@@ -757,7 +784,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
       'Tarih,Kategori,Personel,Rol,Ödeme Tipi,Dönem,Tutar,Para Birimi,Ekleyen,Açıklama',
       ...filteredExpenses.map(e => [
         e.date,
-        categoryLabels[e.category].replace(/[^\x00-\x7F]/g, ''),
+        (categoryLabels[e.category] || e.category).replace(/[^\x00-\x7F]/g, ''),
         e.personelAdi || '',
         e.personelRol || '',
         e.odemeTipi || '',
@@ -1138,20 +1165,54 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
               <div>
                 <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 block">Kategori</label>
                 <div className="grid grid-cols-3 gap-2">
-                  {(Object.entries(categoryLabels) as [Expense['category'], string][]).map(([key, label]) => (
+                  {(Object.entries(categoryLabels) as [string, string][]).map(([key, label]) => (
                     <button
                       key={key}
                       onClick={() => setFormData(prev => ({ ...prev, category: key }))}
                       className={`py-2.5 px-2 rounded-xl text-xs font-semibold transition-all active:scale-95 ${
                         formData.category === key
-                          ? `bg-gradient-to-br ${categoryColors[key].bg} border ${categoryColors[key].border} ${categoryColors[key].text}`
+                          ? `bg-gradient-to-br ${(categoryColors[key] || categoryColors.diger).bg} border ${(categoryColors[key] || categoryColors.diger).border} ${(categoryColors[key] || categoryColors.diger).text}`
                           : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10'
                       }`}
                     >
                       {label}
                     </button>
                   ))}
+                  {/* Cariler kategorisi butonu */}
+                  {cariler.length > 0 && (
+                    <button
+                      onClick={() => setFormData(prev => ({ ...prev, category: prev.category?.startsWith('cari:') ? '' : 'cari:' }))}
+                      className={`py-2.5 px-2 rounded-xl text-xs font-semibold transition-all active:scale-95 ${
+                        formData.category?.startsWith('cari:')
+                          ? 'bg-gradient-to-br from-ta/20 to-ta/20 border border-ta/30 text-ta'
+                          : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10'
+                      }`}
+                    >
+                      🏢 Cariler
+                    </button>
+                  )}
                 </div>
+                {/* Cari seçici — Cariler kategorisi seçiliyse göster */}
+                {formData.category?.startsWith('cari:') && cariler.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    {cariler.map((cari) => {
+                      const cariKey = `cari:${cari.name}`;
+                      return (
+                        <button
+                          key={`cari-${cari.id}`}
+                          onClick={() => setFormData(prev => ({ ...prev, category: cariKey }))}
+                          className={`py-2.5 px-3 rounded-xl text-xs font-semibold transition-all active:scale-95 text-left ${
+                            formData.category === cariKey
+                              ? 'bg-gradient-to-br from-ta/20 to-ta/20 border border-ta/30 text-ta'
+                              : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10'
+                          }`}
+                        >
+                          {cari.emoji || '🏢'} {cari.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* ── Mekan Seçimi (opsiyonel) ── */}
@@ -1385,6 +1446,22 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                 />
               </div>
 
+              {/* ── Ödendi mi? ── */}
+              {!editingExpense && (
+                <div>
+                  <button
+                    onClick={() => setFormData(prev => ({ ...prev, odpiendi: !prev.odpiendi }))}
+                    className={`w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-95 ${
+                      formData.odpiendi
+                        ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400'
+                        : 'bg-white/5 border border-white/10 text-white/40'
+                    }`}
+                  >
+                    {formData.odpiendi ? '✅ Ödendi — Kasaya ödendi olarak işlenir' : '⏳ Ödenmedi — Kasada bekleyen ödemeye düşer'}
+                  </button>
+                </div>
+              )}
+
               {/* ── Kaydet / İptal ── */}
               <div className="flex gap-3 pt-1">
                 <button
@@ -1412,18 +1489,58 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
               <div className="space-y-2">
                 {categorySummary.map(item => {
                   if ((currentRole === 'personel' || currentRole === 'mudur') && (item.category === 'operasyonel' || item.category === 'personel')) return null;
+                  const isOpen = acikKategori === item.category;
+                  const detayItems = item.category === 'kira'
+                    ? mekanKiralar
+                    : filteredExpenses.filter(e => e.category === item.category);
                   return (
-                    <div key={item.category} className="bg-white/5 rounded-xl p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-semibold text-white">{categoryLabels[item.category]} <span className="text-xs text-gray-500 font-normal">({item.count})</span></span>
-                        <div className="text-right">
-                          <div className="text-sm font-bold text-white">₺{item.total.toLocaleString('tr-TR')}</div>
-                          <div className={`text-xs ${categoryColors[item.category].text}`}>{item.percentage.toFixed(1)}%</div>
+                    <div key={item.category} className="bg-white/5 rounded-xl overflow-hidden">
+                      <button
+                        onClick={() => setAcikKategori(isOpen ? null : item.category)}
+                        className="w-full p-3 text-left"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-semibold text-white">{categoryLabels[item.category] || `🏢 ${item.category}`} <span className="text-xs text-gray-500 font-normal">({item.count})</span></span>
+                          <div className="text-right">
+                            <div className="text-sm font-bold text-white">₺{Math.round(item.total).toLocaleString('tr-TR')}</div>
+                            <div className={`text-xs ${(categoryColors[item.category] || categoryColors.diger).text}`}>{item.percentage.toFixed(1)}%</div>
+                          </div>
                         </div>
-                      </div>
-                      <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                        <div className={`h-full bg-gradient-to-r ${categoryColors[item.category].progress} transition-all`} style={{ width: `${item.percentage}%` }} />
-                      </div>
+                        <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div className={`h-full bg-gradient-to-r ${(categoryColors[item.category] || categoryColors.diger).progress} transition-all`} style={{ width: `${item.percentage}%` }} />
+                        </div>
+                      </button>
+                      {/* Detay — açılır panel (kişi/kaynak bazlı gruplanmış) */}
+                      {isOpen && (() => {
+                        // Kişi/kaynak bazlı grupla
+                        const { days: fDays } = getDateRangeForFilter();
+                        const grupMap: Record<string, { label: string; toplam: number; count: number }> = {};
+                        for (const e of detayItems) {
+                          const key = e.personelAdi || e.name || e.description || '-';
+                          if (!grupMap[key]) grupMap[key] = { label: key, toplam: 0, count: 0 };
+                          // Kira: yearlyRent'ten dönem bazlı hesapla, diğerleri: amount
+                          const tutar = e.yearlyRent ? (e.yearlyRent / 365) * fDays : (e.amount || 0);
+                          grupMap[key].toplam += tutar;
+                          grupMap[key].count++;
+                        }
+                        const gruplar = Object.values(grupMap).sort((a, b) => b.toplam - a.toplam);
+
+                        return (
+                          <div className="px-3 pb-3 space-y-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                            {gruplar.length === 0 ? (
+                              <p className="text-[10px] text-white/20 py-2 text-center">Kayıt yok</p>
+                            ) : gruplar.map((g, i) => (
+                              <div key={i} className="flex items-center justify-between py-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[11px] text-white/70 truncate">{g.label}</p>
+                                  {g.count > 1 && <p className="text-[9px] text-white/20">{g.count} kayıt</p>}
+                                </div>
+                                <span className="text-[11px] font-bold text-white/60 shrink-0 ml-2">₺{Math.round(g.toplam).toLocaleString('tr-TR')}</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })}
@@ -1525,8 +1642,8 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                             </div>
                           ) : (
                             <div className="flex items-center gap-2 mb-1">
-                              <span className={`text-xs font-semibold px-2 py-1 rounded-lg bg-gradient-to-r ${categoryColors[expense.category].bg} border ${categoryColors[expense.category].border} ${categoryColors[expense.category].text}`}>
-                                {categoryLabels[expense.category]}
+                              <span className={`text-xs font-semibold px-2 py-1 rounded-lg bg-gradient-to-r ${(categoryColors[expense.category] || categoryColors.diger).bg} border ${(categoryColors[expense.category] || categoryColors.diger).border} ${(categoryColors[expense.category] || categoryColors.diger).text}`}>
+                                {categoryLabels[expense.category] || `🏢 ${expense.category}`}
                               </span>
                             </div>
                           )}

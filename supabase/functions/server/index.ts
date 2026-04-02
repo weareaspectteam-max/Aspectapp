@@ -2000,8 +2000,9 @@ app.get("/make-server-4da0b637/maliyetler", async (c) => {
     const papers = await ckv.getByPrefix("cost_paper_");
     const recurring = await ckv.getByPrefix("cost_recurring_");
     const salaries = await ckv.getByPrefix("cost_salary_");
+    const cariler = await ckv.getByPrefix("cost_cari_").catch(() => []) || [];
 
-    return c.json({ exchangeRates, albums, papers, recurring, salaries });
+    return c.json({ exchangeRates, albums, papers, recurring, salaries, cariler });
   } catch (err) {
     console.log("Get maliyetler error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -2330,6 +2331,48 @@ app.delete("/make-server-4da0b637/maliyetler/maaslar/:id", async (c) => {
     return c.json({ message: "Maaş silindi." });
   } catch (err) {
     console.log("Delete maas error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// CARİ HESAPLAR: CRUD
+// ──────────────────────────────────────────
+
+// POST /maliyetler/cariler — Cari ekle/güncelle
+app.post("/make-server-4da0b637/maliyetler/cariler", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (!hasPermission(user.user_metadata?.role, ["yonetici", "ust-mudur"])) return c.json({ error: "Yetkiniz yok." }, 403);
+    const ckv = companyKvFor(getCompanyId(user));
+    const { id, name, emoji, description } = await c.req.json();
+    if (!name?.trim()) return c.json({ error: "Cari adı zorunlu." }, 400);
+
+    const cariId = id || `cari_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const cari = { id: cariId, name: name.trim(), emoji: emoji || "🏢", description: description?.trim() || "", createdAt: id ? undefined : new Date().toISOString() };
+    if (id) { const existing = await ckv.get(`cost_cari_${id}`); if (existing?.createdAt) cari.createdAt = existing.createdAt; }
+    if (!cari.createdAt) cari.createdAt = new Date().toISOString();
+
+    await ckv.set(`cost_cari_${cariId}`, cari);
+    return c.json({ cari });
+  } catch (err) {
+    console.log("Post cari error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// DELETE /maliyetler/cariler/:id
+app.delete("/make-server-4da0b637/maliyetler/cariler/:id", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (!hasPermission(user.user_metadata?.role, ["yonetici", "ust-mudur"])) return c.json({ error: "Yetkiniz yok." }, 403);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del(`cost_cari_${c.req.param("id")}`);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("Delete cari error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
@@ -15128,6 +15171,10 @@ app.post("/make-server-4da0b637/kasa/sirket/kismi-sil", async (c) => {
     const { giderId, tutar, aciklama, personelAdi, category, ay } = await c.req.json();
     if (!giderId || !tutar || tutar <= 0) return c.json({ error: "giderId ve tutar zorunlu." }, 400);
 
+    // Zaten komple silinmiş mi?
+    const mevcutOdeme = await ckv.get(`kasa_odeme_${giderId}`);
+    if (mevcutOdeme?.komplesilindi) return c.json({ error: "Bu gider zaten silinmiş." }, 400);
+
     // 1. Kasadaki ödeme kaydına "silinen" olarak ekle
     const odemeKey = `kasa_odeme_${giderId}`;
     const existing = await ckv.get(odemeKey) || { giderId, odemeler: [], silmeler: [], odpiendi: false, odpienenTutar: 0, silinenTutar: 0 };
@@ -15188,6 +15235,10 @@ app.post("/make-server-4da0b637/kasa/sirket/komple-sil", async (c) => {
     const { giderIds, tutar, aciklama, personelAdi, category, ay } = await c.req.json();
     // giderIds: bir grup giderin ID listesi (aynı kişinin tüm günlük kayıtları)
     if (!giderIds || !Array.isArray(giderIds) || !tutar || tutar <= 0) return c.json({ error: "giderIds ve tutar zorunlu." }, 400);
+
+    // Zaten komple silinmiş mi kontrol et
+    const ilkOdeme = await ckv.get(`kasa_odeme_${giderIds[0]}`);
+    if (ilkOdeme?.komplesilindi) return c.json({ error: "Bu gider zaten silinmiş." }, 400);
 
     // Her gider için kasada "silindi" işaretle
     for (const gId of giderIds) {

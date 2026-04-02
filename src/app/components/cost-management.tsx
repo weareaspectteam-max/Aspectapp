@@ -83,7 +83,7 @@ interface Location {
   photoPrice: number;
 }
 
-type ViewType = 'main' | 'products' | 'recurring' | 'salaries' | 'rents';
+type ViewType = 'main' | 'products' | 'recurring' | 'salaries' | 'rents' | 'cariler';
 
 export function CostManagement({ userName, userRole, accessToken, onLogout, onNavigate }: CostManagementProps) {
   const [currentView, setCurrentView] = useState<ViewType>('main');
@@ -132,6 +132,11 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
 
   // Locations from mekan-management
   const [locations, setLocations] = useState<Location[]>([]);
+
+  // Cariler
+  const [cariler, setCariler] = useState<any[]>([]);
+  const [showCariForm, setShowCariForm] = useState(false);
+  const [cariForm, setCariForm] = useState({ emoji: '🏢', name: '', description: '' });
 
   // Form states for paper
   const [paperForm, setPaperForm] = useState({
@@ -208,6 +213,7 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
         setPapers(data.papers || []);
         setRecurringCosts(data.recurring || []);
         setSalaries(data.salaries || []);
+        setCariler(data.cariler || []);
       }
 
       if (mekanRes.ok) {
@@ -646,6 +652,158 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
     });
   };
 
+  // ─── Cari CRUD ──────────────────────────────
+  const handleAddCari = async () => {
+    if (!cariForm.name.trim()) {
+      alert('Lütfen cari adını girin!');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(appendGhostParam(`${API_BASE}/maliyetler/cariler`), {
+        method: 'POST',
+        headers: buildHeaders(token),
+        body: JSON.stringify({
+          emoji: cariForm.emoji || '🏢',
+          name: cariForm.name.trim(),
+          description: cariForm.description.trim(),
+        }),
+      });
+      if (!res.ok) { const e = await res.json(); alert(e.error || 'Cari eklenemedi.'); return; }
+      const { cari } = await res.json();
+      setCariler(prev => [...prev, cari]);
+      setCariForm({ emoji: '🏢', name: '', description: '' });
+      setShowCariForm(false);
+    } catch (err) {
+      console.log('Cari ekleme hatası:', err);
+      alert('Sunucu hatası!');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteCari = async (id: string) => {
+    if (!confirm('Bu cariyi silmek istediğinize emin misiniz?')) return;
+    try {
+      const token = await getToken();
+      await fetch(appendGhostParam(`${API_BASE}/maliyetler/cariler/${id}`), { method: 'DELETE', headers: buildHeaders(token) });
+      setCariler(prev => prev.filter(c => c.id !== id));
+    } catch (err) {
+      console.log('Cari silme hatası:', err);
+    }
+  };
+
+  // CARILER VIEW
+  const renderCarilerView = () => {
+    return (
+      <div className="px-6 space-y-4">
+        {/* Header */}
+        <div className="backdrop-blur-xl bg-gradient-to-br from-[#c4b5fd]/20 to-[#a78bfa]/10 border border-[#c4b5fd]/30 rounded-2xl p-5 text-center">
+          <p className="text-sm text-gray-300 mb-2">Toplam Cari</p>
+          <p className="text-3xl font-bold text-white">{cariler.length}</p>
+        </div>
+
+        {cariler.length === 0 && !showCariForm && (
+          <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-8 text-center">
+            <p className="text-gray-400 mb-4">Henüz cari eklenmemiş</p>
+            <button
+              onClick={() => setShowCariForm(true)}
+              className="px-6 py-3 bg-gradient-to-r from-[#c4b5fd] to-[#a78bfa] rounded-xl text-white font-bold hover:scale-105 transition-all active:scale-95 inline-flex items-center gap-2"
+            >
+              <Plus className="w-5 h-5" />
+              İlk Cariyi Ekle
+            </button>
+          </div>
+        )}
+
+        {cariler.length > 0 && !showCariForm && (
+          <div className="space-y-3">
+            {cariler.map((cari) => (
+              <div key={cari.id} className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{cari.emoji || '🏢'}</span>
+                    <div>
+                      <h4 className="font-bold text-white">{cari.name}</h4>
+                      {cari.description && <p className="text-sm text-gray-400">{cari.description}</p>}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteCari(cari.id)}
+                    className="p-2 bg-red-600/60 border border-red-500/50 rounded-lg text-white hover:scale-110 transition-all active:scale-95"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            <button
+              onClick={() => setShowCariForm(true)}
+              className="w-full py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white font-semibold hover:bg-white/20 transition-all active:scale-95 flex items-center justify-center gap-2"
+            >
+              <Plus className="w-5 h-5" />
+              Yeni Cari Ekle
+            </button>
+          </div>
+        )}
+
+        {/* Cari Form */}
+        {showCariForm && (
+          <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5 space-y-4">
+            <div>
+              <label className="text-sm font-semibold text-gray-300 mb-2 block">Emoji:</label>
+              <input
+                type="text"
+                value={cariForm.emoji}
+                onChange={(e) => setCariForm({ ...cariForm, emoji: e.target.value })}
+                className="w-20 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-center text-xl focus:outline-none focus:border-[#c4b5fd] transition-all"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-gray-300 mb-2 block">Cari Adı:</label>
+              <input
+                type="text"
+                value={cariForm.name}
+                onChange={(e) => setCariForm({ ...cariForm, name: e.target.value })}
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-[#c4b5fd] transition-all"
+                placeholder="Örn: Ribon Tedarikçisi"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-gray-300 mb-2 block">Açıklama (opsiyonel):</label>
+              <input
+                type="text"
+                value={cariForm.description}
+                onChange={(e) => setCariForm({ ...cariForm, description: e.target.value })}
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-[#c4b5fd] transition-all"
+                placeholder="Kısa açıklama..."
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowCariForm(false); setCariForm({ emoji: '🏢', name: '', description: '' }); }}
+                className="flex-1 py-3 bg-white/10 border border-white/20 rounded-xl text-white font-semibold hover:bg-white/20 transition-all active:scale-95"
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleAddCari}
+                disabled={isSaving}
+                className="flex-1 py-3 bg-gradient-to-r from-[#c4b5fd] to-[#a78bfa] rounded-xl text-white font-bold hover:scale-105 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Kaydet
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // MAIN VIEW
   const renderMainView = () => {
     const totalMonthlyCost = calculateTotalMonthlyCost();
@@ -691,6 +849,13 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
         title: 'Mekan Kiraları',
         subtitle: `${(locations || []).length} mekan • ₺${formatCurrency(totalRentsMonthly)}/ay`,
         color: '#d4b5f7',
+      },
+      {
+        view: 'cariler' as ViewType,
+        emoji: '🏢',
+        title: 'Cariler',
+        subtitle: `${cariler.length} cari`,
+        color: '#c4b5fd',
       },
     ];
 
@@ -1712,6 +1877,7 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
                   {currentView === 'recurring' && 'Düzenli Giderler'}
                   {currentView === 'salaries'  && 'Personel Maaşları'}
                   {currentView === 'rents'     && 'Mekan Kiraları'}
+                  {currentView === 'cariler'   && 'Cariler'}
                 </h1>
                 {currentView === 'main' && <span className="text-xl">💰</span>}
                 {isSaving && <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#9dd9ea' }} />}
@@ -1722,6 +1888,7 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
                 {currentView === 'recurring' && 'Düzenli gider takibi'}
                 {currentView === 'salaries'  && 'Personel maaş yönetimi'}
                 {currentView === 'rents'     && 'Mekan kiraları (Sadece görüntüleme)'}
+                {currentView === 'cariler'   && 'Tedarikçi ve cari hesap yönetimi'}
               </p>
             </div>
           </div>
@@ -1751,6 +1918,7 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
           {currentView === 'recurring' && renderRecurringView()}
           {currentView === 'salaries'  && renderSalariesView()}
           {currentView === 'rents'     && renderRentsView()}
+          {currentView === 'cariler'   && renderCarilerView()}
         </div>
       )}
     </div>
