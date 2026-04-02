@@ -17,6 +17,28 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '4.5.0',
+    date: '2026-04-02',
+    title: 'Kasa Sistemi & Cari Hesaplar',
+    changes: [
+      { type: 'new', text: 'Kasa: şirket kasası — ciro devir, bekleyen ödemeler, ay kapatma, bakiye takibi' },
+      { type: 'new', text: 'Kasa: cariler tabı — personel/tedarikçi/kira bazlı borç takibi, ay bazlı hareketler' },
+      { type: 'new', text: 'Kasa: para girişi/çıkışı, açılış bakiye, açılış borcu' },
+      { type: 'new', text: 'Kasa: İGD entegrasyonu — giderler kasada bekleyen ödeme olarak görünür' },
+      { type: 'new', text: 'Kasa: hakediş-kasa senkronu — birinden öde, diğerinde de ödendi' },
+      { type: 'new', text: 'Kasa: kısmi öde, kısmi sil, komple sil — İGD düzeltme kaydı ile' },
+      { type: 'new', text: 'Kasa: kur farkı — borç kapandığında fark otomatik hesaplanır' },
+      { type: 'new', text: 'Cari hesap sistemi — Maliyet Yönetiminden tedarikçi tanımlama' },
+      { type: 'new', text: 'Akademi: global içerik desteği — tüm şirketler için ortak eğitim' },
+      { type: 'improve', text: 'İGD: gider formunda cari kategori + ödendi seçeneği' },
+      { type: 'improve', text: 'İGD: Kategori Bazlı Özet tıklanabilir detay, kişi bazlı gruplama' },
+      { type: 'improve', text: 'Maaş hesaplama: /30 yerine ayın gerçek gün sayısı (tüm raporlar tutarlı)' },
+      { type: 'improve', text: 'Maliyet Yönetimi: tüm alt sayfalar için geri butonu' },
+      { type: 'improve', text: 'Kasa görünürlük: üst müdür ve idari ayrı toggle' },
+      { type: 'fix', text: 'Tema uyumu: 58 bileşende 870+ renk referansı dinamik tema rengine bağlandı' },
+    ],
+  },
+  {
     version: '4.4.0',
     date: '2026-03-30',
     title: 'Akademi & Telegram Fotoğraf',

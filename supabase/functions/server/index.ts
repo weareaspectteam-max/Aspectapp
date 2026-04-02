@@ -14555,17 +14555,33 @@ app.get("/make-server-4da0b637/academy", async (c) => {
     const reqCId = c.req.query("company_id");
     const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
 
-    const [categories, allContent, progress, announcement] = await Promise.all([
+    const companyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+
+    const [categories, allContent, progress, announcement, globalCats, globalContent, hiddenList] = await Promise.all([
       ckv.get("academy_categories"),
       ckv.getByPrefix("academy_content_"),
       ckv.get(`academy_progress_${user.id}`),
       ckv.get("academy_announcement"),
+      kv.get("academy_global_categories"),
+      kv.getByPrefix("academy_global_content_"),
+      ckv.get("academy_hidden"),
     ]);
 
-    const cats = (categories || []).sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
-    const contents = (allContent || []).sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+    const hidden = new Set(hiddenList || []);
 
-    return c.json({ categories: cats, contents, progress: progress || {}, announcement: announcement || null });
+    // Şirket kategorileri
+    const localCats = (categories || []).map((c: any) => ({ ...c, global: false }));
+    // Global kategoriler — gizlenmemişleri ekle
+    const gCats = (globalCats || []).filter((c: any) => !hidden.has(c.id)).map((c: any) => ({ ...c, global: true }));
+    const cats = [...localCats, ...gCats].sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+
+    // Şirket içerikleri
+    const localContents = (allContent || []).map((c: any) => ({ ...c, global: false }));
+    // Global içerikler — gizlenmemişleri ekle
+    const gContents = (globalContent || []).filter((c: any) => !hidden.has(c.id) && !hidden.has(c.categoryId)).map((c: any) => ({ ...c, global: true }));
+    const contents = [...localContents, ...gContents].sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+
+    return c.json({ categories: cats, contents, progress: progress || {}, announcement: announcement || null, companyId });
   } catch (err) {
     console.log("Academy GET error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -14721,6 +14737,209 @@ app.post("/make-server-4da0b637/academy/progress", async (c) => {
     console.log("Academy progress POST error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
+});
+
+// ── GLOBAL AKADEMİ ──
+
+// POST /academy/global/category — Global kategori ekle/güncelle
+app.post("/make-server-4da0b637/academy/global/category", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    if (role !== "yonetici") return c.json({ error: "Sadece yönetici." }, 403);
+
+    const { id, name, emoji, order } = await c.req.json();
+    if (!name?.trim()) return c.json({ error: "Kategori adı zorunlu." }, 400);
+
+    const cats = (await kv.get("academy_global_categories")) || [];
+    const catId = id || `gcat_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const companyId = getCompanyId(user);
+
+    // Düzenleme: sadece oluşturan şirket
+    if (id) {
+      const existing = cats.find((c: any) => c.id === id);
+      if (existing && existing.createdByCompany && existing.createdByCompany !== companyId) {
+        return c.json({ error: "Bu kategoriyi sadece oluşturan şirket düzenleyebilir." }, 403);
+      }
+    }
+
+    const cat = { id: catId, name: name.trim(), emoji: emoji || "📁", order: order ?? cats.length, global: true, createdByCompany: companyId, createdBy: user.user_metadata?.full_name || "" };
+    const idx = cats.findIndex((c: any) => c.id === catId);
+    if (idx >= 0) { cat.createdByCompany = cats[idx].createdByCompany; cats[idx] = cat; }
+    else cats.push(cat);
+
+    await kv.set("academy_global_categories", cats);
+    return c.json({ category: cat });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// DELETE /academy/global/category/:id
+app.delete("/make-server-4da0b637/academy/global/category/:id", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if ((user.user_metadata?.role || "personel") !== "yonetici") return c.json({ error: "Sadece yönetici." }, 403);
+
+    const catId = c.req.param("id");
+    const companyId = getCompanyId(user);
+    const cats = (await kv.get("academy_global_categories")) || [];
+    const cat = cats.find((c: any) => c.id === catId);
+    if (cat && cat.createdByCompany && cat.createdByCompany !== companyId) {
+      return c.json({ error: "Bu kategoriyi sadece oluşturan şirket silebilir." }, 403);
+    }
+
+    await kv.set("academy_global_categories", cats.filter((c: any) => c.id !== catId));
+    // İçerikleri de sil
+    const allContent = (await kv.getByPrefix("academy_global_content_")) || [];
+    for (const ct of allContent) { if (ct.categoryId === catId) await kv.del(`academy_global_content_${ct.id}`); }
+    return c.json({ ok: true });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// POST /academy/global/content — Global içerik ekle/güncelle
+app.post("/make-server-4da0b637/academy/global/content", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if ((user.user_metadata?.role || "personel") !== "yonetici") return c.json({ error: "Sadece yönetici." }, 403);
+
+    const body = await c.req.json();
+    const { id, categoryId, type, title, description, data, order } = body;
+    if (!categoryId || !type || !title?.trim()) return c.json({ error: "categoryId, type ve title zorunlu." }, 400);
+
+    const companyId = getCompanyId(user);
+    const contentId = id || `gcnt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+    // Düzenleme: sadece oluşturan şirket
+    if (id) {
+      const existing = await kv.get(`academy_global_content_${id}`);
+      if (existing && existing.createdByCompany && existing.createdByCompany !== companyId) {
+        return c.json({ error: "Bu içeriği sadece oluşturan şirket düzenleyebilir." }, 403);
+      }
+    }
+
+    const content = {
+      id: contentId, categoryId, type, title: title.trim(),
+      description: description?.trim() || "", data: data || {}, order: order ?? 0,
+      global: true, createdByCompany: companyId,
+      createdBy: user.user_metadata?.full_name || "",
+      createdAt: id ? undefined : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (id) { const ex = await kv.get(`academy_global_content_${id}`); if (ex?.createdAt) content.createdAt = ex.createdAt; content.createdByCompany = ex?.createdByCompany || companyId; }
+    if (!content.createdAt) content.createdAt = new Date().toISOString();
+
+    await kv.set(`academy_global_content_${contentId}`, content);
+    return c.json({ content });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// DELETE /academy/global/content/:id
+app.delete("/make-server-4da0b637/academy/global/content/:id", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if ((user.user_metadata?.role || "personel") !== "yonetici") return c.json({ error: "Sadece yönetici." }, 403);
+
+    const contentId = c.req.param("id");
+    const companyId = getCompanyId(user);
+    const existing = await kv.get(`academy_global_content_${contentId}`);
+    if (existing && existing.createdByCompany && existing.createdByCompany !== companyId) {
+      return c.json({ error: "Bu içeriği sadece oluşturan şirket silebilir." }, 403);
+    }
+    await kv.del(`academy_global_content_${contentId}`);
+    return c.json({ ok: true });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// POST /academy/hide — İçerik/kategori gizle/göster (şirkete özel)
+app.post("/make-server-4da0b637/academy/hide", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if ((user.user_metadata?.role || "personel") !== "yonetici") return c.json({ error: "Sadece yönetici." }, 403);
+
+    const ckv = companyKvFor(getCompanyId(user));
+    const { itemId, hide } = await c.req.json();
+    if (!itemId) return c.json({ error: "itemId zorunlu." }, 400);
+
+    const hidden: string[] = (await ckv.get("academy_hidden")) || [];
+    if (hide && !hidden.includes(itemId)) hidden.push(itemId);
+    else if (!hide) { const idx = hidden.indexOf(itemId); if (idx >= 0) hidden.splice(idx, 1); }
+
+    await ckv.set("academy_hidden", hidden);
+    return c.json({ hidden });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// POST /academy/toggle-global — İçeriği/kategoriyi globale taşı veya globalden kaldır
+app.post("/make-server-4da0b637/academy/toggle-global", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if ((user.user_metadata?.role || "personel") !== "yonetici") return c.json({ error: "Sadece yönetici." }, 403);
+
+    const companyId = getCompanyId(user);
+    const ckv = companyKvFor(companyId);
+    const { type, id, toGlobal } = await c.req.json(); // type: 'category' | 'content'
+
+    if (type === 'category') {
+      if (toGlobal) {
+        // Şirketten → Global
+        const localCats = (await ckv.get("academy_categories")) || [];
+        const cat = localCats.find((c: any) => c.id === id);
+        if (!cat) return c.json({ error: "Kategori bulunamadı." }, 404);
+
+        // Global'e ekle
+        const globalCats = (await kv.get("academy_global_categories")) || [];
+        globalCats.push({ ...cat, global: true, createdByCompany: companyId, createdBy: user.user_metadata?.full_name || "" });
+        await kv.set("academy_global_categories", globalCats);
+
+        // İçerikleri de taşı
+        const localContents = (await ckv.getByPrefix("academy_content_")) || [];
+        for (const ct of localContents) {
+          if (ct.categoryId === id) {
+            await kv.set(`academy_global_content_${ct.id}`, { ...ct, global: true, createdByCompany: companyId });
+            await ckv.del(`academy_content_${ct.id}`);
+          }
+        }
+
+        // Şirketten kaldır
+        await ckv.set("academy_categories", localCats.filter((c: any) => c.id !== id));
+        return c.json({ ok: true, direction: 'toGlobal' });
+
+      } else {
+        // Global → Şirkete (sadece oluşturan)
+        const globalCats = (await kv.get("academy_global_categories")) || [];
+        const cat = globalCats.find((c: any) => c.id === id);
+        if (!cat) return c.json({ error: "Kategori bulunamadı." }, 404);
+        if (cat.createdByCompany && cat.createdByCompany !== companyId) {
+          return c.json({ error: "Bu kategoriyi sadece oluşturan şirket kaldırabilir." }, 403);
+        }
+
+        // Şirkete ekle
+        const localCats = (await ckv.get("academy_categories")) || [];
+        localCats.push({ ...cat, global: false });
+        await ckv.set("academy_categories", localCats);
+
+        // İçerikleri de taşı
+        const globalContents = (await kv.getByPrefix("academy_global_content_")) || [];
+        for (const ct of globalContents) {
+          if (ct.categoryId === id) {
+            await ckv.set(`academy_content_${ct.id}`, { ...ct, global: false });
+            await kv.del(`academy_global_content_${ct.id}`);
+          }
+        }
+
+        // Globalden kaldır
+        await kv.set("academy_global_categories", globalCats.filter((c: any) => c.id !== id));
+        return c.json({ ok: true, direction: 'toLocal' });
+      }
+    }
+
+    return c.json({ error: "Geçersiz type." }, 400);
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
 // POST /academy/announcement — Yönetici duyuru mesajı yaz/güncelle
@@ -15704,41 +15923,6 @@ app.delete("/make-server-4da0b637/kasa/sirket/acilis-borc/:id", async (c) => {
   } catch (err) {
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
-});
-
-// ── TEMP: Akademi içerik ekle ──
-app.post("/make-server-4da0b637/academy/seed-content", async (c) => {
-  try {
-    const user = await verifyToken(c);
-    if (!user) return c.json({ error: "Yetkisiz." }, 401);
-    if (user.user_metadata?.role !== "yonetici") return c.json({ error: "Yetki yok." }, 403);
-    const ckv = companyKvFor(getCompanyId(user));
-
-    const { categoryId, items } = await c.req.json();
-    if (!categoryId || !items?.length) return c.json({ error: "categoryId ve items zorunlu." }, 400);
-
-    let count = 0;
-    for (const item of items) {
-      const contentId = `cnt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      await ckv.set(`academy_content_${contentId}`, {
-        id: contentId,
-        categoryId,
-        type: item.type || "text",
-        title: item.title,
-        description: item.description || "",
-        data: item.data || {},
-        order: count,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        createdBy: "sistem",
-      });
-      count++;
-      // küçük gecikme — ID çakışması önleme
-      await new Promise(r => setTimeout(r, 50));
-    }
-
-    return c.json({ ok: true, count });
-  } catch (err) { return c.json({ error: `${err}` }, 500); }
 });
 
 // ── CARİ HESAPLAR (kişi/firma bazlı borç/ödeme özet) ──

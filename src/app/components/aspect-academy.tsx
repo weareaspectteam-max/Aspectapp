@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   BookOpen, Camera, TrendingUp, Award, ChevronRight, ChevronDown, Play, CheckCircle,
   Plus, Trash2, Edit3, Video, FileText, Image, Link as LinkIcon, HelpCircle, Loader2,
-  ArrowLeft, ExternalLink, X, GripVertical, Save
+  ArrowLeft, ExternalLink, X, GripVertical, Save, EyeOff, Globe
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { authHeaders, appendGhostParam } from '../lib/api';
@@ -12,11 +12,12 @@ import { projectId } from '../lib/supabase-info';
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
 // ── Tipler ──
-interface Category { id: string; name: string; emoji: string; order: number; }
+interface Category { id: string; name: string; emoji: string; order: number; global?: boolean; createdByCompany?: string; }
 interface ContentItem {
   id: string; categoryId: string; type: 'video' | 'text' | 'pdf' | 'gallery' | 'quiz' | 'link';
   title: string; description: string; data: any; order: number;
   createdAt: string; updatedAt: string; createdBy: string;
+  global?: boolean; createdByCompany?: string;
 }
 interface QuizQuestion { question: string; options: string[]; correctIndex: number; }
 interface Progress { [contentId: string]: { watched: boolean; date: string } }
@@ -59,6 +60,7 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [myCompanyId, setMyCompanyId] = useState('');
 
   // Admin state
   const isAdmin = ['yonetici', 'ust-mudur'].includes(userRole);
@@ -68,7 +70,7 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
   const [saving, setSaving] = useState(false);
 
   // Form state
-  const [catForm, setCatForm] = useState({ name: '', emoji: '📚' });
+  const [catForm, setCatForm] = useState({ name: '', emoji: '📚', globalCat: false });
   const [contentForm, setContentForm] = useState({
     type: 'video' as ContentItem['type'],
     title: '', description: '',
@@ -88,6 +90,7 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
       setContents(d.contents || []);
       setProgress(d.progress || {});
       setAnnouncement(d.announcement || null);
+      setMyCompanyId(d.companyId || '');
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -102,12 +105,13 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
     if (!catForm.name.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch(appendGhostParam(`${API_BASE}/academy/category`), {
+      const endpoint = catForm.globalCat ? `${API_BASE}/academy/global/category` : `${API_BASE}/academy/category`;
+      const res = await fetch(appendGhostParam(endpoint), {
         method: 'POST', headers: await authHeaders(),
         body: JSON.stringify({ name: catForm.name, emoji: catForm.emoji }),
       });
       if (!res.ok) throw new Error((await res.json()).error);
-      setCatForm({ name: '', emoji: '📁' });
+      setCatForm({ name: '', emoji: '📁', globalCat: false });
       setShowCatForm(false);
       fetchData();
     } catch (e: any) { setError(e.message); }
@@ -115,10 +119,11 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
   };
 
   // ── Kategori sil ──
-  const deleteCategory = async (id: string) => {
+  const deleteCategory = async (id: string, isGlobal?: boolean) => {
     if (!confirm('Bu kategori ve tüm içerikleri silinecek. Emin misiniz?')) return;
     try {
-      await fetch(appendGhostParam(`${API_BASE}/academy/category/${id}`), {
+      const endpoint = isGlobal ? `${API_BASE}/academy/global/category/${id}` : `${API_BASE}/academy/category/${id}`;
+      await fetch(appendGhostParam(endpoint), {
         method: 'DELETE', headers: await authHeaders(),
       });
       if (selectedCat === id) setSelectedCat(null);
@@ -154,7 +159,9 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
       };
       if (editItem) body.id = editItem.id;
 
-      const res = await fetch(appendGhostParam(`${API_BASE}/academy/content`), {
+      const isGlobalCat = selectedCatObj?.global;
+      const contentEndpoint = isGlobalCat ? `${API_BASE}/academy/global/content` : `${API_BASE}/academy/content`;
+      const res = await fetch(appendGhostParam(contentEndpoint), {
         method: 'POST', headers: await authHeaders(), body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error((await res.json()).error);
@@ -165,10 +172,11 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
   };
 
   // ── İçerik sil ──
-  const deleteContent = async (id: string) => {
+  const deleteContent = async (id: string, isGlobal?: boolean) => {
     if (!confirm('Bu içerik silinecek. Emin misiniz?')) return;
     try {
-      await fetch(appendGhostParam(`${API_BASE}/academy/content/${id}`), {
+      const endpoint = isGlobal ? `${API_BASE}/academy/global/content/${id}` : `${API_BASE}/academy/content/${id}`;
+      await fetch(appendGhostParam(endpoint), {
         method: 'DELETE', headers: await authHeaders(),
       });
       if (selectedContent?.id === id) setSelectedContent(null);
@@ -212,6 +220,31 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
       setAnnouncementText('');
       setEditingAnnouncement(false);
     } catch (e: any) { setError(e.message); }
+  };
+
+  // ── Global helpers ──
+  const canEditItem = (item: { global?: boolean; createdByCompany?: string }) => !item.global || item.createdByCompany === myCompanyId;
+
+  const hideItem = async (itemId: string) => {
+    try {
+      await fetch(appendGhostParam(`${API_BASE}/academy/hide`), {
+        method: 'POST', headers: await authHeaders(),
+        body: JSON.stringify({ itemId, hide: true }),
+      });
+      fetchData();
+    } catch {}
+  };
+
+  const toggleGlobal = async (cat: Category) => {
+    const toGlobal = !cat.global;
+    if (!confirm(toGlobal ? 'Bu kategoriyi tüm şirketlere açmak istiyor musunuz?' : 'Bu kategoriyi globalden kaldırmak istiyor musunuz?')) return;
+    try {
+      await fetch(appendGhostParam(`${API_BASE}/academy/toggle-global`), {
+        method: 'POST', headers: await authHeaders(),
+        body: JSON.stringify({ type: 'category', id: cat.id, toGlobal }),
+      });
+      fetchData();
+    } catch {}
   };
 
   const resetContentForm = () => {
@@ -789,18 +822,30 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
                     {/* Kategori başlık */}
                     <div className="px-4 flex items-center gap-2 mb-2.5">
                       <span className="text-base">{cat.emoji}</span>
-                      <span className="text-[13px] font-bold text-white flex-1">{cat.name}</span>
+                      <span className="text-[13px] font-bold text-white flex-1">{cat.name}{cat.global && <span className="ml-1 text-[9px] text-emerald-400">🌐</span>}</span>
                       {catItems.length > 0 && (
                         <span className="text-[10px] font-bold text-white/25">{catDone}/{catItems.length}</span>
                       )}
-                      {isAdmin && (
+                      {isAdmin && canEditItem(cat) && (
                         <button onClick={() => { setSelectedCat(cat.id); setShowContentForm(true); }}
                           className="w-6 h-6 rounded-md bg-white/6 border border-white/10 flex items-center justify-center">
                           <Plus className="w-3 h-3 text-white/30" />
                         </button>
                       )}
-                      {isAdmin && (
-                        <button onClick={() => deleteCategory(cat.id)}
+                      {isAdmin && canEditItem(cat) && (
+                        <button onClick={() => toggleGlobal(cat)}
+                          className="w-6 h-6 rounded-md bg-white/6 border border-white/10 flex items-center justify-center">
+                          <Globe className="w-3 h-3" style={{ color: cat.global ? '#34d399' : 'rgba(255,255,255,0.2)' }} />
+                        </button>
+                      )}
+                      {isAdmin && cat.global && (
+                        <button onClick={() => hideItem(cat.id)}
+                          className="w-6 h-6 rounded-md bg-white/6 border border-white/10 flex items-center justify-center">
+                          <EyeOff className="w-3 h-3 text-white/20" />
+                        </button>
+                      )}
+                      {isAdmin && canEditItem(cat) && (
+                        <button onClick={() => deleteCategory(cat.id, cat.global)}
                           className="w-6 h-6 rounded-md bg-red-500/8 border border-red-500/15 flex items-center justify-center">
                           <Trash2 className="w-3 h-3 text-red-400/50" />
                         </button>
@@ -865,13 +910,13 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
                               </div>
 
                               {/* Admin overlay */}
-                              {isAdmin && (
+                              {isAdmin && canEditItem(item) && (
                                 <div className="absolute top-1 left-1 flex gap-1 opacity-0 group-active/card:opacity-100 transition-opacity z-10">
                                   <button onClick={e => { e.stopPropagation(); startEdit(item); }}
                                     className="w-5 h-5 rounded bg-black/60 backdrop-blur-sm flex items-center justify-center">
                                     <Edit3 className="w-2.5 h-2.5 text-white/80" />
                                   </button>
-                                  <button onClick={e => { e.stopPropagation(); deleteContent(item.id); }}
+                                  <button onClick={e => { e.stopPropagation(); deleteContent(item.id, item.global); }}
                                     className="w-5 h-5 rounded bg-black/60 backdrop-blur-sm flex items-center justify-center">
                                     <Trash2 className="w-2.5 h-2.5 text-red-400" />
                                   </button>
@@ -1002,13 +1047,13 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
                       {item.description && <p className="text-[10px] text-white/35 truncate mt-0.5">{item.description}</p>}
                     </div>
                     {/* Admin butonları */}
-                    {isAdmin && (
+                    {isAdmin && canEditItem(item) && (
                       <div className="flex gap-1 shrink-0">
                         <button onClick={e => { e.stopPropagation(); startEdit(item); }}
                           className="w-7 h-7 rounded-lg bg-white/6 border border-white/10 flex items-center justify-center">
                           <Edit3 className="w-3 h-3 text-white/40" />
                         </button>
-                        <button onClick={e => { e.stopPropagation(); deleteContent(item.id); }}
+                        <button onClick={e => { e.stopPropagation(); deleteContent(item.id, item.global); }}
                           className="w-7 h-7 rounded-lg bg-red-500/8 border border-red-500/15 flex items-center justify-center">
                           <Trash2 className="w-3 h-3 text-red-400/70" />
                         </button>
@@ -1051,6 +1096,18 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
                 placeholder="Kategori adı"
                 className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white text-sm outline-none placeholder-white/20 focus:border-ta/50"
               />
+              {/* Global toggle */}
+              <button
+                onClick={() => setCatForm(f => ({ ...f, globalCat: !f.globalCat }))}
+                className={`w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+                  catForm.globalCat
+                    ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400'
+                    : 'bg-white/5 border border-white/10 text-white/40'
+                }`}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                {catForm.globalCat ? '🌐 Tüm Şirketlere Açık' : 'Sadece Bu Şirket'}
+              </button>
               <div className="flex gap-2">
                 <button onClick={() => setShowCatForm(false)} className="flex-1 py-2.5 rounded-xl bg-white/8 text-white/60 text-sm font-semibold">
                   İptal
@@ -1071,8 +1128,8 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
         {showContentForm && renderContentForm()}
       </AnimatePresence>
 
-      {/* TEMP: Vardiya içerik ekle */}
-      {isAdmin && categories.length > 0 && (
+      {/* Seed kaldırıldı */}
+      {false && isAdmin && categories.length > 0 && (
         <button onClick={async () => {
           const cat = categories.find(c => c.name.toLowerCase().includes('uygulama'));
           if (!cat) { alert('Uygulama Kullanımı kategorisi bulunamadı'); return; }
