@@ -77,12 +77,12 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
   const [payMethod, setPayMethod] = useState('havale');
   const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
 
-  const headers = useCallback(() => buildHeaders(accessToken), [accessToken]);
+  const getHeaders = () => buildHeaders(accessToken);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${SERVER_URL}/tedarikci/ozet`, { headers: headers() });
+      const res = await fetch(`${SERVER_URL}/tedarikci/ozet`, { headers: buildHeaders(accessToken) });
       const text = await res.text();
       let d: any;
       try { d = JSON.parse(text); } catch { throw new Error('Sunucu yanıtı geçersiz'); }
@@ -93,7 +93,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
     } finally {
       setLoading(false);
     }
-  }, [headers]);
+  }, [accessToken]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -109,7 +109,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
     try {
       const res = await fetch(`${SERVER_URL}/tedarikci/davet`, {
         method: 'POST',
-        headers: headers(),
+        headers: getHeaders(),
         body: JSON.stringify({ email: invEmail, fullName: invName, phone: invPhone, cariId: invCariId, tempPassword: invPassword || undefined }),
       });
       const d = await res.json();
@@ -127,13 +127,13 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
       const items = orderItems.filter(i => i.productName);
       const res = await fetch(`${SERVER_URL}/tedarikci/siparisler`, {
         method: 'POST',
-        headers: headers(),
+        headers: getHeaders(),
         body: JSON.stringify({ cariId: orderCariId, items, currency: orderCurrency, notes: orderNotes }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.error); return; }
       if (send && d.siparis?.id) {
-        await fetch(`${SERVER_URL}/tedarikci/siparisler/${d.siparis.id}/gonder`, { method: 'POST', headers: headers() });
+        await fetch(`${SERVER_URL}/tedarikci/siparisler/${d.siparis.id}/gonder`, { method: 'POST', headers: getHeaders() });
       }
       setShowNewOrder(false);
       setOrderCariId(''); setOrderNotes(''); setOrderItems([{ productName: '', quantity: 0, unitPrice: 0 }]);
@@ -144,7 +144,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
   const sendOrder = async (id: string) => {
     setActionLoading(id);
     try {
-      await fetch(`${SERVER_URL}/tedarikci/siparisler/${id}/gonder`, { method: 'POST', headers: headers() });
+      await fetch(`${SERVER_URL}/tedarikci/siparisler/${id}/gonder`, { method: 'POST', headers: getHeaders() });
       fetchData();
     } finally { setActionLoading(''); }
   };
@@ -155,7 +155,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
     setActionLoading(id);
     try {
       await fetch(`${SERVER_URL}/tedarikci/siparisler/${id}/iptal`, {
-        method: 'POST', headers: headers(), body: JSON.stringify({ reason }),
+        method: 'POST', headers: getHeaders(), body: JSON.stringify({ reason }),
       });
       fetchData();
     } finally { setActionLoading(''); }
@@ -164,7 +164,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
   const approveDelivery = async (id: string) => {
     setActionLoading(id);
     try {
-      await fetch(`${SERVER_URL}/tedarikci/teslimatlar/${id}/onayla`, { method: 'PUT', headers: headers() });
+      await fetch(`${SERVER_URL}/tedarikci/teslimatlar/${id}/onayla`, { method: 'PUT', headers: getHeaders() });
       fetchData();
     } finally { setActionLoading(''); }
   };
@@ -175,7 +175,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
     setActionLoading(id);
     try {
       await fetch(`${SERVER_URL}/tedarikci/teslimatlar/${id}/reddet`, {
-        method: 'PUT', headers: headers(), body: JSON.stringify({ reason }),
+        method: 'PUT', headers: getHeaders(), body: JSON.stringify({ reason }),
       });
       fetchData();
     } finally { setActionLoading(''); }
@@ -186,7 +186,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
     setActionLoading('pay');
     try {
       await fetch(`${SERVER_URL}/tedarikci/odemeler`, {
-        method: 'POST', headers: headers(),
+        method: 'POST', headers: getHeaders(),
         body: JSON.stringify({ siparisId: showPayment, amount: payAmount, currency: payCurrency, paymentMethod: payMethod, paymentDate: payDate }),
       });
       setShowPayment(null);
