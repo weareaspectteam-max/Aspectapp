@@ -15444,6 +15444,155 @@ app.post("/make-server-4da0b637/kasa/sirket/ay-kapat", async (c) => {
   }
 });
 
+// ── CARİ HESAPLAR (kişi/firma bazlı borç/ödeme özet) ──
+
+// GET /kasa/cariler — Tüm kişi/firma bazlı borç/ödeme durumu
+app.get("/make-server-4da0b637/kasa/cariler", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    if (!["yonetici", "ust-mudur"].includes(role) && user.user_metadata?.originalRole !== "superadmin") {
+      return c.json({ error: "Yetkiniz yok." }, 403);
+    }
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    const reqCId = c.req.query("company_id");
+    const companyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(companyId);
+
+    const ay = c.req.query("ay"); // opsiyonel — boşsa tüm zamanlar
+
+    // Paralel KV okuma
+    const [tumGiderler, tumOdemeler, mekanlar] = await Promise.all([
+      ckv.getByPrefix("isletme_gider_"),
+      ckv.getByPrefix("kasa_odeme_"),
+      getMekanlarFor(companyId),
+    ]);
+
+    // Ödeme map
+    const odemeMap: Record<string, any> = {};
+    for (const o of (tumOdemeler || [])) { if (o.giderId) odemeMap[o.giderId] = o; }
+
+    // Mekan kiraları
+    const mekanKiraGiderleri: any[] = [];
+    if (ay) {
+      const [yil, ayNum] = ay.split("-").map(Number);
+      const ayGun = new Date(yil, ayNum, 0).getDate();
+      for (const m of (mekanlar || [])) {
+        const yillikKira = Number(m.yearlyRent) || (m.yearlyRents ? Number(m.yearlyRents[String(yil)]) || 0 : 0);
+        if (yillikKira <= 0) continue;
+        const aylikKira = Math.round((yillikKira / 365) * ayGun);
+        mekanKiraGiderleri.push({
+          id: `kira_${m.id || m.mekanId}_${ay}`,
+          category: "kira",
+          amount: aylikKira,
+          description: `${ay} kirası`,
+          date: `${ay}-01`,
+          personelAdi: m.name,
+          mekanEmoji: m.emoji || "🏠",
+          otomatik: true,
+        });
+      }
+    }
+
+    // Tüm giderleri birleştir
+    // Nisan 2026 öncesi giderleri gösterme (eski veriler temizlendi)
+    const kasaBaslangic = "2026-04-01";
+    const filteredGiderler = ay
+      ? (tumGiderler || []).filter((g: any) => g.date?.startsWith(ay) && g.amount > 0 && g.date >= kasaBaslangic)
+      : (tumGiderler || []).filter((g: any) => g.amount > 0 && g.date >= kasaBaslangic);
+    const tumAyGiderleri = [...filteredGiderler, ...mekanKiraGiderleri].filter((g: any) => g.odemeTipi !== "duzeltme" && !g.kasaDuzeltme);
+
+    // Kişi/firma bazlı grupla
+    const cariMap: Record<string, any> = {};
+
+    for (const g of tumAyGiderleri) {
+      const gId = g.id || g.otomatikKey || `gider_${g.date}_${g.amount}`;
+      const kisi = g.personelAdi || g.category || "Diğer";
+      const standartKategoriler = ["personel", "malzeme", "ekipman", "operasyonel", "ulasim", "diger", "kira", "duzeltme"];
+      const tip = g.category === "personel" ? "personel"
+        : g.category === "kira" ? "kira"
+        : standartKategoriler.includes(g.category) ? "diger_gider"
+        : "cari";
+
+      if (!cariMap[kisi]) {
+        cariMap[kisi] = {
+          kisi,
+          tip,
+          emoji: g.mekanEmoji || (tip === "personel" ? "👤" : tip === "kira" ? "🏠" : "🏢"),
+          toplamBorc: 0,
+          toplamOdpipipiienen: 0,
+          toplamSilinen: 0,
+          hareketler: [],
+        };
+      }
+
+      const odeme = odemeMap[gId];
+      const silinenTutar = odeme?.silinenTutar || 0;
+      const komipleSilindi = odeme?.komplesilindi || false;
+
+      if (komipleSilindi) continue;
+
+      const efektifTutar = Math.max(0, (g.amount || 0) - silinenTutar);
+      if (efektifTutar <= 0) continue;
+
+      cariMap[kisi].toplamBorc += efektifTutar;
+
+      // Borç hareketi
+      cariMap[kisi].hareketler.push({
+        tip: "borc",
+        tutar: efektifTutar,
+        tarih: g.date,
+        aciklama: g.description || "",
+        giderId: gId,
+      });
+
+      // Ödeme hareketleri
+      if (odeme?.odemeler?.length > 0) {
+        for (const odm of odeme.odemeler) {
+          cariMap[kisi].toplamOdpipipiienen += odm.tutar || 0;
+          cariMap[kisi].hareketler.push({
+            tip: "odeme",
+            tutar: odm.tutar,
+            tarih: odm.tarih,
+            aciklama: odm.aciklama || "Ödeme",
+            giderId: gId,
+          });
+        }
+      }
+      if (odeme?.odpiendi) {
+        const odpipipipienenToplam = (odeme.odemeler || []).reduce((s: number, o: any) => s + (o.tutar || 0), 0);
+        if (odpipipipienenToplam === 0) {
+          cariMap[kisi].toplamOdpipipiienen += efektifTutar;
+          cariMap[kisi].hareketler.push({ tip: "odeme", tutar: efektifTutar, tarih: odeme.odemeler?.[0]?.tarih || g.date, aciklama: "Tam ödeme", giderId: gId });
+        }
+      }
+
+      // Silme hareketleri
+      if (odeme?.silmeler?.length > 0) {
+        for (const slm of odeme.silmeler) {
+          if (slm.tutar > 0) {
+            cariMap[kisi].toplamSilinen += slm.tutar;
+            cariMap[kisi].hareketler.push({ tip: "silme", tutar: slm.tutar, tarih: slm.tarih, aciklama: slm.aciklama || "Silme" });
+          }
+        }
+      }
+    }
+
+    // Kalan hesapla ve listeye çevir
+    const cariler = Object.values(cariMap).map((c: any) => ({
+      ...c,
+      kalanBorc: Math.max(0, c.toplamBorc - c.toplamOdpipipiienen),
+      hareketler: c.hareketler.sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || "")),
+    })).sort((a: any, b: any) => b.kalanBorc - a.kalanBorc);
+
+    return c.json({ cariler });
+  } catch (err) {
+    console.log("Kasa cariler GET error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 // ── KİŞİSEL KASA ──
 
 // GET /kasa/kisisel — Bakiye + işlemler

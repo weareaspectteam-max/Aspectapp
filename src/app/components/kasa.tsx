@@ -90,7 +90,18 @@ interface BorclarData {
   verecekler: Borc[];
 }
 
-type TabKey = 'sirket' | 'kisisel' | 'borclar';
+interface CariHesap {
+  kisi: string;
+  tip: string;
+  emoji: string;
+  toplamBorc: number;
+  toplamOdpipipiienen: number;
+  toplamSilinen: number;
+  kalanBorc: number;
+  hareketler: { tip: string; tutar: number; tarih: string; aciklama: string; giderId?: string }[];
+}
+
+type TabKey = 'sirket' | 'kisisel' | 'cariler' | 'borclar';
 
 const KISISEL_KATEGORILER = ['Maaş', 'Kira', 'Market', 'Fatura', 'Yatırım', 'Diğer'];
 
@@ -134,6 +145,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'sirket', label: 'Şirket Kasası' },
     // Kişisel kasa ayrı sayfaya taşınacak
+    { key: 'cariler', label: 'Cariler' },
     { key: 'borclar', label: 'Borçlar' },
   ];
 
@@ -158,7 +170,12 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
   const [kismiOdemeTutar, setKismiOdemeTutar] = useState('');
   const [kismiOdemeAciklama, setKismiOdemeAciklama] = useState('');
   const [odemeYapiliyor, setOdemeYapiliyor] = useState(false);
-  const [showKismiSilDialog, setShowKismiSilDialog] = useState<any>(null); // {giderId, label, toplam}
+  const [showKismiSilDialog, setShowKismiSilDialog] = useState<any>(null);
+  const [cariData, setCariData] = useState<CariHesap[]>([]);
+  const [cariLoading, setCariLoading] = useState(false);
+  const [acikCari, setAcikCari] = useState<string | null>(null);
+  const [cariAra, setCariAra] = useState('');
+  const [acikKategori, setAcikKategori] = useState<string | null>(null); // {giderId, label, toplam}
   const [kismiSilTutar, setKismiSilTutar] = useState('');
 
   // ─ Kişisel Kasa State ─
@@ -249,6 +266,14 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
     }
   }, [isAdmin]);
 
+  const fetchCariler = useCallback(async () => {
+    setCariLoading(true);
+    try {
+      const res = await fetch(appendGhostParam(`${API_BASE}/kasa/cariler`), { headers: await authHeaders() });
+      if (res.ok) { const data = await res.json(); setCariData(data.cariler || []); }
+    } catch {} finally { setCariLoading(false); }
+  }, [selectedMonth]);
+
   const fetchBorclar = useCallback(async () => {
     setBorclarLoading(true);
     setBorclarError(null);
@@ -270,6 +295,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
   useEffect(() => {
     if (activeTab === 'sirket') fetchSirket();
     else if (activeTab === 'kisisel') fetchKisisel();
+    else if (activeTab === 'cariler') fetchCariler();
     else if (activeTab === 'borclar') fetchBorclar();
   }, [activeTab, fetchSirket, fetchKisisel, fetchBorclar]);
 
@@ -1341,6 +1367,213 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
     );
   };
 
+  // ── TAB: Cariler ────────────────────────────────────────────────────
+  const renderCariler = () => {
+    if (cariLoading) return <LoadingSpinner />;
+
+    const filtered = cariAra
+      ? cariData.filter(c => c.kisi.toLowerCase().includes(cariAra.toLowerCase()))
+      : cariData;
+
+    const toplamKalan = filtered.reduce((s, c) => s + c.kalanBorc, 0);
+    const toplamOdenen = filtered.reduce((s, c) => s + c.toplamOdpipipiienen, 0);
+
+    return (
+      <div className="space-y-4">
+        {/* Özet */}
+        <div className="grid grid-cols-2 gap-3">
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} style={glass} className="p-4 text-center">
+            <p className="text-white/40 text-[10px] uppercase tracking-wider mb-1">Toplam Kalan</p>
+            <p className="text-amber-400 font-bold text-lg">{formatMoney(toplamKalan)}</p>
+          </motion.div>
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} style={glass} className="p-4 text-center">
+            <p className="text-white/40 text-[10px] uppercase tracking-wider mb-1">Toplam Ödenen</p>
+            <p className="text-emerald-400 font-bold text-lg">{formatMoney(toplamOdenen)}</p>
+          </motion.div>
+        </div>
+
+        {/* Arama */}
+        <div className="relative">
+          <input
+            value={cariAra}
+            onChange={e => setCariAra(e.target.value)}
+            placeholder="Cari ara..."
+            className="w-full bg-white/5 border border-white/10 rounded-xl pl-4 pr-4 py-2.5 text-white text-sm outline-none focus:border-ta/50 placeholder-white/20"
+          />
+        </div>
+
+        {/* Cari Listesi — kategori bazlı gruplanmış */}
+        {filtered.length === 0 ? (
+          <p className="text-white/30 text-sm text-center py-8">Cari hesap bulunamadı</p>
+        ) : (() => {
+          // Kategoriye göre grupla
+          const kategoriMap: Record<string, CariHesap[]> = {};
+          for (const c of filtered) {
+            const kat = c.tip === 'personel' ? 'Personel' : c.tip === 'kira' ? 'Kira' : c.tip === 'diger_gider' ? 'Diğer Giderler' : 'Tedarikçiler';
+            if (!kategoriMap[kat]) kategoriMap[kat] = [];
+            kategoriMap[kat].push(c);
+          }
+          const kategoriSira = ['Personel', 'Tedarikçiler', 'Kira', 'Diğer Giderler'];
+          const kategoriEmoji: Record<string, string> = { Personel: '👤', Kira: '🏠', 'Tedarikçiler': '🏢', 'Diğer Giderler': '📋' };
+          const kategoriRenk: Record<string, string> = { Personel: '#fbbf24', Kira: '#f97316', 'Tedarikçiler': 'var(--app-accent, #a855f7)', 'Diğer Giderler': '#6b7280' };
+
+          return (
+            <div className="space-y-4">
+              {kategoriSira.filter(k => kategoriMap[k]?.length > 0).map(kat => {
+                const cariler = kategoriMap[kat];
+                const katKalan = cariler.reduce((s, c) => s + c.kalanBorc, 0);
+                return (
+                  <div key={kat}>
+                    {/* Kategori başlığı — tıklanabilir */}
+                    <button
+                      onClick={() => setAcikKategori(acikKategori === kat ? null : kat)}
+                      className="w-full flex items-center gap-2 mb-2 active:opacity-70 transition-all"
+                    >
+                      <span className="text-base">{kategoriEmoji[kat]}</span>
+                      <span className="text-xs font-bold text-white/50 uppercase tracking-wider flex-1 text-left">{kat}</span>
+                      <span className="text-[10px] text-white/30 mr-1">{cariler.length}</span>
+                      <span className="text-xs font-bold" style={{ color: kategoriRenk[kat] }}>{formatMoney(katKalan)}</span>
+                      <ChevronDown className={`w-4 h-4 text-white/30 transition-transform ${acikKategori === kat ? 'rotate-180' : ''}`} />
+                    </button>
+                    {acikKategori === kat && (
+                    <div className="space-y-2">
+                      {cariler.map(cari => {
+              const isOpen = acikCari === cari.kisi;
+              const pct = cari.toplamBorc > 0 ? ((cari.toplamOdpipipiienen / cari.toplamBorc) * 100) : 0;
+              const tampiamOdendi = cari.kalanBorc <= 0;
+              const renk = tampiamOdendi ? '#34d399' : cari.tip === 'personel' ? '#fbbf24' : cari.tip === 'kira' ? '#f97316' : 'var(--app-accent, #a855f7)';
+
+              return (
+                <motion.div key={cari.kisi} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                  className="rounded-xl overflow-hidden" style={{ ...glass, borderColor: `${tampiamOdendi ? 'rgba(52,211,153,0.15)' : 'rgba(255,255,255,0.08)'}` }}>
+
+                  {/* Kart başlığı — tıklanabilir */}
+                  <button onClick={() => setAcikCari(isOpen ? null : cari.kisi)} className="w-full p-4 text-left">
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="text-lg">{cari.emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-white truncate">{cari.kisi}</p>
+                        <p className="text-[10px] text-white/30">{cari.tip === 'personel' ? 'Personel' : cari.tip === 'kira' ? 'Kira' : 'Cari'}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        {tampiamOdendi ? (
+                          <span className="text-xs font-bold text-emerald-400">✅ Ödendi</span>
+                        ) : (
+                          <span className="text-sm font-bold" style={{ color: renk }}>{formatMoney(cari.kalanBorc)}</span>
+                        )}
+                      </div>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 rounded-full overflow-hidden bg-white/8">
+                        <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(pct, 100)}%`, background: tampiamOdendi ? '#34d399' : renk }} />
+                      </div>
+                      <span className="text-[9px] text-white/30 shrink-0">{formatMoney(cari.toplamOdpipipiienen)} / {formatMoney(cari.toplamBorc)}</span>
+                    </div>
+                  </button>
+
+                  {/* Detay — açılır */}
+                  {isOpen && (
+                    <div className="px-4 pb-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      {/* Özet satır */}
+                      <div className="flex justify-between py-2 text-[10px]">
+                        <span className="text-white/30">Borç: {formatMoney(cari.toplamBorc)}</span>
+                        <span className="text-emerald-400/70">Ödenen: {formatMoney(cari.toplamOdpipipiienen)}</span>
+                        <span className="font-bold" style={{ color: renk }}>Kalan: {formatMoney(cari.kalanBorc)}</span>
+                      </div>
+
+                      {/* Hareketler */}
+                      <p className="text-[10px] text-white/40 uppercase tracking-wider mb-2 mt-1">Hareketler</p>
+                      <div className="space-y-1 max-h-60 overflow-y-auto">
+                        {cari.hareketler.map((h, i) => (
+                          <div key={i} className="flex items-center gap-2 py-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                            <div className="w-1 h-4 rounded-full shrink-0" style={{ background: h.tip === 'borc' ? '#f59e0b' : h.tip === 'odeme' ? '#34d399' : '#ef4444' }} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] text-white/60 truncate">{h.aciklama || (h.tip === 'borc' ? 'Borç' : h.tip === 'odeme' ? 'Ödeme' : 'Silme')}</p>
+                              <p className="text-[9px] text-white/25">{h.tarih}</p>
+                            </div>
+                            <span className={`text-[11px] font-bold shrink-0 ${h.tip === 'borc' ? 'text-amber-400' : h.tip === 'odeme' ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {h.tip === 'borc' ? '+' : '-'}{formatMoney(h.tutar)}
+                            </span>
+                            {isAdmin && h.tip === 'odeme' && h.giderId && (
+                              <button onClick={async () => {
+                                if (!confirm('Bu ödemeyi geri almak istiyor musunuz?')) return;
+                                try {
+                                  await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/odeme/${h.giderId}`), { method: 'DELETE', headers: await authHeaders() });
+                                  fetchCariler();
+                                  fetchSirket();
+                                } catch {}
+                              }} className="p-1 rounded text-white/15 active:text-red-400 shrink-0">
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Ödeme butonları */}
+                      {isAdmin && cari.kalanBorc > 0 && (
+                        <div className="flex gap-2 mt-3">
+                          <button
+                            onClick={async () => {
+                              const borclar = cari.hareketler.filter(h => h.tip === 'borc' && h.giderId);
+                              if (borclar.length === 0) return;
+                              try {
+                                setOdemeYapiliyor(true);
+                                const hdrs = await authHeaders();
+                                for (const b of borclar) {
+                                  await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/ode`), {
+                                    method: 'POST', headers: hdrs,
+                                    body: JSON.stringify({ giderId: b.giderId, tutar: b.tutar, aciklama: `${cari.kisi} — tam ödeme` }),
+                                  });
+                                }
+                                fetchCariler();
+                                fetchSirket();
+                              } catch {} finally { setOdemeYapiliyor(false); }
+                            }}
+                            disabled={odemeYapiliyor}
+                            className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white disabled:opacity-40" style={{ background: 'var(--app-accent)' }}
+                          >
+                            Tamamını Öde
+                          </button>
+                          <button
+                            onClick={() => {
+                              const ilkGider = cari.hareketler.find(h => h.tip === 'borc' && h.giderId);
+                              if (ilkGider) { setShowKismiOdemeDialog({ giderId: ilkGider.giderId, kalanTutar: cari.kalanBorc, personelAdi: cari.kisi }); setKismiOdemeTutar(''); setKismiOdemeAciklama(''); }
+                            }}
+                            className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-amber-300 border border-amber-400/30 bg-amber-400/10"
+                          >
+                            Kısmi Öde
+                          </button>
+                          <div className="flex-1" />
+                          <button
+                            onClick={() => {
+                              const ilkGider = cari.hareketler.find(h => h.tip === 'borc' && h.giderId);
+                              if (ilkGider) { setShowKismiSilDialog({ items: [{ giderId: ilkGider.giderId, personelAdi: cari.kisi, category: cari.tip }], label: cari.kisi, toplam: cari.kalanBorc }); setKismiSilTutar(''); }
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-red-400/50 border border-red-400/15 bg-red-400/5"
+                          >
+                            Kısmi Sil
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })}
+          </div>
+          )}
+                </div>
+              );
+            })}
+          </div>
+          );
+        })()}
+      </div>
+    );
+  };
+
   // ── TAB 3: Borçlar ────────────────────────────────────────────────────
   const renderBorclar = () => {
     if (borclarLoading) return <LoadingSpinner />;
@@ -1945,6 +2178,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
           >
             {activeTab === 'sirket' && renderSirket()}
             {/* Kişisel kasa ayrı sayfaya taşınacak */}
+            {activeTab === 'cariler' && renderCariler()}
             {activeTab === 'borclar' && renderBorclar()}
           </motion.div>
         </AnimatePresence>
