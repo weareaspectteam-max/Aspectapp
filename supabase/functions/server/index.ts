@@ -15706,6 +15706,41 @@ app.delete("/make-server-4da0b637/kasa/sirket/acilis-borc/:id", async (c) => {
   }
 });
 
+// ── TEMP: Akademi içerik ekle ──
+app.post("/make-server-4da0b637/academy/seed-content", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz." }, 401);
+    if (user.user_metadata?.role !== "yonetici") return c.json({ error: "Yetki yok." }, 403);
+    const ckv = companyKvFor(getCompanyId(user));
+
+    const { categoryId, items } = await c.req.json();
+    if (!categoryId || !items?.length) return c.json({ error: "categoryId ve items zorunlu." }, 400);
+
+    let count = 0;
+    for (const item of items) {
+      const contentId = `cnt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await ckv.set(`academy_content_${contentId}`, {
+        id: contentId,
+        categoryId,
+        type: item.type || "text",
+        title: item.title,
+        description: item.description || "",
+        data: item.data || {},
+        order: count,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: "sistem",
+      });
+      count++;
+      // küçük gecikme — ID çakışması önleme
+      await new Promise(r => setTimeout(r, 50));
+    }
+
+    return c.json({ ok: true, count });
+  } catch (err) { return c.json({ error: `${err}` }, 500); }
+});
+
 // ── CARİ HESAPLAR (kişi/firma bazlı borç/ödeme özet) ──
 
 // GET /kasa/cariler — Tüm kişi/firma bazlı borç/ödeme durumu

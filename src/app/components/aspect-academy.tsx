@@ -226,6 +226,7 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
 
   const startEdit = (item: ContentItem) => {
     setEditItem(item);
+    setSelectedCat(item.categoryId);
     setContentForm({
       type: item.type, title: item.title, description: item.description,
       youtubeUrl: item.data?.youtubeId ? `https://youtube.com/watch?v=${item.data.youtubeId}` : '',
@@ -1069,6 +1070,172 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
       <AnimatePresence>
         {showContentForm && renderContentForm()}
       </AnimatePresence>
+
+      {/* TEMP: Vardiya içerik ekle */}
+      {isAdmin && categories.length > 0 && (
+        <button onClick={async () => {
+          const cat = categories.find(c => c.name.toLowerCase().includes('uygulama'));
+          if (!cat) { alert('Uygulama Kullanımı kategorisi bulunamadı'); return; }
+          try {
+            const res = await fetch(appendGhostParam(`${API_BASE}/academy/seed-content`), {
+              method: 'POST', headers: await authHeaders(),
+              body: JSON.stringify({
+                categoryId: cat.id,
+                items: [
+                  {
+                    type: 'text',
+                    title: 'Vardiya Açılış — Adım Adım Rehber',
+                    description: 'Vardiya açılışı nasıl yapılır, personel fotoğrafı, yazıcı sayaçları',
+                    data: { content: `📋 VARDİYA AÇILIŞ REHBERİ
+
+1️⃣ MEKANA GİRİŞ
+• Operasyon Paneli'ni aç
+• Mekan seçimi yapılır (rotasyonda atandığın mekan otomatik gelir)
+• Eğer rotasyonda atanmamışsan açılış yapamazsın
+
+2️⃣ PERSONEL FOTOĞRAFI
+• Ön kamera açılır — selfie çek
+• Bu fotoğraf Telegram grubuna otomatik gönderilir
+• Fotoğraf çekmeden açılış yapılamaz
+
+3️⃣ STOK SAYIMI
+• Mevcut albüm stoğunu say (3'lü, 5'li, 7'li... 15'li)
+• Paspartu sayısını gir
+• Ribon sayısını gir (yazıcı bazlı)
+• Önceki günün kapanış sayısı öneri olarak gösterilir
+• Fark varsa anomali olarak kaydedilir
+
+4️⃣ YAZICI SAYAÇLARI
+• Her yazıcı için başlangıç sayacını gir
+• Önceki günün kapanış sayacı öneri olarak gösterilir
+• Sayaç uyuşmazlığı varsa anomali kaydedilir
+
+5️⃣ AÇILIŞ NOTU (Opsiyonel)
+• Vardiya ile ilgili not ekleyebilirsin
+• Önceki personelden devir bilgisi varsa buraya yaz
+
+6️⃣ AÇILIŞI TAMAMLA
+• "Açılışı Kaydet" butonuna bas
+• Telegram grubuna bildirim gider: mekan adı + saat + personel adı + fotoğraf
+• Açılış yapıldıktan sonra satış girişine geçilir
+
+⚠️ ÖNEMLİ NOTLAR:
+• Açılış günde bir kez yapılır
+• Saat 08:00 öncesi açılış bir önceki güne sayılır
+• Anomali varsa sebep yazmanız istenir
+• Yanlış açılış yapıldıysa yönetici sıfırlayabilir` }
+                  },
+                  {
+                    type: 'text',
+                    title: 'Vardiya Kapanış — Adım Adım Rehber',
+                    description: 'Vardiya kapanışı, yazıcı sayaçları, stok sayımı, mekan fotoğrafı',
+                    data: { content: `📋 VARDİYA KAPANIŞ REHBERİ
+
+1️⃣ KAPANIŞA HAZIRLIK
+• Tüm satışların girildiğinden emin ol
+• İade varsa iade fotoğraf sayısını not al
+• Reyon sayımı yap (varsa)
+
+2️⃣ YAZICI KAPANIŞ SAYAÇLARI
+Her yazıcı için:
+• Kapanış sayacını gir
+• Ribon değişimi yaptıysan kaç takim değiştiğini gir
+• İade fotoğraf sayısını gir
+
+Sistem otomatik hesaplar:
+• Kullanılan baskı = Açılış + (Ribon değişim × Kapasite) - Kapanış
+• Çıkış adedi = Kullanılan baskı × Çarpan (yarım=2, tam=1)
+• Satılan fotoğraf = Çıkış - İade
+
+3️⃣ STOK SAYIMI
+• Kapanış albüm stoğunu say
+• Paspartu sayısını gir
+• Ribon sayısını gir
+• Sistem açılış ile karşılaştırır — fark = satılan/eklenen
+
+4️⃣ MEKAN FOTOĞRAFI
+• Arka kamera açılır — mekanın son halini çek
+• Bu fotoğraf Telegram grubuna gönderilir
+• Fotoğraf çekmeden kapanış yapılamaz
+
+5️⃣ KAPANIŞ NOTU (Opsiyonel)
+• Gün sonu notlarını yaz
+• Sonraki personel için bilgi bırak
+
+6️⃣ KAPANIŞI TAMAMLA
+• "Kapanışı Kaydet" butonuna bas
+• Telegram grubuna bildirim gider: mekan + saat + personel + fotoğraf
+• Vardiya raporlarında görünür hale gelir
+• Kasa'da "bekleyen devir" olarak ciro görünür
+
+⚠️ ÖNEMLİ NOTLAR:
+• Kapanış sayacı açılış sayacından küçük olamaz
+• ±2 fotoğraf toleransı var (yazıcı anomali)
+• Anomali tespit edilirse uyarı çıkar — neden yazmanız istenir
+• Kapanış yapılmadan vardiya raporlarında görünmez` }
+                  },
+                  {
+                    type: 'text',
+                    title: 'Satış Girişi — Nasıl Yapılır',
+                    description: 'Ürün seçimi, ödeme yöntemi, iskonto, kare kaydı',
+                    data: { content: `📋 SATIŞ GİRİŞİ REHBERİ
+
+1️⃣ ÜRÜN SEÇİMİ
+• Açılış yapıldıktan sonra satış paneli aktif olur
+• Ürün kartlarından birini seç:
+  - 1 Fotoğraf, 3'lü, 5'li, 7'li, 9'lu, 11'li, 13'lü, 15'li
+  - Paspartu
+• Adet seçimi yap (varsayılan 1)
+
+2️⃣ ÖDEME YÖNTEMİ
+• Nakit 💵
+• Kredi Kartı 💳
+• IBAN / Havale 🏦
+• Ödeme yöntemi raporlarda ayrı gösterilir
+
+3️⃣ FİYAT & İSKONTO
+• Birim fiyat mekan ayarından gelir
+• İskonto yapılabilir — farkı otomatik hesaplanır
+• İskonto raporlarda gösterilir
+
+4️⃣ KARE KAYDI
+• Satış yapan fotoğrafçı seçilir
+• Fotoğraf karesi kaydedilir
+• Liderlik tablosuna yansır
+
+5️⃣ SATIŞ ONAYI
+• "Satışı Kaydet" butonuna bas
+• Satış anlık olarak kaydedilir
+• Canlı Feed'de görünür (yönetici)
+
+⚠️ İPTAL
+• Son satışı iptal edebilirsin
+• İptal edilen satış raporlarda "iptal" olarak işaretlenir
+• Ciroya dahil edilmez` }
+                  },
+                  {
+                    type: 'quiz',
+                    title: 'Vardiya Bilgi Testi',
+                    description: 'Açılış ve kapanış sürecini ne kadar biliyorsun?',
+                    data: { questions: [
+                      { question: 'Vardiya açılışında ilk ne yapılır?', options: ['Satış girilir', 'Personel fotoğrafı çekilir', 'Stok sayılır', 'Yazıcı açılır'], correctIndex: 1 },
+                      { question: 'Kapanışta mekan fotoğrafı hangi kamerayla çekilir?', options: ['Ön kamera', 'Arka kamera', 'Fark etmez', 'Fotoğraf gerekmez'], correctIndex: 1 },
+                      { question: 'Anomali nedir?', options: ['Satış hatası', 'Stok farkı', 'Yazılım hatası', 'Kamera arızası'], correctIndex: 1 },
+                      { question: 'Saat 07:00\'da yapılan açılış hangi güne sayılır?', options: ['Bugün', 'Dün', 'Yarın', 'Fark etmez'], correctIndex: 1 },
+                      { question: 'Kapanış yapılmadan ne olmaz?', options: ['Satış girilmez', 'Vardiya raporunda görünmez', 'Kasa açılmaz', 'Mesaj gönderilmez'], correctIndex: 1 },
+                    ]}
+                  }
+                ]
+              })
+            });
+            const data = await res.json();
+            alert(`${data.count} içerik eklendi!`);
+            fetchData();
+          } catch { alert('Hata'); }
+        }} className="mx-4 mb-4 py-2 rounded-xl text-[10px] font-bold text-emerald-400/40 border border-emerald-500/15 w-[calc(100%-2rem)] text-center">
+          📚 İçerik Ekle (Seed)
+        </button>
+      )}
 
       {/* Bottom Navigation */}
       {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
