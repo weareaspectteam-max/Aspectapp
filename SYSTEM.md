@@ -308,6 +308,108 @@ mekanBasi = gunlukMaas / oGunCalistigiMekanSayisi
 
 ---
 
+## Kasa Sistemi
+
+**Frontend:** `src/app/components/kasa.tsx`
+**Backend:** Tum endpoint'ler `index.ts` icinde `/kasa/...` prefix'li
+
+### Genel Mantik
+Kasa = "cepte ne var" + "neyi odedik, neyi odemedik". IGD'deki giderler kasada bekleyen odeme olarak gorunur. Odeme yapilinca kasadan duser.
+
+### KV Yapisi
+| Key | Icerik |
+|-----|--------|
+| `kasa_devir_{mekanId}_{tarih}` | Ciro devir kaydi (nakit/kart/iban dagilimi) |
+| `kasa_odeme_{giderId}` | Odeme durumu: odendi, odemeler[], silinenTutar |
+| `kasa_ay_kapatis_{ay}` | Ay kapatis: bakiye, odenmemisler, devretsiz |
+| `kasa_acilis_{ay}` | Acilis bakiyesi (IGD'ye yazmaz) |
+| `kasa_acilis_borc_{id}` | Acilis borcu (IGD'ye yazmaz, carilerde gorunur) |
+| `kasa_sirket_settings` | Gorunurluk: visibleUstMudur, visibleIdari |
+
+### Bakiye Hesabi
+```
+Bakiye = DevirBakiye + AcilisBakiye + DevirCirolar - OdenenGiderler
+```
+
+### Ciro Devir Akisi
+1. Vardiya kapanir → "Bekleyen Devirler" listesine duser
+2. Yonetici "Devret" butonuna basar → ciro kasaya girer
+3. Tarihe gore gruplanmis, "Tumunu Devret" butonu
+
+### Bekleyen Odemeler
+- IGD'deki otomatik maas + mekan kiralari + manuel giderler
+- Her gider icin `kasa_odeme_` kontrol → odenmemis ise "bekleyen"
+- Ode / Kismi Ode / Kismi Sil / Komple Sil butonlari
+- Kismi Sil → IGD'ye negatif duzeltme kaydi (o ayin tarihine)
+
+### Ay Kapatma
+- "Kasayi Kapat & Devret" → bakiye sonraki aya devredilir
+- "Devretmeden Kapat" → bakiye 0 olarak devredilir
+- Kapanan ay: read-only, duzenleme yapilamaz
+- Odenmemis giderler kapatis kaydina yazilir → sonraki ayda "Onceki Aydan Kalan" olarak gorunur
+
+### Cariler Tabi
+- Kisi/firma bazli borc takibi: Personel / Tedarikciler / Kira / Diger Giderler
+- Her cari: toplam borc, odenen, kalan, progress bar
+- Tiklayinca detay: ay bazli hareketler (acilir/kapanir)
+- Tamamini Ode / Kismi Ode / Kismi Sil butonlari
+- Odeme geri alma (sil butonu)
+- En altta: Toplam Odenen (tum zamanlar)
+
+### Hakedis-Kasa Senkronu
+- Hakedis Takip sayfasi yuklenince → bekleyen hakedisler IGD'ye gider olarak yazilir (`prim_bekleyen`)
+- Hakedis Takip'ten ode → kasada da odendi (`kasa_odeme_`)
+- Kasadan ode → hakedis takipte de odendi (`prim_odendi_`)
+- Iptal → her ikisinden de silinir
+
+### Kur Farki
+- IGD'de doviz gider girilince kasada TRY'ye cevrilir (`cost_exchange_rates`)
+- Borc kapandiginda toplam odenen vs borc tutari karsilastirilir
+- Fark >= 1 TL ise: fazla → kur farki gideri, az → kur farki geliri (IGD'ye otomatik)
+
+### Gorunurluk
+- Ust Mudur (UM) ve Idari (ID) icin ayri toggle
+- Goz kapaliysa o rol kasaya erisemez (backend 403)
+
+### Para Giris/Cikis
+- Para Girisi → IGD'ye gelir + kasaya giris
+- Para Cikisi → IGD'ye gider + odendi secenegi
+- Acilis Bakiye → IGD'ye yazmaz, sadece kasa bakiyesine eklenir
+- Acilis Borcu → IGD'ye yazmaz, carilerde gorunur
+
+### Cari Hesap (Maliyet Yonetimi)
+- `cost_cari_{id}` → tedarikci/firma tanimi
+- IGD gider formunda kategori olarak secilir
+- Kasada cariler tabinda ayri baslik altinda gorunur
+
+---
+
+## Akademi Sistemi
+
+**Frontend:** `src/app/components/aspect-academy.tsx`
+
+### KV Yapisi
+| Key | Icerik |
+|-----|--------|
+| `academy_categories` | Sirket kategorileri |
+| `academy_content_{id}` | Sirket icerigi |
+| `academy_progress_{userId}` | Kullanici ilerlemesi |
+| `academy_announcement` | Yonetici duyuru mesaji |
+| `academy_hidden` | Gizlenen global icerik ID'leri |
+| `academy_global_categories` | Global kategoriler (prefix'siz KV) |
+| `academy_global_content_{id}` | Global icerikler (prefix'siz KV) |
+
+### Icerik Tipleri
+video (YouTube embed), text (yazi), pdf (dis link), gallery (resimler), quiz (coktan secmeli), link (dis baglanti)
+
+### Global Icerik
+- Yonetici global kategori/icerik olusturabilir → tum sirketler gorur
+- Duzenleme/silme: sadece olusturan sirketin yoneticisi
+- Gizleme: her yonetici kendi sirketinde gizleyebilir
+- Globale tasi / globalden kaldir toggle
+
+---
+
 ## Yapilacaklar (sonra)
 - Mekan katkisi (ciro×0.60 + kare×0.40) backend'e kaydedilecek — kapanista hesaplanip KV'ye yazilacak. Sonra istatistik sayfasi + gun raporunda kullanilacak. Su an sadece vardiya bazlida frontend'de hesaplaniyor.
 
