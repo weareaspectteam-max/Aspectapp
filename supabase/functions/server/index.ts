@@ -14581,7 +14581,11 @@ app.get("/make-server-4da0b637/academy", async (c) => {
     const gContents = (globalContent || []).filter((c: any) => !hidden.has(c.id) && !hidden.has(c.categoryId)).map((c: any) => ({ ...c, global: true }));
     const contents = [...localContents, ...gContents].sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
 
-    return c.json({ categories: cats, contents, progress: progress || {}, announcement: announcement || null, companyId });
+    // Gizlenen içerikleri de döndür (admin görmek isterse)
+    const hiddenGlobalCats = (globalCats || []).filter((c: any) => hidden.has(c.id)).map((c: any) => ({ ...c, global: true, gizli: true }));
+    const hiddenGlobalContents = (globalContent || []).filter((c: any) => hidden.has(c.id) || hidden.has(c.categoryId)).map((c: any) => ({ ...c, global: true, gizli: true }));
+
+    return c.json({ categories: cats, contents, progress: progress || {}, announcement: announcement || null, companyId, hiddenItems: hiddenList || [], hiddenCategories: hiddenGlobalCats });
   } catch (err) {
     console.log("Academy GET error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);

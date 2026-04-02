@@ -91,6 +91,8 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
       setProgress(d.progress || {});
       setAnnouncement(d.announcement || null);
       setMyCompanyId(d.companyId || '');
+      setHiddenItems(d.hiddenItems || []);
+      if (d.hiddenCategories) setHiddenCats(d.hiddenCategories);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -225,11 +227,26 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
   // ── Global helpers ──
   const canEditItem = (item: { global?: boolean; createdByCompany?: string }) => !item.global || item.createdByCompany === myCompanyId;
 
+  const [hiddenItems, setHiddenItems] = useState<string[]>([]);
+  const [hiddenCats, setHiddenCats] = useState<Category[]>([]);
+  const [showHidden, setShowHidden] = useState(false);
+
   const hideItem = async (itemId: string) => {
+    if (!confirm('Bu içeriği gizlemek istiyor musunuz?')) return;
     try {
       await fetch(appendGhostParam(`${API_BASE}/academy/hide`), {
         method: 'POST', headers: await authHeaders(),
         body: JSON.stringify({ itemId, hide: true }),
+      });
+      fetchData();
+    } catch {}
+  };
+
+  const unhideItem = async (itemId: string) => {
+    try {
+      await fetch(appendGhostParam(`${API_BASE}/academy/hide`), {
+        method: 'POST', headers: await authHeaders(),
+        body: JSON.stringify({ itemId, hide: false }),
       });
       fetchData();
     } catch {}
@@ -683,11 +700,20 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
                   </div>
                 </div>
                 {isAdmin && (
-                  <button onClick={() => setShowCatForm(true)}
-                    className="h-8 px-3 rounded-xl bg-ta/15 border border-ta/30 flex items-center gap-1.5 active:scale-95 transition-all">
-                    <Plus className="w-3.5 h-3.5 text-ta" />
-                    <span className="text-[10px] font-bold text-ta">Kategori</span>
-                  </button>
+                  <div className="flex gap-1.5">
+                    {hiddenItems.length > 0 && (
+                      <button onClick={() => setShowHidden(!showHidden)}
+                        className={`h-8 px-2 rounded-xl flex items-center gap-1 active:scale-95 transition-all ${showHidden ? 'bg-amber-500/15 border border-amber-500/30' : 'bg-white/5 border border-white/10'}`}>
+                        <EyeOff className="w-3.5 h-3.5" style={{ color: showHidden ? '#fbbf24' : 'rgba(255,255,255,0.3)' }} />
+                        <span className="text-[9px] font-bold" style={{ color: showHidden ? '#fbbf24' : 'rgba(255,255,255,0.3)' }}>{hiddenItems.length}</span>
+                      </button>
+                    )}
+                    <button onClick={() => setShowCatForm(true)}
+                      className="h-8 px-3 rounded-xl bg-ta/15 border border-ta/30 flex items-center gap-1.5 active:scale-95 transition-all">
+                      <Plus className="w-3.5 h-3.5 text-ta" />
+                      <span className="text-[10px] font-bold text-ta">Kategori</span>
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -1128,7 +1154,27 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
         {showContentForm && renderContentForm()}
       </AnimatePresence>
 
-      {/* Seed kaldırıldı */}
+      {/* Gizlenen kategoriler */}
+      {isAdmin && showHidden && hiddenCats.length > 0 && !selectedCat && (
+        <div className="px-4 mb-4">
+          <p className="text-[10px] text-amber-400/60 uppercase tracking-wider mb-2">Gizlenen İçerikler</p>
+          <div className="space-y-2">
+            {hiddenCats.map(cat => (
+              <div key={cat.id} className="flex items-center justify-between p-3 rounded-xl" style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.15)' }}>
+                <div className="flex items-center gap-2">
+                  <span>{cat.emoji}</span>
+                  <span className="text-xs text-white/50">{cat.name}</span>
+                  <span className="text-[8px] text-amber-400">🌐 gizli</span>
+                </div>
+                <button onClick={() => unhideItem(cat.id)}
+                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 active:scale-95">
+                  Göster
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {false && isAdmin && categories.length > 0 && (
         <button onClick={async () => {
           const cat = categories.find(c => c.name.toLowerCase().includes('uygulama'));
