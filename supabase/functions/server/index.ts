@@ -16399,6 +16399,96 @@ app.delete("/make-server-4da0b637/kasa/borclar/:id", async (c) => {
 });
 
 // ══════════════════════════════════════════
+// ═══ FABRİKA SIFIRLAMASI ════════════════
+// ══════════════════════════════════════════
+
+// POST /sistem/fabrika-sifirla — Şirketi tamamen sıfırla
+app.post("/make-server-4da0b637/sistem/fabrika-sifirla", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    if (role !== "yonetici") return c.json({ error: "Sadece yönetici bu işlemi yapabilir." }, 403);
+
+    const companyId = getCompanyId(user);
+    const { onay, sirketAdi } = await c.req.json();
+
+    // Çift doğrulama: şirket adı + şirket kodu
+    if (!sirketAdi?.trim() || !onay?.trim()) return c.json({ error: "Şirket adı ve şirket kodu zorunlu." }, 400);
+
+    // Şirket kodu doğrulaması (companyId ile eşleşmeli)
+    if (onay.trim().toLowerCase() !== companyId.toLowerCase()) {
+      return c.json({ error: `Şirket kodu eşleşmiyor. Doğru kod: '${companyId}'` }, 400);
+    }
+
+    // Şirket adı doğrulaması
+    const companyConfig = await companyKvFor(companyId).get("company_config");
+    const storedName = companyConfig?.name || companyId;
+    // Basit kontrol — girilen ad companyId veya kayıtlı ad ile eşleşmeli
+    const giris = sirketAdi.trim().toLowerCase();
+    if (giris !== companyId.toLowerCase() && giris !== (companyConfig?.name || "").toLowerCase()) {
+      return c.json({ error: "Şirket adı eşleşmiyor." }, 400);
+    }
+
+    const ckv = companyKvFor(companyId);
+    console.log(`[FABRİKA SIFIRLA] BAŞLADI — ${companyId} by ${user.email}`);
+
+    // 1. Tüm şirket KV verilerini sil
+    const allKeys = await ckv.getByPrefix("").catch(() => []) || [];
+    // getByPrefix("") tüm prefix'li kayıtları döndürür
+    // Ama value döndürür key değil — KV'den key listesi almak için farklı yol lazım
+    // company_kv getByPrefix key'leri dönmüyor, value dönüyor
+    // Doğrudan KV tablosundan şirket prefix'li tüm key'leri silelim
+
+    const supabaseAdmin = getAdminClient();
+    const prefix = `${companyId}:`;
+    let deletedKV = 0;
+
+    // KV tablosundan şirket prefix'li tüm kayıtları sil
+    const { data: kvRows, error: kvErr } = await supabaseAdmin
+      .from("kv_store_4da0b637")
+      .select("key")
+      .like("key", `${prefix}%`);
+
+    if (!kvErr && kvRows) {
+      for (const row of kvRows) {
+        await supabaseAdmin.from("kv_store_4da0b637").delete().eq("key", row.key);
+        deletedKV++;
+      }
+    }
+
+    // Legacy (aspect) prefix'siz kayıtlar — sadece aspect şirketi için
+    if (companyId === "aspect") {
+      // aspect şirketinin legacy kayıtları da olabilir — ama bunları silmek riskli
+      // Şimdilik sadece prefix'li olanları siliyoruz
+      console.log(`[FABRİKA SIFIRLA] aspect legacy kayıtları korundu (güvenlik)`);
+    }
+
+    // 2. Kullanıcıları sil (yönetici hariç)
+    let deletedUsers = 0;
+    const { data: { users: allUsers } } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+    for (const u of (allUsers || [])) {
+      if (u.id === user.id) continue; // yöneticiyi koru
+      const uCompany = u.user_metadata?.company_id || "aspect";
+      if (uCompany !== companyId) continue; // başka şirketin kullanıcısına dokunma
+      await supabaseAdmin.auth.admin.deleteUser(u.id);
+      deletedUsers++;
+    }
+
+    console.log(`[FABRİKA SIFIRLA] TAMAMLANDI — ${companyId}: ${deletedKV} KV kaydı, ${deletedUsers} kullanıcı silindi — by ${user.email}`);
+
+    return c.json({
+      ok: true,
+      silinen: { kvKayit: deletedKV, kullanici: deletedUsers },
+      mesaj: `Şirket sıfırlandı. ${deletedKV} veri kaydı ve ${deletedUsers} kullanıcı silindi.`,
+    });
+  } catch (err) {
+    console.log("Fabrika sifirla error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
 
 Deno.serve(async (req) => {
   // Supabase Edge Functions'da OPTIONS preflight istekleri gateway tarafından kesilebilir.

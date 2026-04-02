@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Camera, Mail, Lock, User, Save, Eye, EyeOff, Shield, Bell, CheckCircle, Cake, Loader2 } from 'lucide-react';
+import { Camera, Mail, Lock, User, Save, Eye, EyeOff, Shield, Bell, CheckCircle, Cake, Loader2, AlertTriangle, Trash2 } from 'lucide-react';
 
 import { NewBottomNav } from './new-bottom-nav';
 import { authHeaders, appendGhostParam } from '../lib/api';
@@ -558,6 +558,75 @@ export function Settings({ userName, userRole, userAvatar, userEmail, userBirthD
           </div>
         </div>
       </div>
+
+      {/* ── Fabrika Sıfırlaması — sadece yönetici ── */}
+      {userRole === 'yonetici' && (() => {
+        const [sifirlaOnay, setSifirlaOnay] = useState('');
+        const [sifirlaAdi, setSifirlaAdi] = useState('');
+        const [sifirlaYukleniyor, setSifirlaYukleniyor] = useState(false);
+        const [sifirlaAcik, setSifirlaAcik] = useState(false);
+
+        return (
+          <div className="px-6 mb-8">
+            <button onClick={() => setSifirlaAcik(!sifirlaAcik)}
+              className="w-full flex items-center gap-2 p-4 rounded-2xl transition-all"
+              style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>
+              <AlertTriangle className="w-5 h-5 text-red-400" />
+              <span className="text-sm font-bold text-red-400 flex-1 text-left">Fabrika Sıfırlaması</span>
+              <span className="text-[10px] text-red-400/50">{sifirlaAcik ? '▲' : '▼'}</span>
+            </button>
+            {sifirlaAcik && (
+              <div className="mt-3 p-4 rounded-2xl space-y-3" style={{ background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.1)' }}>
+                <p className="text-[11px] text-red-300/70 leading-relaxed">
+                  ⚠️ Bu işlem geri alınamaz. Şirketinizin TÜM verileri silinir:
+                  mekanlar, ekipmanlar, vardiyalar, satışlar, rotasyonlar, maaşlar, giderler, gelirler, kasa, hakediş, akademi, mesajlar, duyurular, izinler ve tüm kullanıcılar (yönetici hariç).
+                </p>
+                <div>
+                  <label className="text-[10px] text-red-400/50 mb-1 block">1. Şirket adını yazın</label>
+                  <input
+                    value={sifirlaAdi}
+                    onChange={e => setSifirlaAdi(e.target.value)}
+                    placeholder="Ör: Aspect"
+                    className="w-full px-4 py-2.5 bg-red-500/5 border border-red-500/20 rounded-xl text-white text-sm outline-none placeholder-red-400/30"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-red-400/50 mb-1 block">2. Şirket kodunu yazın</label>
+                  <input
+                    value={sifirlaOnay}
+                    onChange={e => setSifirlaOnay(e.target.value)}
+                    placeholder="Ör: aspect"
+                    className="w-full px-4 py-2.5 bg-red-500/5 border border-red-500/20 rounded-xl text-white text-sm outline-none placeholder-red-400/30"
+                  />
+                </div>
+                <button
+                  disabled={!sifirlaOnay.trim() || !sifirlaAdi.trim() || sifirlaYukleniyor}
+                  onClick={async () => {
+                    if (!confirm('SON UYARI: Tüm verileriniz silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?')) return;
+                    setSifirlaYukleniyor(true);
+                    try {
+                      const res = await fetch(appendGhostParam(`${SERVER_URL}/sistem/fabrika-sifirla`), {
+                        method: 'POST', headers: await authHeaders(),
+                        body: JSON.stringify({ onay: sifirlaOnay, sirketAdi: sifirlaAdi }),
+                      });
+                      const data = await res.json();
+                      if (!res.ok) { alert(data.error || 'Hata oluştu'); return; }
+                      alert(`${data.mesaj}\n\nSayfa yenilenecek.`);
+                      window.location.reload();
+                    } catch { alert('Sunucu hatası'); }
+                    finally { setSifirlaYukleniyor(false); }
+                  }}
+                  className="w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-20 active:scale-[0.98] transition-all"
+                  style={{ background: 'rgba(239,68,68,0.8)', color: '#fff' }}
+                >
+                  {sifirlaYukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  Tüm Verileri Sil ve Sıfırla
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Bottom Navigation - Only for personel/bekleyen */}
       {['personel', 'bekleyen'].includes(userRole) && (
