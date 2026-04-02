@@ -14776,8 +14776,18 @@ app.get("/make-server-4da0b637/kasa/sirket", async (c) => {
       }
     }
 
-    // Tüm giderler = İGD giderleri + mekan kiraları
-    const tumAyGiderleri = [...ayGiderleri, ...mekanKiralari];
+    // Döviz kurları — giderleri TRY'ye çevirmek için
+    const exRatesKasa: any = await ckv.get("cost_exchange_rates").catch(() => null) || { EUR: 38, USD: 33, GBP: 41.20 };
+    const toTLKasa = (amount: number, currency: string) => {
+      if (!currency || currency === "TRY") return amount;
+      if (currency === "EUR") return amount * (Number(exRatesKasa.EUR) || 38);
+      if (currency === "USD") return amount * (Number(exRatesKasa.USD) || 33);
+      if (currency === "GBP") return amount * (Number(exRatesKasa.GBP) || 41.2);
+      return amount;
+    };
+
+    // Tüm giderler = İGD giderleri + mekan kiraları (döviz → TRY çevirme)
+    const tumAyGiderleri = [...ayGiderleri.map((g: any) => ({ ...g, amount: toTLKasa(g.amount || 0, g.currency) })), ...mekanKiralari];
 
     // Ödeme durumlarını map'e al
     const odemeMap: Record<string, any> = {};
@@ -14865,7 +14875,11 @@ app.get("/make-server-4da0b637/kasa/sirket", async (c) => {
     }
 
     // Bakiye = önceki aydan devir + cirolar - ödenen giderler
-    const bakiye = devirBakiye + toplamDevir - toplamOdpienenGider;
+    // Açılış bakiyesi
+    const acilisBakiye = ay ? await ckv.get(`kasa_acilis_${ay}`) : null;
+    const acilisTutar = acilisBakiye?.tutar || 0;
+
+    const bakiye = devirBakiye + acilisTutar + toplamDevir - toplamOdpienenGider;
 
     // İşlem geçmişi: ödeme yapılmış giderler
     const opipienenIslemler: any[] = [];
@@ -14906,6 +14920,7 @@ app.get("/make-server-4da0b637/kasa/sirket", async (c) => {
     return c.json({
       bakiye,
       devirBakiye,
+      acilisTutar,
       ayKapatildi,
       ayDevretsiz,
       oncekiAydanKalanlar,
@@ -15444,6 +15459,114 @@ app.post("/make-server-4da0b637/kasa/sirket/ay-kapat", async (c) => {
   }
 });
 
+// ── AÇILIŞ BAKİYE / BORÇ ──
+
+// POST /kasa/sirket/acilis-bakiye — Açılış bakiyesi ekle (İGD'ye yazmaz)
+app.post("/make-server-4da0b637/kasa/sirket/acilis-bakiye", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (!["yonetici", "ust-mudur"].includes(user.user_metadata?.role || "personel")) return c.json({ error: "Yetkiniz yok." }, 403);
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    const reqCId = c.req.query("company_id");
+    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+
+    const { tutar, aciklama, ay } = await c.req.json();
+    if (!tutar || !ay) return c.json({ error: "tutar ve ay zorunlu." }, 400);
+
+    await ckv.set(`kasa_acilis_${ay}`, {
+      tutar: Number(tutar),
+      aciklama: aciklama?.trim() || "Açılış bakiyesi",
+      tarih: new Date().toISOString(),
+      ekleyen: user.user_metadata?.full_name || user.email || "",
+    });
+
+    console.log(`[Kasa] Açılış bakiye: ${ay} ₺${tutar} by ${user.id}`);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("Kasa acilis-bakiye POST error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /kasa/sirket/acilis-borc — Açılış borcu ekle (İGD'ye yazmaz, cariler'de görünür)
+app.post("/make-server-4da0b637/kasa/sirket/acilis-borc", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (!["yonetici", "ust-mudur"].includes(user.user_metadata?.role || "personel")) return c.json({ error: "Yetkiniz yok." }, 403);
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    const reqCId = c.req.query("company_id");
+    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+
+    const { kisi, tutar, aciklama, emoji } = await c.req.json();
+    if (!kisi?.trim() || !tutar || tutar <= 0) return c.json({ error: "kisi ve tutar zorunlu." }, 400);
+
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const borc = {
+      id,
+      kisi: kisi.trim(),
+      tutar: Number(tutar),
+      kalanTutar: Number(tutar),
+      aciklama: aciklama?.trim() || "Açılış borcu",
+      emoji: emoji || "🏢",
+      tarih: new Date().toISOString().split("T")[0],
+      odemeler: [],
+      acilisBorc: true,
+      created_at: new Date().toISOString(),
+      created_by: user.user_metadata?.full_name || user.email || "",
+    };
+
+    await ckv.set(`kasa_acilis_borc_${id}`, borc);
+    console.log(`[Kasa] Açılış borç: ${kisi} ₺${tutar} by ${user.id}`);
+    return c.json({ borc });
+  } catch (err) {
+    console.log("Kasa acilis-borc POST error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /kasa/sirket/acilis-borc/:id/odeme — Açılış borcu ödeme
+app.post("/make-server-4da0b637/kasa/sirket/acilis-borc/:id/odeme", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (!["yonetici", "ust-mudur"].includes(user.user_metadata?.role || "personel")) return c.json({ error: "Yetkiniz yok." }, 403);
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    const reqCId = c.req.query("company_id");
+    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+
+    const borcId = c.req.param("id");
+    const { tutar, aciklama } = await c.req.json();
+    if (!tutar || tutar <= 0) return c.json({ error: "Ödeme tutarı zorunlu." }, 400);
+
+    const borc = await ckv.get(`kasa_acilis_borc_${borcId}`);
+    if (!borc) return c.json({ error: "Borç bulunamadı." }, 404);
+
+    borc.odemeler = [...(borc.odemeler || []), { tutar: Number(tutar), tarih: new Date().toISOString().split("T")[0], aciklama: aciklama?.trim() || "", created_at: new Date().toISOString() }];
+    borc.kalanTutar = Math.max(0, (borc.kalanTutar || borc.tutar) - Number(tutar));
+    await ckv.set(`kasa_acilis_borc_${borcId}`, borc);
+    return c.json({ borc });
+  } catch (err) {
+    console.log("Kasa acilis-borc odeme POST error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// DELETE /kasa/sirket/acilis-borc/:id
+app.delete("/make-server-4da0b637/kasa/sirket/acilis-borc/:id", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if ((user.user_metadata?.role || "personel") !== "yonetici") return c.json({ error: "Yetkiniz yok." }, 403);
+    const ckv = companyKvFor(getCompanyId(user));
+    await ckv.del(`kasa_acilis_borc_${c.req.param("id")}`);
+    return c.json({ ok: true });
+  } catch (err) {
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 // ── CARİ HESAPLAR (kişi/firma bazlı borç/ödeme özet) ──
 
 // GET /kasa/cariler — Tüm kişi/firma bazlı borç/ödeme durumu
@@ -15501,7 +15624,16 @@ app.get("/make-server-4da0b637/kasa/cariler", async (c) => {
     const filteredGiderler = ay
       ? (tumGiderler || []).filter((g: any) => g.date?.startsWith(ay) && g.amount > 0 && g.date >= kasaBaslangic)
       : (tumGiderler || []).filter((g: any) => g.amount > 0 && g.date >= kasaBaslangic);
-    const tumAyGiderleri = [...filteredGiderler, ...mekanKiraGiderleri].filter((g: any) => g.odemeTipi !== "duzeltme" && !g.kasaDuzeltme);
+    // Döviz kurları
+    const exRatesCari: any = await ckv.get("cost_exchange_rates").catch(() => null) || { EUR: 38, USD: 33, GBP: 41.20 };
+    const toTLCari = (amount: number, currency: string) => {
+      if (!currency || currency === "TRY") return amount;
+      if (currency === "EUR") return amount * (Number(exRatesCari.EUR) || 38);
+      if (currency === "USD") return amount * (Number(exRatesCari.USD) || 33);
+      if (currency === "GBP") return amount * (Number(exRatesCari.GBP) || 41.2);
+      return amount;
+    };
+    const tumAyGiderleri = [...filteredGiderler.map((g: any) => ({ ...g, amount: toTLCari(g.amount || 0, g.currency) })), ...mekanKiraGiderleri].filter((g: any) => g.odemeTipi !== "duzeltme" && !g.kasaDuzeltme);
 
     // Kişi/firma bazlı grupla
     const cariMap: Record<string, any> = {};
@@ -15580,6 +15712,21 @@ app.get("/make-server-4da0b637/kasa/cariler", async (c) => {
     }
 
     // Kalan hesapla ve listeye çevir
+    // Açılış borçlarını da cariler'e ekle
+    const acilisBorclar = await ckv.getByPrefix("kasa_acilis_borc_").catch(() => []) || [];
+    for (const ab of acilisBorclar) {
+      const kisi = ab.kisi || "Bilinmeyen";
+      if (!cariMap[kisi]) {
+        cariMap[kisi] = { kisi, tip: "cari", emoji: ab.emoji || "🏢", toplamBorc: 0, toplamOdpipipiienen: 0, toplamSilinen: 0, hareketler: [] };
+      }
+      cariMap[kisi].toplamBorc += ab.tutar || 0;
+      cariMap[kisi].hareketler.push({ tip: "borc", tutar: ab.tutar, tarih: ab.tarih, aciklama: ab.aciklama || "Açılış borcu", giderId: `acilis_${ab.id}` });
+      for (const odm of (ab.odemeler || [])) {
+        cariMap[kisi].toplamOdpipipiienen += odm.tutar || 0;
+        cariMap[kisi].hareketler.push({ tip: "odeme", tutar: odm.tutar, tarih: odm.tarih, aciklama: odm.aciklama || "Ödeme", giderId: `acilis_${ab.id}` });
+      }
+    }
+
     const cariler = Object.values(cariMap).map((c: any) => ({
       ...c,
       kalanBorc: Math.max(0, c.toplamBorc - c.toplamOdpipipiienen),

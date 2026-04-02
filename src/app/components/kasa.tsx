@@ -101,7 +101,7 @@ interface CariHesap {
   hareketler: { tip: string; tutar: number; tarih: string; aciklama: string; giderId?: string }[];
 }
 
-type TabKey = 'sirket' | 'kisisel' | 'cariler' | 'borclar';
+type TabKey = 'sirket' | 'kisisel' | 'cariler';
 
 const KISISEL_KATEGORILER = ['Maaş', 'Kira', 'Market', 'Fatura', 'Yatırım', 'Diğer'];
 
@@ -146,7 +146,6 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
     { key: 'sirket', label: 'Şirket Kasası' },
     // Kişisel kasa ayrı sayfaya taşınacak
     { key: 'cariler', label: 'Cariler' },
-    { key: 'borclar', label: 'Borçlar' },
   ];
 
   const [activeTab, setActiveTab] = useState<TabKey>('sirket');
@@ -177,6 +176,21 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
   const [cariAra, setCariAra] = useState('');
   const [acikKategori, setAcikKategori] = useState<string | null>(null); // {giderId, label, toplam}
   const [kismiSilTutar, setKismiSilTutar] = useState('');
+
+  // ─ Aksiyon Modalları State ─
+  const [showParaGirisi, setShowParaGirisi] = useState(false);
+  const [showParaCikisi, setShowParaCikisi] = useState(false);
+  const [showAcilisBakiye, setShowAcilisBakiye] = useState(false);
+  const [showAcilisBorc, setShowAcilisBorc] = useState(false);
+  const [aksiyonTutar, setAksiyonTutar] = useState('');
+  const [aksiyonAciklama, setAksiyonAciklama] = useState('');
+  const [aksiyonTarih, setAksiyonTarih] = useState(todayStr());
+  const [aksiyonOdemeYontemi, setAksiyonOdemeYontemi] = useState('cash');
+  const [aksiyonKategori, setAksiyonKategori] = useState('');
+  const [aksiyonOdendi, setAksiyonOdendi] = useState(true);
+  const [aksiyonKisi, setAksiyonKisi] = useState('');
+  const [aksiyonEmoji, setAksiyonEmoji] = useState('🏢');
+  const [aksiyonSaving, setAksiyonSaving] = useState(false);
 
   // ─ Kişisel Kasa State ─
   const [kisiselData, setKisiselData] = useState<KisiselKasaData | null>(null);
@@ -293,11 +307,10 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'sirket') fetchSirket();
+    if (activeTab === 'sirket') { fetchSirket(); fetchCariler(); }
     else if (activeTab === 'kisisel') fetchKisisel();
     else if (activeTab === 'cariler') fetchCariler();
-    else if (activeTab === 'borclar') fetchBorclar();
-  }, [activeTab, fetchSirket, fetchKisisel, fetchBorclar]);
+  }, [activeTab, fetchSirket, fetchKisisel, fetchCariler]);
 
   // ── Actions ───────────────────────────────────────────────────────────
   const toggleGorunurluk = async () => {
@@ -523,6 +536,115 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
     setFormTarih(todayStr());
   };
 
+  const resetAksiyonForm = () => {
+    setAksiyonTutar('');
+    setAksiyonAciklama('');
+    setAksiyonTarih(todayStr());
+    setAksiyonKategori('');
+    setAksiyonOdendi(true);
+    setAksiyonOdemeYontemi('cash');
+    setAksiyonKisi('');
+    setAksiyonEmoji('🏢');
+  };
+
+  const GIDER_KATEGORILER = ['personel', 'malzeme', 'ekipman', 'operasyonel', 'ulasim', 'diger'];
+
+  const handleParaGirisi = async () => {
+    if (!aksiyonTutar) return;
+    setAksiyonSaving(true);
+    try {
+      const odemeLabel = aksiyonOdemeYontemi === 'cash' ? 'Nakit' : aksiyonOdemeYontemi === 'card' ? 'Kart' : 'İban';
+      await fetch(appendGhostParam(`${API_BASE}/isletme/gelirler`), {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({
+          amount: parseFloat(aksiyonTutar),
+          description: aksiyonAciklama || `${odemeLabel} ekleme`,
+          date: aksiyonTarih,
+          mekanId: '',
+          mekanAdi: '',
+          paymentMethod: aksiyonOdemeYontemi,
+        }),
+      });
+      setShowParaGirisi(false);
+      resetAksiyonForm();
+      fetchSirket();
+    } catch {} finally { setAksiyonSaving(false); }
+  };
+
+  const handleParaCikisi = async () => {
+    if (!aksiyonTutar || !aksiyonKategori) return;
+    setAksiyonSaving(true);
+    try {
+      const hdrs = await authHeaders();
+      const giderRes = await fetch(appendGhostParam(`${API_BASE}/isletme/giderler`), {
+        method: 'POST',
+        headers: hdrs,
+        body: JSON.stringify({
+          category: aksiyonKategori,
+          amount: parseFloat(aksiyonTutar),
+          description: aksiyonAciklama || 'Gider',
+          date: aksiyonTarih,
+          currency: 'TRY',
+        }),
+      });
+      if (aksiyonOdendi && giderRes.ok) {
+        const giderData = await giderRes.json();
+        const giderId = giderData?.id || giderData?.giderId;
+        if (giderId) {
+          await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/ode`), {
+            method: 'POST',
+            headers: hdrs,
+            body: JSON.stringify({ giderId, tutar: parseFloat(aksiyonTutar) }),
+          });
+        }
+      }
+      setShowParaCikisi(false);
+      resetAksiyonForm();
+      fetchSirket();
+    } catch {} finally { setAksiyonSaving(false); }
+  };
+
+  const handleAcilisBakiye = async () => {
+    if (!aksiyonTutar) return;
+    setAksiyonSaving(true);
+    try {
+      await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/acilis-bakiye`), {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({
+          tutar: parseFloat(aksiyonTutar),
+          aciklama: aksiyonAciklama || 'Açılış bakiyesi',
+          ay: selectedMonth,
+        }),
+      });
+      setShowAcilisBakiye(false);
+      resetAksiyonForm();
+      fetchSirket();
+    } catch {} finally { setAksiyonSaving(false); }
+  };
+
+  const handleAcilisBorc = async () => {
+    if (!aksiyonKisi || !aksiyonTutar) return;
+    setAksiyonSaving(true);
+    try {
+      await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/acilis-borc`), {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({
+          kisi: aksiyonKisi,
+          tutar: parseFloat(aksiyonTutar),
+          aciklama: aksiyonAciklama || 'Açılış borcu',
+          emoji: aksiyonEmoji,
+        }),
+      });
+      setShowAcilisBorc(false);
+      resetAksiyonForm();
+      fetchSirket();
+      fetchCariler();
+    } catch {} finally { setAksiyonSaving(false); }
+  };
+
   // ── Render Helpers ────────────────────────────────────────────────────
   const LoadingSpinner = () => (
     <div className="flex items-center justify-center py-20">
@@ -658,6 +780,57 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
             </div>
           </div>
         </motion.div>
+
+        {/* Açılış Bakiyesi */}
+        {(d as any).acilisTutar > 0 && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            className="rounded-xl p-3 flex items-center justify-between"
+            style={{ background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.15)' }}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm">📋</span>
+              <span className="text-xs text-white/50">Açılış bakiyesi</span>
+            </div>
+            <span className="text-sm font-bold" style={{ color: '#60a5fa' }}>{formatMoney((d as any).acilisTutar)}</span>
+          </motion.div>
+        )}
+
+        {/* Aksiyon Butonları */}
+        {isAdmin && (
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              onClick={() => { resetAksiyonForm(); setShowParaGirisi(true); }}
+              className="flex items-center gap-2 p-3 rounded-xl text-left transition-all active:scale-[0.97]"
+              style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)' }}
+            >
+              <span className="text-lg">💰</span>
+              <span className="text-xs font-bold" style={{ color: '#34d399' }}>Para Girişi</span>
+            </button>
+            <button
+              onClick={() => { resetAksiyonForm(); setShowParaCikisi(true); }}
+              className="flex items-center gap-2 p-3 rounded-xl text-left transition-all active:scale-[0.97]"
+              style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)' }}
+            >
+              <span className="text-lg">💸</span>
+              <span className="text-xs font-bold" style={{ color: '#f87171' }}>Para Çıkışı</span>
+            </button>
+            <button
+              onClick={() => { resetAksiyonForm(); setShowAcilisBakiye(true); }}
+              className="flex items-center gap-2 p-3 rounded-xl text-left transition-all active:scale-[0.97]"
+              style={{ background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)' }}
+            >
+              <span className="text-lg">📋</span>
+              <span className="text-xs font-bold" style={{ color: '#60a5fa' }}>Açılış Bakiye</span>
+            </button>
+            <button
+              onClick={() => { resetAksiyonForm(); setShowAcilisBorc(true); }}
+              className="flex items-center gap-2 p-3 rounded-xl text-left transition-all active:scale-[0.97]"
+              style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)' }}
+            >
+              <span className="text-lg">📋</span>
+              <span className="text-xs font-bold" style={{ color: '#fbbf24' }}>Açılış Borcu</span>
+            </button>
+          </div>
+        )}
 
         {/* Önceki Aydan Kalan Ödemeler */}
         {isAdmin && ((d as any).oncekiAydanKalanlar?.length || 0) > 0 && (
@@ -2179,7 +2352,6 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
             {activeTab === 'sirket' && renderSirket()}
             {/* Kişisel kasa ayrı sayfaya taşınacak */}
             {activeTab === 'cariler' && renderCariler()}
-            {activeTab === 'borclar' && renderBorclar()}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -2249,6 +2421,188 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
       </AnimatePresence>
 
       {/* Kişisel kasa modalları kaldırıldı — ayrı sayfaya taşınacak */}
+
+      {/* ── Para Girişi Modal ── */}
+      <AnimatePresence>
+        {showParaGirisi && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center px-5"
+            onClick={() => setShowParaGirisi(false)}>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              className="w-full max-w-sm rounded-2xl p-5 space-y-4"
+              style={{ ...glass, background: '#1a1a2e' }}
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold" style={{ color: '#34d399' }}>💰 Para Girişi</h3>
+                <button onClick={() => setShowParaGirisi(false)} className="text-white/30"><X className="w-4 h-4" /></button>
+              </div>
+              <input type="number" value={aksiyonTutar} onChange={e => setAksiyonTutar(e.target.value)}
+                placeholder="Tutar (₺)" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-emerald-400/50" />
+              {/* Ödeme yöntemi */}
+              <div className="flex gap-2">
+                {[{ key: 'cash', label: 'Nakit', color: '#22c55e' }, { key: 'card', label: 'Kart', color: '#f97316' }, { key: 'iban', label: 'İban', color: '#06b6d4' }].map(m => (
+                  <button key={m.key} onClick={() => setAksiyonOdemeYontemi(m.key)}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${aksiyonOdemeYontemi === m.key ? 'text-white' : 'bg-white/5 border border-white/10 text-white/40'}`}
+                    style={aksiyonOdemeYontemi === m.key ? { background: m.color, border: `1px solid ${m.color}` } : {}}>
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              <input type="text" value={aksiyonAciklama} onChange={e => setAksiyonAciklama(e.target.value)}
+                placeholder="Açıklama" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-emerald-400/50" />
+              <input type="date" value={aksiyonTarih} onChange={e => setAksiyonTarih(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-emerald-400/50" />
+              <div className="flex gap-2">
+                <button onClick={() => setShowParaGirisi(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/8 text-white/50 text-sm font-semibold">İptal</button>
+                <button onClick={handleParaGirisi} disabled={!aksiyonTutar || aksiyonSaving}
+                  className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-30"
+                  style={{ background: 'linear-gradient(135deg, #34d399, #059669)' }}>
+                  {aksiyonSaving ? 'Kaydediliyor...' : 'Kaydet'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Para Çıkışı Modal ── */}
+      <AnimatePresence>
+        {showParaCikisi && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center px-5"
+            onClick={() => setShowParaCikisi(false)}>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              className="w-full max-w-sm rounded-2xl p-5 space-y-4"
+              style={{ ...glass, background: '#1a1a2e' }}
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold" style={{ color: '#f87171' }}>💸 Para Çıkışı</h3>
+                <button onClick={() => setShowParaCikisi(false)} className="text-white/30"><X className="w-4 h-4" /></button>
+              </div>
+              <input type="number" value={aksiyonTutar} onChange={e => setAksiyonTutar(e.target.value)}
+                placeholder="Tutar (₺)" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-red-400/50" />
+              <select value={aksiyonKategori} onChange={e => setAksiyonKategori(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-red-400/50 appearance-none">
+                <option value="" className="bg-[#1a1a2e]">Kategori seçin...</option>
+                {GIDER_KATEGORILER.map(k => (
+                  <option key={k} value={k} className="bg-[#1a1a2e]">{k.charAt(0).toUpperCase() + k.slice(1)}</option>
+                ))}
+                {cariData.map(c => (
+                  <option key={`cari-${c.kisi}`} value={c.kisi} className="bg-[#1a1a2e]">{c.emoji} {c.kisi}</option>
+                ))}
+              </select>
+              {/* Ödeme yöntemi */}
+              <div className="flex gap-2">
+                {[{ key: 'cash', label: 'Nakit', color: '#22c55e' }, { key: 'card', label: 'Kart', color: '#f97316' }, { key: 'iban', label: 'İban', color: '#06b6d4' }].map(m => (
+                  <button key={m.key} onClick={() => setAksiyonOdemeYontemi(m.key)}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${aksiyonOdemeYontemi === m.key ? 'text-white' : 'bg-white/5 border border-white/10 text-white/40'}`}
+                    style={aksiyonOdemeYontemi === m.key ? { background: m.color, border: `1px solid ${m.color}` } : {}}>
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              <input type="text" value={aksiyonAciklama} onChange={e => setAksiyonAciklama(e.target.value)}
+                placeholder="Açıklama" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-red-400/50" />
+              <input type="date" value={aksiyonTarih} onChange={e => setAksiyonTarih(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-red-400/50" />
+              <div className="flex items-center justify-between py-1">
+                <span className="text-xs text-white/50">Ödendi (kasadan)</span>
+                <button onClick={() => setAksiyonOdendi(p => !p)}
+                  className={`w-10 h-5 rounded-full transition-all ${aksiyonOdendi ? 'bg-emerald-500' : 'bg-white/15'}`}>
+                  <div className={`w-4 h-4 rounded-full bg-white transition-all ${aksiyonOdendi ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setShowParaCikisi(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/8 text-white/50 text-sm font-semibold">İptal</button>
+                <button onClick={handleParaCikisi} disabled={!aksiyonTutar || !aksiyonKategori || aksiyonSaving}
+                  className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-30"
+                  style={{ background: 'linear-gradient(135deg, #f87171, #dc2626)' }}>
+                  {aksiyonSaving ? 'Kaydediliyor...' : 'Kaydet'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Açılış Bakiye Modal ── */}
+      <AnimatePresence>
+        {showAcilisBakiye && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center px-5"
+            onClick={() => setShowAcilisBakiye(false)}>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              className="w-full max-w-sm rounded-2xl p-5 space-y-4"
+              style={{ ...glass, background: '#1a1a2e' }}
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold" style={{ color: '#60a5fa' }}>📋 Açılış Bakiyesi</h3>
+                <button onClick={() => setShowAcilisBakiye(false)} className="text-white/30"><X className="w-4 h-4" /></button>
+              </div>
+              <input type="number" value={aksiyonTutar} onChange={e => setAksiyonTutar(e.target.value)}
+                placeholder="Tutar (₺)" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-blue-400/50" />
+              <input type="text" value={aksiyonAciklama} onChange={e => setAksiyonAciklama(e.target.value)}
+                placeholder="Açıklama" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-blue-400/50" />
+              <div className="flex gap-2">
+                <button onClick={() => setShowAcilisBakiye(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/8 text-white/50 text-sm font-semibold">İptal</button>
+                <button onClick={handleAcilisBakiye} disabled={!aksiyonTutar || aksiyonSaving}
+                  className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-30"
+                  style={{ background: 'linear-gradient(135deg, #60a5fa, #2563eb)' }}>
+                  {aksiyonSaving ? 'Kaydediliyor...' : 'Kaydet'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Açılış Borcu Modal ── */}
+      <AnimatePresence>
+        {showAcilisBorc && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center px-5"
+            onClick={() => setShowAcilisBorc(false)}>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              className="w-full max-w-sm rounded-2xl p-5 space-y-4"
+              style={{ ...glass, background: '#1a1a2e' }}
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold" style={{ color: '#fbbf24' }}>📋 Açılış Borcu</h3>
+                <button onClick={() => setShowAcilisBorc(false)} className="text-white/30"><X className="w-4 h-4" /></button>
+              </div>
+              <input type="text" value={aksiyonKisi} onChange={e => setAksiyonKisi(e.target.value)}
+                placeholder="Kişi / Firma adı" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-amber-400/50" />
+              <input type="number" value={aksiyonTutar} onChange={e => setAksiyonTutar(e.target.value)}
+                placeholder="Tutar (₺)" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-amber-400/50" />
+              <div className="space-y-1">
+                <label className="text-[10px] text-white/40">Emoji (opsiyonel)</label>
+                <div className="flex gap-2 flex-wrap">
+                  {['🏢', '👤', '🏪', '🔧', '📦', '🚚', '🍽️', '💼'].map(em => (
+                    <button key={em} onClick={() => setAksiyonEmoji(em)}
+                      className={`text-lg p-1.5 rounded-lg transition-all ${aksiyonEmoji === em ? 'bg-amber-400/20 ring-1 ring-amber-400/40' : 'bg-white/5'}`}>
+                      {em}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <input type="text" value={aksiyonAciklama} onChange={e => setAksiyonAciklama(e.target.value)}
+                placeholder="Açıklama" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-amber-400/50" />
+              <div className="flex gap-2">
+                <button onClick={() => setShowAcilisBorc(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/8 text-white/50 text-sm font-semibold">İptal</button>
+                <button onClick={handleAcilisBorc} disabled={!aksiyonKisi || !aksiyonTutar || aksiyonSaving}
+                  className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-30"
+                  style={{ background: 'linear-gradient(135deg, #fbbf24, #d97706)' }}>
+                  {aksiyonSaving ? 'Kaydediliyor...' : 'Kaydet'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
