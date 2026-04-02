@@ -388,6 +388,9 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
           giderId: showKismiOdemeDialog.giderId,
           tutar: parseFloat(kismiOdemeTutar),
           aciklama: kismiOdemeAciklama || undefined,
+          borcTutar: showKismiOdemeDialog.kalanTutar || 0,
+          personelAdi: showKismiOdemeDialog.personelAdi || '',
+          category: showKismiOdemeDialog.category || '',
         }),
       });
       setShowKismiOdemeDialog(null);
@@ -1697,7 +1700,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
                                 for (const b of borclar) {
                                   await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/ode`), {
                                     method: 'POST', headers: hdrs,
-                                    body: JSON.stringify({ giderId: b.giderId, tutar: b.tutar, aciklama: `${cari.kisi} — tam ödeme` }),
+                                    body: JSON.stringify({ giderId: b.giderId, tutar: b.tutar, aciklama: `${cari.kisi} — tam ödeme`, borcTutar: b.tutar, personelAdi: cari.kisi, category: cari.tip }),
                                   });
                                 }
                                 fetchCariler();

@@ -15046,7 +15046,7 @@ app.post("/make-server-4da0b637/kasa/sirket/ode", async (c) => {
     const reqCId = c.req.query("company_id");
     const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
 
-    const { giderId, tutar, aciklama, ay } = await c.req.json();
+    const { giderId, tutar, aciklama, ay, borcTutar, personelAdi, category } = await c.req.json();
     if (!giderId || !tutar || tutar <= 0) return c.json({ error: "giderId ve tutar zorunlu." }, 400);
 
     const odemeKey = `kasa_odeme_${giderId}`;
@@ -15062,15 +15062,49 @@ app.post("/make-server-4da0b637/kasa/sirket/ode", async (c) => {
 
     existing.odemeler = [...(existing.odemeler || []), yeniOdeme];
     existing.odpienenTutar = (existing.odemeler || []).reduce((s: number, o: any) => s + (o.tutar || 0), 0);
-
-    // Giderin toplam tutarını bul (İGD'den)
-    // Tam ödeme kontrolü: aciklama'da "tam" geçiyorsa veya tutar >= kalan ise
-    // Bu bilgiyi frontend gönderebilir ama backend'de de kontrol edelim
     existing.description = aciklama || existing.description;
-    existing.category = existing.category || "";
-    existing.personelAdi = existing.personelAdi || "";
+    existing.category = category || existing.category || "";
+    existing.personelAdi = personelAdi || existing.personelAdi || "";
 
     await ckv.set(odemeKey, existing);
+
+    // Kur farkı: borç kapandığında toplam ödenen vs borç tutarı karşılaştır
+    if (borcTutar && Number(borcTutar) > 0 && existing.odpienenTutar >= Number(borcTutar)) {
+      existing.odpiendi = true;
+      const fark = existing.odpienenTutar - Number(borcTutar);
+      if (Math.abs(fark) >= 1) { // ₺1'den büyük fark varsa
+        const kurFarkId = `kurfark_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const kisim = personelAdi || category || "Gider";
+        if (fark > 0) {
+          // Fazla ödendi → kur farkı gideri
+          await ckv.set(`isletme_gider_${kurFarkId}`, {
+            id: kurFarkId,
+            category: "kur_farki",
+            amount: fark,
+            currency: "TRY",
+            description: `📈 Kur farkı gideri — ${kisim}`,
+            date: new Date().toISOString().split("T")[0],
+            personelAdi: personelAdi || "",
+            otomatik: false,
+            created_at: new Date().toISOString(),
+            created_by: user.user_metadata?.full_name || "",
+          });
+          console.log(`[Kasa] Kur farkı gideri: +${fark} for ${giderId}`);
+        } else {
+          // Az ödendi → kur farkı geliri
+          await ckv.set(`isletme_gelir_${kurFarkId}`, {
+            id: kurFarkId,
+            amount: Math.abs(fark),
+            description: `📉 Kur farkı geliri — ${kisim}`,
+            date: new Date().toISOString().split("T")[0],
+            created_at: new Date().toISOString(),
+            created_by: user.user_metadata?.full_name || "",
+          });
+          console.log(`[Kasa] Kur farkı geliri: ${fark} for ${giderId}`);
+        }
+      }
+    }
+
     console.log(`[Kasa] Ödeme: ${giderId} tutar=${tutar} by ${user.id}`);
     return c.json({ odeme: existing });
   } catch (err) {
