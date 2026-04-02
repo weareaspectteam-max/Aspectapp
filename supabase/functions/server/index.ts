@@ -16327,13 +16327,14 @@ app.post("/make-server-4da0b637/kasa/borclar", async (c) => {
     if (!["yonetici", "ust-mudur"].includes(role)) return c.json({ error: "Yetkiniz yok." }, 403);
     const ckv = companyKvFor(getCompanyId(user));
 
-    const { yon, kisi, tutar, aciklama, tarih } = await c.req.json();
+    const { yon, kisi, tutar, aciklama, tarih, currency } = await c.req.json();
     if (!yon || !kisi?.trim() || !tutar || tutar <= 0) return c.json({ error: "yon, kisi ve tutar zorunlu." }, 400);
     if (!["alacak", "verecek"].includes(yon)) return c.json({ error: "yon: alacak veya verecek olmalı." }, 400);
 
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const borc = {
       id, yon, kisi: kisi.trim(), tutar, kalanTutar: tutar,
+      currency: currency || "TRY",
       aciklama: aciklama?.trim() || "",
       tarih: tarih || new Date().toISOString().split("T")[0],
       odemeler: [],

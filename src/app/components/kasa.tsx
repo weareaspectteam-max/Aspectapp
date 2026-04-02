@@ -101,7 +101,7 @@ interface CariHesap {
   hareketler: { tip: string; tutar: number; tarih: string; aciklama: string; giderId?: string }[];
 }
 
-type TabKey = 'sirket' | 'kisisel' | 'cariler';
+type TabKey = 'sirket' | 'kisisel' | 'cariler' | 'borclar';
 
 const KISISEL_KATEGORILER = ['Maaş', 'Kira', 'Market', 'Fatura', 'Yatırım', 'Diğer'];
 
@@ -146,6 +146,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
     { key: 'sirket', label: 'Şirket Kasası' },
     // Kişisel kasa ayrı sayfaya taşınacak
     { key: 'cariler', label: 'Cariler' },
+    { key: 'borclar', label: '📝' },
   ];
 
   const [activeTab, setActiveTab] = useState<TabKey>('sirket');
@@ -222,6 +223,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
   const [borcYon, setBorcYon] = useState<'alacak' | 'verecek'>('alacak');
   const [borcKisi, setBorcKisi] = useState('');
   const [borcTutar, setBorcTutar] = useState('');
+  const [borcParaBirimi, setBorcParaBirimi] = useState('TRY');
   const [borcAciklama, setBorcAciklama] = useState('');
   const [borcTarih, setBorcTarih] = useState(todayStr());
 
@@ -310,6 +312,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
     if (activeTab === 'sirket') { fetchSirket(); fetchCariler(); }
     else if (activeTab === 'kisisel') fetchKisisel();
     else if (activeTab === 'cariler') fetchCariler();
+    else if (activeTab === 'borclar') fetchBorclar();
   }, [activeTab, fetchSirket, fetchKisisel, fetchCariler]);
 
   // ── Actions ───────────────────────────────────────────────────────────
@@ -1853,7 +1856,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
         {/* Add Borç Button */}
         {isAdmin && (
           <button
-            onClick={() => { setBorcYon(borcListeGoster); setBorcKisi(''); setBorcTutar(''); setBorcAciklama(''); setBorcTarih(todayStr()); setShowBorcModal(true); }}
+            onClick={() => { setBorcYon(borcListeGoster); setBorcKisi(''); setBorcTutar(''); setBorcAciklama(''); setBorcTarih(todayStr()); setBorcParaBirimi('TRY'); setShowBorcModal(true); }}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium text-white border border-ta/30 bg-ta/10 active:bg-ta/20"
           >
             <Plus className="w-4 h-4" /> Borç Ekle
@@ -2108,7 +2111,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60"
+          className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-8 overflow-y-auto"
           onClick={() => setShowBorcModal(false)}
         >
           <motion.div
@@ -2154,14 +2157,26 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
             </div>
 
             <div className="mb-3">
-              <label className="text-white/40 text-xs mb-1 block">Tutar (₺)</label>
-              <input
-                type="number"
-                value={borcTutar}
-                onChange={e => setBorcTutar(e.target.value)}
-                placeholder="0"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-lg outline-none focus:border-ta/50"
-              />
+              <label className="text-white/40 text-xs mb-1 block">Tutar & Para Birimi</label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={borcTutar}
+                  onChange={e => setBorcTutar(e.target.value)}
+                  placeholder="0"
+                  className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-lg outline-none focus:border-ta/50"
+                />
+                <select
+                  value={borcParaBirimi}
+                  onChange={e => setBorcParaBirimi(e.target.value)}
+                  className="w-20 bg-white/5 border border-white/10 rounded-xl px-2 py-3 text-white text-sm outline-none focus:border-ta/50 appearance-none text-center"
+                >
+                  <option value="TRY" className="bg-[#1a1035]">₺ TRY</option>
+                  <option value="USD" className="bg-[#1a1035]">$ USD</option>
+                  <option value="EUR" className="bg-[#1a1035]">€ EUR</option>
+                  <option value="GBP" className="bg-[#1a1035]">£ GBP</option>
+                </select>
+              </div>
             </div>
 
             <div className="mb-3">
@@ -2342,7 +2357,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
     try {
       await fetch(appendGhostParam(`${API_BASE}/kasa/kisisel/borclar`), {
         method: 'POST', headers: await authHeaders(),
-        body: JSON.stringify({ yon: borcYon, kisi: borcKisi, tutar: Number(borcTutar), aciklama: borcAciklama, tarih: borcTarih }),
+        body: JSON.stringify({ yon: borcYon, kisi: borcKisi, tutar: Number(borcTutar), aciklama: borcAciklama, tarih: borcTarih, currency: borcParaBirimi }),
       });
       setShowKisiselBorcModal(false);
       setBorcKisi(''); setBorcTutar(''); setBorcAciklama('');
@@ -2388,7 +2403,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
+              className={`${tab.key === 'borclar' ? 'px-3' : 'flex-1'} py-2 rounded-lg text-xs font-medium transition-all ${
                 activeTab === tab.key
                   ? 'bg-ta/20 text-ta'
                   : 'text-white/40'
@@ -2413,6 +2428,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
             {activeTab === 'sirket' && renderSirket()}
             {/* Kişisel kasa ayrı sayfaya taşınacak */}
             {activeTab === 'cariler' && renderCariler()}
+            {activeTab === 'borclar' && renderBorclar()}
           </motion.div>
         </AnimatePresence>
       </div>

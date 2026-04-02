@@ -410,6 +410,31 @@ video (YouTube embed), text (yazi), pdf (dis link), gallery (resimler), quiz (co
 
 ---
 
+## Manuel Borclar (Kasadan Bagimsiz)
+
+**Tab:** Kasa icinde 3. tab (📝 ikonu)
+**KV:** `kasa_borc_{id}` → `{ id, yon: "alacak"/"verecek", kisi, tutar, kalanTutar, currency, aciklama, tarih, odemeler: [{tutar, tarih, aciklama}] }`
+
+- Kasadan ve IGD'den bagimsiz — sadece bilgi amacli alacak/verecek takibi
+- Doviz destegi: TRY, USD, EUR, GBP
+- Kismi/tam odeme yapilabilir
+- Kasa bakiyesini etkilemez
+
+---
+
+## Fabrika Sifirlamasi
+
+**Endpoint:** `POST /sistem/fabrika-sifirla`
+**Konum:** Ayarlar → Fabrika Sifirlamasi
+
+- Sirketin TUM KV verilerini siler (mekanlar, ekipmanlar, vardiyalar, satislar, kasa, hakedis, akademi, mesajlar, izinler vs.)
+- Yonetici haric tum kullanicilari Supabase Auth'dan siler
+- Cift dogrulama: sirket adi + sirket kodu
+- Sadece yonetici yapabilir, baska sirketlere dokunamaz
+- Geri alinamaz
+
+---
+
 ## Yapilacaklar (sonra)
 - Mekan katkisi (ciro×0.60 + kare×0.40) backend'e kaydedilecek — kapanista hesaplanip KV'ye yazilacak. Sonra istatistik sayfasi + gun raporunda kullanilacak. Su an sadece vardiya bazlida frontend'de hesaplaniyor.
 
