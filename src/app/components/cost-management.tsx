@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Edit2, Trash2, Save, ChevronRight, Plus, RefreshCw, Loader2, Users, ChevronDown, Check, ArrowRight } from 'lucide-react';
+import { Edit2, Trash2, Save, ChevronRight, ChevronLeft, Plus, RefreshCw, Loader2, Users, ChevronDown, Check, ArrowRight } from 'lucide-react';
 import { projectId } from '../lib/supabase-info';
 import { getToken, buildHeaders, appendGhostParam } from '../lib/api';
 
@@ -1869,6 +1869,11 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
       <div className="sticky top-0 z-[5]" style={{ backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', background: 'rgba(42,42,58,0.92)', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
         <div className="px-4 py-4">
           <div className="flex items-center gap-3">
+            {currentView !== 'main' && (
+              <button onClick={() => setCurrentView('main')} className="w-9 h-9 rounded-xl bg-white/8 border border-white/10 flex items-center justify-center active:scale-95 transition-all shrink-0">
+                <ChevronLeft className="w-4 h-4 text-white/70" />
+              </button>
+            )}
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-black text-white">

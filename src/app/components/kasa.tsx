@@ -316,15 +316,20 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
   const toggleGorunurluk = async () => {
     if (!isAdmin || !sirketData) return;
     try {
-      await fetch(
-        appendGhostParam(`${API_BASE}/kasa/sirket/ayarlar`),
-        {
-          method: 'PUT',
-          headers: await authHeaders(),
-          body: JSON.stringify({ gorunurluk: !sirketData.gorunurluk }),
-        }
-      );
-      setSirketData({ ...sirketData, gorunurluk: !sirketData.gorunurluk });
+      // Kullanılmıyor — yeni toggleGorunurlukRol kullanılıyor
+    } catch {}
+  };
+
+  const toggleGorunurlukRol = async (rol: 'ustMudur' | 'idari') => {
+    if (!sirketData) return;
+    const key = rol === 'ustMudur' ? 'visibleUstMudur' : 'visibleIdari';
+    const yeniDeger = !(sirketData as any)[key];
+    try {
+      await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/ayarlar`), {
+        method: 'PUT', headers: await authHeaders(),
+        body: JSON.stringify({ [key]: yeniDeger }),
+      });
+      setSirketData({ ...sirketData, [key]: yeniDeger } as any);
     } catch {}
   };
 
@@ -692,9 +697,20 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
             </button>
           </div>
           {isAdmin && (
-            <button onClick={toggleGorunurluk} className="p-2 rounded-xl bg-white/5 text-white/60 active:bg-white/10">
-              {d.visible ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
-            </button>
+            <div className="flex gap-1">
+              <button onClick={() => toggleGorunurlukRol('ustMudur')}
+                className="px-2 py-1 rounded-lg text-[9px] font-bold flex items-center gap-1 active:scale-95 transition-all"
+                style={{ background: (d as any).visibleUstMudur ? 'rgba(52,211,153,0.15)' : 'rgba(255,255,255,0.05)', border: (d as any).visibleUstMudur ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(255,255,255,0.1)' }}>
+                {(d as any).visibleUstMudur ? <Eye className="w-3 h-3 text-emerald-400" /> : <EyeOff className="w-3 h-3 text-white/30" />}
+                <span style={{ color: (d as any).visibleUstMudur ? '#34d399' : 'rgba(255,255,255,0.3)' }}>ÜM</span>
+              </button>
+              <button onClick={() => toggleGorunurlukRol('idari')}
+                className="px-2 py-1 rounded-lg text-[9px] font-bold flex items-center gap-1 active:scale-95 transition-all"
+                style={{ background: (d as any).visibleIdari ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.05)', border: (d as any).visibleIdari ? '1px solid rgba(96,165,250,0.3)' : '1px solid rgba(255,255,255,0.1)' }}>
+                {(d as any).visibleIdari ? <Eye className="w-3 h-3 text-blue-400" /> : <EyeOff className="w-3 h-3 text-white/30" />}
+                <span style={{ color: (d as any).visibleIdari ? '#60a5fa' : 'rgba(255,255,255,0.3)' }}>İD</span>
+              </button>
+            </div>
           )}
         </div>
 
@@ -1658,34 +1674,76 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
                         <span className="font-bold" style={{ color: renk }}>Kalan: {formatMoney(cari.kalanBorc)}</span>
                       </div>
 
-                      {/* Hareketler */}
+                      {/* Hareketler — ay bazlı gruplanmış */}
                       <p className="text-[10px] text-white/40 uppercase tracking-wider mb-2 mt-1">Hareketler</p>
-                      <div className="space-y-1 max-h-60 overflow-y-auto">
-                        {cari.hareketler.map((h, i) => (
-                          <div key={i} className="flex items-center gap-2 py-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                            <div className="w-1 h-4 rounded-full shrink-0" style={{ background: h.tip === 'borc' ? '#f59e0b' : h.tip === 'odeme' ? '#34d399' : '#ef4444' }} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[10px] text-white/60 truncate">{h.aciklama || (h.tip === 'borc' ? 'Borç' : h.tip === 'odeme' ? 'Ödeme' : 'Silme')}</p>
-                              <p className="text-[9px] text-white/25">{h.tarih}</p>
+                      {(() => {
+                        // Aya göre grupla
+                        const ayMap: Record<string, typeof cari.hareketler> = {};
+                        for (const h of cari.hareketler) {
+                          const ay = h.tarih?.slice(0, 7) || 'bilinmiyor';
+                          if (!ayMap[ay]) ayMap[ay] = [];
+                          ayMap[ay].push(h);
+                        }
+                        const aylar = Object.keys(ayMap).sort((a, b) => b.localeCompare(a));
+                        const mevcutAy = new Date().toISOString().slice(0, 7);
+
+                        return (
+                          <div className="space-y-2">
+                            {aylar.map((ay, ayIdx) => {
+                              const hareketler = ayMap[ay];
+                              const ayAcik = acikCari === cari.kisi && (ay === mevcutAy || (acikCari + '_ay_' + ay) === (acikCari + '_ay_' + ay));
+                              const ayToplam = hareketler.reduce((s, h) => s + (h.tip === 'borc' ? h.tutar : -h.tutar), 0);
+                              const ayDate = new Date(ay + '-01T00:00:00Z');
+                              const ayLabel = ayDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+                              const ilkAy = ayIdx === 0; // en güncel ay açık başlar
+
+                              return (
+                                <div key={ay}>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); const el = e.currentTarget.nextElementSibling; if (el) el.classList.toggle('hidden'); }}
+                                    className="w-full flex items-center justify-between py-1.5 active:opacity-70"
+                                  >
+                                    <span className="text-[10px] font-bold text-white/40">📅 {ayLabel}</span>
+                                    <span className="text-[10px] font-bold" style={{ color: ayToplam > 0 ? '#fbbf24' : '#34d399' }}>{ayToplam > 0 ? '+' : ''}{formatMoney(ayToplam)}</span>
+                                  </button>
+                                  <div className={ilkAy ? '' : 'hidden'}>
+                                    {hareketler.map((h, i) => (
+                                      <div key={i} className="flex items-center gap-2 py-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                        <div className="w-1 h-4 rounded-full shrink-0" style={{ background: h.tip === 'borc' ? '#f59e0b' : h.tip === 'odeme' ? '#34d399' : '#ef4444' }} />
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-[10px] text-white/60 truncate">{h.aciklama || (h.tip === 'borc' ? 'Borç' : h.tip === 'odeme' ? 'Ödeme' : 'Silme')}</p>
+                                          <p className="text-[9px] text-white/25">{h.tarih}</p>
+                                        </div>
+                                        <span className={`text-[11px] font-bold shrink-0 ${h.tip === 'borc' ? 'text-amber-400' : h.tip === 'odeme' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                          {h.tip === 'borc' ? '+' : '-'}{formatMoney(h.tutar)}
+                                        </span>
+                                        {isAdmin && h.tip === 'odeme' && h.giderId && (
+                                          <button onClick={async () => {
+                                            if (!confirm('Bu ödemeyi geri almak istiyor musunuz?')) return;
+                                            try {
+                                              await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/odeme/${h.giderId}`), { method: 'DELETE', headers: await authHeaders() });
+                                              fetchCariler(); fetchSirket();
+                                            } catch {}
+                                          }} className="p-1 rounded text-white/15 active:text-red-400 shrink-0">
+                                            <Trash2 className="w-3 h-3" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {/* Toplam ödenen — tüm zamanlar */}
+                            <div className="pt-2 mt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] text-white/30">Toplam Ödenen (tüm zamanlar)</span>
+                                <span className="text-[11px] font-bold text-emerald-400">{formatMoney(cari.toplamOdpipipiienen)}</span>
+                              </div>
                             </div>
-                            <span className={`text-[11px] font-bold shrink-0 ${h.tip === 'borc' ? 'text-amber-400' : h.tip === 'odeme' ? 'text-emerald-400' : 'text-red-400'}`}>
-                              {h.tip === 'borc' ? '+' : '-'}{formatMoney(h.tutar)}
-                            </span>
-                            {isAdmin && h.tip === 'odeme' && h.giderId && (
-                              <button onClick={async () => {
-                                if (!confirm('Bu ödemeyi geri almak istiyor musunuz?')) return;
-                                try {
-                                  await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/odeme/${h.giderId}`), { method: 'DELETE', headers: await authHeaders() });
-                                  fetchCariler();
-                                  fetchSirket();
-                                } catch {}
-                              }} className="p-1 rounded text-white/15 active:text-red-400 shrink-0">
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            )}
                           </div>
-                        ))}
-                      </div>
+                        );
+                      })()}
 
                       {/* Ödeme butonları */}
                       {isAdmin && cari.kalanBorc > 0 && (

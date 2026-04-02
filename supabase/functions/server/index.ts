@@ -495,6 +495,7 @@ const ensureOtomatikGiderler = async (companyId: string): Promise<void> => {
           currency: "TRY",
           description: `🔄 Otomatik Gider — ${r.name || "Düzenli Gider"} (${gun})`,
           date: gun,
+          personelAdi: r.name || "Düzenli Gider",
           otomatik: true,
           otomatikKey,
           created_at: new Date().toISOString(),
@@ -4461,6 +4462,39 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
     const odenenPrim = primKayitlariFinal.filter(p => p.odendi).reduce((s, p) => s + p.primMiktar, 0);
     const bekleyenPrim = toplamPrim - odenenPrim;
 
+    // ── Bekleyen hakedişleri İGD'ye gider olarak yaz (idempotent) ──
+    // Bu, kasada personele borç olarak görünmesini sağlar
+    const mevcutGiderKeys = new Set<string>();
+    const tumGiderlerPrim = await ckv.getByPrefix("isletme_gider_").catch(() => []) || [];
+    for (const g of tumGiderlerPrim) { if (g.primOdemeKey) mevcutGiderKeys.add(g.primOdemeKey); }
+
+    let primGiderEklenen = 0;
+    for (const p of primKayitlariFinal) {
+      if (p.silindi) continue;
+      if (p.odendi) continue; // ödenmişler zaten İGD'ye yazılmış (ödeme anında)
+      if (mevcutGiderKeys.has(p.odemeKey)) continue; // zaten İGD'de var
+
+      const giderId = `prim_bekleyen_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await ckv.set(`isletme_gider_${giderId}`, {
+        id: giderId,
+        category: "personel",
+        odemeTipi: "prim_bekleyen",
+        amount: p.primMiktar || 0,
+        currency: "TRY",
+        description: `Hakediş — ${p.personelAdi || "?"} · ${p.mekanName || ""} ${p.tarih} ${(p.kademeIndex ?? 0) + 1}. Kademe`,
+        date: p.tarih || ay + "-01",
+        personelAdi: p.personelAdi || "",
+        mekanAdi: p.mekanName || "",
+        primOdemeKey: p.odemeKey,
+        otomatik: true,
+        kasaBekleyen: true,
+        created_at: new Date().toISOString(),
+        created_by: "sistem",
+      });
+      primGiderEklenen++;
+    }
+    if (primGiderEklenen > 0) console.log(`[Prim→İGD] ${primGiderEklenen} bekleyen hakediş gider olarak eklendi (${ay})`);
+
     console.log(`Prim raporu ${ay}: ${primKayitlariFinal.length} kişi-kademe kaydı, toplam ₺${toplamPrim}`);
     return c.json({ ay, primKayitlari: primKayitlariFinal, toplamPrim, odenenPrim, bekleyenPrim });
   } catch (err) {
@@ -4884,30 +4918,64 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
       results.push(key);
 
       if (odendiMi && detay) {
-        // Ödeme → otomatik işletme gider kalemi oluştur
-        const kademeLabel = `${(detay.kademeIndex ?? 0) + 1}. Kademe`;
-        const giderId = `prim_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-        const gider = {
-          id: giderId,
-          category: "personel",
-          odemeTipi: "prim",
-          amount: detay.primMiktar || 0,
-          currency: "TRY",
-          description: `Personel Hakediş Ödemesi �� ${detay.personelAdi || "Bilinmiyor"} — ${detay.mekanAdi || ""} ${detay.tarih || todayStr} ${kademeLabel}`,
-          date: detay.tarih || todayStr,
-          personelAdi: detay.personelAdi,
-          mekanAdi: detay.mekanAdi,
-          primKey: key,
-          created_at: now,
-          created_by: user.email || user.id,
-        };
-        await ckv.set(`isletme_gider_${giderId}`, gider);
+        // Ödeme → bekleyen İGD giderini bul ve kasada ödendi işaretle
+        // Eğer bekleyen yoksa yeni İGD gider oluştur (geriye uyumluluk)
+        if (!tumGiderler.length) tumGiderler = await ckv.getByPrefix("isletme_gider_").catch(() => []) || [];
+        const bekleyenGider = tumGiderler.find((g: any) => g.primOdemeKey === key);
+
+        if (bekleyenGider) {
+          // Bekleyen gider var → kasada ödendi işaretle
+          const gId = bekleyenGider.id || bekleyenGider.otomatikKey;
+          const odemeKey = `kasa_odeme_${gId}`;
+          await ckv.set(odemeKey, {
+            giderId: gId,
+            odemeler: [{ tutar: detay.primMiktar || 0, tarih: todayStr, aciklama: `Hakediş ödendi — ${detay.personelAdi}`, created_at: now }],
+            odpiendi: true,
+            odpienenTutar: detay.primMiktar || 0,
+            silinenTutar: 0,
+            personelAdi: detay.personelAdi,
+            category: "personel",
+          });
+          // Bekleyen gideri "ödendi" tipine güncelle
+          bekleyenGider.odemeTipi = "prim";
+          bekleyenGider.description = `Hakediş Ödemesi ✅ ${detay.personelAdi || ""} — ${detay.mekanAdi || ""} ${detay.tarih || todayStr}`;
+          await ckv.set(`isletme_gider_${bekleyenGider.id}`, bekleyenGider);
+        } else {
+          // Bekleyen yok → eski sistem, yeni gider oluştur + kasada ödendi
+          const kademeLabel = `${(detay.kademeIndex ?? 0) + 1}. Kademe`;
+          const giderId = `prim_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          const gider = {
+            id: giderId,
+            category: "personel",
+            odemeTipi: "prim",
+            amount: detay.primMiktar || 0,
+            currency: "TRY",
+            description: `Hakediş Ödemesi ✅ ${detay.personelAdi || "Bilinmiyor"} — ${detay.mekanAdi || ""} ${detay.tarih || todayStr} ${kademeLabel}`,
+            date: detay.tarih || todayStr,
+            personelAdi: detay.personelAdi,
+            mekanAdi: detay.mekanAdi,
+            primKey: key,
+            primOdemeKey: key,
+            created_at: now,
+            created_by: user.email || user.id,
+          };
+          await ckv.set(`isletme_gider_${giderId}`, gider);
+          // Kasada da ödendi
+          await ckv.set(`kasa_odeme_${giderId}`, {
+            giderId: giderId,
+            odemeler: [{ tutar: detay.primMiktar || 0, tarih: todayStr, aciklama: `Hakediş ödendi — ${detay.personelAdi}`, created_at: now }],
+            odpiendi: true,
+            odpienenTutar: detay.primMiktar || 0,
+            silinenTutar: 0,
+          });
+        }
         giderSayisi++;
       } else if (!odendiMi) {
-        // İptal → bu prime ait işletme gider kaydını/kayıtlarını sil
-        const eslesen = tumGiderler.filter((g: any) => g.primKey === key);
+        // İptal → bu prime ait işletme gider kaydını/kayıtlarını + kasa ödeme kaydını sil
+        const eslesen = tumGiderler.filter((g: any) => g.primKey === key || g.primOdemeKey === key);
         for (const g of eslesen) {
           await ckv.del(`isletme_gider_${g.id}`);
+          await ckv.del(`kasa_odeme_${g.id}`).catch(() => {});
           giderSilinen++;
         }
       }
@@ -14726,11 +14794,14 @@ app.get("/make-server-4da0b637/kasa/sirket", async (c) => {
     const companyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
     const ckv = companyKvFor(companyId);
 
-    // Görünürlük kontrolü
-    const settings = await ckv.get("kasa_sirket_settings");
-    const visible = settings?.visible ?? false;
-    if (!["yonetici", "ust-mudur"].includes(role) && !isSA && !visible) {
-      return c.json({ error: "Kasa görünürlüğü kapalı." }, 403);
+    // Görünürlük kontrolü — rol bazlı
+    const settings = await ckv.get("kasa_sirket_settings") || {};
+    const visibleUstMudur = settings.visibleUstMudur ?? false;
+    const visibleIdari = settings.visibleIdari ?? false;
+    if (!["yonetici"].includes(role) && !isSA) {
+      if (role === "ust-mudur" && !visibleUstMudur) return c.json({ error: "Kasa görünürlüğü kapalı." }, 403);
+      if (role === "idari" && !visibleIdari) return c.json({ error: "Kasa görünürlüğü kapalı." }, 403);
+      if (!["ust-mudur", "idari"].includes(role)) return c.json({ error: "Kasa görünürlüğü kapalı." }, 403);
     }
 
     const ay = c.req.query("ay"); // "2026-04" formatı
@@ -14931,7 +15002,8 @@ app.get("/make-server-4da0b637/kasa/sirket", async (c) => {
       devirler: filteredDevirler.sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || "")),
       bekleyenOdemeler: bekleyenOdemeler.sort((a: any, b: any) => (b.amount || 0) - (a.amount || 0)),
       opipienenIslemler: opipienenIslemler.sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || "")),
-      visible,
+      visibleUstMudur,
+      visibleIdari,
     });
   } catch (err) {
     console.log("Kasa sirket GET error:", err);
@@ -15102,6 +15174,29 @@ app.post("/make-server-4da0b637/kasa/sirket/ode", async (c) => {
           });
           console.log(`[Kasa] Kur farkı geliri: ${fark} for ${giderId}`);
         }
+      }
+    }
+
+    // Hakediş senkron: eğer bu gider bir prim bekleyen ise, prim_odendi_ kaydını da güncelle
+    if (existing.odpiendi || existing.odpienenTutar >= Number(borcTutar || 0)) {
+      // Gideri bul ve primOdemeKey kontrol et
+      const giderKaydi = await ckv.get(`isletme_gider_${giderId}`);
+      if (giderKaydi?.primOdemeKey) {
+        const primKey = giderKaydi.primOdemeKey;
+        await ckv.set(primKey, {
+          key: primKey,
+          odendi: true,
+          odemeTarihi: new Date().toISOString(),
+          odeyenKisi: user.email || user.id,
+          personelAdi: giderKaydi.personelAdi,
+          mekanAdi: giderKaydi.mekanAdi,
+          primMiktar: giderKaydi.amount,
+        });
+        // Gider tipini güncelle
+        giderKaydi.odemeTipi = "prim";
+        giderKaydi.description = `Hakediş Ödemesi ✅ ${giderKaydi.personelAdi || ""} — ${giderKaydi.mekanAdi || ""}`;
+        await ckv.set(`isletme_gider_${giderId}`, giderKaydi);
+        console.log(`[Kasa→Prim] ${primKey} ödendi işaretlendi (kasadan)`);
       }
     }
 
@@ -15380,9 +15475,19 @@ app.put("/make-server-4da0b637/kasa/sirket/ayarlar", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     if ((user.user_metadata?.role || "personel") !== "yonetici") return c.json({ error: "Yetkiniz yok." }, 403);
     const ckv = companyKvFor(getCompanyId(user));
-    const { visible } = await c.req.json();
-    await ckv.set("kasa_sirket_settings", { visible: !!visible, updated_at: new Date().toISOString(), updated_by: user.user_metadata?.full_name || "" });
-    return c.json({ visible: !!visible });
+    const { visibleUstMudur, visibleIdari } = await c.req.json();
+    const existing = await ckv.get("kasa_sirket_settings") || {};
+    const updated = {
+      ...existing,
+      visibleUstMudur: visibleUstMudur !== undefined ? !!visibleUstMudur : (existing.visibleUstMudur ?? false),
+      visibleIdari: visibleIdari !== undefined ? !!visibleIdari : (existing.visibleIdari ?? false),
+      // geriye uyumluluk
+      visible: (visibleUstMudur !== undefined ? !!visibleUstMudur : existing.visibleUstMudur) || (visibleIdari !== undefined ? !!visibleIdari : existing.visibleIdari),
+      updated_at: new Date().toISOString(),
+      updated_by: user.user_metadata?.full_name || "",
+    };
+    await ckv.set("kasa_sirket_settings", updated);
+    return c.json({ visibleUstMudur: updated.visibleUstMudur, visibleIdari: updated.visibleIdari });
   } catch (err) {
     console.log("Kasa ayarlar PUT error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);

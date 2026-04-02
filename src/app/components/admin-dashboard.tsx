@@ -88,13 +88,10 @@ const ALBUM_COLORS = [
 ];
 
 const QUICK_ACTIONS = [
-  { label: 'Vardiya Raporları',  icon: FileText,      color: '#ffd4a3', tab: 'vardiya-raporlari'    },
-  { label: 'Satış İstatistik', icon: BarChart2,     color: '#9dd9ea', tab: 'satis-raporu'         },
-  { label: 'Anomali İstatistik', icon: AlertTriangle, color: '#f87171', tab: 'anomali-panosu'       },
-  { label: 'Vardiya İstatistik', icon: Clock,         color: '#a8e6cf', tab: 'vardiya-istatistikleri' },
-  { label: 'İndirim İstatistik', icon: Star,          color: 'var(--app-accent, #a855f7)', tab: 'indirim-istatistik'   },
-  { label: 'Yön. Raporları',     icon: TrendingUp,    color: '#fb923c', tab: 'manager-reports'      },
-  { label: 'Hakediş Takip',      icon: Trophy,        color: '#fbbf24', tab: 'prim-takip'           },
+  { label: 'Vardiya Raporları',    icon: FileText,      color: '#ffd4a3', tab: 'vardiya-raporlari'       },
+  { label: 'İşletme İstatistik',   icon: BarChart2,     color: '#9dd9ea', tab: 'isletme-istatistikleri'  },
+  { label: 'Yön. Raporları',       icon: TrendingUp,    color: '#fb923c', tab: 'manager-reports'         },
+  { label: 'Hakediş Takip',        icon: Trophy,        color: '#fbbf24', tab: 'prim-takip'              },
 ];
 
 // ── Custom SVG Chart — Recharts kaldırıldı (iç SVG key çakışması) ──
