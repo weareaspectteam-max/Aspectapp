@@ -795,7 +795,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
               <h1 className="text-2xl font-black text-white">İşletme Genel Durum</h1>
               <span className="text-2xl">💼</span>
             </div>
-            <p className="text-sm text-gray-400">Gelir, gider ve ödeme takibi</p>
+            <p className="text-sm text-gray-400">Finansal Genel Bakış — Gelir, gider ve ödeme takibi</p>
           </div>
           <button onClick={fetchData} disabled={isLoading} className="p-2 bg-white/10 border border-white/20 rounded-xl text-white hover:bg-white/20 transition-all">
             {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span className="text-sm">↻</span>}

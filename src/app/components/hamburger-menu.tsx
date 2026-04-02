@@ -110,6 +110,7 @@ function getSections(
         { icon: FileBarChart,  label: 'Vardiya Raporları',    roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],                    action: () => go('vardiya-raporlari')      },
         { icon: BarChart2,     label: 'İşletme Genel Durum',  roles: ['yonetici','ust-mudur'] as UserRole[],                                    action: () => go('isletme-genel-durum')    },
         { icon: Target,        label: 'Hedef Takibi',         roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('hedef-takip')            },
+        { icon: Wallet,        label: 'Kasa',                 roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('kasa')                   },
       ],
     },
     {
@@ -949,6 +950,7 @@ export function HamburgerMenu({
                                   {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#6ee7b7' }} />} label="İşletme Genel Durum" desc="Gelir, gider ve kar/zarar takibi" color="#6ee7b7" onClick={() => { onNavigate('isletme-genel-durum'); close(); }} />}
                                   <NavItem icon={<FileBarChart style={{ width: 13, height: 13, color: '#93c5fd' }} />} label="Vardiya Raporları" desc="Günlük vardiya özet raporları" color="#93c5fd" onClick={() => { onNavigate('vardiya-raporlari'); close(); }} />
                                   {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<Target style={{ width: 13, height: 13, color: accentHex }} />} label="Hedef Takibi" desc="Mekan bazlı ciro ve kar hedefleri" color={accentHex} onClick={() => { onNavigate('hedef-takip'); close(); }} />}
+                                  {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<Wallet style={{ width: 13, height: 13, color: '#fbbf24' }} />} label="Kasa" desc="Şirket ve kişisel kasa takibi" color="#fbbf24" onClick={() => { onNavigate('kasa'); close(); }} />}
                                 </SubAccordion>
 
                                 {/* ── 4. Lokasyon & İşletme ── */}

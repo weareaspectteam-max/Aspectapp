@@ -228,7 +228,7 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
         <div className="flex-1">
           <h1 className="text-white font-black" style={{ fontSize: 18 }}>Vardiya Raporları</h1>
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
-            {aktifSekme === 'gun' ? (gunSecili ? `Gün Detayı — ${gunSecili}` : `Gün Raporu — ${gunListe.length} gün`) : secili ? secili.mekan : loading ? 'Yükleniyor…' : `${raporlar.length} kapanmış vardiya`}
+            {aktifSekme === 'gun' ? (gunSecili ? `Gün Detayı — ${gunSecili}` : `Gün Raporu — ${gunListe.length} gün`) : secili ? secili.mekan : loading ? 'Yükleniyor…' : `Operasyonel Analiz · ${raporlar.length} kapanmış vardiya`}
           </p>
         </div>
         {!secili && (
