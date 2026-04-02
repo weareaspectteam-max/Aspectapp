@@ -25,11 +25,13 @@ interface SirketKasaData {
   devirBakiye: number;
   ayKapatildi: boolean;
   toplamDevir: number;
-  toplamGelir: number;
-  toplamGider: number;
+  toplamOdpienenGider: number;
+  toplamBekleyenGider: number;
   odemeDagilimi: { nakit: number; kart: number; iban: number };
   visible: boolean;
   bekleyenDevirler: BekleyenDevir[];
+  bekleyenOdemeler: any[];
+  opipienenIslemler: any[];
   devirler: any[];
   islemler: Islem[];
 }
@@ -44,7 +46,7 @@ interface BekleyenDevir {
 
 interface Islem {
   id: string;
-  tip: 'devir' | 'gelir' | 'gider';
+  tip: 'devir' | 'gelir' | 'gider' | 'odeme';
   tutar: number;
   aciklama: string;
   kategori: string;
@@ -151,6 +153,13 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
   const [showDevretDialog, setShowDevretDialog] = useState<BekleyenDevir | null>(null);
   const [devretGider, setDevretGider] = useState('');
   const [devretGiderAciklama, setDevretGiderAciklama] = useState('');
+  const [bekleyenOdemelerOpen, setBekleyenOdemelerOpen] = useState(true);
+  const [showKismiOdemeDialog, setShowKismiOdemeDialog] = useState<any>(null);
+  const [kismiOdemeTutar, setKismiOdemeTutar] = useState('');
+  const [kismiOdemeAciklama, setKismiOdemeAciklama] = useState('');
+  const [odemeYapiliyor, setOdemeYapiliyor] = useState(false);
+  const [showKismiSilDialog, setShowKismiSilDialog] = useState<any>(null); // {giderId, label, toplam}
+  const [kismiSilTutar, setKismiSilTutar] = useState('');
 
   // ─ Kişisel Kasa State ─
   const [kisiselData, setKisiselData] = useState<KisiselKasaData | null>(null);
@@ -291,8 +300,6 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
           headers: await authHeaders(),
           body: JSON.stringify({
             devirId: showDevretDialog.id,
-            gider: devretGider ? parseFloat(devretGider) : 0,
-            giderAciklama: devretGiderAciklama || undefined,
           }),
         }
       );
@@ -304,6 +311,51 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
     } finally {
       setFormSaving(false);
     }
+  };
+
+  // ── Bekleyen Ödeme Actions ──
+  const handleBekleyenOde = async (giderId: string, tutar: number) => {
+    setOdemeYapiliyor(true);
+    try {
+      await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/ode`), {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({ giderId, tutar }),
+      });
+      fetchSirket();
+    } catch {} finally { setOdemeYapiliyor(false); }
+  };
+
+  const handleBekleyenOdeTumu = async (odemeler: { giderId: string; tutar: number }[]) => {
+    setOdemeYapiliyor(true);
+    try {
+      await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/ode-tumu`), {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({ odemeler }),
+      });
+      fetchSirket();
+    } catch {} finally { setOdemeYapiliyor(false); }
+  };
+
+  const handleKismiOdeme = async () => {
+    if (!showKismiOdemeDialog || !kismiOdemeTutar) return;
+    setOdemeYapiliyor(true);
+    try {
+      await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/ode`), {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({
+          giderId: showKismiOdemeDialog.giderId,
+          tutar: parseFloat(kismiOdemeTutar),
+          aciklama: kismiOdemeAciklama || undefined,
+        }),
+      });
+      setShowKismiOdemeDialog(null);
+      setKismiOdemeTutar('');
+      setKismiOdemeAciklama('');
+      fetchSirket();
+    } catch {} finally { setOdemeYapiliyor(false); }
   };
 
   const handleSirketIslem = async () => {
@@ -503,7 +555,11 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
             <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
             <div>
               <p className="text-xs font-bold text-emerald-400">Bu ay kapatılmış</p>
-              <p className="text-[10px] text-white/30">Veriler bilgi amaçlıdır. Bakiye bir sonraki aya devredilmiştir.</p>
+              <p className="text-[10px] text-white/30">
+                {(d as any).ayDevretsiz
+                  ? 'Veriler bilgi amaçlıdır. Bakiye devredilmeden kapatılmıştır.'
+                  : 'Veriler bilgi amaçlıdır. Bakiye bir sonraki aya devredilmiştir.'}
+              </p>
             </div>
           </motion.div>
         )}
@@ -537,12 +593,12 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
               <p className="text-white font-semibold text-sm">{formatMoney(d.toplamDevir)}</p>
             </div>
             <div className="text-center">
-              <p className="text-white/40 text-[10px] uppercase tracking-wider">Gelir</p>
-              <p className="text-emerald-400 font-semibold text-sm">{formatMoney(d.toplamGelir)}</p>
+              <p className="text-white/40 text-[10px] uppercase tracking-wider">Ödenen</p>
+              <p className="text-red-400 font-semibold text-sm">{formatMoney(d.toplamOdpienenGider)}</p>
             </div>
             <div className="text-center">
-              <p className="text-white/40 text-[10px] uppercase tracking-wider">Gider</p>
-              <p className="text-red-400 font-semibold text-sm">{formatMoney(d.toplamGider)}</p>
+              <p className="text-white/40 text-[10px] uppercase tracking-wider">Bekleyen</p>
+              <p className="text-amber-400 font-semibold text-sm">{formatMoney(d.toplamBekleyenGider)}</p>
             </div>
           </div>
 
@@ -576,6 +632,204 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
             </div>
           </div>
         </motion.div>
+
+        {/* Önceki Aydan Kalan Ödemeler */}
+        {isAdmin && ((d as any).oncekiAydanKalanlar?.length || 0) > 0 && (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+            style={{ ...glass, borderColor: 'rgba(239,68,68,0.25)' }} className="overflow-hidden">
+            <div className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-red-400 text-sm">⚡</span>
+                <span className="text-red-300 font-medium text-sm flex-1">Önceki Aydan Kalan</span>
+                <span className="bg-red-400/20 text-red-300 text-xs font-bold px-2 py-0.5 rounded-full">
+                  {(d as any).oncekiAydanKalanlar.length}
+                </span>
+                <span className="text-red-300 text-xs font-bold">
+                  {formatMoney((d as any).oncekiAydanKalanlar.reduce((s: number, o: any) => s + (o.kalanTutar || 0), 0))}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {(d as any).oncekiAydanKalanlar.map((od: any) => (
+                  <div key={od.giderId} className="rounded-xl p-3" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.12)' }}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-bold text-red-300">{od.personelAdi || od.category || 'Gider'}</span>
+                      <span className="text-sm font-bold text-red-300">{formatMoney(od.kalanTutar)}</span>
+                    </div>
+                    <p className="text-[10px] text-white/30 mb-2">{od.description || `${od.oncekiAy} ayından kalan`}</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleBekleyenOde(od.giderId, od.kalanTutar)}
+                        disabled={odemeYapiliyor}
+                        className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white disabled:opacity-40 bg-red-500/80"
+                      >
+                        Öde
+                      </button>
+                      <button
+                        onClick={() => { setShowKismiOdemeDialog(od); setKismiOdemeTutar(''); setKismiOdemeAciklama(''); }}
+                        className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-red-300 border border-red-400/30 bg-red-400/10"
+                      >
+                        Kısmi Öde
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Bekleyen Ödemeler */}
+        {isAdmin && (d.bekleyenOdemeler?.length || 0) > 0 && (() => {
+          const odemeler = d.bekleyenOdemeler || [];
+          // Grup: personelAdi veya category bazlı
+          const grouped: Record<string, { label: string; items: any[]; toplam: number }> = {};
+          for (const o of odemeler) {
+            const key = o.personelAdi || o.category || 'Diğer';
+            if (!grouped[key]) grouped[key] = { label: key, items: [], toplam: 0 };
+            grouped[key].items.push(o);
+            grouped[key].toplam += (o.kalanTutar || o.amount || 0);
+          }
+          const gruplar = Object.values(grouped);
+          const genelToplam = odemeler.reduce((s: number, o: any) => s + (o.kalanTutar || o.amount || 0), 0);
+
+          return (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.03 }}
+              style={{ ...glass, borderColor: 'rgba(245,158,11,0.25)' }}
+              className="overflow-hidden"
+            >
+              <div className="flex items-center justify-between p-4">
+                <button
+                  onClick={() => setBekleyenOdemelerOpen(p => !p)}
+                  className="flex items-center gap-2 flex-1"
+                >
+                  <CircleDollarSign className="w-4 h-4 text-amber-400" />
+                  <span className="text-amber-300 font-medium text-sm">Bekleyen Ödemeler</span>
+                  <span className="bg-amber-400/20 text-amber-300 text-xs font-bold px-2 py-0.5 rounded-full">{odemeler.length}</span>
+                  <span className="text-white/20 text-[10px]">({formatMoney(genelToplam)})</span>
+                  {bekleyenOdemelerOpen ? <ChevronUp className="w-4 h-4 text-amber-400" /> : <ChevronDown className="w-4 h-4 text-amber-400" />}
+                </button>
+                <button
+                  onClick={() => {
+                    if (!confirm(`Tüm bekleyen ${odemeler.length} ödemeyi yapmak istiyor musunuz?`)) return;
+                    handleBekleyenOdeTumu(odemeler.map((o: any) => ({ giderId: o.giderId, tutar: o.kalanTutar || o.amount })));
+                  }}
+                  disabled={odemeYapiliyor}
+                  className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white shrink-0 ml-2 disabled:opacity-40"
+                  style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
+                >
+                  {odemeYapiliyor ? 'Ödeniyor...' : 'Tümünü Öde'}
+                </button>
+              </div>
+              <AnimatePresence>
+                {bekleyenOdemelerOpen && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="px-4 pb-4 space-y-2">
+                      {gruplar.map(grup => (
+                        <div key={grup.label} className="rounded-xl p-3" style={{ background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.12)' }}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm font-bold text-amber-300">{grup.label}</span>
+                            <span className="text-sm font-bold text-amber-300">{formatMoney(grup.toplam)}</span>
+                          </div>
+                          <p className="text-[10px] text-white/30 mb-2">{grup.items.length} adet bekleyen ödeme
+                            {grup.items.some((it: any) => it.odpienenTutar > 0) && ` · ${formatMoney(grup.items.reduce((s: number, it: any) => s + (it.odpienenTutar || 0), 0))} kısmi ödendi`}
+                          </p>
+
+                          {/* Kısmi ödemeler geçmişi */}
+                          {grup.items.some((it: any) => it.odemeler?.length > 0) && (
+                            <div className="mb-2 space-y-1">
+                              {grup.items.flatMap((it: any) => (it.odemeler || []).map((o: any, idx: number) => ({ ...o, giderId: it.giderId, odemeIndex: idx }))).map((o: any, i: number) => (
+                                <div key={i} className="flex items-center justify-between py-1 px-2 rounded-lg bg-white/3">
+                                  <span className="text-[9px] text-white/30">{o.tarih} — {o.aciklama || 'Kısmi ödeme'}</span>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-bold text-orange-400">{formatMoney(o.tutar)}</span>
+                                    <button onClick={async () => {
+                                      if (!confirm('Bu kısmi ödemeyi silmek istiyor musunuz?')) return;
+                                      try {
+                                        await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/odeme/${o.giderId}/kismi/${o.odemeIndex}`), { method: 'DELETE', headers: await authHeaders() });
+                                        fetchSirket();
+                                      } catch {}
+                                    }} className="p-0.5 rounded text-white/15 active:text-red-400">
+                                      <Trash2 className="w-2.5 h-2.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="flex gap-2 items-center">
+                            {/* Sol: Öde butonları */}
+                            <button
+                              onClick={() => {
+                                if (grup.items.length === 1) {
+                                  handleBekleyenOde(grup.items[0].giderId, grup.items[0].kalanTutar || grup.items[0].amount);
+                                } else {
+                                  handleBekleyenOdeTumu(grup.items.map((o: any) => ({ giderId: o.giderId, tutar: o.kalanTutar || o.amount })));
+                                }
+                              }}
+                              disabled={odemeYapiliyor}
+                              className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white disabled:opacity-40"
+                              style={{ background: 'var(--app-accent)' }}
+                            >
+                              Öde
+                            </button>
+                            <button
+                              onClick={() => {
+                                setShowKismiOdemeDialog(grup.items[0]);
+                                setKismiOdemeTutar('');
+                                setKismiOdemeAciklama('');
+                              }}
+                              className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-amber-300 border border-amber-400/30 bg-amber-400/10"
+                            >
+                              Kısmi Öde
+                            </button>
+                            {/* Sağ: Sil butonları */}
+                            <div className="flex-1" />
+                            <button
+                              onClick={() => { setShowKismiSilDialog({ items: grup.items, label: grup.label, toplam: grup.toplam }); setKismiSilTutar(''); }}
+                              className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-red-400/50 border border-red-400/15 bg-red-400/5"
+                            >
+                              Kısmi Sil
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (!confirm(`${grup.label} komple silinecek. İGD'ye düzeltme kaydı eklenecek. Emin misiniz?`)) return;
+                                try {
+                                  await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/komple-sil`), {
+                                    method: 'POST', headers: await authHeaders(),
+                                    body: JSON.stringify({
+                                      giderIds: grup.items.map((it: any) => it.giderId),
+                                      tutar: grup.toplam,
+                                      personelAdi: grup.items[0]?.personelAdi || '',
+                                      category: grup.items[0]?.category || '',
+                                      ay: selectedMonth,
+                                    }),
+                                  });
+                                  fetchSirket();
+                                } catch {}
+                              }}
+                              className="px-2 py-1.5 rounded-lg text-[10px] text-red-400/60 border border-red-400/20 bg-red-400/5"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          );
+        })()}
 
         {/* Bekleyen Devirler — tarihe göre gruplanmış */}
         {bekleyenCount > 0 && (() => {
@@ -795,7 +1049,19 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
               aciklama: i.aciklama || i.description,
               kategori: i.kategori || i.category,
             }));
-            let tumIslemler = [...devirIslemler, ...manuelIslemler].sort((a, b) => (b.tarih || '').localeCompare(a.tarih || ''));
+            // Ödenen işlemleri ekle
+            const odemeIslemler = (d.opipienenIslemler || []).map((i: any) => ({
+              ...i,
+              id: i.id || `odeme_${i.tarih}_${Math.random()}`,
+              tip: 'odeme' as const,
+              tutar: i.tutar || i.amount || 0,
+              tarih: i.tarih || i.date,
+              aciklama: i.personelAdi ? `Ödeme: ${i.personelAdi}` : `Ödeme: ${i.aciklama || i.description || ''}`,
+              kategori: i.kategori || i.category || 'Ödeme',
+              giderId: i.giderId,
+              odemeIndex: i.odemeIndex,
+            }));
+            let tumIslemler = [...devirIslemler, ...manuelIslemler, ...odemeIslemler].sort((a, b) => (b.tarih || '').localeCompare(a.tarih || ''));
 
             // Tarih filtresi uygula
             if (islemFiltreBas) tumIslemler = tumIslemler.filter(i => i.tarih >= islemFiltreBas);
@@ -810,9 +1076,11 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
               <>
                 <div className="space-y-2">
                   {gosterilen.map((islem: any, i: number) => {
-                    const borderColor = islem.tip === 'devir' ? '#34d399' : islem.tip === 'gelir' ? '#60a5fa' : '#f87171';
+                    const borderColor = islem.tip === 'devir' ? '#34d399' : islem.tip === 'odeme' ? '#f97316' : islem.tip === 'silme' ? '#ef4444' : islem.tip === 'gelir' ? '#60a5fa' : '#f87171';
                     const label = islem.tip === 'devir'
                       ? `${islem.mekanEmoji || '🏪'} ${islem.mekanAdi || ''} · Ciro`
+                      : islem.tip === 'odeme' ? (islem.aciklama || 'Ödeme')
+                      : islem.tip === 'silme' ? `📝 ${islem.aciklama || 'Silme/İndirim'}`
                       : islem.tip === 'gelir' ? 'Gelir' : 'Gider';
 
                     return (
@@ -823,10 +1091,25 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
                           <div className="w-1 h-4 rounded-full shrink-0" style={{ background: borderColor }} />
                           <span className="text-[11px] font-medium truncate flex-1" style={{ color: borderColor }}>{label}</span>
                           <span className="text-[10px] text-white/25 shrink-0">{islem.tarih}</span>
-                          <span className={`text-xs font-bold shrink-0 ${islem.tip === 'gider' ? 'text-red-400' : 'text-emerald-400'}`}>
-                            {islem.tip === 'gider' ? '-' : '+'}{formatMoney(islem.tutar)}
+                          <span className={`text-xs font-bold shrink-0 ${islem.tip === 'silme' ? 'text-red-500' : islem.tip === 'gider' ? 'text-red-400' : islem.tip === 'odeme' ? 'text-orange-400' : 'text-emerald-400'}`}>
+                            {islem.tip === 'silme' ? '🗑️ -' : (islem.tip === 'gider' || islem.tip === 'odeme') ? '-' : '+'}{formatMoney(islem.tutar)}
                           </span>
-                          {isAdmin && islem.tip !== 'devir' && !d.ayKapatildi && (
+                          {isAdmin && !d.ayKapatildi && islem.tip === 'odeme' && islem.giderId && (
+                            <button onClick={async () => {
+                              if (!confirm('Bu ödemeyi silmek istiyor musunuz?')) return;
+                              try {
+                                if (islem.odemeIndex !== undefined) {
+                                  await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/odeme/${islem.giderId}/kismi/${islem.odemeIndex}`), { method: 'DELETE', headers: await authHeaders() });
+                                } else {
+                                  await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/odeme/${islem.giderId}`), { method: 'DELETE', headers: await authHeaders() });
+                                }
+                                fetchSirket();
+                              } catch {}
+                            }} className="p-1 rounded text-white/20 active:text-red-400 shrink-0">
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                          {isAdmin && !d.ayKapatildi && islem.tip !== 'devir' && islem.tip !== 'odeme' && (
                             <button onClick={() => deleteIslem('sirket', islem.id)} className="p-1 rounded text-white/20 active:text-red-400 shrink-0">
                               <Trash2 className="w-3 h-3" />
                             </button>
@@ -873,22 +1156,30 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
               style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171' }}
             >
               <Lock className="w-4 h-4" />
-              Kasayı Kapat — {selectedMonth}
+              Kasayı Kapat & Devret — {selectedMonth}
             </button>
-            <p className="text-[10px] text-white/20 text-center mt-1.5">Kapatılan ayın bakiyesi sonraki aya devredilir</p>
+            <button
+              onClick={async () => {
+                if (!confirm(`${selectedMonth} kasasını devretmeden kapatmak istiyor musunuz? Bakiye sonraki aya aktarılmayacak.`)) return;
+                try {
+                  await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/ay-kapat`), {
+                    method: 'POST', headers: await authHeaders(),
+                    body: JSON.stringify({ ay: selectedMonth, devretsiz: true }),
+                  });
+                  fetchSirket();
+                } catch {}
+              }}
+              className="w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] mt-2"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)' }}
+            >
+              <Lock className="w-4 h-4" />
+              Devretmeden Kapat — {selectedMonth}
+            </button>
+            <p className="text-[10px] text-white/20 text-center mt-1.5">Üst: bakiye sonraki aya devredilir · Alt: bakiye sıfırlanır</p>
           </motion.div>
         )}
 
-        {/* FAB */}
-        {isAdmin && !d.ayKapatildi && (
-          <button
-            onClick={() => { resetForm(); setShowSirketModal(true); }}
-            className="fixed bottom-24 right-5 w-14 h-14 rounded-full shadow-lg flex items-center justify-center z-30"
-            style={{ background: 'var(--app-accent)' }}
-          >
-            <Plus className="w-6 h-6 text-white" />
-          </button>
-        )}
+        {/* FAB kaldırıldı — v2'de gider ekleme bekleyen ödemelerden yapılıyor */}
       </div>
     );
   };
@@ -1320,27 +1611,6 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
               {showDevretDialog.mekanEmoji} {showDevretDialog.mekanAdi} - {formatMoney(showDevretDialog.ciro)}
             </p>
 
-            <div className="mb-3">
-              <label className="text-white/40 text-xs mb-1 block">Gider Düşülecek Tutar (opsiyonel)</label>
-              <input
-                type="number"
-                value={devretGider}
-                onChange={e => setDevretGider(e.target.value)}
-                placeholder="0"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-ta/50"
-              />
-            </div>
-
-            <div className="mb-5">
-              <label className="text-white/40 text-xs mb-1 block">Gider Açıklama</label>
-              <input
-                value={devretGiderAciklama}
-                onChange={e => setDevretGiderAciklama(e.target.value)}
-                placeholder="Açıklama (opsiyonel)"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-ta/50"
-              />
-            </div>
-
             <div className="flex gap-3">
               <button
                 onClick={() => setShowDevretDialog(null)}
@@ -1528,6 +1798,76 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
     </AnimatePresence>
   );
 
+  // ── Kısmi Ödeme Dialog ──
+  const renderKismiOdemeDialog = () => (
+    <AnimatePresence>
+      {showKismiOdemeDialog && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-5"
+          onClick={() => setShowKismiOdemeDialog(null)}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            onClick={e => e.stopPropagation()}
+            className="w-full max-w-sm bg-[#1a1035] border border-white/10 rounded-2xl p-5"
+          >
+            <h3 className="text-white font-semibold mb-1">Kısmi Ödeme</h3>
+            <p className="text-white/50 text-sm mb-1">
+              {showKismiOdemeDialog.personelAdi || showKismiOdemeDialog.description}
+            </p>
+            <p className="text-amber-400/70 text-xs mb-4">
+              Kalan: {formatMoney(showKismiOdemeDialog.kalanTutar || showKismiOdemeDialog.amount)}
+            </p>
+
+            <div className="mb-3">
+              <label className="text-white/40 text-xs mb-1 block">Ödeme Tutarı (TL)</label>
+              <input
+                type="number"
+                value={kismiOdemeTutar}
+                onChange={e => setKismiOdemeTutar(e.target.value)}
+                placeholder="0"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-lg outline-none focus:border-ta/50"
+              />
+            </div>
+
+            <div className="mb-5">
+              <label className="text-white/40 text-xs mb-1 block">Açıklama</label>
+              <input
+                value={kismiOdemeAciklama}
+                onChange={e => setKismiOdemeAciklama(e.target.value)}
+                placeholder="Açıklama (opsiyonel)"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-ta/50"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowKismiOdemeDialog(null)}
+                className="flex-1 py-2.5 rounded-xl text-white/60 text-sm font-medium bg-white/5 active:bg-white/10"
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleKismiOdeme}
+                disabled={odemeYapiliyor || !kismiOdemeTutar}
+                className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-2"
+                style={{ background: 'var(--app-accent)' }}
+              >
+                {odemeYapiliyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                Öde
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
   // ── Kişisel borç ekle ──
   const saveKisiselBorc = async () => {
     if (!borcKisi.trim() || !borcTutar) return;
@@ -1611,11 +1951,68 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
       </div>
 
       {/* Modals */}
-      {renderIslemModal(showSirketModal, () => setShowSirketModal(false), handleSirketIslem, 'Şirket İşlemi Ekle')}
-      {/* Kişisel kasa modalı kaldırıldı */}
+      {/* Şirket islem modalı kaldırıldı — v2'de gider ekleme bekleyen ödemelerden yapılıyor */}
       {renderDevretDialog()}
       {renderBorcModal()}
       {renderOdemeDialog()}
+      {renderKismiOdemeDialog()}
+
+      {/* Kısmi Sil Dialog */}
+      <AnimatePresence>
+        {showKismiSilDialog && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center px-5"
+            onClick={() => setShowKismiSilDialog(null)}>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              className="w-full max-w-sm rounded-2xl p-5 space-y-4"
+              style={{ ...glass, background: '#1a1a2e' }}
+              onClick={e => e.stopPropagation()}>
+              <h3 className="text-sm font-bold text-white">Kısmi Sil</h3>
+              <p className="text-xs text-white/40">{showKismiSilDialog.label} — Toplam: {formatMoney(showKismiSilDialog.toplam)}</p>
+              <input
+                type="number"
+                value={kismiSilTutar}
+                onChange={e => setKismiSilTutar(e.target.value)}
+                placeholder="Silinecek tutar (₺)"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-red-400/50"
+              />
+              <div className="flex gap-2">
+                <button onClick={() => setShowKismiSilDialog(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/8 text-white/50 text-sm font-semibold">İptal</button>
+                <button
+                  disabled={!kismiSilTutar || Number(kismiSilTutar) <= 0}
+                  onClick={async () => {
+                    const tutar = Number(kismiSilTutar);
+                    if (tutar <= 0) return;
+                    try {
+                      const hdrs = await authHeaders();
+                      const item = showKismiSilDialog.items?.[0];
+                      if (item?.giderId) {
+                        await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/kismi-sil`), {
+                          method: 'POST', headers: hdrs,
+                          body: JSON.stringify({
+                            giderId: item.giderId,
+                            tutar,
+                            aciklama: `${showKismiSilDialog.label} indirimi`,
+                            personelAdi: item.personelAdi || '',
+                            category: item.category || '',
+                            ay: selectedMonth,
+                          }),
+                        });
+                      }
+                      setShowKismiSilDialog(null);
+                      setKismiSilTutar('');
+                      fetchSirket();
+                    } catch {}
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-red-500/20 text-red-400 text-sm font-bold disabled:opacity-30 flex items-center justify-center gap-1.5">
+                  <Trash2 className="w-4 h-4" /> Sil
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Kişisel kasa modalları kaldırıldı — ayrı sayfaya taşınacak */}
     </div>
