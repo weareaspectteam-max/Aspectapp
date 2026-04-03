@@ -17,6 +17,33 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '5.0.0',
+    date: '2026-04-03',
+    title: 'Tedarikçi Portalı & Sipariş Sistemi',
+    changes: [
+      { type: 'new', text: 'Tedarikçi portalı — tedarikçi kendi şifresiyle giriş yapıp siparişlerini takip eder' },
+      { type: 'new', text: 'Çok şirketli model — tedarikçi birden fazla şirkete hizmet verebilir' },
+      { type: 'new', text: 'Albüm bazlı sipariş — ürün listesi, depo+genel stok, fiyatlar otomatik' },
+      { type: 'new', text: 'Teklif/pazarlık sistemi — karşılıklı teklif, kabul, red, karşı teklif' },
+      { type: 'new', text: 'Tedarikçi üretim durumu bildirimi — Üretimde / Kısmi Hazır / Hazır' },
+      { type: 'new', text: 'Teslimat sistemi — kısmi/tam teslimat, admin onayı, depo stok girişi' },
+      { type: 'new', text: 'Aktivite logları — her işlem kayıt altında, her iki tarafta görünür' },
+      { type: 'new', text: 'Tedarikçi bazlı fiyat listesi — her tedarikçiyle ayrı fiyat anlaşması' },
+      { type: 'new', text: 'Fiyat güncelleme talebi — tedarikçi veya admin fiyat değişikliği önerir' },
+      { type: 'new', text: 'Admin tedarikçi yönetimi — tedarikçi seçmeli yapı, her tedarikçinin ayrı ekranı' },
+      { type: 'new', text: 'Bakiye tabı — sipariş bazlı borç/alacak takibi + ön ödeme' },
+      { type: 'new', text: 'Stok görünürlük toggle — admin tedarikçinin stoku görmesini açıp kapatabilir' },
+      { type: 'improve', text: 'Kasa: para girişi bakiyeye ekleniyor, para çıkışı düzgün düşüyor' },
+      { type: 'improve', text: 'Kasa: İGD düzenleme → kasa senkronu, kasadan silme → İGD silme' },
+      { type: 'improve', text: 'Kasa: üst müdür tam erişim (yönetici gibi)' },
+      { type: 'improve', text: 'Sipariş kartlarında progress bar (teslim edilen/toplam)' },
+      { type: 'improve', text: 'Sipariş filtreleri: Tümü / Aktif / Teklif / Geçmiş / İptal + renk kodları' },
+      { type: 'fix', text: 'Cari güncelleme: linkedUserId kaybolma sorunu (merge fix)' },
+      { type: 'fix', text: 'Paspartu: toplam hesabında çarpma yok, depoya eklenmez' },
+      { type: 'fix', text: 'Diğer kategorisi renk fix (görünürlük)' },
+    ],
+  },
+  {
     version: '4.5.0',
     date: '2026-04-02',
     title: 'Kasa Sistemi & Cari Hesaplar',
