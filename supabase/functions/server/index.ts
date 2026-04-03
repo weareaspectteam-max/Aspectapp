@@ -16594,7 +16594,10 @@ app.get("/make-server-4da0b637/tedarikci/portal", async (c) => {
     const resolved = await resolveSupplierCompany(c, callerUser);
     if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
     const { cariId, ckv: sckv } = resolved;
-    const [allSiparis, allTeslimat, allOdeme] = await Promise.all([sckv.getByPrefix("siparis_"), sckv.getByPrefix("teslimat_"), sckv.getByPrefix("tedarikci_odeme_")]);
+    const [allSiparis, allTeslimat, allOdeme, albumler, fiyatListesi] = await Promise.all([
+      sckv.getByPrefix("siparis_"), sckv.getByPrefix("teslimat_"), sckv.getByPrefix("tedarikci_odeme_"),
+      sckv.get("cost_albums"), sckv.get(`tedarikci_fiyat_${cariId}`),
+    ]);
     const mySiparis = (allSiparis || []).filter((s) => s.cariId === cariId && s.status !== "iptal");
     const myTeslimat = (allTeslimat || []).filter((t) => t.cariId === cariId);
     const myOdeme = (allOdeme || []).filter((o) => o.cariId === cariId);
@@ -16607,6 +16610,7 @@ app.get("/make-server-4da0b637/tedarikci/portal", async (c) => {
       siparisler: mySiparis.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
       teslimatlar: myTeslimat.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
       odemeler: myOdeme.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
+      albumler: albumler || [], fiyatListesi: fiyatListesi || null,
     });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -16929,6 +16933,38 @@ app.post("/make-server-4da0b637/tedarikci/odemeler/:id/onayla", async (c) => {
     odeme.supplierConfirmed = true; odeme.supplierConfirmedAt = new Date().toISOString(); odeme.status = "onaylandi";
     await resolved.ckv.set(`tedarikci_odeme_${odemeId}`, odeme);
     return c.json({ ok: true, odeme });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// ── TEDARİKÇİDEN TEKLİF OLUŞTURMA ──
+app.post("/make-server-4da0b637/tedarikci/teklif", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (callerUser.user_metadata?.role !== "tedarikci") return c.json({ error: "Yetki yok." }, 403);
+    const resolved = await resolveSupplierCompany(c, callerUser);
+    if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
+    const { items, currency, notes, teklifFiyat } = await c.req.json();
+    if (!items?.length) return c.json({ error: "En az 1 kalem zorunlu." }, 400);
+    const cari = await resolved.ckv.get(`cost_cari_${resolved.cariId}`);
+    const now = new Date().toISOString();
+    const id = `siparis_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const orderItems = items.map((it, idx) => ({ id: `item_${idx}_${Math.random().toString(36).slice(2, 6)}`, productName: it.productName || "", quantity: it.quantity || 0, unitPrice: it.unitPrice || 0, currency: it.currency || currency || "TRY", deliveredQuantity: 0 }));
+    const totalAmount = orderItems.reduce((a, it) => a + (it.quantity * it.unitPrice), 0);
+    const siparis = {
+      id, cariId: resolved.cariId, cariName: cari?.name || "", status: "gonderildi", items: orderItems, totalAmount, currency: currency || "TRY", notes: notes || "",
+      createdAt: now, createdBy: callerUser.user_metadata?.full_name || "", createdByUserId: callerUser.id, updatedAt: now, sentAt: now,
+      teklifFiyat: teklifFiyat ? Number(teklifFiyat) : totalAmount,
+      teklifler: [{ taraf: "tedarikci", fiyat: teklifFiyat ? Number(teklifFiyat) : totalAmount, tarih: now, kisi: callerUser.user_metadata?.full_name || "" }],
+      teklifDurum: "tedarikci_teklifi", kaynakTedarikci: true,
+    };
+    await resolved.ckv.set(id, siparis);
+    // Admin'lere bildirim
+    const supabase = getAdminClient();
+    const { data: { users } } = await supabase.auth.admin.listUsers();
+    const admins = (users || []).filter((u) => ["yonetici", "ust-mudur"].includes(u.user_metadata?.role) && (u.user_metadata?.company_id || "aspect") === resolved.companyId);
+    for (const admin of admins) await createNotification(admin.id, "siparis_teklif", "Tedarikçi Teklifi", `${cari?.name || ""}: ₺${(teklifFiyat || totalAmount).toLocaleString("tr-TR")}`, { siparisId: id }, resolved.companyId);
+    return c.json({ ok: true, siparis });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
