@@ -69,7 +69,14 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
   const [orderCariId, setOrderCariId] = useState('');
   const [orderCurrency, setOrderCurrency] = useState('TRY');
   const [orderNotes, setOrderNotes] = useState('');
-  const [orderItems, setOrderItems] = useState<Array<{ productName: string; quantity: number; unitPrice: number }>>([{ productName: '', quantity: 0, unitPrice: 0 }]);
+  const [orderItems, setOrderItems] = useState<Array<{ productName: string; quantity: number; unitPrice: number }>>([]);
+
+  // Derived: selected cari's supplier type + product list
+  const selectedCari = cariler.find((c: any) => c.id === orderCariId);
+  const supplierType = selectedCari?.supplierType || '';
+  const albumler: any[] = data?.albumler || [];
+  const depoStok: any = data?.depoStok || {};
+  const papers: any[] = data?.papers || [];
 
   // Payment form
   const [payAmount, setPayAmount] = useState(0);
@@ -448,60 +455,110 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
       <AnimatePresence>
         {showNewOrder && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-5"
             onClick={() => setShowNewOrder(false)}>
-            <motion.div initial={{ y: 300 }} animate={{ y: 0 }} exit={{ y: 300 }}
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
               onClick={e => e.stopPropagation()}
-              className="w-full max-w-lg rounded-t-3xl p-6 space-y-4 max-h-[85vh] overflow-y-auto"
-              style={{ background: 'rgba(15,10,40,0.98)', border: '1px solid rgba(255,255,255,0.10)', borderBottom: 'none' }}>
+              className="w-full max-w-sm rounded-2xl p-5 space-y-4 max-h-[85vh] overflow-y-auto"
+              style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.10)' }}>
               <div className="flex items-center justify-between">
                 <h2 className="text-white font-bold text-lg">Yeni Sipariş</h2>
                 <button onClick={() => setShowNewOrder(false)}><X className="w-5 h-5 text-white/40" /></button>
               </div>
-              <select value={orderCariId} onChange={e => setOrderCariId(e.target.value)} className={inputStyle + ' bg-white/10'}>
+              <select value={orderCariId} onChange={e => {
+                setOrderCariId(e.target.value);
+                // Tedarikçi seçilince ürün listesini otomatik oluştur
+                const cari = cariler.find((c: any) => c.id === e.target.value);
+                const st = cari?.supplierType || '';
+                if (st === 'album') {
+                  const items: Array<{ productName: string; quantity: number; unitPrice: number }> = [];
+                  const sizes = [3, 5, 7, 9, 11, 13, 15];
+                  for (const s of sizes) {
+                    const a = (albumler || []).find((al: any) => al.size === s || al.size === String(s));
+                    items.push({ productName: `${s} Kare Albüm`, quantity: 0, unitPrice: a?.tamBoy || 0 });
+                  }
+                  items.push({ productName: 'Paspartu', quantity: 0, unitPrice: 0 });
+                  setOrderItems(items);
+                  setOrderCurrency((albumler || [])[0]?.currency || 'TRY');
+                } else if (st === 'ribon') {
+                  setOrderItems((papers || []).map((p: any) => ({ productName: p.name || p.id, quantity: 0, unitPrice: p.boxPrice || 0 })));
+                  setOrderCurrency((papers || [])[0]?.currency || 'TRY');
+                } else {
+                  setOrderItems([{ productName: '', quantity: 0, unitPrice: 0 }]);
+                }
+              }} className={inputStyle + ' bg-white/10'}>
                 <option value="" className="bg-gray-900">Tedarikçi seç...</option>
-                {cariler.map((c: any) => (
-                  <option key={c.id} value={c.id} className="bg-gray-900">{c.emoji || '🏢'} {c.name}</option>
+                {cariler.filter((c: any) => c.supplierType).map((c: any) => (
+                  <option key={c.id} value={c.id} className="bg-gray-900">{c.emoji || '🏢'} {c.name} ({c.supplierType === 'album' ? 'Albüm' : 'Ribon'})</option>
                 ))}
               </select>
-              <select value={orderCurrency} onChange={e => setOrderCurrency(e.target.value)} className={inputStyle + ' bg-white/10'}>
-                {['TRY', 'USD', 'EUR', 'GBP'].map(cur => <option key={cur} value={cur} className="bg-gray-900">{cur}</option>)}
-              </select>
 
-              <p className="text-white/60 text-xs font-semibold">Kalemler</p>
-              {orderItems.map((item, idx) => (
-                <div key={idx} className="flex gap-2 items-end">
-                  <input placeholder="Ürün adı" value={item.productName}
-                    onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, productName: e.target.value } : p))}
-                    className={inputStyle + ' flex-1'} />
-                  <input type="number" placeholder="Adet" value={item.quantity || ''}
-                    onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p))}
-                    className={inputStyle + ' w-20 text-center'} />
-                  <input type="number" placeholder="Fiyat" value={item.unitPrice || ''}
-                    onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, unitPrice: parseFloat(e.target.value) || 0 } : p))}
-                    className={inputStyle + ' w-24 text-center'} />
-                  {orderItems.length > 1 && (
-                    <button onClick={() => setOrderItems(prev => prev.filter((_, i) => i !== idx))} className="text-red-400 pb-2"><X className="w-4 h-4" /></button>
-                  )}
+              {/* Ürün listesi — tedarikçi tipine göre otomatik */}
+              {orderCariId && supplierType && (
+                <div className="space-y-1">
+                  <div className="flex text-[10px] text-white/30 font-semibold px-1">
+                    <span className="flex-1">Ürün</span>
+                    <span className="w-14 text-center">Stok</span>
+                    <span className="w-16 text-center">Fiyat</span>
+                    <span className="w-16 text-center">Adet</span>
+                  </div>
+                  {orderItems.map((item, idx) => {
+                    const stokKey = supplierType === 'album'
+                      ? (item.productName === 'Paspartu' ? 'paspartu' : `album${item.productName.match(/\d+/)?.[0] || ''}`)
+                      : '';
+                    const stok = stokKey ? (depoStok[stokKey] || 0) : '—';
+                    return (
+                      <div key={idx} className="flex items-center gap-1 py-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <span className="flex-1 text-white text-xs truncate">{item.productName}</span>
+                        <span className="w-14 text-center text-[11px] text-amber-400 font-bold">{stok}</span>
+                        <span className="w-16 text-center text-[11px] text-white/40">{item.unitPrice > 0 ? `₺${item.unitPrice}` : '—'}</span>
+                        <input type="number" min={0} value={item.quantity || ''}
+                          onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p))}
+                          className="w-16 px-2 py-1.5 rounded-lg text-center text-white bg-white/10 border border-white/20 text-xs"
+                          placeholder="0" />
+                      </div>
+                    );
+                  })}
+                  <div className="flex justify-between pt-2 border-t border-white/10">
+                    <span className="text-white/50 text-xs">Toplam:</span>
+                    <span className="text-white font-bold text-sm">₺{orderItems.reduce((a, i) => a + (i.quantity * i.unitPrice), 0).toLocaleString('tr-TR')}</span>
+                  </div>
                 </div>
-              ))}
-              <button onClick={() => setOrderItems(prev => [...prev, { productName: '', quantity: 0, unitPrice: 0 }])}
-                className="text-blue-400 text-xs font-medium">+ Kalem Ekle</button>
+              )}
+
+              {/* Generic form — tip yoksa */}
+              {orderCariId && !supplierType && (
+                <>
+                  <select value={orderCurrency} onChange={e => setOrderCurrency(e.target.value)} className={inputStyle + ' bg-white/10'}>
+                    {['TRY', 'USD', 'EUR', 'GBP'].map(cur => <option key={cur} value={cur} className="bg-gray-900">{cur}</option>)}
+                  </select>
+                  {orderItems.map((item, idx) => (
+                    <div key={idx} className="flex gap-2 items-end">
+                      <input placeholder="Ürün adı" value={item.productName}
+                        onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, productName: e.target.value } : p))}
+                        className={inputStyle + ' flex-1'} />
+                      <input type="number" placeholder="Adet" value={item.quantity || ''}
+                        onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p))}
+                        className={inputStyle + ' w-20 text-center'} />
+                      <input type="number" placeholder="Fiyat" value={item.unitPrice || ''}
+                        onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, unitPrice: parseFloat(e.target.value) || 0 } : p))}
+                        className={inputStyle + ' w-24 text-center'} />
+                    </div>
+                  ))}
+                  <button onClick={() => setOrderItems(prev => [...prev, { productName: '', quantity: 0, unitPrice: 0 }])}
+                    className="text-blue-400 text-xs font-medium">+ Kalem Ekle</button>
+                </>
+              )}
 
               <textarea placeholder="Not (opsiyonel)" value={orderNotes} onChange={e => setOrderNotes(e.target.value)}
                 className={inputStyle + ' resize-none'} rows={2} />
 
               <div className="flex gap-2">
-                <motion.button whileTap={{ scale: 0.97 }} onClick={() => createOrder(false)}
-                  disabled={!orderCariId || actionLoading === 'order'}
-                  className="flex-1 py-3 rounded-xl font-semibold text-white/60 bg-white/10 border border-white/15 disabled:opacity-40 text-sm">
-                  Taslak Kaydet
-                </motion.button>
                 <motion.button whileTap={{ scale: 0.97 }} onClick={() => createOrder(true)}
-                  disabled={!orderCariId || actionLoading === 'order'}
-                  className="flex-1 py-3 rounded-xl font-semibold text-white disabled:opacity-40 text-sm"
+                  disabled={!orderCariId || orderItems.every(i => i.quantity === 0) || actionLoading === 'order'}
+                  className="w-full py-3 rounded-xl font-semibold text-white disabled:opacity-40 text-sm"
                   style={{ background: 'linear-gradient(135deg, #60a5fa, #3b82f6)' }}>
-                  {actionLoading === 'order' ? '...' : 'Kaydet & Gönder'}
+                  {actionLoading === 'order' ? '...' : 'Sipariş Gönder'}
                 </motion.button>
               </div>
             </motion.div>
@@ -513,12 +570,12 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
       <AnimatePresence>
         {showPayment && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-5"
             onClick={() => setShowPayment(null)}>
-            <motion.div initial={{ y: 300 }} animate={{ y: 0 }} exit={{ y: 300 }}
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
               onClick={e => e.stopPropagation()}
-              className="w-full max-w-lg rounded-t-3xl p-6 space-y-4"
-              style={{ background: 'rgba(15,10,40,0.98)', border: '1px solid rgba(255,255,255,0.10)', borderBottom: 'none' }}>
+              className="w-full max-w-sm rounded-2xl p-5 space-y-4"
+              style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.10)' }}>
               <div className="flex items-center justify-between">
                 <h2 className="text-white font-bold text-lg">Ödeme Kaydet</h2>
                 <button onClick={() => setShowPayment(null)}><X className="w-5 h-5 text-white/40" /></button>

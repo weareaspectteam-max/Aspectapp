@@ -136,7 +136,7 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
   // Cariler
   const [cariler, setCariler] = useState<any[]>([]);
   const [showCariForm, setShowCariForm] = useState(false);
-  const [cariForm, setCariForm] = useState({ emoji: '🏢', name: '', description: '' });
+  const [cariForm, setCariForm] = useState({ emoji: '🏢', name: '', description: '', supplierType: '' });
 
   // Form states for paper
   const [paperForm, setPaperForm] = useState({
@@ -668,12 +668,13 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
           emoji: cariForm.emoji || '🏢',
           name: cariForm.name.trim(),
           description: cariForm.description.trim(),
+          supplierType: cariForm.supplierType || '',
         }),
       });
       if (!res.ok) { const e = await res.json(); alert(e.error || 'Cari eklenemedi.'); return; }
       const { cari } = await res.json();
       setCariler(prev => [...prev, cari]);
-      setCariForm({ emoji: '🏢', name: '', description: '' });
+      setCariForm({ emoji: '🏢', name: '', description: '', supplierType: '' });
       setShowCariForm(false);
     } catch (err) {
       console.log('Cari ekleme hatası:', err);
@@ -727,6 +728,7 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
                     <div>
                       <h4 className="font-bold text-white">{cari.name}</h4>
                       {cari.description && <p className="text-sm text-gray-400">{cari.description}</p>}
+                      {cari.supplierType && <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">{cari.supplierType === 'album' ? '📸 Albüm' : '🖨️ Ribon'}</span>}
                       {cari.linkedUserEmail && <p className="text-xs text-green-400 mt-0.5">🏭 {cari.linkedUserEmail}</p>}
                     </div>
                   </div>
@@ -782,10 +784,21 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
                 placeholder="Kısa açıklama..."
               />
             </div>
+            <div>
+              <label className="text-sm font-semibold text-gray-300 mb-2 block">Tedarikçi Tipi:</label>
+              <div className="flex gap-2">
+                {[{ key: '', label: 'Yok', emoji: '—' }, { key: 'album', label: 'Albüm', emoji: '📸' }, { key: 'ribon', label: 'Ribon/Kağıt', emoji: '🖨️' }].map(t => (
+                  <button key={t.key} onClick={() => setCariForm({ ...cariForm, supplierType: t.key })}
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${cariForm.supplierType === t.key ? 'bg-gradient-to-r from-[#c4b5fd] to-[#a78bfa] text-white' : 'bg-white/10 border border-white/20 text-gray-400'}`}>
+                    {t.emoji} {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="flex gap-3">
               <button
-                onClick={() => { setShowCariForm(false); setCariForm({ emoji: '🏢', name: '', description: '' }); }}
+                onClick={() => { setShowCariForm(false); setCariForm({ emoji: '🏢', name: '', description: '', supplierType: '' }); }}
                 className="flex-1 py-3 bg-white/10 border border-white/20 rounded-xl text-white font-semibold hover:bg-white/20 transition-all active:scale-95"
               >
                 İptal

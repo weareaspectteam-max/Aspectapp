@@ -5,7 +5,10 @@
       "Bash(npx tsc:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(node -e ':*)",
+      "Bash(sed -n '16524,17334p' supabase/functions/server/index.ts)",
+      "Read(//tmp/**)"
     ]
   }
 }

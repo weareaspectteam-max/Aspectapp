@@ -94,7 +94,8 @@ function getSections(
 ): Section[] {
   const go = (tab: string) => { onNavigate(tab); close(); };
 
-  const all:  UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','personel','tedarikci','bekleyen','superadmin'];
+  const all:  UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','personel','bekleyen','superadmin'];
+  const withSupplier: UserRole[] = [...all, 'tedarikci'];
   const mgmt: UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','superadmin'];
   const ops:  UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','superadmin'];
 
@@ -168,9 +169,9 @@ function getSections(
       title: 'HESAP',
       color: '#60a5fa',
       items: [
-        { icon: User,     label: 'Profil',     roles: all, action: () => go('profile') },
-        { icon: Settings, label: 'Ayarlar',    roles: all, action: () => go('settings') },
-        { icon: LogOut,   label: 'Çıkış Yap',  roles: all, danger: true, action: () => { close(); onLogout(); } },
+        { icon: User,     label: 'Profil',     roles: withSupplier, action: () => go('profile') },
+        { icon: Settings, label: 'Ayarlar',    roles: withSupplier, action: () => go('settings') },
+        { icon: LogOut,   label: 'Çıkış Yap',  roles: withSupplier, danger: true, action: () => { close(); onLogout(); } },
       ],
     },
   ];

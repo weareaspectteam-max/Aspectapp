@@ -16619,12 +16619,16 @@ app.get("/make-server-4da0b637/tedarikci/ozet", async (c) => {
     if (!hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
-    const [cariler, siparisler, teslimatlar, odemeler] = await Promise.all([ckv.getByPrefix("cost_cari_"), ckv.getByPrefix("siparis_"), ckv.getByPrefix("teslimat_"), ckv.getByPrefix("tedarikci_odeme_")]);
+    const [cariler, siparisler, teslimatlar, odemeler, albumler, depoStok, papers] = await Promise.all([
+      ckv.getByPrefix("cost_cari_"), ckv.getByPrefix("siparis_"), ckv.getByPrefix("teslimat_"), ckv.getByPrefix("tedarikci_odeme_"),
+      ckv.get("cost_albums"), ckv.get("depo_stok"), ckv.getByPrefix("cost_paper_"),
+    ]);
     return c.json({ ok: true, cariler: cariler || [], siparisler: (siparisler || []).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
       teslimatlar: (teslimatlar || []).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
       odemeler: (odemeler || []).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
       linkedCariler: (cariler || []).filter((cr) => cr.linkedUserId).length,
       bekleyenTeslimat: (teslimatlar || []).filter((t) => t.status === "beklemede").length,
+      albumler: albumler || [], depoStok: depoStok || {}, papers: papers || [],
     });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -16806,6 +16810,23 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
       siparis.updatedAt = new Date().toISOString();
       await ckv.set(`siparis_${teslimat.siparisId}`, siparis);
     }
+    // Depo stok girişi — teslimat kalemlerini depoya ekle
+    const depoStok = await ckv.get("depo_stok") || {};
+    for (const line of teslimat.lines) {
+      const name = (line.productName || "").toLowerCase();
+      if (name.includes("paspartu")) {
+        depoStok.paspartu = (depoStok.paspartu || 0) + (line.quantity || 0);
+      } else {
+        const sizeMatch = name.match(/(\d+)/);
+        if (sizeMatch) {
+          const key = `album${sizeMatch[1]}`;
+          depoStok[key] = (depoStok[key] || 0) + (line.quantity || 0);
+        }
+      }
+    }
+    await ckv.set("depo_stok", depoStok);
+    console.log(`[Tedarikci] Teslimat onaylandı → depo_stok güncellendi: ${teslimatId}`);
+
     const cari = await ckv.get(`cost_cari_${teslimat.cariId}`);
     if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "teslimat_onaylandi", "Teslimat Onaylandı", "Teslimatınız onaylandı.", { siparisId: teslimat.siparisId, teslimatId }, companyId);
     return c.json({ ok: true, teslimat, siparis });
