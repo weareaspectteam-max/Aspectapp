@@ -20,6 +20,7 @@ interface PurchaseOrder {
   id: string; cariId: string; cariName: string; status: string; items: OrderItem[];
   totalAmount: number; currency: string; notes: string; createdAt: string;
   sentAt?: string; confirmedAt?: string; completedAt?: string; cancelReason?: string;
+  teklifFiyat?: number; teklifDurum?: string; teklifler?: Array<{ taraf: string; fiyat: number; tarih: string; kisi: string; aksiyon?: string }>;
 }
 interface DeliveryRecord { id: string; siparisId: string; status: string; lines: Array<{ itemId: string; productName: string; quantity: number }>; deliveryDate: string; deliveryNote?: string; createdAt: string; reviewedBy?: string; rejectionReason?: string }
 interface SupplierPayment { id: string; siparisId: string; amount: number; currency: string; paymentMethod: string; paymentDate: string; status: string; supplierConfirmed: boolean; createdAt: string }
@@ -539,50 +540,93 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                 <button onClick={() => setShowOfferForm(false)} className="text-white/40"><span className="text-xl">×</span></button>
               </div>
 
-              <div className="space-y-1">
-                {offerItems.map((item, idx) => (
-                  <div key={idx} className="flex items-center gap-2 py-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span className="flex-1 text-white text-xs">{item.productName || 'Ürün'}</span>
-                    <input type="number" min={0} value={item.unitPrice || ''} onChange={e => setOfferItems(prev => prev.map((p, i) => i === idx ? { ...p, unitPrice: parseFloat(e.target.value) || 0 } : p))}
-                      className="w-16 px-1 py-1 rounded text-center text-green-400 bg-white/10 border border-white/20 text-[10px]" placeholder="₺" />
-                    <input type="number" min={0} value={item.quantity || ''} onChange={e => setOfferItems(prev => prev.map((p, i) => i === idx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p))}
-                      className="w-14 px-1 py-1 rounded text-center text-white bg-white/10 border border-white/20 text-[10px]" placeholder="Adet" />
+              {(() => {
+                const cari = portalData?.cari || {};
+                const albums: any[] = portalData?.albumler || [];
+                const stokGorunur = cari.stokGorunur !== false; // default true
+                return (
+                  <div className="space-y-0">
+                    <div className={`grid ${stokGorunur ? 'grid-cols-[1fr_40px_50px_48px]' : 'grid-cols-[1fr_50px_48px]'} text-[8px] text-white/30 font-semibold px-1 pb-1 gap-1`}>
+                      <span>Ürün</span>
+                      {stokGorunur && <span className="text-center">Stok</span>}
+                      <span className="text-center">Fiyat</span>
+                      <span className="text-center">Adet</span>
+                    </div>
+                    {offerItems.map((item, idx) => {
+                      const sizeMatch = item.productName.match(/(\d+)/);
+                      const size = sizeMatch ? parseInt(sizeMatch[1]) : 0;
+                      const albumData = size ? albums.find((a: any) => a.size === size || a.size === String(size)) : null;
+                      const genel = stokGorunur ? (ozet as any)?.[`album${size}`] || 0 : 0;
+                      return (
+                        <div key={idx} className={`grid ${stokGorunur ? 'grid-cols-[1fr_40px_50px_48px]' : 'grid-cols-[1fr_50px_48px]'} items-center py-1.5 gap-1`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <span className="text-white text-[11px] font-medium">{item.productName}</span>
+                          {stokGorunur && <span className="text-center text-[10px] text-cyan-400 font-bold">{item.productName === 'Paspartu' ? '—' : genel}</span>}
+                          <input type="number" min={0} value={item.unitPrice || ''} onChange={e => setOfferItems(prev => prev.map((p, i) => i === idx ? { ...p, unitPrice: parseFloat(e.target.value) || 0 } : p))}
+                            className="w-full px-1 py-0.5 rounded text-center text-green-400 bg-white/10 border border-white/20 text-[10px]" placeholder="₺" />
+                          <input type="number" min={0} value={item.quantity || ''} onChange={e => setOfferItems(prev => prev.map((p, i) => i === idx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p))}
+                            className="w-full px-1 py-1 rounded-lg text-center text-white bg-white/10 border border-white/20 text-[11px]" placeholder="0" />
+                        </div>
+                      );
+                    })}
+                    <div className="flex justify-between pt-2 border-t border-white/10">
+                      <span className="text-white/50 text-xs">Toplam:</span>
+                      <span className="text-white font-bold text-sm">₺{offerItems.reduce((a, i) => a + (i.quantity * i.unitPrice), 0).toLocaleString('tr-TR')}</span>
+                    </div>
                   </div>
-                ))}
-              </div>
+                );
+              })()}
 
-              <div className="flex justify-between text-xs">
-                <span className="text-white/40">Liste Toplam:</span>
-                <span className="text-white font-bold">₺{offerItems.reduce((a, i) => a + (i.quantity * i.unitPrice), 0).toLocaleString('tr-TR')}</span>
-              </div>
-
+              {/* Teklif fiyatı (opsiyonel) */}
               <div className="p-3 rounded-xl" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.15)' }}>
-                <span className="text-amber-400 text-xs font-semibold block mb-1">Teklif Fiyatı</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-amber-400 text-xs font-semibold">Teklif Fiyatı (opsiyonel)</span>
+                  <span className="text-white/30 text-[10px]">Liste: ₺{offerItems.reduce((a, i) => a + (i.quantity * i.unitPrice), 0).toLocaleString('tr-TR')}</span>
+                </div>
                 <input type="number" min={0} value={offerTeklifFiyat || ''} onChange={e => setOfferTeklifFiyat(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-amber-400 bg-white/10 border border-amber-400/20 text-sm font-bold text-center" placeholder="₺ Toplam teklif tutarı" />
+                  className="w-full mt-1 px-3 py-2 rounded-lg text-amber-400 bg-white/10 border border-amber-400/20 text-sm font-bold text-center" placeholder="₺ Teklif tutarı girin..." />
               </div>
 
               <textarea placeholder="Not (opsiyonel)" value={offerNotes} onChange={e => setOfferNotes(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg text-white bg-white/10 border border-white/20 text-sm resize-none" rows={2} />
 
-              <motion.button whileTap={{ scale: 0.97 }} onClick={async () => {
-                const items = offerItems.filter(i => i.quantity > 0);
-                if (!items.length) return;
-                setActionLoading('offer');
-                try {
-                  await fetch(`${SERVER_URL}/tedarikci/teklif`, {
-                    method: 'POST', headers: headers(),
-                    body: JSON.stringify({ items, currency: 'TRY', notes: offerNotes, teklifFiyat: offerTeklifFiyat ? parseFloat(offerTeklifFiyat) : null }),
-                  });
-                  setShowOfferForm(false);
-                  fetchPortal();
-                } finally { setActionLoading(''); }
-              }}
-                disabled={offerItems.every(i => i.quantity === 0) || actionLoading === 'offer'}
-                className="w-full py-3 rounded-xl font-semibold text-white disabled:opacity-40"
-                style={{ background: 'linear-gradient(135deg, #fbbf24, #d97706)' }}>
-                {actionLoading === 'offer' ? '...' : '💰 Teklif Gönder'}
-              </motion.button>
+              <div className="flex gap-2">
+                <motion.button whileTap={{ scale: 0.97 }} onClick={async () => {
+                  const items = offerItems.filter(i => i.quantity > 0);
+                  if (!items.length) return;
+                  setActionLoading('offer');
+                  try {
+                    await fetch(`${SERVER_URL}/tedarikci/teklif`, {
+                      method: 'POST', headers: headers(),
+                      body: JSON.stringify({ items, currency: 'TRY', notes: offerNotes }),
+                    });
+                    setShowOfferForm(false); fetchPortal();
+                  } finally { setActionLoading(''); }
+                }}
+                  disabled={offerItems.every(i => i.quantity === 0) || actionLoading === 'offer'}
+                  className="flex-1 py-3 rounded-xl font-semibold text-white disabled:opacity-40 text-sm"
+                  style={{ background: 'linear-gradient(135deg, #60a5fa, #3b82f6)' }}>
+                  {actionLoading === 'offer' ? '...' : 'Sipariş Gönder'}
+                </motion.button>
+                {offerTeklifFiyat && (
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={async () => {
+                    const items = offerItems.filter(i => i.quantity > 0);
+                    if (!items.length) return;
+                    setActionLoading('offer');
+                    try {
+                      await fetch(`${SERVER_URL}/tedarikci/teklif`, {
+                        method: 'POST', headers: headers(),
+                        body: JSON.stringify({ items, currency: 'TRY', notes: offerNotes, teklifFiyat: parseFloat(offerTeklifFiyat) }),
+                      });
+                      setShowOfferForm(false); fetchPortal();
+                    } finally { setActionLoading(''); }
+                  }}
+                    disabled={offerItems.every(i => i.quantity === 0) || actionLoading === 'offer'}
+                    className="flex-1 py-3 rounded-xl font-semibold text-white disabled:opacity-40 text-sm"
+                    style={{ background: 'linear-gradient(135deg, #fbbf24, #d97706)' }}>
+                    {actionLoading === 'offer' ? '...' : '💰 Teklif Gönder'}
+                  </motion.button>
+                )}
+              </div>
             </motion.div>
           </motion.div>
         )}

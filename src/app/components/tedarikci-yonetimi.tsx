@@ -232,12 +232,27 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
               {!c.linkedUserId && <p className="text-white/30 text-xs">Hesap bağlı değil</p>}
               {c.description && <p className="text-white/25 text-[10px]">{c.description}</p>}
             </div>
-            {c.supplierType && (
-              <button onClick={() => { setShowPriceList(c.id); setPriceListItems(fiyatMap[c.id]?.items || []); }}
-                className="px-2.5 py-1.5 rounded-lg text-[10px] font-medium text-amber-300 border border-amber-400/20 bg-amber-400/10">
-                💰 Fiyat
-              </button>
-            )}
+            <div className="flex flex-col items-end gap-1.5">
+              {c.supplierType && (
+                <button onClick={() => { setShowPriceList(c.id); setPriceListItems(fiyatMap[c.id]?.items || []); }}
+                  className="px-2.5 py-1.5 rounded-lg text-[10px] font-medium text-amber-300 border border-amber-400/20 bg-amber-400/10">
+                  💰 Fiyat
+                </button>
+              )}
+              {c.linkedUserId && (
+                <button onClick={async () => {
+                  const newVal = !(c.stokGorunur !== false);
+                  await fetch(`${SERVER_URL}/maliyetler/cariler`, {
+                    method: 'POST', headers: getHeaders(),
+                    body: JSON.stringify({ id: c.id, name: c.name, emoji: c.emoji, description: c.description, supplierType: c.supplierType, stokGorunur: newVal }),
+                  });
+                  fetchData();
+                }}
+                  className={`px-2 py-1 rounded-lg text-[9px] font-medium ${c.stokGorunur !== false ? 'text-cyan-400 border-cyan-400/20 bg-cyan-400/10' : 'text-white/30 border-white/10 bg-white/5'} border`}>
+                  {c.stokGorunur !== false ? '👁 Stok Açık' : '🚫 Stok Kapalı'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       ))}
