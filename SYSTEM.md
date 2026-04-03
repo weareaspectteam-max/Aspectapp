@@ -328,8 +328,16 @@ Kasa = "cepte ne var" + "neyi odedik, neyi odemedik". IGD'deki giderler kasada b
 
 ### Bakiye Hesabi
 ```
-Bakiye = DevirBakiye + AcilisBakiye + DevirCirolar - OdenenGiderler
+Bakiye = DevirBakiye + AcilisBakiye + DevirCirolar + ParaGirisleri - OdenenGiderler
 ```
+**ParaGirisleri:** `isletme_gelir_` kayitlarindan ay filtreli toplam
+**OdenenGiderler:** `kasa_odeme_` kayitlarinda odpiendi=true olanlar
+
+### IGD-Kasa Senkronu
+- IGD'de gider tutari duzenlenince → `kasa_odeme_` da guncellenir
+- Kasadan odeme silinince → `isletme_gider_` da silinir (komple-sil, kismi-sil)
+- Acilis borcu odenince → IGD'ye gider + kasada odendi
+- Para Cikisi → borcTutar gonderilmezse otomatik odpiendi=true
 
 ### Ciro Devir Akisi
 1. Vardiya kapanir → "Bekleyen Devirler" listesine duser
@@ -452,10 +460,12 @@ Tedarikci (albumcu, malzeme saglayici vb.) kendi sifresiyle giris yapar, siparis
 ### KV Yapisi
 | Key | Icerik |
 |-----|--------|
-| `cost_cari_{id}` | Genisletildi: linkedUserId, linkedUserEmail, products, isActive |
-| `siparis_{id}` | Siparis kaydi: cariId, items, status, totalAmount |
-| `teslimat_{id}` | Teslimat bildirimi: siparisId, lines, status |
-| `tedarikci_odeme_{id}` | Odeme kaydi: siparisId, amount, supplierConfirmed |
+| `cost_cari_{id}` | Cari: linkedUserId, linkedUserEmail, supplierType, stokGorunur |
+| `siparis_{id}` | Siparis: cariId, items, status, totalAmount, teklifFiyat, teklifDurum, teklifler[], loglar[], uretimDurum |
+| `teslimat_{id}` | Teslimat: siparisId, lines, status, reviewedBy |
+| `tedarikci_odeme_{id}` | Odeme: siparisId, amount, supplierConfirmed |
+| `tedarikci_fiyat_{cariId}` | Anlasma fiyatlari: items[{productName, fiyat, currency}] |
+| `tedarikci_fiyat_talep_{cariId}` | Bekleyen fiyat guncelleme talebi: items, gonderen, durum |
 
 ### Siparis Durumu (State Machine)
 ```
