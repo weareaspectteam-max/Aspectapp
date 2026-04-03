@@ -16985,7 +16985,7 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
       ckv = companyKvFor(getCompanyId(callerUser));
     } else { return c.json({ error: "Yetki yok." }, 403); }
     const siparisId = c.req.param("id");
-    const { fiyat, aksiyon } = await c.req.json(); // aksiyon: "teklif" | "kabul" | "red"
+    const { fiyat, aksiyon, items } = await c.req.json(); // aksiyon: "teklif" | "kabul" | "red"
     const siparis = await ckv.get(`siparis_${siparisId}`);
     if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
     const taraf = role === "tedarikci" ? "tedarikci" : "admin";
@@ -17001,7 +17001,12 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
     } else {
       siparis.teklifFiyat = Number(fiyat);
       siparis.teklifDurum = taraf === "admin" ? "teklif_verildi" : "karsi_teklif";
-      siparis.teklifler = [...(siparis.teklifler || []), { taraf, fiyat: Number(fiyat), tarih: now, kisi: callerUser.user_metadata?.full_name || "" }];
+      siparis.teklifler = [...(siparis.teklifler || []), { taraf, fiyat: Number(fiyat), tarih: now, kisi: callerUser.user_metadata?.full_name || "", items: items || null }];
+      // Karşı teklifte ürün kalemleri değiştirilmişse güncelle
+      if (items?.length) {
+        siparis.items = items.map((it, idx) => ({ id: it.id || `item_${idx}_${Math.random().toString(36).slice(2, 6)}`, productName: it.productName || "", quantity: it.quantity || 0, unitPrice: it.unitPrice || 0, currency: it.currency || siparis.currency || "TRY", deliveredQuantity: 0 }));
+        siparis.totalAmount = siparis.items.reduce((a, it) => a + (it.quantity * it.unitPrice), 0);
+      }
     }
     siparis.updatedAt = now;
     await ckv.set(`siparis_${siparisId}`, siparis);

@@ -57,6 +57,9 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
   const [showNewOrder, setShowNewOrder] = useState(false);
   const [showPayment, setShowPayment] = useState<string | null>(null); // siparisId
   const [showPriceList, setShowPriceList] = useState<string | null>(null); // cariId
+  const [selectedSiparis, setSelectedSiparis] = useState<any>(null); // detay görünümü
+  const [karsiTeklifItems, setKarsiTeklifItems] = useState<Array<{ productName: string; quantity: number; unitPrice: number }>>([]);
+  const [karsiTeklifFiyat, setKarsiTeklifFiyat] = useState('');
   const [priceListItems, setPriceListItems] = useState<Array<{ productName: string; fiyat: number; currency: string }>>([]);
   const [actionLoading, setActionLoading] = useState('');
 
@@ -260,7 +263,152 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
     </div>
   );
 
-  const renderSiparisTab = () => (
+  const renderSiparisTab = () => {
+    // Detay görünümü
+    if (selectedSiparis) {
+      const s = selectedSiparis;
+      const sc = STATUS_CONFIG[s.status] || STATUS_CONFIG.taslak;
+      const showTeklifActions = ['karsi_teklif', 'tedarikci_teklifi', 'teklif_verildi'].includes(s.teklifDurum);
+      return (
+        <div className="space-y-3">
+          <button onClick={() => setSelectedSiparis(null)} className="text-white/50 text-sm">← Geri</button>
+
+          {/* Header */}
+          <div className="p-4 rounded-2xl" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-white font-bold">{s.cariName}</p>
+                <p className="text-white/40 text-xs">{new Date(s.createdAt).toLocaleDateString('tr-TR')}</p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {s.kaynakTedarikci && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30">🏭</span>}
+                <span className="px-2.5 py-1 rounded-full text-xs font-medium" style={{ background: sc.bg, color: sc.color }}>{sc.label}</span>
+              </div>
+            </div>
+            {s.notes && <p className="text-white/30 text-xs italic">{s.notes}</p>}
+          </div>
+
+          {/* Kalemler */}
+          <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+            <div className="px-4 py-2 border-b" style={{ borderColor: glassBorder }}><p className="text-white font-semibold text-sm">Kalemler</p></div>
+            {(s.items || []).map((item: any) => (
+              <div key={item.id} className="px-4 py-2 border-b flex justify-between" style={{ borderColor: glassBorder }}>
+                <span className="text-white text-xs">{item.productName}</span>
+                <div className="text-right">
+                  <span className="text-white/60 text-xs">{item.quantity} adet</span>
+                  <span className="text-white/30 text-xs ml-2">₺{item.unitPrice}</span>
+                </div>
+              </div>
+            ))}
+            <div className="px-4 py-2 flex justify-between">
+              <span className="text-white/50 text-xs">Toplam:</span>
+              <span className="text-white font-bold text-sm">₺{(s.totalAmount || 0).toLocaleString('tr-TR')}</span>
+            </div>
+          </div>
+
+          {/* Teklif Geçmişi */}
+          {(s.teklifler || []).length > 0 && (
+            <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+              <div className="px-4 py-2 border-b" style={{ borderColor: glassBorder }}><p className="text-white font-semibold text-sm">💰 Teklif Geçmişi</p></div>
+              {(s.teklifler || []).map((t: any, i: number) => (
+                <div key={i} className="px-4 py-2 border-b flex justify-between items-center" style={{ borderColor: glassBorder }}>
+                  <div>
+                    <span className={`text-xs font-medium ${t.taraf === 'admin' ? 'text-blue-400' : 'text-orange-400'}`}>{t.taraf === 'admin' ? '🏢 Sen' : '🏭 Tedarikçi'}</span>
+                    <span className="text-white/30 text-[10px] ml-2">{new Date(t.tarih).toLocaleDateString('tr-TR')}</span>
+                  </div>
+                  <span className="text-white font-bold text-xs">
+                    {t.aksiyon === 'kabul' ? '✓ Kabul' : t.aksiyon === 'red' ? '✗ Red' : `₺${(t.fiyat || 0).toLocaleString('tr-TR')}`}
+                  </span>
+                </div>
+              ))}
+              {s.teklifFiyat && (
+                <div className="px-4 py-2 flex justify-between">
+                  <span className="text-amber-400 text-xs font-semibold">Güncel Teklif:</span>
+                  <span className="text-amber-400 font-bold">₺{s.teklifFiyat.toLocaleString('tr-TR')}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Aksiyonlar */}
+          <div className="space-y-2">
+            {s.status === 'taslak' && (
+              <div className="flex gap-2">
+                <motion.button whileTap={{ scale: 0.95 }} onClick={() => { sendOrder(s.id); setSelectedSiparis(null); }}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-500/20 border border-blue-500/30"><Send className="w-3 h-3 inline mr-1" /> Gönder</motion.button>
+                <button onClick={() => { cancelOrder(s.id); setSelectedSiparis(null); }}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/20">İptal</button>
+              </div>
+            )}
+
+            {showTeklifActions && (
+              <div className="space-y-2">
+                <motion.button whileTap={{ scale: 0.95 }} onClick={async () => {
+                  await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ aksiyon: 'kabul' }) });
+                  fetchData(); setSelectedSiparis(null);
+                }} className="w-full py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg, #34d399, #10b981)' }}>✓ Teklifi Kabul Et</motion.button>
+
+                {/* Karşı Teklif — düzenlenebilir kalemler */}
+                <div className="p-3 rounded-xl space-y-2" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.15)' }}>
+                  <p className="text-amber-400 text-xs font-semibold">↩ Karşı Teklif</p>
+                  {karsiTeklifItems.length === 0 && (
+                    <button onClick={() => {
+                      setKarsiTeklifItems((s.items || []).map((i: any) => ({ productName: i.productName, quantity: i.quantity, unitPrice: i.unitPrice })));
+                      setKarsiTeklifFiyat('');
+                    }} className="text-amber-400 text-[10px] underline">Kalemleri düzenle</button>
+                  )}
+                  {karsiTeklifItems.length > 0 && (
+                    <>
+                      {karsiTeklifItems.map((item, idx) => (
+                        <div key={idx} className="flex items-center gap-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <span className="flex-1 text-white text-[10px]">{item.productName}</span>
+                          <input type="number" min={0} value={item.unitPrice || ''} onChange={e => setKarsiTeklifItems(prev => prev.map((p, i) => i === idx ? { ...p, unitPrice: parseFloat(e.target.value) || 0 } : p))}
+                            className="w-14 px-1 py-0.5 rounded text-center text-green-400 bg-white/10 border border-white/20 text-[10px]" placeholder="₺" />
+                          <input type="number" min={0} value={item.quantity || ''} onChange={e => setKarsiTeklifItems(prev => prev.map((p, i) => i === idx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p))}
+                            className="w-12 px-1 py-0.5 rounded text-center text-white bg-white/10 border border-white/20 text-[10px]" placeholder="0" />
+                          <button onClick={() => setKarsiTeklifItems(prev => prev.filter((_, i) => i !== idx))} className="text-red-400/50 text-xs">×</button>
+                        </div>
+                      ))}
+                      <button onClick={() => setKarsiTeklifItems(prev => [...prev, { productName: '', quantity: 0, unitPrice: 0 }])}
+                        className="text-blue-400 text-[9px]">+ Kalem Ekle</button>
+                      <input type="number" min={0} value={karsiTeklifFiyat || ''} onChange={e => setKarsiTeklifFiyat(e.target.value)}
+                        className="w-full px-2 py-1.5 rounded-lg text-center text-amber-400 bg-white/10 border border-amber-400/20 text-xs font-bold" placeholder="Toplam teklif fiyatı (₺)" />
+                      <motion.button whileTap={{ scale: 0.95 }} onClick={async () => {
+                        const items = karsiTeklifItems.filter(i => i.quantity > 0 && i.productName);
+                        const fiyat = karsiTeklifFiyat ? parseFloat(karsiTeklifFiyat) : items.reduce((a, i) => a + (i.quantity * i.unitPrice), 0);
+                        await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ fiyat, items }) });
+                        setKarsiTeklifItems([]); setKarsiTeklifFiyat('');
+                        fetchData(); setSelectedSiparis(null);
+                      }} className="w-full py-2 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg, #fbbf24, #d97706)' }}>↩ Karşı Teklif Gönder</motion.button>
+                    </>
+                  )}
+                </div>
+
+                <button onClick={async () => {
+                  await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ aksiyon: 'red' }) });
+                  fetchData(); setSelectedSiparis(null);
+                }} className="w-full py-2 rounded-xl text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/20">✗ Reddet</button>
+              </div>
+            )}
+
+            {['teslim_edildi', 'kismen_teslim', 'onaylandi'].includes(s.status) && (
+              <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setShowPayment(s.id); setPayCurrency(s.currency || 'TRY'); }}
+                className="w-full py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg, #34d399, #10b981)' }}>
+                <Banknote className="w-3 h-3 inline mr-1" /> Ödeme Yap
+              </motion.button>
+            )}
+
+            {!['taslak', 'tamamlandi', 'iptal'].includes(s.status) && (
+              <button onClick={() => { cancelOrder(s.id); setSelectedSiparis(null); }}
+                className="w-full py-2 rounded-xl text-xs text-red-400/60 bg-red-500/5 border border-red-500/10">İptal Et</button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Liste görünümü
+    return (
     <div className="space-y-3">
       <motion.button whileTap={{ scale: 0.97 }} onClick={() => setShowNewOrder(true)}
         className="w-full py-3 rounded-xl font-semibold text-white flex items-center justify-center gap-2"
@@ -271,79 +419,31 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
       {siparisler.map((s: any) => {
         const sc = STATUS_CONFIG[s.status] || STATUS_CONFIG.taslak;
         return (
-          <div key={s.id} className="p-4 rounded-2xl space-y-2" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+          <motion.button key={s.id} whileTap={{ scale: 0.98 }} onClick={() => { setSelectedSiparis(s); setKarsiTeklifItems([]); setKarsiTeklifFiyat(''); }}
+            className="w-full p-4 rounded-2xl space-y-2 text-left" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
             <div className="flex items-center justify-between">
               <div className="flex-1 min-w-0">
                 <p className="text-white font-semibold text-sm truncate">{s.cariName}</p>
                 <p className="text-white/40 text-xs">{new Date(s.createdAt).toLocaleDateString('tr-TR')}</p>
               </div>
               <div className="flex items-center gap-1.5">
-                {s.kaynakTedarikci && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30">🏭 Tedarikçi</span>}
+                {s.kaynakTedarikci && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30">🏭</span>}
                 <span className="px-2.5 py-1 rounded-full text-xs font-medium" style={{ background: sc.bg, color: sc.color }}>{sc.label}</span>
               </div>
             </div>
-            <div className="text-white/50 text-xs">
-              {s.items?.map((i: any) => `${i.productName} ×${i.quantity}`).join(', ')}
-            </div>
-            {s.teklifFiyat && (
-              <div className="flex items-center gap-2 text-[10px]">
-                <span className="text-white/30">Liste: ₺{(s.totalAmount || 0).toLocaleString('tr-TR')}</span>
-                <span className="text-amber-400 font-bold">Teklif: ₺{s.teklifFiyat.toLocaleString('tr-TR')}</span>
-                {s.teklifDurum === 'karsi_teklif' && <span className="px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">Karşı Teklif</span>}
-                {s.teklifDurum === 'kabul_edildi' && <span className="px-1.5 py-0.5 rounded bg-green-500/20 text-green-300 border border-green-500/30">✓ Kabul</span>}
-                {s.teklifDurum === 'reddedildi' && <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30">✗ Red</span>}
-              </div>
-            )}
+            <div className="text-white/50 text-xs truncate">{s.items?.map((i: any) => `${i.productName} ×${i.quantity}`).join(', ')}</div>
             <div className="flex items-center justify-between">
-              <p className="text-white font-bold text-sm">{(s.teklifDurum === 'kabul_edildi' ? s.teklifFiyat : s.totalAmount || 0).toLocaleString('tr-TR')} {s.currency}</p>
-              <div className="flex gap-2">
-                {s.status === 'taslak' && (
-                  <>
-                    <motion.button whileTap={{ scale: 0.95 }} onClick={() => sendOrder(s.id)}
-                      disabled={actionLoading === s.id}
-                      className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-blue-500/20 border border-blue-500/30">
-                      <Send className="w-3 h-3 inline mr-1" /> Gönder
-                    </motion.button>
-                    <button onClick={() => cancelOrder(s.id)} className="px-3 py-1.5 rounded-lg text-xs text-red-400 bg-red-500/10 border border-red-500/20">İptal</button>
-                  </>
-                )}
-                {(s.teklifDurum === 'karsi_teklif' || s.teklifDurum === 'tedarikci_teklifi' || s.teklifDurum === 'teklif_verildi') && (
-                  <div className="flex gap-1">
-                    <button onClick={async () => {
-                      await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ aksiyon: 'kabul' }) });
-                      fetchData();
-                    }} className="px-2 py-1 rounded text-[10px] font-bold text-green-400 bg-green-500/15 border border-green-500/25">✓ Kabul</button>
-                    <button onClick={async () => {
-                      const f = prompt('Karşı teklif fiyatı (₺):');
-                      if (!f) return;
-                      await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ fiyat: parseFloat(f) }) });
-                      fetchData();
-                    }} className="px-2 py-1 rounded text-[10px] font-bold text-amber-400 bg-amber-500/15 border border-amber-500/25">↩ Karşı</button>
-                    <button onClick={async () => {
-                      await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ aksiyon: 'red' }) });
-                      fetchData();
-                    }} className="px-2 py-1 rounded text-[10px] font-bold text-red-400 bg-red-500/15 border border-red-500/25">✗ Red</button>
-                  </div>
-                )}
-                {['teslim_edildi', 'kismen_teslim', 'onaylandi'].includes(s.status) && (
-                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setShowPayment(s.id); setPayCurrency(s.currency || 'TRY'); }}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-green-500/20 border border-green-500/30">
-                    <Banknote className="w-3 h-3 inline mr-1" /> Ödeme
-                  </motion.button>
-                )}
-                {!['taslak', 'tamamlandi', 'iptal'].includes(s.status) && (
-                  <button onClick={() => cancelOrder(s.id)} className="px-2 py-1.5 rounded-lg text-xs text-red-400/60 hover:text-red-400">
-                    <XCircle className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
+              <p className="text-white font-bold text-sm">₺{(s.totalAmount || 0).toLocaleString('tr-TR')}</p>
+              {s.teklifFiyat && <span className="text-amber-400 text-xs font-bold">Teklif: ₺{s.teklifFiyat.toLocaleString('tr-TR')}</span>}
+              <ChevronRight className="w-4 h-4 text-white/20" />
             </div>
-          </div>
+          </motion.button>
         );
       })}
       {siparisler.length === 0 && <p className="text-center text-white/30 py-8 text-sm">Henüz sipariş yok</p>}
     </div>
-  );
+    );
+  };
 
   const renderTeslimatTab = () => {
     const bekleyen = teslimatlar.filter((t: any) => t.status === 'beklemede');
