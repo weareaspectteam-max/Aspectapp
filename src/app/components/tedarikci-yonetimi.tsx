@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SERVER_URL } from '../lib/supabase';
-import { buildHeaders } from '../lib/api';
+import { buildHeaders, appendGhostParam } from '../lib/api';
 import type { UserRole } from './login';
 
 interface TedarikciYonetimiProps {
@@ -94,7 +94,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${SERVER_URL}/tedarikci/ozet`, { headers: buildHeaders(accessToken) });
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/ozet`), { headers: buildHeaders(accessToken) });
       const text = await res.text();
       let d: any;
       try { d = JSON.parse(text); } catch { throw new Error('Sunucu yanıtı geçersiz'); }
@@ -129,7 +129,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
     if (!invEmail || !invCariId) return;
     setActionLoading('invite');
     try {
-      const res = await fetch(`${SERVER_URL}/tedarikci/davet`, {
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/davet`), {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ email: invEmail, fullName: invName, phone: invPhone, cariId: invCariId, tempPassword: invPassword || undefined }),
@@ -147,7 +147,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
     setActionLoading('order');
     try {
       const items = orderItems.filter(i => i.productName && i.quantity > 0);
-      const res = await fetch(`${SERVER_URL}/tedarikci/siparisler`, {
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler`), {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ cariId: orderCariId, items, currency: orderCurrency, notes: orderNotes, teklifFiyat: orderTeklifFiyat ? parseFloat(orderTeklifFiyat) : null }),
@@ -155,7 +155,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
       const d = await res.json();
       if (!res.ok) { setError(d.error); return; }
       if (send && d.siparis?.id) {
-        await fetch(`${SERVER_URL}/tedarikci/siparisler/${d.siparis.id}/gonder`, { method: 'POST', headers: getHeaders() });
+        await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${d.siparis.id}/gonder`), { method: 'POST', headers: getHeaders() });
       }
       setShowNewOrder(false);
       setOrderCariId(''); setOrderNotes(''); setOrderItems([]); setOrderTeklifFiyat('');
@@ -166,7 +166,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
   const sendOrder = async (id: string) => {
     setActionLoading(id);
     try {
-      await fetch(`${SERVER_URL}/tedarikci/siparisler/${id}/gonder`, { method: 'POST', headers: getHeaders() });
+      await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${id}/gonder`), { method: 'POST', headers: getHeaders() });
       fetchData();
     } finally { setActionLoading(''); }
   };
@@ -175,7 +175,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
     if (!confirm('Bu siparişi iptal etmek istiyor musunuz?')) return;
     setActionLoading(id);
     try {
-      await fetch(`${SERVER_URL}/tedarikci/siparisler/${id}/iptal`, {
+      await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${id}/iptal`), {
         method: 'POST', headers: getHeaders(), body: JSON.stringify({ reason: 'İptal edildi' }),
       });
       fetchData();
@@ -185,7 +185,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
   const approveDelivery = async (id: string) => {
     setActionLoading(id);
     try {
-      await fetch(`${SERVER_URL}/tedarikci/teslimatlar/${id}/onayla`, { method: 'PUT', headers: getHeaders() });
+      await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teslimatlar/${id}/onayla`), { method: 'PUT', headers: getHeaders() });
       fetchData();
     } finally { setActionLoading(''); }
   };
@@ -195,7 +195,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
     const reason = 'Reddedildi';
     setActionLoading(id);
     try {
-      await fetch(`${SERVER_URL}/tedarikci/teslimatlar/${id}/reddet`, {
+      await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teslimatlar/${id}/reddet`), {
         method: 'PUT', headers: getHeaders(), body: JSON.stringify({ reason }),
       });
       fetchData();
@@ -206,7 +206,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
     if (!showPayment || !payAmount) return;
     setActionLoading('pay');
     try {
-      await fetch(`${SERVER_URL}/tedarikci/odemeler`, {
+      await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/odemeler`), {
         method: 'POST', headers: getHeaders(),
         body: JSON.stringify({ siparisId: showPayment, amount: payAmount, currency: payCurrency, paymentMethod: payMethod, paymentDate: payDate }),
       });
@@ -367,7 +367,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
             {showTeklifActions && (
               <div className="space-y-2">
                 <motion.button whileTap={{ scale: 0.95 }} onClick={async () => {
-                  await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ aksiyon: 'kabul' }) });
+                  await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`), { method: 'POST', headers: getHeaders(), body: JSON.stringify({ aksiyon: 'kabul' }) });
                   fetchData(); setSelectedSiparis(null);
                 }} className="w-full py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg, #34d399, #10b981)' }}>✓ Teklifi Kabul Et</motion.button>
 
@@ -428,7 +428,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                       <motion.button whileTap={{ scale: 0.95 }} onClick={async () => {
                         const items = karsiTeklifItems.filter(i => i.quantity > 0 && i.productName);
                         const fiyat = karsiTeklifFiyat ? parseFloat(karsiTeklifFiyat) : items.reduce((a, i) => a + (i.quantity * i.unitPrice), 0);
-                        await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ fiyat, items }) });
+                        await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`), { method: 'POST', headers: getHeaders(), body: JSON.stringify({ fiyat, items }) });
                         setKarsiTeklifItems([]); setKarsiTeklifFiyat('');
                         fetchData(); setSelectedSiparis(null);
                       }} className="w-full py-2.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg, #fbbf24, #d97706)' }}>↩ Karşı Teklif Gönder</motion.button>
@@ -438,7 +438,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                 </div>
 
                 <button onClick={async () => {
-                  await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ aksiyon: 'red' }) });
+                  await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`), { method: 'POST', headers: getHeaders(), body: JSON.stringify({ aksiyon: 'red' }) });
                   fetchData(); setSelectedSiparis(null);
                 }} className="w-full py-2 rounded-xl text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/20">✗ Reddet</button>
               </div>
@@ -725,7 +725,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
             <div className="flex gap-1">
               <button onClick={async () => {
                 const newVal = !(selectedTedarikci.stokGorunur !== false);
-                await fetch(`${SERVER_URL}/maliyetler/cariler`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ ...selectedTedarikci, stokGorunur: newVal }) });
+                await fetch(appendGhostParam(`${SERVER_URL}/maliyetler/cariler`), { method: 'POST', headers: getHeaders(), body: JSON.stringify({ ...selectedTedarikci, stokGorunur: newVal }) });
                 fetchData(); setSelectedTedarikci({ ...selectedTedarikci, stokGorunur: newVal });
               }} className={`px-2 py-1 rounded-lg text-[9px] font-medium ${selectedTedarikci.stokGorunur !== false ? 'text-cyan-400 border-cyan-400/20 bg-cyan-400/10' : 'text-white/30 border-white/10 bg-white/5'} border`}>
                 {selectedTedarikci.stokGorunur !== false ? '👁 Stok' : '🚫 Stok'}
@@ -885,7 +885,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                             setActionLoading('onodeme');
                             try {
                               // Sipariş olmadan ödeme — kasadan düşer
-                              await fetch(`${SERVER_URL}/tedarikci/odemeler`, {
+                              await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/odemeler`), {
                                 method: 'POST', headers: getHeaders(),
                                 body: JSON.stringify({ siparisId: `on_odeme_${Date.now()}`, amount: parseFloat(onOdemeTutar), currency: 'TRY', paymentMethod: 'havale', paymentDate: new Date().toISOString().slice(0, 10) }),
                               });
@@ -1214,7 +1214,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                 onClick={async () => {
                   setActionLoading('price');
                   try {
-                    await fetch(`${SERVER_URL}/tedarikci/fiyat/${showPriceList}`, {
+                    await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/fiyat/${showPriceList}`), {
                       method: 'PUT', headers: getHeaders(),
                       body: JSON.stringify({ items: priceListItems }),
                     });

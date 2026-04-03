@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SERVER_URL } from '../lib/supabase';
-import { buildHeaders } from '../lib/api';
+import { buildHeaders, appendGhostParam } from '../lib/api';
 import type { UserRole } from './login';
 
 // ── Types ──
@@ -84,7 +84,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${SERVER_URL}/tedarikci/portal`, { headers: headers() });
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/portal`), { headers: headers() });
       const text = await res.text();
       let data: any;
       try { data = JSON.parse(text); } catch { throw new Error('Sunucu yanıtı geçersiz'); }
@@ -102,7 +102,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
   // ── Fetch order detail ──
   const fetchOrderDetail = async (orderId: string) => {
     try {
-      const res = await fetch(`${SERVER_URL}/tedarikci/siparisler/${orderId}`, { headers: headers() });
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${orderId}`), { headers: headers() });
       const data = await res.json();
       if (res.ok) setOrderDetail(data);
     } catch {}
@@ -117,7 +117,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
   const confirmOrder = async (orderId: string) => {
     setActionLoading(orderId);
     try {
-      const res = await fetch(`${SERVER_URL}/tedarikci/siparisler/${orderId}/onayla`, { method: 'POST', headers: headers() });
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${orderId}/onayla`), { method: 'POST', headers: headers() });
       if (res.ok) { fetchPortal(); if (selectedOrder === orderId) fetchOrderDetail(orderId); }
     } finally { setActionLoading(''); }
   };
@@ -127,7 +127,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
     if (!validLines.length) return;
     setActionLoading('delivery');
     try {
-      const res = await fetch(`${SERVER_URL}/tedarikci/teslimat`, {
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teslimat`), {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({ siparisId: orderId, lines: validLines, deliveryNote }),
@@ -145,7 +145,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
   const confirmPayment = async (odemeId: string) => {
     setActionLoading(odemeId);
     try {
-      const res = await fetch(`${SERVER_URL}/tedarikci/odemeler/${odemeId}/onayla`, { method: 'POST', headers: headers() });
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/odemeler/${odemeId}/onayla`), { method: 'POST', headers: headers() });
       if (res.ok) { fetchPortal(); if (selectedOrder) fetchOrderDetail(selectedOrder); }
     } finally { setActionLoading(''); }
   };
@@ -273,7 +273,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
               <div className="space-y-2 mt-3">
                 <button onClick={async () => {
                   setActionLoading('teklif_kabul');
-                  await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: headers(), body: JSON.stringify({ aksiyon: 'kabul' }) });
+                  await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`), { method: 'POST', headers: headers(), body: JSON.stringify({ aksiyon: 'kabul' }) });
                   fetchPortal(); fetchOrderDetail(s.id); setActionLoading('');
                 }} className="w-full py-2.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg, #34d399, #10b981)' }}>✓ Kabul Et</button>
                 <button onClick={() => {
@@ -294,7 +294,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                 }} className="w-full py-2.5 rounded-lg text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20">↩ Karşı Teklif Hazırla</button>
                 <button onClick={async () => {
                   setActionLoading('teklif_red');
-                  await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: headers(), body: JSON.stringify({ aksiyon: 'red' }) });
+                  await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`), { method: 'POST', headers: headers(), body: JSON.stringify({ aksiyon: 'red' }) });
                   fetchPortal(); fetchOrderDetail(s.id); setActionLoading('');
                 }} className="w-full py-2 rounded-lg text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/20">✗ Reddet</button>
               </div>
@@ -346,7 +346,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                   const items = karsiItems.filter(i => i.quantity > 0 && i.productName);
                   const fiyat = karsiFiyat ? parseFloat(karsiFiyat) : items.reduce((a, i) => a + (i.quantity * i.unitPrice), 0);
                   setActionLoading('karsi');
-                  await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: headers(), body: JSON.stringify({ fiyat, items }) });
+                  await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`), { method: 'POST', headers: headers(), body: JSON.stringify({ fiyat, items }) });
                   setShowKarsiTeklif(false); setKarsiItems([]); setKarsiFiyat('');
                   fetchPortal(); fetchOrderDetail(s.id); setActionLoading('');
                 }} className="w-full py-2.5 rounded-lg text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg, #fbbf24, #d97706)' }}>↩ Karşı Teklif Gönder</motion.button>
@@ -371,7 +371,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
             {[{ key: 'uretimde', label: '🔨 Üretimde', color: '#fbbf24' }, { key: 'kismi_hazir', label: '📦 Kısmi Hazır', color: '#60a5fa' }, { key: 'hazir', label: '✅ Hazır', color: '#34d399' }].map(d => (
               <button key={d.key} onClick={async () => {
                 setActionLoading('durum');
-                await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/durum`, { method: 'POST', headers: headers(), body: JSON.stringify({ durum: d.key }) });
+                await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${s.id}/durum`), { method: 'POST', headers: headers(), body: JSON.stringify({ durum: d.key }) });
                 fetchPortal(); if (selectedOrder) fetchOrderDetail(selectedOrder); setActionLoading('');
               }}
                 className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${(s as any).uretimDurum === d.key ? 'text-white' : 'text-white/40 bg-white/5 border-white/10'}`}
@@ -747,7 +747,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                       <button onClick={() => setFiyatDuzenle(false)} className="flex-1 py-2 rounded-lg text-xs text-white/40 bg-white/5">Vazgeç</button>
                       <motion.button whileTap={{ scale: 0.95 }} onClick={async () => {
                         setActionLoading('fiyat');
-                        await fetch(`${SERVER_URL}/tedarikci/fiyat-talep/${portalData?.cari?.id || ''}`, {
+                        await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/fiyat-talep/${portalData?.cari?.id || ''}`), {
                           method: 'POST', headers: headers(),
                           body: JSON.stringify({ items: fiyatItems.map(i => ({ productName: i.productName, fiyat: i.yeniFiyat, currency: 'TRY' })) }),
                         });
@@ -873,7 +873,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                   if (!items.length) return;
                   setActionLoading('offer');
                   try {
-                    await fetch(`${SERVER_URL}/tedarikci/teklif`, {
+                    await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teklif`), {
                       method: 'POST', headers: headers(),
                       body: JSON.stringify({ items, currency: 'TRY', notes: offerNotes }),
                     });
@@ -891,7 +891,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                     if (!items.length) return;
                     setActionLoading('offer');
                     try {
-                      await fetch(`${SERVER_URL}/tedarikci/teklif`, {
+                      await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teklif`), {
                         method: 'POST', headers: headers(),
                         body: JSON.stringify({ items, currency: 'TRY', notes: offerNotes, teklifFiyat: parseFloat(offerTeklifFiyat) }),
                       });
