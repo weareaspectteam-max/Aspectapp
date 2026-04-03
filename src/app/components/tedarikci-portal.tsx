@@ -235,7 +235,53 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
         </div>
 
         {/* Aksiyonlar */}
-        {s.status === 'gonderildi' && (
+        {/* Teklif bölümü */}
+        {s.teklifFiyat && (
+          <div className="p-3 rounded-xl" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.15)' }}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-amber-400 text-xs font-semibold">💰 Teklif</span>
+              {s.teklifDurum === 'kabul_edildi' && <span className="text-green-400 text-[10px]">✓ Kabul edildi</span>}
+              {s.teklifDurum === 'reddedildi' && <span className="text-red-400 text-[10px]">✗ Reddedildi</span>}
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-white/40 text-xs">Liste: ₺{(s.totalAmount || 0).toLocaleString('tr-TR')}</span>
+              <span className="text-amber-400 font-bold">Teklif: ₺{s.teklifFiyat.toLocaleString('tr-TR')}</span>
+            </div>
+            {(s.teklifler || []).length > 0 && (
+              <div className="mt-2 space-y-1">
+                {(s.teklifler || []).map((t: any, i: number) => (
+                  <div key={i} className="flex justify-between text-[10px]">
+                    <span className={t.taraf === 'admin' ? 'text-blue-400' : 'text-orange-400'}>{t.taraf === 'admin' ? '🏢' : '🏭'} {t.kisi}</span>
+                    <span className="text-white/50">{t.aksiyon === 'kabul' ? '✓ Kabul' : t.aksiyon === 'red' ? '✗ Red' : `₺${t.fiyat?.toLocaleString('tr-TR')}`}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {s.teklifDurum !== 'kabul_edildi' && s.teklifDurum !== 'reddedildi' && (
+              <div className="flex gap-2 mt-3">
+                <button onClick={async () => {
+                  setActionLoading('teklif_kabul');
+                  await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: headers(), body: JSON.stringify({ aksiyon: 'kabul' }) });
+                  fetchPortal(); fetchOrderDetail(s.id); setActionLoading('');
+                }} className="flex-1 py-2 rounded-lg text-xs font-bold text-green-400 bg-green-500/15 border border-green-500/25">✓ Kabul</button>
+                <button onClick={async () => {
+                  const f = prompt('Karşı teklif fiyatı (₺):');
+                  if (!f) return;
+                  setActionLoading('teklif_karsi');
+                  await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: headers(), body: JSON.stringify({ fiyat: parseFloat(f) }) });
+                  fetchPortal(); fetchOrderDetail(s.id); setActionLoading('');
+                }} className="flex-1 py-2 rounded-lg text-xs font-bold text-amber-400 bg-amber-500/15 border border-amber-500/25">↩ Karşı Teklif</button>
+                <button onClick={async () => {
+                  setActionLoading('teklif_red');
+                  await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: headers(), body: JSON.stringify({ aksiyon: 'red' }) });
+                  fetchPortal(); fetchOrderDetail(s.id); setActionLoading('');
+                }} className="flex-1 py-2 rounded-lg text-xs font-bold text-red-400 bg-red-500/15 border border-red-500/25">✗ Red</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {s.status === 'gonderildi' && !s.teklifFiyat && (
           <motion.button whileTap={{ scale: 0.97 }} onClick={() => confirmOrder(s.id)}
             disabled={actionLoading === s.id}
             className="w-full py-3 rounded-xl font-semibold text-white"

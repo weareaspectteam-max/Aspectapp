@@ -16619,16 +16619,26 @@ app.get("/make-server-4da0b637/tedarikci/ozet", async (c) => {
     if (!hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
-    const [cariler, siparisler, teslimatlar, odemeler, albumler, depoStok, papers] = await Promise.all([
+    const [cariler, siparisler, teslimatlar, odemeler, albumler, depoStok, papers, tumStoklar, fiyatListeleri] = await Promise.all([
       ckv.getByPrefix("cost_cari_"), ckv.getByPrefix("siparis_"), ckv.getByPrefix("teslimat_"), ckv.getByPrefix("tedarikci_odeme_"),
-      ckv.get("cost_albums"), ckv.get("depo_stok"), ckv.getByPrefix("cost_paper_"),
+      ckv.get("cost_albums"), ckv.get("depo_stok"), ckv.getByPrefix("cost_paper_"), ckv.getByPrefix("stok_gunluk_"), ckv.getByPrefix("tedarikci_fiyat_"),
     ]);
+    // Genel stok: depo + tüm mekanların en son stok sayımı
+    const ds = depoStok || {};
+    const genelStok = { album3: ds.album3 || 0, album5: ds.album5 || 0, album7: ds.album7 || 0, album9: ds.album9 || 0, album11: ds.album11 || 0, album13: ds.album13 || 0, album15: ds.album15 || 0, paspartu: ds.paspartu || 0 };
+    const mekanSon = {};
+    for (const s of (tumStoklar || [])) { const mid = s.mekanId; if (!mid) continue; if (!mekanSon[mid] || (s.tarih || "") > (mekanSon[mid].tarih || "")) mekanSon[mid] = s; }
+    for (const s of Object.values(mekanSon)) { const sayim = s.kapanish || s.acilis || {}; for (const k of Object.keys(genelStok)) genelStok[k] += (sayim[k] || 0); }
+    // Fiyat listeleri map
+    const fiyatMap = {};
+    for (const fl of (fiyatListeleri || [])) { if (fl.cariId) fiyatMap[fl.cariId] = fl; }
+
     return c.json({ ok: true, cariler: cariler || [], siparisler: (siparisler || []).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
       teslimatlar: (teslimatlar || []).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
       odemeler: (odemeler || []).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
       linkedCariler: (cariler || []).filter((cr) => cr.linkedUserId).length,
       bekleyenTeslimat: (teslimatlar || []).filter((t) => t.status === "beklemede").length,
-      albumler: albumler || [], depoStok: depoStok || {}, papers: papers || [],
+      albumler: albumler || [], depoStok: ds, genelStok, papers: papers || [], fiyatMap,
     });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -16684,7 +16694,7 @@ app.post("/make-server-4da0b637/tedarikci/siparisler", async (c) => {
     if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
-    const { cariId, items, currency, notes } = await c.req.json();
+    const { cariId, items, currency, notes, teklifFiyat } = await c.req.json();
     if (!cariId || !items?.length) return c.json({ error: "CariId ve en az 1 kalem zorunlu." }, 400);
     const cari = await ckv.get(`cost_cari_${cariId}`);
     if (!cari) return c.json({ error: "Cari bulunamadı." }, 404);
@@ -16692,7 +16702,11 @@ app.post("/make-server-4da0b637/tedarikci/siparisler", async (c) => {
     const id = `siparis_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const orderItems = items.map((it, idx) => ({ id: `item_${idx}_${Math.random().toString(36).slice(2, 6)}`, productName: it.productName || "", quantity: it.quantity || 0, unitPrice: it.unitPrice || 0, currency: it.currency || currency || "TRY", deliveredQuantity: 0, notes: it.notes || "" }));
     const totalAmount = orderItems.reduce((a, it) => a + (it.quantity * it.unitPrice), 0);
-    const siparis = { id, cariId, cariName: cari.name || "", status: "taslak", items: orderItems, totalAmount, currency: currency || "TRY", notes: notes || "", createdAt: now, createdBy: callerUser.user_metadata?.full_name || "", createdByUserId: callerUser.id, updatedAt: now };
+    const siparis = { id, cariId, cariName: cari.name || "", status: "taslak", items: orderItems, totalAmount, currency: currency || "TRY", notes: notes || "", createdAt: now, createdBy: callerUser.user_metadata?.full_name || "", createdByUserId: callerUser.id, updatedAt: now,
+      teklifFiyat: teklifFiyat ? Number(teklifFiyat) : null,
+      teklifler: teklifFiyat ? [{ taraf: "admin", fiyat: Number(teklifFiyat), tarih: now, kisi: callerUser.user_metadata?.full_name || "" }] : [],
+      teklifDurum: teklifFiyat ? "teklif_verildi" : null,
+    };
     await ckv.set(id, siparis);
     return c.json({ ok: true, siparis });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
@@ -16915,6 +16929,99 @@ app.post("/make-server-4da0b637/tedarikci/odemeler/:id/onayla", async (c) => {
     odeme.supplierConfirmed = true; odeme.supplierConfirmedAt = new Date().toISOString(); odeme.status = "onaylandi";
     await resolved.ckv.set(`tedarikci_odeme_${odemeId}`, odeme);
     return c.json({ ok: true, odeme });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// ── TEKLİF / PAZARLIK ──
+app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = callerUser.user_metadata?.role;
+    const callerRole = getEffectiveRole(callerUser);
+    let ckv;
+    if (role === "tedarikci") {
+      const resolved = await resolveSupplierCompany(c, callerUser);
+      if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
+      ckv = resolved.ckv;
+    } else if (hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) {
+      ckv = companyKvFor(getCompanyId(callerUser));
+    } else { return c.json({ error: "Yetki yok." }, 403); }
+    const siparisId = c.req.param("id");
+    const { fiyat, aksiyon } = await c.req.json(); // aksiyon: "teklif" | "kabul" | "red"
+    const siparis = await ckv.get(`siparis_${siparisId}`);
+    if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
+    const taraf = role === "tedarikci" ? "tedarikci" : "admin";
+    const now = new Date().toISOString();
+    if (aksiyon === "kabul") {
+      siparis.teklifDurum = "kabul_edildi";
+      siparis.teklifler = [...(siparis.teklifler || []), { taraf, fiyat: siparis.teklifFiyat, tarih: now, kisi: callerUser.user_metadata?.full_name || "", aksiyon: "kabul" }];
+      if (siparis.status === "gonderildi" || siparis.status === "taslak") siparis.status = "onaylandi";
+      siparis.confirmedAt = now;
+    } else if (aksiyon === "red") {
+      siparis.teklifDurum = "reddedildi";
+      siparis.teklifler = [...(siparis.teklifler || []), { taraf, fiyat: siparis.teklifFiyat, tarih: now, kisi: callerUser.user_metadata?.full_name || "", aksiyon: "red" }];
+    } else {
+      siparis.teklifFiyat = Number(fiyat);
+      siparis.teklifDurum = taraf === "admin" ? "teklif_verildi" : "karsi_teklif";
+      siparis.teklifler = [...(siparis.teklifler || []), { taraf, fiyat: Number(fiyat), tarih: now, kisi: callerUser.user_metadata?.full_name || "" }];
+    }
+    siparis.updatedAt = now;
+    await ckv.set(`siparis_${siparisId}`, siparis);
+    // Bildirim
+    if (taraf === "tedarikci") {
+      const supabase = getAdminClient();
+      const { data: { users } } = await supabase.auth.admin.listUsers();
+      const admins = (users || []).filter((u) => ["yonetici", "ust-mudur"].includes(u.user_metadata?.role) && (u.user_metadata?.company_id || "aspect") === (siparis.companyId || getCompanyId(callerUser)));
+      for (const admin of admins) await createNotification(admin.id, "siparis_teklif", aksiyon === "kabul" ? "Teklif Kabul Edildi" : aksiyon === "red" ? "Teklif Reddedildi" : "Karşı Teklif", `${siparis.cariName}: ₺${fiyat || siparis.teklifFiyat}`, { siparisId }, getCompanyId(callerUser));
+    } else {
+      const cari = await ckv.get(`cost_cari_${siparis.cariId}`);
+      if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "siparis_teklif", aksiyon === "kabul" ? "Teklif Kabul Edildi" : aksiyon === "red" ? "Teklif Reddedildi" : "Yeni Teklif", `₺${fiyat || siparis.teklifFiyat}`, { siparisId }, getCompanyId(callerUser));
+    }
+    return c.json({ ok: true, siparis });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// ── TEDARİKÇİ FİYAT LİSTESİ ──
+app.get("/make-server-4da0b637/tedarikci/fiyat/:cariId", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = callerUser.user_metadata?.role;
+    const callerRole = getEffectiveRole(callerUser);
+    let ckv;
+    if (role === "tedarikci") {
+      const resolved = await resolveSupplierCompany(c, callerUser);
+      if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
+      ckv = resolved.ckv;
+    } else if (hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) {
+      ckv = companyKvFor(getCompanyId(callerUser));
+    } else { return c.json({ error: "Yetki yok." }, 403); }
+    const cariId = c.req.param("cariId");
+    const fiyat = await ckv.get(`tedarikci_fiyat_${cariId}`);
+    return c.json({ ok: true, fiyat: fiyat || { cariId, items: [] } });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+app.put("/make-server-4da0b637/tedarikci/fiyat/:cariId", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = callerUser.user_metadata?.role;
+    const callerRole = getEffectiveRole(callerUser);
+    let ckv;
+    if (role === "tedarikci") {
+      const resolved = await resolveSupplierCompany(c, callerUser);
+      if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
+      ckv = resolved.ckv;
+    } else if (hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) {
+      ckv = companyKvFor(getCompanyId(callerUser));
+    } else { return c.json({ error: "Yetki yok." }, 403); }
+    const cariId = c.req.param("cariId");
+    const { items } = await c.req.json();
+    const fiyat = { cariId, items: items || [], updatedAt: new Date().toISOString(), updatedBy: callerUser.user_metadata?.full_name || callerUser.email || "" };
+    await ckv.set(`tedarikci_fiyat_${cariId}`, fiyat);
+    return c.json({ ok: true, fiyat });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
