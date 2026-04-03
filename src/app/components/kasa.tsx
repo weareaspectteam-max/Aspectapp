@@ -140,7 +140,7 @@ const currentMonth = () => {
 
 // ── Main Component ─────────────────────────────────────────────────────
 export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaProps) {
-  const isAdmin = userRole === 'yonetici';
+  const isAdmin = userRole === 'yonetici' || userRole === 'ust-mudur';
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'sirket', label: 'Şirket Kasası' },

@@ -16605,7 +16605,8 @@ app.get("/make-server-4da0b637/tedarikci/portal", async (c) => {
     const cari = await sckv.get(`cost_cari_${cariId}`);
     const aktivSiparis = mySiparis.filter((s) => !["tamamlandi","iptal","taslak"].includes(s.status)).length;
     const bekleyenTeslimat = myTeslimat.filter((t) => t.status === "beklemede").length;
-    const toplamSiparisTutar = mySiparis.reduce((a, s) => a + (s.totalAmount || 0), 0);
+    const kesinSiparisler = mySiparis.filter((s) => ["onaylandi", "kismen_teslim", "teslim_edildi", "tamamlandi"].includes(s.status));
+    const toplamSiparisTutar = kesinSiparisler.reduce((a, s) => a + (s.teklifDurum === "kabul_edildi" && s.teklifFiyat ? s.teklifFiyat : s.totalAmount || 0), 0);
     const toplamOdenen = myOdeme.filter((o) => o.status !== "reddedildi").reduce((a, o) => a + (o.amount || 0), 0);
     return c.json({ ok: true, cari: cari || {}, ozet: { aktivSiparis, bekleyenTeslimat, toplamSiparisTutar, toplamOdenen, kalanBorc: toplamSiparisTutar - toplamOdenen },
       siparisler: mySiparis.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
@@ -16674,7 +16675,7 @@ app.get("/make-server-4da0b637/tedarikci/siparisler/:id", async (c) => {
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = callerUser.user_metadata?.role;
     const callerRole = getEffectiveRole(callerUser);
-    const siparisId = c.req.param("id");
+    const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
     let sckv, cariId = null;
     if (role === "tedarikci") {
       const resolved = await resolveSupplierCompany(c, callerUser);
@@ -16706,11 +16707,12 @@ app.post("/make-server-4da0b637/tedarikci/siparisler", async (c) => {
     const now = new Date().toISOString();
     const id = `siparis_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const orderItems = items.map((it, idx) => ({ id: `item_${idx}_${Math.random().toString(36).slice(2, 6)}`, productName: it.productName || "", quantity: it.quantity || 0, unitPrice: it.unitPrice || 0, currency: it.currency || currency || "TRY", deliveredQuantity: 0, notes: it.notes || "" }));
-    const totalAmount = orderItems.reduce((a, it) => a + (it.quantity * it.unitPrice), 0);
+    const totalAmount = orderItems.reduce((a, it) => a + ((it.productName || "").toLowerCase().includes("paspartu") ? (it.unitPrice || 0) : (it.quantity * it.unitPrice)), 0);
     const siparis = { id, cariId, cariName: cari.name || "", status: "taslak", items: orderItems, totalAmount, currency: currency || "TRY", notes: notes || "", createdAt: now, createdBy: callerUser.user_metadata?.full_name || "", createdByUserId: callerUser.id, updatedAt: now,
       teklifFiyat: teklifFiyat ? Number(teklifFiyat) : null,
       teklifler: teklifFiyat ? [{ taraf: "admin", fiyat: Number(teklifFiyat), tarih: now, kisi: callerUser.user_metadata?.full_name || "" }] : [],
       teklifDurum: teklifFiyat ? "teklif_verildi" : null,
+      loglar: [{ tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: teklifFiyat ? `Sipariş oluşturuldu, ₺${Number(teklifFiyat).toLocaleString("tr-TR")} teklif edildi` : `Sipariş oluşturuldu (₺${totalAmount.toLocaleString("tr-TR")})` }],
     };
     await ckv.set(id, siparis);
     return c.json({ ok: true, siparis });
@@ -16724,11 +16726,12 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/gonder", async (c) => {
     if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
-    const siparisId = c.req.param("id");
+    const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
     const siparis = await ckv.get(`siparis_${siparisId}`);
     if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
     if (siparis.status !== "taslak") return c.json({ error: "Sadece taslak siparişler gönderilebilir." }, 400);
     siparis.status = "gonderildi"; siparis.sentAt = new Date().toISOString(); siparis.updatedAt = new Date().toISOString();
+    siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: "Sipariş tedarikçiye gönderildi" }];
     await ckv.set(`siparis_${siparisId}`, siparis);
     const cari = await ckv.get(`cost_cari_${siparis.cariId}`);
     if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "siparis_yeni", "Yeni Sipariş", `${siparis.items.length} kalem, toplam ${siparis.totalAmount} ${siparis.currency}`, { siparisId }, companyId);
@@ -16743,11 +16746,12 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/onayla", async (c) => {
     if (callerUser.user_metadata?.role !== "tedarikci") return c.json({ error: "Yetki yok." }, 403);
     const resolved = await resolveSupplierCompany(c, callerUser);
     if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
-    const siparisId = c.req.param("id");
+    const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
     const siparis = await resolved.ckv.get(`siparis_${siparisId}`);
     if (!siparis || siparis.cariId !== resolved.cariId) return c.json({ error: "Sipariş bulunamadı." }, 404);
     if (siparis.status !== "gonderildi") return c.json({ error: "Bu sipariş onaylanamaz." }, 400);
     siparis.status = "onaylandi"; siparis.confirmedAt = new Date().toISOString(); siparis.updatedAt = new Date().toISOString();
+    siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "tedarikci", mesaj: "Sipariş onaylandı" }];
     await resolved.ckv.set(`siparis_${siparisId}`, siparis);
     return c.json({ ok: true, siparis });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
@@ -16759,12 +16763,13 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/iptal", async (c) => {
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
     if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
     const ckv = companyKvFor(getCompanyId(callerUser));
-    const siparisId = c.req.param("id");
+    const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
     const siparis = await ckv.get(`siparis_${siparisId}`);
     if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
     if (siparis.status === "tamamlandi") return c.json({ error: "Tamamlanmış sipariş iptal edilemez." }, 400);
     const { reason } = await c.req.json();
     siparis.status = "iptal"; siparis.cancelledAt = new Date().toISOString(); siparis.cancelReason = reason || ""; siparis.updatedAt = new Date().toISOString();
+    siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: `Sipariş iptal edildi${reason ? ": " + reason : ""}` }];
     await ckv.set(`siparis_${siparisId}`, siparis);
     const cari = await ckv.get(`cost_cari_${siparis.cariId}`);
     if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "siparis_iptal", "Sipariş İptal", reason || "Sipariş iptal edildi.", { siparisId }, getCompanyId(callerUser));
@@ -16790,6 +16795,9 @@ app.post("/make-server-4da0b637/tedarikci/teslimat", async (c) => {
       lines: lines.map((l) => ({ itemId: l.itemId, productName: l.productName || siparis.items?.find((i) => i.id === l.itemId)?.productName || "", quantity: l.quantity || 0 })),
       deliveryDate: deliveryDate || now.slice(0, 10), deliveryNote: deliveryNote || "", createdAt: now, createdBy: callerUser.user_metadata?.full_name || "", createdByUserId: callerUser.id };
     await resolved.ckv.set(id, teslimat);
+    // Siparişe log ekle
+    const sip = await resolved.ckv.get(`siparis_${siparisId}`);
+    if (sip) { sip.loglar = [...(sip.loglar || []), { tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "tedarikci", mesaj: `Teslimat bildirildi: ${teslimat.lines.map(l => l.productName + " ×" + l.quantity).join(", ")}` }]; await resolved.ckv.set(`siparis_${siparisId}`, sip); }
     return c.json({ ok: true, teslimat });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -16826,6 +16834,7 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
       const allDelivered = siparis.items.every((i) => (i.deliveredQuantity || 0) >= i.quantity);
       const anyDelivered = siparis.items.some((i) => (i.deliveredQuantity || 0) > 0);
       if (allDelivered) siparis.status = "teslim_edildi"; else if (anyDelivered) siparis.status = "kismen_teslim";
+      siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: `Teslimat onaylandı${allDelivered ? " — tümü teslim edildi" : ""}` }];
       siparis.updatedAt = new Date().toISOString();
       await ckv.set(`siparis_${teslimat.siparisId}`, siparis);
     }
@@ -16834,7 +16843,7 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
     for (const line of teslimat.lines) {
       const name = (line.productName || "").toLowerCase();
       if (name.includes("paspartu")) {
-        depoStok.paspartu = (depoStok.paspartu || 0) + (line.quantity || 0);
+        // Paspartu depoya eklenmez
       } else {
         const sizeMatch = name.match(/(\d+)/);
         if (sizeMatch) {
@@ -16891,10 +16900,13 @@ app.post("/make-server-4da0b637/tedarikci/odemeler", async (c) => {
     await ckv.set(`kasa_odeme_${giderId.replace("isletme_gider_", "")}`, { giderId: giderId.replace("isletme_gider_", ""), odpiendi: true, odpienenTutar: amount, odemeler: [{ tutar: amount, tarih: payDate, aciklama: `Tedarikçi ödemesi: ${siparis.cariName}` }] });
     const allOdeme = await ckv.getByPrefix("tedarikci_odeme_");
     const toplamOdenen = (allOdeme || []).filter((o) => o.siparisId === siparisId && o.status !== "reddedildi").reduce((a, o) => a + (o.amount || 0), 0);
+    siparis.loglar = [...(siparis.loglar || []), { tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: `₺${amount.toLocaleString("tr-TR")} ödeme kaydedildi` }];
     if (toplamOdenen >= siparis.totalAmount && siparis.status === "teslim_edildi") {
-      siparis.status = "tamamlandi"; siparis.completedAt = now; siparis.updatedAt = now;
-      await ckv.set(`siparis_${siparisId}`, siparis);
+      siparis.status = "tamamlandi"; siparis.completedAt = now;
+      siparis.loglar = [...(siparis.loglar || []), { tarih: now, kisi: "Sistem", taraf: "sistem", mesaj: "Sipariş tamamlandı — ödeme tam" }];
     }
+    siparis.updatedAt = now;
+    await ckv.set(`siparis_${siparisId}`, siparis);
     const cari = await ckv.get(`cost_cari_${siparis.cariId}`);
     if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "odeme_yapildi", "Ödeme Kaydedildi", `${amount} ${currency || "TRY"} ödeme kaydedildi.`, { siparisId, odemeId }, companyId);
     return c.json({ ok: true, odeme });
@@ -16951,13 +16963,14 @@ app.post("/make-server-4da0b637/tedarikci/teklif", async (c) => {
     const now = new Date().toISOString();
     const id = `siparis_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const orderItems = items.map((it, idx) => ({ id: `item_${idx}_${Math.random().toString(36).slice(2, 6)}`, productName: it.productName || "", quantity: it.quantity || 0, unitPrice: it.unitPrice || 0, currency: it.currency || currency || "TRY", deliveredQuantity: 0 }));
-    const totalAmount = orderItems.reduce((a, it) => a + (it.quantity * it.unitPrice), 0);
+    const totalAmount = orderItems.reduce((a, it) => a + ((it.productName || "").toLowerCase().includes("paspartu") ? (it.unitPrice || 0) : (it.quantity * it.unitPrice)), 0);
     const siparis = {
       id, cariId: resolved.cariId, cariName: cari?.name || "", status: "gonderildi", items: orderItems, totalAmount, currency: currency || "TRY", notes: notes || "",
       createdAt: now, createdBy: callerUser.user_metadata?.full_name || "", createdByUserId: callerUser.id, updatedAt: now, sentAt: now,
       teklifFiyat: teklifFiyat ? Number(teklifFiyat) : totalAmount,
       teklifler: [{ taraf: "tedarikci", fiyat: teklifFiyat ? Number(teklifFiyat) : totalAmount, tarih: now, kisi: callerUser.user_metadata?.full_name || "" }],
       teklifDurum: "tedarikci_teklifi", kaynakTedarikci: true,
+      loglar: [{ tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "tedarikci", mesaj: `Teklif oluşturuldu: ₺${(teklifFiyat || totalAmount).toLocaleString("tr-TR")}` }],
     };
     await resolved.ckv.set(id, siparis);
     // Admin'lere bildirim
@@ -16965,6 +16978,136 @@ app.post("/make-server-4da0b637/tedarikci/teklif", async (c) => {
     const { data: { users } } = await supabase.auth.admin.listUsers();
     const admins = (users || []).filter((u) => ["yonetici", "ust-mudur"].includes(u.user_metadata?.role) && (u.user_metadata?.company_id || "aspect") === resolved.companyId);
     for (const admin of admins) await createNotification(admin.id, "siparis_teklif", "Tedarikçi Teklifi", `${cari?.name || ""}: ₺${(teklifFiyat || totalAmount).toLocaleString("tr-TR")}`, { siparisId: id }, resolved.companyId);
+    return c.json({ ok: true, siparis });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// ── FİYAT TALEP SİSTEMİ ──
+app.post("/make-server-4da0b637/tedarikci/fiyat-talep/:cariId", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = callerUser.user_metadata?.role;
+    const callerRole = getEffectiveRole(callerUser);
+    let ckv;
+    if (role === "tedarikci") {
+      const resolved = await resolveSupplierCompany(c, callerUser);
+      if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
+      ckv = resolved.ckv;
+    } else if (hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) {
+      ckv = companyKvFor(getCompanyId(callerUser));
+    } else { return c.json({ error: "Yetki yok." }, 403); }
+    const cariId = c.req.param("cariId");
+    const { items } = await c.req.json();
+    const taraf = role === "tedarikci" ? "tedarikci" : "admin";
+    const now = new Date().toISOString();
+    // Mevcut fiyatları al
+    const mevcutFiyat = await ckv.get(`tedarikci_fiyat_${cariId}`);
+    const talep = { cariId, items: (items || []).map((it) => {
+      const mevcut = (mevcutFiyat?.items || []).find((f) => f.productName === it.productName);
+      return { productName: it.productName, eskiFiyat: mevcut?.fiyat || 0, yeniFiyat: it.fiyat || 0, currency: it.currency || "TRY" };
+    }), gonderen: taraf, gonderenKisi: callerUser.user_metadata?.full_name || "", tarih: now, durum: "beklemede" };
+    await ckv.set(`tedarikci_fiyat_talep_${cariId}`, talep);
+    // Bildirim
+    if (taraf === "tedarikci") {
+      const supabase = getAdminClient();
+      const companyId = role === "tedarikci" ? (await resolveSupplierCompany(c, callerUser))?.companyId || "aspect" : getCompanyId(callerUser);
+      const { data: { users } } = await supabase.auth.admin.listUsers();
+      const admins = (users || []).filter((u) => ["yonetici", "ust-mudur"].includes(u.user_metadata?.role) && (u.user_metadata?.company_id || "aspect") === companyId);
+      for (const admin of admins) await createNotification(admin.id, "fiyat_talebi", "Fiyat Güncelleme Talebi", `${callerUser.user_metadata?.full_name || ""} fiyat güncellemesi istedi`, { cariId }, companyId);
+    } else {
+      const cari = await ckv.get(`cost_cari_${cariId}`);
+      if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "fiyat_talebi", "Fiyat Güncelleme Talebi", "Şirket fiyat güncellemesi istedi", { cariId }, getCompanyId(callerUser));
+    }
+    return c.json({ ok: true, talep });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+app.post("/make-server-4da0b637/tedarikci/fiyat-talep/:cariId/kabul", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = callerUser.user_metadata?.role;
+    const callerRole = getEffectiveRole(callerUser);
+    let ckv;
+    if (role === "tedarikci") {
+      const resolved = await resolveSupplierCompany(c, callerUser);
+      if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
+      ckv = resolved.ckv;
+    } else if (hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) {
+      ckv = companyKvFor(getCompanyId(callerUser));
+    } else { return c.json({ error: "Yetki yok." }, 403); }
+    const cariId = c.req.param("cariId");
+    const { maliyetYansit } = await c.req.json();
+    const talep = await ckv.get(`tedarikci_fiyat_talep_${cariId}`);
+    if (!talep || talep.durum !== "beklemede") return c.json({ error: "Bekleyen talep yok." }, 404);
+    talep.durum = "kabul";
+    await ckv.set(`tedarikci_fiyat_talep_${cariId}`, talep);
+    // Fiyat listesini güncelle
+    const yeniFiyatlar = { cariId, items: (talep.items || []).map((it) => ({ productName: it.productName, fiyat: it.yeniFiyat, currency: it.currency || "TRY" })), updatedAt: new Date().toISOString(), updatedBy: callerUser.user_metadata?.full_name || "" };
+    await ckv.set(`tedarikci_fiyat_${cariId}`, yeniFiyatlar);
+    // Maliyet yönetimine yansıt
+    if (maliyetYansit) {
+      const albums = await ckv.get("cost_albums") || [];
+      for (const it of talep.items) {
+        const sizeMatch = it.productName.match(/(\d+)/);
+        if (sizeMatch) {
+          const size = parseInt(sizeMatch[1]);
+          const album = albums.find((a) => a.size === size || a.size === String(size));
+          if (album) { album.yarimBoy = it.yeniFiyat; }
+        }
+      }
+      await ckv.set("cost_albums", albums);
+    }
+    return c.json({ ok: true, talep, fiyat: yeniFiyatlar });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+app.post("/make-server-4da0b637/tedarikci/fiyat-talep/:cariId/red", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = callerUser.user_metadata?.role;
+    const callerRole = getEffectiveRole(callerUser);
+    let ckv;
+    if (role === "tedarikci") {
+      const resolved = await resolveSupplierCompany(c, callerUser);
+      if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
+      ckv = resolved.ckv;
+    } else if (hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) {
+      ckv = companyKvFor(getCompanyId(callerUser));
+    } else { return c.json({ error: "Yetki yok." }, 403); }
+    const cariId = c.req.param("cariId");
+    const talep = await ckv.get(`tedarikci_fiyat_talep_${cariId}`);
+    if (!talep || talep.durum !== "beklemede") return c.json({ error: "Bekleyen talep yok." }, 404);
+    talep.durum = "red";
+    await ckv.set(`tedarikci_fiyat_talep_${cariId}`, talep);
+    return c.json({ ok: true, talep });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// ── ÜRETİM DURUMU ──
+app.post("/make-server-4da0b637/tedarikci/siparisler/:id/durum", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (callerUser.user_metadata?.role !== "tedarikci") return c.json({ error: "Yetki yok." }, 403);
+    const resolved = await resolveSupplierCompany(c, callerUser);
+    if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
+    const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
+    const siparis = await resolved.ckv.get(`siparis_${siparisId}`);
+    if (!siparis || siparis.cariId !== resolved.cariId) return c.json({ error: "Sipariş bulunamadı." }, 404);
+    const { durum, not } = await c.req.json();
+    const durumLabel = durum === "uretimde" ? "Üretimde" : durum === "hazir" ? "Hazır — Teslimat Bekliyor" : durum === "kismi_hazir" ? "Kısmi Hazır" : durum;
+    siparis.uretimDurum = durum;
+    siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "tedarikci", mesaj: `Üretim durumu: ${durumLabel}${not ? " — " + not : ""}` }];
+    siparis.updatedAt = new Date().toISOString();
+    await resolved.ckv.set(`siparis_${siparisId}`, siparis);
+    // Admin bildirim
+    const supabase = getAdminClient();
+    const { data: { users } } = await supabase.auth.admin.listUsers();
+    const admins = (users || []).filter((u) => ["yonetici", "ust-mudur"].includes(u.user_metadata?.role) && (u.user_metadata?.company_id || "aspect") === resolved.companyId);
+    for (const admin of admins) await createNotification(admin.id, "siparis_durum", "Üretim Durumu", `${siparis.cariName}: ${durumLabel}`, { siparisId }, resolved.companyId);
     return c.json({ ok: true, siparis });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -16984,7 +17127,7 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
     } else if (hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) {
       ckv = companyKvFor(getCompanyId(callerUser));
     } else { return c.json({ error: "Yetki yok." }, 403); }
-    const siparisId = c.req.param("id");
+    const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
     const { fiyat, aksiyon, items } = await c.req.json(); // aksiyon: "teklif" | "kabul" | "red"
     const siparis = await ckv.get(`siparis_${siparisId}`);
     if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
@@ -16997,6 +17140,9 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
       siparis.confirmedAt = now;
     } else if (aksiyon === "red") {
       siparis.teklifDurum = "reddedildi";
+      siparis.status = "iptal";
+      siparis.cancelledAt = now;
+      siparis.cancelReason = "Teklif reddedildi";
       siparis.teklifler = [...(siparis.teklifler || []), { taraf, fiyat: siparis.teklifFiyat, tarih: now, kisi: callerUser.user_metadata?.full_name || "", aksiyon: "red" }];
     } else {
       siparis.teklifFiyat = Number(fiyat);
@@ -17008,6 +17154,8 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
         siparis.totalAmount = siparis.items.reduce((a, it) => a + (it.quantity * it.unitPrice), 0);
       }
     }
+    const logMesaj = aksiyon === "kabul" ? "Teklif kabul edildi" : aksiyon === "red" ? "Teklif reddedildi" : `₺${Number(fiyat).toLocaleString("tr-TR")} ${taraf === "admin" ? "teklif edildi" : "karşı teklif yapıldı"}`;
+    siparis.loglar = [...(siparis.loglar || []), { tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf, mesaj: logMesaj }];
     siparis.updatedAt = now;
     await ckv.set(`siparis_${siparisId}`, siparis);
     // Bildirim

@@ -8,7 +8,8 @@
       "Bash(git add:*)",
       "Bash(node -e ':*)",
       "Bash(sed -n '16524,17334p' supabase/functions/server/index.ts)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(npx vite:*)"
     ]
   }
 }

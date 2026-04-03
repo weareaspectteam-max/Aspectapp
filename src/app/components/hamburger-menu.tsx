@@ -115,6 +115,7 @@ function getSections(
         { icon: BarChart2,     label: 'İşletme Genel Durum',  roles: ['yonetici','ust-mudur'] as UserRole[],                                    action: () => go('isletme-genel-durum')    },
         { icon: Target,        label: 'Hedef Takibi',         roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('hedef-takip')            },
         { icon: Wallet,        label: 'Kasa',                 roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('kasa')                   },
+        { icon: Package,       label: 'Tedarikçi Yönetimi', roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('tedarikci-yonetimi')     },
       ],
     },
     {
@@ -135,7 +136,6 @@ function getSections(
         { icon: Zap,       label: 'Operasyon Paneli', roles: all, action: () => go('quick-sales')   },
         { icon: RotateCcw, label: 'Rotasyon',          roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('rotation')       },
         { icon: Bell,      label: 'Duyurular',         roles: all,                                                              action: () => go('announcements') },
-        { icon: Package,   label: 'Tedarikçi Yönetimi', roles: ['yonetici','ust-mudur','mudur'] as UserRole[],                   action: () => go('tedarikci-yonetimi') },
       ],
     },
     {

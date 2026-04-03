@@ -495,6 +495,40 @@ Odeme kaydedildiginde:
 | POST | `/tedarikci/odemeler` | Admin: odeme kaydet |
 | GET | `/tedarikci/odemeler` | Listele |
 | POST | `/tedarikci/odemeler/:id/onayla` | Tedarikci: odemeyi onayladi |
+| POST | `/tedarikci/teklif` | Tedarikci: teklif/siparis olustur |
+| POST | `/tedarikci/siparisler/:id/teklif` | Karsilikli teklif (kabul/red/karsi teklif) |
+| POST | `/tedarikci/siparisler/:id/durum` | Tedarikci: uretim durumu bildir |
+| GET/PUT | `/tedarikci/fiyat/:cariId` | Fiyat listesi oku/guncelle |
+| POST | `/tedarikci/fiyat-talep/:cariId` | Fiyat guncelleme talebi gonder |
+| POST | `/tedarikci/fiyat-talep/:cariId/kabul` | Talebi kabul et (+ cost_albums yansitma) |
+| POST | `/tedarikci/fiyat-talep/:cariId/red` | Talebi reddet |
+
+### Tedarikci Tipi
+- `cost_cari_{id}.supplierType`: 'album' (album+paspartu) veya 'ribon' (ribon/kagit)
+- Siparis formunda tipine gore urun listesi otomatik gelir
+- `cost_cari_{id}.stokGorunur`: tedarikci stoku gorebilir mi (admin toggle)
+
+### Fiyat Listesi
+- `tedarikci_fiyat_{cariId}`: anlasilmis fiyatlar (urun bazli)
+- `tedarikci_fiyat_talep_{cariId}`: bekleyen fiyat guncelleme talebi
+- Siparis fiyatlari: tedarikci_fiyat varsa oradan, yoksa cost_albums'dan default
+
+### Teklif/Pazarlik
+- siparis.teklifFiyat, teklifDurum, teklifler[] — karsilikli teklif gecmisi
+- teklifDurum: teklif_verildi | karsi_teklif | tedarikci_teklifi | kabul_edildi | reddedildi
+
+### Aktivite Loglari
+- siparis.loglar[] — her islem log olarak kaydedilir
+- Her iki tarafta "Son Aktiviteler" paneli
+
+### Admin Tedarikci Yonetimi Yapisi
+- Ilk ekran: tedarikci listesi (kartlar + davet et)
+- Tedarikciye tikla → o tedarikcinin ekrani (loglar + Siparisler/Fiyatlar/Bakiye tab'lari)
+- Her tedarikci icin ayri ekran (tedarikci portalinin admin versiyonu)
+
+### Teslimat → Depo Stok
+- Teslimat onaylaninca depo_stok otomatik artar (paspartu haric)
+- Paspartu depoya eklenmez, fiyati toplam tutar olarak girilir (carpma yok)
 
 ---
 
