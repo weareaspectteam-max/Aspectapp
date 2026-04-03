@@ -244,7 +244,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                   const newVal = !(c.stokGorunur !== false);
                   await fetch(`${SERVER_URL}/maliyetler/cariler`, {
                     method: 'POST', headers: getHeaders(),
-                    body: JSON.stringify({ id: c.id, name: c.name, emoji: c.emoji, description: c.description, supplierType: c.supplierType, stokGorunur: newVal }),
+                    body: JSON.stringify({ ...c, stokGorunur: newVal }),
                   });
                   fetchData();
                 }}
@@ -277,7 +277,10 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                 <p className="text-white font-semibold text-sm truncate">{s.cariName}</p>
                 <p className="text-white/40 text-xs">{new Date(s.createdAt).toLocaleDateString('tr-TR')}</p>
               </div>
-              <span className="px-2.5 py-1 rounded-full text-xs font-medium" style={{ background: sc.bg, color: sc.color }}>{sc.label}</span>
+              <div className="flex items-center gap-1.5">
+                {s.kaynakTedarikci && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30">🏭 Tedarikçi</span>}
+                <span className="px-2.5 py-1 rounded-full text-xs font-medium" style={{ background: sc.bg, color: sc.color }}>{sc.label}</span>
+              </div>
             </div>
             <div className="text-white/50 text-xs">
               {s.items?.map((i: any) => `${i.productName} ×${i.quantity}`).join(', ')}
@@ -304,7 +307,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                     <button onClick={() => cancelOrder(s.id)} className="px-3 py-1.5 rounded-lg text-xs text-red-400 bg-red-500/10 border border-red-500/20">İptal</button>
                   </>
                 )}
-                {s.teklifDurum === 'karsi_teklif' && (
+                {(s.teklifDurum === 'karsi_teklif' || s.teklifDurum === 'tedarikci_teklifi' || s.teklifDurum === 'teklif_verildi') && (
                   <div className="flex gap-1">
                     <button onClick={async () => {
                       await fetch(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ aksiyon: 'kabul' }) });

@@ -2347,13 +2347,14 @@ app.post("/make-server-4da0b637/maliyetler/cariler", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     if (!hasPermission(user.user_metadata?.role, ["yonetici", "ust-mudur"])) return c.json({ error: "Yetkiniz yok." }, 403);
     const ckv = companyKvFor(getCompanyId(user));
-    const { id, name, emoji, description } = await c.req.json();
+    const body = await c.req.json();
+    const { id, name } = body;
     if (!name?.trim()) return c.json({ error: "Cari adı zorunlu." }, 400);
 
     const cariId = id || `cari_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    const cari = { id: cariId, name: name.trim(), emoji: emoji || "🏢", description: description?.trim() || "", createdAt: id ? undefined : new Date().toISOString() };
-    if (id) { const existing = await ckv.get(`cost_cari_${id}`); if (existing?.createdAt) cari.createdAt = existing.createdAt; }
-    if (!cari.createdAt) cari.createdAt = new Date().toISOString();
+    // Mevcut kayıt varsa merge et (linkedUserId, supplierType vb. korunsun)
+    const existing = id ? (await ckv.get(`cost_cari_${id}`) || {}) : {};
+    const cari = { ...existing, ...body, id: cariId, name: name.trim(), emoji: body.emoji || existing.emoji || "🏢", createdAt: existing.createdAt || new Date().toISOString() };
 
     await ckv.set(`cost_cari_${cariId}`, cari);
     return c.json({ cari });
