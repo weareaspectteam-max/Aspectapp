@@ -836,7 +836,23 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
             <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
               <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: glassBorder }}>
                 <p className="text-white font-semibold text-sm">💰 Anlaşma Fiyatları</p>
-                <button onClick={() => { setShowPriceList(selectedTedarikci.id); setPriceListItems(fiyatMap[selectedTedarikci.id]?.items || []); }}
+                <button onClick={() => {
+                  setShowPriceList(selectedTedarikci.id);
+                  const rawItems = fiyatMap[selectedTedarikci.id]?.items || [];
+                  const items: Array<{ productName: string; fiyat: number; currency: string }> = [];
+                  for (const s of [3, 5, 7, 9, 11, 13, 15]) {
+                    const a = (albumler || []).find((al: any) => al.size === s || al.size === String(s));
+                    const flTam = rawItems.find((f: any) => f.productName === `${s} Kare Tam`);
+                    const flYarim = rawItems.find((f: any) => f.productName === `${s} Kare Yarım`);
+                    const flEski = rawItems.find((f: any) => f.productName === `${s} Kare`);
+                    items.push({ productName: `${s} Kare Tam`, fiyat: flTam?.fiyat || flEski?.fiyat || a?.tamBoy || 0, currency: 'TRY' });
+                    items.push({ productName: `${s} Kare Yarım`, fiyat: flYarim?.fiyat || flEski?.fiyat || a?.yarimBoy || 0, currency: 'TRY' });
+                  }
+                  // Paspartu
+                  const flPas = rawItems.find((f: any) => f.productName === 'Paspartu');
+                  items.push({ productName: 'Paspartu', fiyat: flPas?.fiyat || 0, currency: 'TRY' });
+                  setPriceListItems(items);
+                }}
                   className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20">Düzenle</button>
               </div>
               {[3,5,7,9,11,13,15].map(s => {
@@ -911,7 +927,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                               // Sipariş olmadan ödeme — kasadan düşer
                               await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/odemeler`), {
                                 method: 'POST', headers: getHeaders(),
-                                body: JSON.stringify({ siparisId: `on_odeme_${Date.now()}`, amount: parseFloat(onOdemeTutar), currency: 'TRY', paymentMethod: 'havale', paymentDate: new Date().toISOString().slice(0, 10) }),
+                                body: JSON.stringify({ siparisId: `on_odeme_${Date.now()}`, cariId: selectedTedarikci.id, amount: parseFloat(onOdemeTutar), currency: 'TRY', paymentMethod: 'havale', paymentDate: new Date().toISOString().slice(0, 10), aciklama: onOdemeAciklama || '' }),
                               });
                               setShowOnOdeme(false); setOnOdemeTutar(''); setOnOdemeAciklama('');
                               fetchData();

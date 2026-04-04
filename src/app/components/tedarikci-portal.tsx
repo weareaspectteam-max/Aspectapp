@@ -138,6 +138,9 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
         setDeliveryNote('');
         fetchPortal();
         if (selectedOrder === orderId) fetchOrderDetail(orderId);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Teslimat bildirilemedi');
       }
     } finally { setActionLoading(''); }
   };
@@ -413,15 +416,16 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                 {s.items.filter(i => i.quantity > (i.deliveredQuantity || 0)).map((item, idx) => {
                   const max = item.quantity - (item.deliveredQuantity || 0);
                   return (
-                    <div key={item.id} className="flex items-center gap-3">
+                    <div key={item.id || idx} className="flex items-center gap-3">
                       <span className="text-white/60 text-sm flex-1">{item.productName} (kalan: {max})</span>
                       <input
-                        type="number" min={0} max={max}
-                        value={deliveryLines[idx]?.quantity || 0}
+                        type="number" inputMode="numeric" min={0} max={max}
+                        value={deliveryLines[idx]?.quantity ?? ''}
                         onChange={e => {
                           const v = Math.min(max, Math.max(0, parseInt(e.target.value) || 0));
                           setDeliveryLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: v } : l));
                         }}
+                        placeholder="0"
                         className="w-20 px-3 py-2 rounded-lg text-center text-white bg-white/10 border border-white/20 text-sm"
                       />
                     </div>
@@ -713,12 +717,18 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                   {!fiyatDuzenle && <button onClick={() => {
                     const fl = portalData?.fiyatListesi;
                     const albums: any[] = portalData?.albumler || [];
-                    setFiyatItems([3,5,7,9,11,13,15].map(s => {
+                    const items: typeof fiyatItems = [];
+                    for (const s of [3,5,7,9,11,13,15]) {
                       const a = albums.find((al: any) => al.size === s || al.size === String(s));
-                      const flItem = (fl?.items || []).find((f: any) => f.productName === `${s} Kare`);
-                      const fiyat = flItem?.fiyat || a?.yarimBoy || a?.tamBoy || 0;
-                      return { productName: `${s} Kare`, eskiFiyat: fiyat, yeniFiyat: fiyat };
-                    }));
+                      const flTam = (fl?.items || []).find((f: any) => f.productName === `${s} Kare Tam`);
+                      const flYarim = (fl?.items || []).find((f: any) => f.productName === `${s} Kare Yarım`);
+                      const flEski = (fl?.items || []).find((f: any) => f.productName === `${s} Kare`);
+                      const tamFiyat = flTam?.fiyat || flEski?.fiyat || a?.tamBoy || 0;
+                      const yarimFiyat = flYarim?.fiyat || flEski?.fiyat || a?.yarimBoy || 0;
+                      items.push({ productName: `${s} Kare Tam`, eskiFiyat: tamFiyat, yeniFiyat: tamFiyat });
+                      items.push({ productName: `${s} Kare Yarım`, eskiFiyat: yarimFiyat, yeniFiyat: yarimFiyat });
+                    }
+                    setFiyatItems(items);
                     setFiyatDuzenle(true);
                   }} className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20">Güncelle</button>}
                 </div>
@@ -728,12 +738,21 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                       const fl = portalData?.fiyatListesi;
                       const albums: any[] = portalData?.albumler || [];
                       const a = albums.find((al: any) => al.size === s || al.size === String(s));
-                      const flItem = (fl?.items || []).find((f: any) => f.productName === `${s} Kare`);
-                      const fiyat = flItem?.fiyat || a?.yarimBoy || a?.tamBoy || 0;
+                      const flTam = (fl?.items || []).find((f: any) => f.productName === `${s} Kare Tam`);
+                      const flYarim = (fl?.items || []).find((f: any) => f.productName === `${s} Kare Yarım`);
+                      const flEski = (fl?.items || []).find((f: any) => f.productName === `${s} Kare`);
+                      const tamFiyat = flTam?.fiyat || flEski?.fiyat || a?.tamBoy || 0;
+                      const yarimFiyat = flYarim?.fiyat || flEski?.fiyat || a?.yarimBoy || 0;
                       return (
-                        <div key={s} className="px-4 py-2 border-b flex justify-between" style={{ borderColor: glassBorder }}>
-                          <span className="text-white text-xs">{s} Kare</span>
-                          <span className="text-green-400 font-bold text-xs">₺{fiyat}</span>
+                        <div key={s}>
+                          <div className="px-4 py-1.5 border-b flex justify-between" style={{ borderColor: glassBorder }}>
+                            <span className="text-white text-xs">{s} Kare Tam</span>
+                            <span className="text-green-400 font-bold text-xs">₺{tamFiyat}</span>
+                          </div>
+                          <div className="px-4 py-1.5 border-b flex justify-between" style={{ borderColor: glassBorder }}>
+                            <span className="text-white text-xs">{s} Kare Yarım</span>
+                            <span className="text-green-400 font-bold text-xs">₺{yarimFiyat}</span>
+                          </div>
                         </div>
                       );
                     })}

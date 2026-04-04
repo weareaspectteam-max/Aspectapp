@@ -95,36 +95,27 @@ const albumItemsLegacy = [
   { key: 'album15', label: '15 Kare', emoji: '📓' },
 ];
 const albumItemsNew = [
-  { key: 'album3_tam', label: '3 Tam', emoji: '📘' },
-  { key: 'album3_yarim', label: '3 Yarım', emoji: '📘' },
-  { key: 'album5_tam', label: '5 Tam', emoji: '📗' },
-  { key: 'album5_yarim', label: '5 Yarım', emoji: '📗' },
-  { key: 'album7_tam', label: '7 Tam', emoji: '📙' },
-  { key: 'album7_yarim', label: '7 Yarım', emoji: '📙' },
-  { key: 'album9_tam', label: '9 Tam', emoji: '📕' },
-  { key: 'album9_yarim', label: '9 Yarım', emoji: '📕' },
-  { key: 'album11_tam', label: '11 Tam', emoji: '📔' },
-  { key: 'album11_yarim', label: '11 Yarım', emoji: '📔' },
-  { key: 'album13_tam', label: '13 Tam', emoji: '📒' },
-  { key: 'album13_yarim', label: '13 Yarım', emoji: '📒' },
-  { key: 'album15_tam', label: '15 Tam', emoji: '📓' },
-  { key: 'album15_yarim', label: '15 Yarım', emoji: '📓' },
+  { key: 'album3_tam', label: '3 Kare Tam', emoji: '📘' },
+  { key: 'album3_yarim', label: '3 Kare Yarım', emoji: '📘' },
+  { key: 'album5_tam', label: '5 Kare Tam', emoji: '📗' },
+  { key: 'album5_yarim', label: '5 Kare Yarım', emoji: '📗' },
+  { key: 'album7_tam', label: '7 Kare Tam', emoji: '📙' },
+  { key: 'album7_yarim', label: '7 Kare Yarım', emoji: '📙' },
+  { key: 'album9_tam', label: '9 Kare Tam', emoji: '📕' },
+  { key: 'album9_yarim', label: '9 Kare Yarım', emoji: '📕' },
+  { key: 'album11_tam', label: '11 Kare Tam', emoji: '📔' },
+  { key: 'album11_yarim', label: '11 Kare Yarım', emoji: '📔' },
+  { key: 'album13_tam', label: '13 Kare Tam', emoji: '📒' },
+  { key: 'album13_yarim', label: '13 Kare Yarım', emoji: '📒' },
+  { key: 'album15_tam', label: '15 Kare Tam', emoji: '📓' },
+  { key: 'album15_yarim', label: '15 Kare Yarım', emoji: '📓' },
 ];
 // Hangi format kullanılacağını stok verisine göre belirle
-const getAlbumItems = (stok: any) => {
+const getAlbumItems = (stok: any, printType?: 'tam' | 'yarim') => {
   if (!stok) return albumItemsLegacy;
-  const hasNew = albumItemsNew.some(a => (stok[a.key] || 0) > 0);
-  if (hasNew) {
-    // Sadece değeri > 0 olan tam/yarım field'ları göster + her boyutun en az yarım'ını göster
-    return albumItemsNew.filter(a => {
-      const val = stok[a.key] || 0;
-      if (val > 0) return true;
-      // Boyutun yarım versiyonunu her zaman göster (mekanın varsayılan tipi)
-      if (a.key.endsWith('_yarim')) return true;
-      return false;
-    });
-  }
-  return albumItemsLegacy;
+  // printType varsa sadece o tipin satırlarını göster
+  const suffix = printType === 'tam' ? '_tam' : '_yarim';
+  return albumItemsNew.filter(a => a.key.endsWith(suffix));
 };
 const albumItems = albumItemsLegacy; // fallback for non-stok contexts
 
@@ -193,10 +184,6 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [dunKapanis, setDunKapanis] = useState<StokSayim | null>(null);
 
   // Stok verisine göre tam/yarım veya eski format albumItems belirle
-  const aktifAlbumItems = useMemo(() => {
-    const stok = dunKapanis || stokGunluk?.acilis as any;
-    return getAlbumItems(stok);
-  }, [dunKapanis, stokGunluk]);
   const [acilisSayim, setAcilisSayim] = useState<StokSayim>(bosStok());
   const [acilisNot, setAcilisNot] = useState('');
   const [acilisAnomaliNeden, setAcilisAnomaliNeden] = useState('');
@@ -253,6 +240,10 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   // ── MEKAN kağıt ayarları ──
   const [mekanPrintType, setMekanPrintType] = useState<'tam' | 'yarim'>('yarim');
   const [mekanPrintTypeLoaded, setMekanPrintTypeLoaded] = useState(false); // mekan bulundu mu?
+  const aktifAlbumItems = useMemo(() => {
+    const stok = dunKapanis || stokGunluk?.acilis as any;
+    return getAlbumItems(stok, mekanPrintType);
+  }, [dunKapanis, stokGunluk, mekanPrintType]);
   const [mekanCurrency, setMekanCurrency] = useState('TRY');
   const [mekanPhotoPrice, setMekanPhotoPrice] = useState(200);   // mekan bazlı 1 fotoğraf fiyatı
   // ── Manuel fallback (printType alınamadığında kullanıcı girer) ──
@@ -1284,22 +1275,52 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     reader.onloadend = () => { setTeamPhotoPreview(reader.result as string); setTeamPhotoTaken(true); };
     reader.readAsDataURL(file);
   };
-  // ── Anomali tespiti (submit öncesi) ──
-  const acilisAnomaliDetect = (): Record<string, number> => {
-    if (!dunKapanis) return {};
-    const result: Record<string, number> = {};
-    (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).forEach(alan => {
-      const fark = (acilisSayim[alan] ?? 0) - (dunKapanis[alan] ?? 0);
-      if (fark !== 0) result[alan] = fark;
-    });
-    return result;
-  };
-
   // ── Efektif kapasite & print type ──
   // printType → mekan'dan; kapasite → her yazıcının kendi kagitTipiId'sinden
   const effectiveKapasite = 0; // artık global kapasite yok — her yazıcı kendi kağıdını kullanır
   const effectivePrintType = mekanPrintTypeLoaded ? mekanPrintType : manualPrintType;
   const needsManualInput = !mekanPrintTypeLoaded; // sadece mekan bulunamadığında
+
+  // Mekanın printType'ına göre stok alanlarını filtrele (sadece _tam veya _yarim göster, eski Kare satırlarını gizle)
+  const stokAlanlari = (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).filter(a => {
+    if (a === 'ribon' || a === 'ribonlar') return false;
+    const key = a as string;
+    if (/^album\d+$/.test(key)) return false; // eski Kare formatını gizle
+    if (effectivePrintType === 'tam' && key.endsWith('_yarim')) return false;
+    if (effectivePrintType === 'yarim' && key.endsWith('_tam')) return false;
+    return true;
+  });
+
+  // Eski format stok verisini (album3, album5...) yeni formata (album3_tam/album3_yarim) aktarır
+  const migrateStok = (sayim: StokSayim, pt: 'tam' | 'yarim'): StokSayim => {
+    const result = { ...sayim };
+    const suffix = pt === 'tam' ? '_tam' : '_yarim';
+    for (const size of [3, 5, 7, 9, 11, 13, 15]) {
+      const eskiKey = `album${size}` as keyof StokSayim;
+      const yeniKey = `album${size}${suffix}` as keyof StokSayim;
+      const eskiVal = Number(result[eskiKey]) || 0;
+      const yeniVal = Number(result[yeniKey]) || 0;
+      if (eskiVal > 0 && yeniVal === 0) {
+        (result as any)[yeniKey] = eskiVal;
+      }
+    }
+    return result;
+  };
+
+  // Migrasyon uygulanmış dünkü kapanış ve açılış verisi
+  const migratedDunKapanis = dunKapanis ? migrateStok(dunKapanis, effectivePrintType) : null;
+  const migratedAcilisSayim = migrateStok(acilisSayim, effectivePrintType);
+
+  // ── Anomali tespiti (submit öncesi) ──
+  const acilisAnomaliDetect = (): Record<string, number> => {
+    if (!migratedDunKapanis) return {};
+    const result: Record<string, number> = {};
+    stokAlanlari.forEach(alan => {
+      const fark = (migratedAcilisSayim[alan] ?? 0) - (migratedDunKapanis[alan] ?? 0);
+      if (fark !== 0) result[alan] = fark;
+    });
+    return result;
+  };
 
   // Net satılan fotoğraf adedi — JSX içinde block-body arrow fn kullanmamak için burada hesaplanıyor
   const netSatilanAdet = Math.max(0, printers.reduce((sum, pr) => {
@@ -1333,14 +1354,13 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       (sum, pr) => sum + (Number(printerRibbonChanges[pr.ekipmanId] || 0)), 0
     );
     const result: Record<string, number> = {};
-    (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).forEach(alan => {
-      let beklenen = (stokGunluk!.acilis as StokSayim)[alan] || 0;
+    const migratedAcilis = migrateStok(stokGunluk!.acilis as StokSayim, effectivePrintType);
+    stokAlanlari.forEach(alan => {
+      let beklenen = migratedAcilis[alan] || 0;
       for (const ek of stokEklemeler) {
         beklenen += (ek.miktar as Record<string, number>)[alan] || 0;
       }
-      // Satışlardan albüm düşümü (backend ile tutarlı: album3..album15 etkilenir)
       beklenen -= kapanisSatisAlbumDusum[alan] || 0;
-      // Ribon: değiştirilen takım adedi stoktan düşer (10 - 1 = 9)
       if (alan === 'ribon') beklenen -= toplamRibonDegisim;
       beklenen = Math.max(0, beklenen);
       const fark = (kapanisSayim[alan] ?? 0) - beklenen;
@@ -1482,13 +1502,13 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     // Reyon modunda kapanisSayim'i reyon datadan hesapla
     let finalKapanisSayim = kapanisSayim;
     if (reyonAcik) {
-      const computed: StokSayim = { ...acilisSayim };
-      (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).forEach(alan => {
+      const computed: StokSayim = { ...migratedAcilisSayim };
+      stokAlanlari.forEach(alan => {
         const reyonAcilis = shiftShelves[alan as string] || 0;
         const gunIciEkleme = reyonGunIciEkleme[alan as string] || 0;
         const reyonKapanis = reyonKapanisSayim[alan] || 0;
         const satilan = Math.max(0, (reyonAcilis + gunIciEkleme) - reyonKapanis);
-        computed[alan] = Math.max(0, (acilisSayim[alan] || 0) - satilan);
+        computed[alan] = Math.max(0, (migratedAcilisSayim[alan] || 0) - satilan);
       });
       finalKapanisSayim = computed;
     }
@@ -1875,9 +1895,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     </div>
                   )}
                   <div className="space-y-2">
-                    {(Object.keys(stokAlanAdi) as Array<keyof StokSayim>).filter(a => a !== 'ribon' && a !== 'ribonlar').map((alan) => {
-                      const beklenen = dunKapanis?.[alan] ?? null;
-                      const gercek = acilisSayim[alan] ?? 0;
+                    {stokAlanlari.map((alan) => {
+                      const beklenen = migratedDunKapanis?.[alan] ?? null;
+                      const gercek = migratedAcilisSayim[alan] ?? 0;
                       const fark = beklenen !== null ? gercek - (beklenen as number) : 0;
                       const sapmaVar = beklenen !== null && fark !== 0;
                       return (
@@ -2005,8 +2025,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                   </div>
 
                   {/* Anomali uyarı bandı */}
-                  {dunKapanis && !stokGunluk?.acilisYapildi &&
-                    (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).some(a => (acilisSayim[a] ?? 0) !== (dunKapanis[a] ?? 0)) && (
+                  {migratedDunKapanis && !stokGunluk?.acilisYapildi &&
+                    stokAlanlari.some(a => (migratedAcilisSayim[a] ?? 0) !== (migratedDunKapanis[a] ?? 0)) && (
                     <div className="mt-4 bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
                       <p className="text-xs text-amber-300">Dünkü kapanıştan farklı — göndermeden önce kontrol edin.</p>
@@ -3257,16 +3277,16 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                               <div className="bg-[#9dd9ea]/10 border border-[#9dd9ea]/20 rounded-xl p-3">
                                 <p className="text-xs font-semibold text-[#9dd9ea] mb-1">📊 Beklenen kapanış (açılış + eklemeler)</p>
                                 <div className="flex flex-wrap gap-x-4 gap-y-0.5">
-                                  {(Object.keys(stokAlanAdi) as Array<keyof StokSayim>).filter(a => (kapanisBeklenen[a] ?? 0) > 0).map(alan => (
+                                  {stokAlanlari.filter(a => (kapanisBeklenen[a] ?? 0) > 0).map(alan => (
                                     <span key={alan} className="text-xs text-gray-400">{stokAlanEmoji[alan]} {kapanisBeklenen[alan]}</span>
                                   ))}
                                 </div>
                               </div>
                             )}
 
-                            {(Object.keys(stokAlanAdi) as Array<keyof StokSayim>).filter(a => a !== 'ribon' && a !== 'ribonlar').map((alan) => {
+                            {stokAlanlari.map((alan) => {
                               // Albümler için client-side beklenen: açılış + eklemeler − satılan
-                              const albumAcilis = (acilisSayim[alan] || 0);
+                              const albumAcilis = (migratedAcilisSayim[alan] || 0);
                               const albumEkleme = stokEklemeler.reduce((s, ek) => s + ((ek.miktar as Record<string, number>)[alan] || 0), 0);
                               const albumSatilan = kapanisSatisAlbumDusum[alan] || 0;
                               const clientBeklenenAlbum = Math.max(0, albumAcilis + albumEkleme - albumSatilan);
@@ -3385,8 +3405,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                             })()}
 
                             {!shiftEndDone && !reyonAcik && stokGunluk?.acilis &&
-                              (Object.keys(stokAlanAdi) as Array<keyof StokSayim>).filter(a => a !== 'ribon' && a !== 'ribonlar').some(a => {
-                                let bek = (stokGunluk!.acilis as StokSayim)[a] || 0;
+                              stokAlanlari.some(a => {
+                                let bek = (migrateStok(stokGunluk!.acilis as StokSayim, effectivePrintType))[a] || 0;
                                 for (const ek of stokEklemeler) bek += (ek.miktar as Record<string, number>)[a] || 0;
                                 bek -= kapanisSatisAlbumDusum[a] || 0;
                                 return (kapanisSayim[a] ?? 0) !== Math.max(0, bek);
