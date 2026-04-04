@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ArrowLeft, Search, Plus, Edit2, Trash2, User, X,
   Save, Loader2, WifiOff, RefreshCw, AlertCircle,
-  Camera, ImageOff, Maximize2, Film,
+  Camera, ImageOff, Maximize2, Film, HelpCircle,
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { UserRole } from './login';
@@ -212,6 +212,7 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
 
   // Modallar
   const [modalAcik, setModalAcik]           = useState(false);
+  const [showGuide, setShowGuide]           = useState(false);
   const [zimmetModal, setZimmetModal]       = useState(false);
   const [duzenleHedef, setDuzenleHedef]     = useState<Equipment | null>(null);
   const [zimmetHedef, setZimmetHedef]       = useState<Equipment | null>(null);
@@ -556,6 +557,13 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
               {yukleniyor ? 'Yükleniyor...' : hataVar ? 'Bağlantı hatası' : `${liste.length} ekipman · Supabase KV`}
             </p>
           </div>
+          <button
+            onClick={() => setShowGuide(true)}
+            className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+            style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}
+          >
+            <HelpCircle className="w-4 h-4 text-amber-400" />
+          </button>
           {canAdd && (
             <button
               onClick={() => { setDuzenleHedef(null); setForm({ ...BOŞ_FORM }); setModalAcik(true); }}
@@ -1409,6 +1417,94 @@ export function EquipmentPage({ userName, userRole, onLogout, onNavigate, embedd
                   </div>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Rehber Modal ── */}
+      {showGuide && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowGuide(false)}>
+          <div
+            className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-ta" /> Malzeme Yönetimi Rehberi
+              </h3>
+              <button onClick={() => setShowGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                <X className="w-4 h-4 text-white/60" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+
+              <div>
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📦 Genel Bakış</h4>
+                <p>Bu sayfa, şirkete ait tüm ekipmanları (kamera, flash, yazıcı, bilgisayar) merkezi olarak yönetir.</p>
+                <p className="mt-1">• Her ekipman <span className="text-ta font-semibold">marka, model, seri numarası</span> ile kaydedilir</p>
+                <p>• Ekipmanlar bir <span className="text-ta font-semibold">mekana</span> veya <span className="text-ta font-semibold">depoya</span> atanır</p>
+                <p>• Bir personele <span className="text-ta font-semibold">zimmetlenebilir</span></p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🏷️ Kategoriler</h4>
+                <div className="space-y-1">
+                  <p>• <span className="font-semibold text-white">📷 Kamera:</span> Fotoğraf makineleri</p>
+                  <p>• <span className="font-semibold text-white">⚡ Flash:</span> Flaş üniteleri — bir kameraya bağlanabilir</p>
+                  <p>• <span className="font-semibold text-white">🖨️ Yazıcı:</span> Baskı yazıcıları — ribon takımı ve kağıt tipi takibi yapılır</p>
+                  <p>• <span className="font-semibold text-white">💻 Bilgisayar:</span> İş istasyonları ve laptoplar</p>
+                </div>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🚦 Durum Kodları</h4>
+                <p>• <span className="text-emerald-400 font-semibold">✓ Çalışıyor:</span> Aktif kullanımda, sorun yok</p>
+                <p>• <span className="text-red-400 font-semibold">✗ Arızalı:</span> Kullanılamaz durumda, onarım gerekli</p>
+                <p>• <span className="text-amber-400 font-semibold">🔧 Bakımda:</span> Geçici olarak bakıma alınmış</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">➕ Ekipman Ekleme</h4>
+                <p>Sağ üstteki <span className="text-emerald-400 font-semibold">+</span> butonuna basarak yeni ekipman ekleyin:</p>
+                <p className="mt-1">• Kategori, marka, model ve seri numarası zorunludur</p>
+                <p>• Konum seçin: hangi mekanda veya depoda</p>
+                <p>• Fotoğraf çekip ekleyebilirsiniz</p>
+                <p>• Yazıcılar için <span className="text-ta font-semibold">kağıt tipi</span> seçimi yapılır — bu maliyet hesabında kullanılır</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">✏️ Düzenleme & Geçmiş</h4>
+                <p>• Ekipman kartına tıklayarak detaylarını görün ve düzenleyin</p>
+                <p>• <span className="text-ta font-semibold">Geçmiş Kayıt</span> ekleyerek bakım, arıza, taşıma notlarını tutun</p>
+                <p>• Konum değişikliği yapıldığında eski konumu not olarak kaydedin</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🖨️ Yazıcıya Özel</h4>
+                <p>• <span className="text-ta font-semibold">Ribon Mevcut:</span> Yazıcının içindeki mevcut ribon takım sayısı</p>
+                <p>• <span className="text-ta font-semibold">Kağıt Tipi:</span> Maliyet Yönetimi'nde tanımlanan kağıt tipiyle eşleştirilir</p>
+                <p>• Vardiya kapanışında yazıcı sayaçları bu kayıtla karşılaştırılır</p>
+                <p>• Seri numarası, açılış/kapanışta yazıcıyı doğru eşleştirmek için kritiktir</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🔍 Filtreleme</h4>
+                <p>• <span className="text-ta font-semibold">Kategori:</span> Kamera, Flash, Yazıcı, Bilgisayar</p>
+                <p>• <span className="text-ta font-semibold">Durum:</span> Çalışıyor, Arızalı, Bakımda</p>
+                <p>• <span className="text-ta font-semibold">Zimmet:</span> Zimmetli veya zimmetsiz</p>
+                <p>• <span className="text-ta font-semibold">Mekan:</span> Hangi lokasyonda</p>
+                <p>• <span className="text-ta font-semibold">Arama:</span> Marka, model veya seri numarasına göre arama</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">⚡ Önemli Kurallar</h4>
+                <p>• Sadece <span className="text-ta font-semibold">Yönetici</span> ekipman ekleyip silebilir</p>
+                <p>• Yazıcı seri numarasını <span className="text-red-400 font-semibold">doğru girmeniz kritiktir</span> — vardiya açılış/kapanışında yazıcı eşleşmesi seri numarasına göre yapılır</p>
+                <p>• Arızalı ekipman rotasyona dahil edilmez</p>
+                <p>• Konum değişikliği yapıldığında ilgili mekan stokları etkilenebilir</p>
+              </div>
+
             </div>
           </div>
         </div>

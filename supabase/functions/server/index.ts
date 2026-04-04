@@ -1847,7 +1847,7 @@ app.post("/make-server-4da0b637/mekanlar", async (c) => {
     }
 
     const body = await c.req.json();
-    const { name, emoji, color, photoPrice, yearlyRent, dailyCostPercentage, profitPercentage, paperType, printType, workingHours } = body;
+    const { name, emoji, color, photoPrice, yearlyRent, dailyCostPercentage, profitPercentage, paperType, printType, workingHours, priceCurrency } = body;
 
     if (!name?.trim()) {
       return c.json({ error: "Mekan adı zorunludur." }, 400);
@@ -1862,6 +1862,7 @@ app.post("/make-server-4da0b637/mekanlar", async (c) => {
       emoji: emoji || "📍",
       color: color || "#9dd9ea",
       photoPrice: Number(photoPrice) || 0,
+      priceCurrency: ["TRY","USD","EUR","GBP"].includes(priceCurrency) ? priceCurrency : "TRY",
       yearlyRent: Number(yearlyRent) || 0,
       yearlyRents: (body.yearlyRents && typeof body.yearlyRents === "object") ? body.yearlyRents : {},
       profitTargets: (body.profitTargets && typeof body.profitTargets === "object") ? body.profitTargets : {},
@@ -1905,7 +1906,7 @@ app.put("/make-server-4da0b637/mekanlar/:id", async (c) => {
     if (!existing) return c.json({ error: "Mekan bulunamadı." }, 404);
 
     const body = await c.req.json();
-    const { name, emoji, color, photoPrice, yearlyRent, dailyCostPercentage, profitPercentage, paperType, printType, workingHours } = body;
+    const { name, emoji, color, photoPrice, yearlyRent, dailyCostPercentage, profitPercentage, paperType, printType, workingHours, priceCurrency } = body;
 
     if (!name?.trim()) {
       return c.json({ error: "Mekan adı zorunludur." }, 400);
@@ -1917,6 +1918,7 @@ app.put("/make-server-4da0b637/mekanlar/:id", async (c) => {
       emoji: emoji || existing.emoji,
       color: color || existing.color,
       photoPrice: Number(photoPrice) ?? existing.photoPrice,
+      priceCurrency: priceCurrency !== undefined ? (["TRY","USD","EUR","GBP"].includes(priceCurrency) ? priceCurrency : "TRY") : (existing.priceCurrency || "TRY"),
       yearlyRent: Number(yearlyRent) ?? existing.yearlyRent,
       yearlyRents: (body.yearlyRents && typeof body.yearlyRents === "object") ? body.yearlyRents : (existing.yearlyRents || {}),
       profitTargets: (body.profitTargets && typeof body.profitTargets === "object") ? body.profitTargets : (existing.profitTargets || {}),
@@ -3336,13 +3338,16 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
     dunTarih.setDate(dunTarih.getDate() - 1);
     const dunStr = dunTarih.toISOString().split("T")[0];
     const dun = await ckv.get(`stok_gunluk_${mekanId}_${dunStr}`);
-    const dunKapanis = dun?.kapanish || null;
+    const dunKapanisRaw = dun?.kapanish || null;
+    const dunKapanis = dunKapanisRaw ? migrateMekanStok({ ...dunKapanisRaw }) : null;
+    // Gelen sayımı da migrate et
+    const migSayim = migrateMekanStok({ ...sayim });
 
     const anomali: Record<string, number> = {};
     if (dunKapanis) {
-      const alanlar = ["album3","album5","album7","album9","album11","album13","album15","paspartu","ribon"];
+      const alanlar = ["album3_tam","album3_yarim","album5_tam","album5_yarim","album7_tam","album7_yarim","album9_tam","album9_yarim","album11_tam","album11_yarim","album13_tam","album13_yarim","album15_tam","album15_yarim","paspartu","ribon"];
       for (const alan of alanlar) {
-        const fark = (sayim[alan] || 0) - (dunKapanis[alan] || 0);
+        const fark = (migSayim[alan] || 0) - (dunKapanis[alan] || 0);
         if (fark !== 0) anomali[alan] = fark;
       }
       // ribonlar tip bazlı anomali
@@ -3385,7 +3390,7 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
       ...existing,
       mekanId,
       tarih,
-      acilis: sayim,
+      acilis: migSayim,
       acilisNot: acilisNot || "",
       acilisYapildi: true,
       acilisZamani: new Date().toISOString(),
@@ -3485,21 +3490,43 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       ribonDegisimByTip[kagitTipiId] = (ribonDegisimByTip[kagitTipiId] || 0) + degisim;
     }
 
-    const alanlar = ["album3","album5","album7","album9","album11","album13","album15","paspartu","ribon"];
+    const alanlar = ["album3_tam","album3_yarim","album5_tam","album5_yarim","album7_tam","album7_yarim","album9_tam","album9_yarim","album11_tam","album11_yarim","album13_tam","album13_yarim","album15_tam","album15_yarim","paspartu","ribon"];
+
+    // Mekan printType'ını al
+    const mekanObjStok: any = await ckv.get(`mekan_${mekanId}`).catch(() => null);
+    const mekanPrintType: string = mekanObjStok?.printType || "yarim";
+    const tercihSuffix = mekanPrintType === "tam" ? "_tam" : "_yarim";
+    const digerSuffix = mekanPrintType === "tam" ? "_yarim" : "_tam";
+
+    // Açılışı migrate et
+    if (existing.acilis) existing.acilis = migrateMekanStok({ ...existing.acilis });
 
     // Günlük iptal olmayan satışlardan albüm stok düşümü
     // Ürün adından sayı çıkarılır: "3'lü" → album3, "13'lü" → album13
-    // "1 Fotoğraf" ve "Paspartu" stok alanıyla ilişkili değil, atlanır
+    // Önce mekanın kendi tipinden düş, bittiyse diğer tipten düş
     const satislar: any[] = existing.satislar || [];
     const satisAlbumDusum: Record<string, number> = {};
+    const farkliTipKullanim: { boyut: number; adet: number; tip: string }[] = [];
     for (const satis of satislar) {
       if (satis.iptal) continue;
       for (const item of (satis.items || [])) {
         const match = String(item.product || '').match(/^(\d+)/);
         if (match) {
-          const alan = `album${match[1]}`;
-          if (alanlar.includes(alan)) {
-            satisAlbumDusum[alan] = (satisAlbumDusum[alan] || 0) + (Number(item.quantity) || 0);
+          const sz = match[1];
+          const tercihAlan = `album${sz}${tercihSuffix}`;
+          const digerAlan = `album${sz}${digerSuffix}`;
+          if (!alanlar.includes(tercihAlan)) continue;
+          const qty = Number(item.quantity) || 0;
+          // Mevcut stok hesabı (açılış - şimdiye kadar düşülen)
+          const tercihMevcut = Math.max(0, (existing.acilis?.[tercihAlan] || 0) - (satisAlbumDusum[tercihAlan] || 0));
+          if (tercihMevcut >= qty) {
+            satisAlbumDusum[tercihAlan] = (satisAlbumDusum[tercihAlan] || 0) + qty;
+          } else {
+            // Kendi tipi yetmez — kalanını diğer tipten düş
+            satisAlbumDusum[tercihAlan] = (satisAlbumDusum[tercihAlan] || 0) + tercihMevcut;
+            const kalanQty = qty - tercihMevcut;
+            satisAlbumDusum[digerAlan] = (satisAlbumDusum[digerAlan] || 0) + kalanQty;
+            if (kalanQty > 0) farkliTipKullanim.push({ boyut: Number(sz), adet: kalanQty, tip: digerSuffix === "_tam" ? "tam" : "yarim" });
           }
         }
       }
@@ -3511,9 +3538,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       for (const ek of eklemeler) toplam += ek.miktar?.[alan] || 0;
       for (const ak of gelenOnaylandi) toplam += ak.gercekMiktar?.[alan] || 0;
       for (const ak of gidenOnaylandi) toplam -= ak.gercekMiktar?.[alan] || 0;
-      // Satışlardan albüm düşümü (album3..album15; paspartu ve ribon etkilenmez)
       toplam -= satisAlbumDusum[alan] || 0;
-      // Ribon: yazıcılarda değiştirilen takım adedi beklenen stoktan düşülür
       if (alan === "ribon") toplam -= toplamRibonDegisim;
       beklenen[alan] = Math.max(0, toplam);
     }
@@ -3527,9 +3552,12 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       beklenenRibonlar[tip] = Math.max(0, toplam);
     }
 
+    // Kapanış sayımını migrate et
+    const migKapSayim = migrateMekanStok({ ...sayim });
+
     const anomali: Record<string, number> = {};
     for (const alan of alanlar) {
-      const fark = (sayim[alan] || 0) - (beklenen[alan] || 0);
+      const fark = (migKapSayim[alan] || 0) - (beklenen[alan] || 0);
       if (fark !== 0) anomali[alan] = fark;
     }
     // ribonlar tip bazlı anomali
@@ -3677,8 +3705,10 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
 
     const kayit = {
       ...existing,
-      kapanish: sayim,
+      kapanish: migKapSayim,
       kapanisNot: kapanisNot || "",
+      farkliTipKullanim: farkliTipKullanim.length > 0 ? farkliTipKullanim : undefined,
+      satisAlbumDusum,
       kapanisYapildi: true,
       kapanisZamani: new Date().toISOString(),
       kapanisYapanId: user.id,
@@ -5563,16 +5593,33 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
       }
     }
 
+    // Mekan stokları eski formatta (album3 vb.)
     const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15","paspartu","ribon"];
     const albumEtiketleri: Record<string, string> = {
       album3:"3 Kare", album5:"5 Kare", album7:"7 Kare",
       album9:"9 Kare", album11:"11 Kare", album13:"13 Kare",
       album15:"15 Kare", paspartu:"Paspartu", ribon:"Ribon",
+      // Depo tam/yarım etiketleri
+      album3_tam:"3 Kare Tam", album3_yarim:"3 Kare Yarım",
+      album5_tam:"5 Kare Tam", album5_yarim:"5 Kare Yarım",
+      album7_tam:"7 Kare Tam", album7_yarim:"7 Kare Yarım",
+      album9_tam:"9 Kare Tam", album9_yarim:"9 Kare Yarım",
+      album11_tam:"11 Kare Tam", album11_yarim:"11 Kare Yarım",
+      album13_tam:"13 Kare Tam", album13_yarim:"13 Kare Yarım",
+      album15_tam:"15 Kare Tam", album15_yarim:"15 Kare Yarım",
     };
     const albumRenkleri: Record<string, string> = {
       album3:"#9dd9ea", album5:"#a8e6cf", album7:"#ffd4a3",
       album9:"#ffb3ba", album11:"#d4a5ff", album13:"#b8d4f1",
       album15:"#ffc78f", paspartu:"#e2e8f0", ribon:"#f9a8d4",
+      // Depo tam/yarım renkleri (tam=koyu, yarım=açık ton)
+      album3_tam:"#7cc5d6", album3_yarim:"#9dd9ea",
+      album5_tam:"#8cd4b5", album5_yarim:"#a8e6cf",
+      album7_tam:"#ebc28a", album7_yarim:"#ffd4a3",
+      album9_tam:"#e69aa3", album9_yarim:"#ffb3ba",
+      album11_tam:"#be8de6", album11_yarim:"#d4a5ff",
+      album13_tam:"#9fbdd9", album13_yarim:"#b8d4f1",
+      album15_tam:"#e6ad76", album15_yarim:"#ffc78f",
     };
 
     const mekanOzetleri: any[] = mekanlarList.map((mekan: any) => {
@@ -5588,9 +5635,13 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
           ? kayit.kapanisYapildi ? "kapandi" : kayit.acilisYapildi ? "acik" : "yok"
           : "yok";
 
+      // Stoku tam/yarım formatına migrate et
+      const migStok = stok ? migrateMekanStok({ ...stok }) : null;
       const albumSayilari: Record<string, number> = {};
-      for (const alan of albumAlanlari) {
-        albumSayilari[alan] = stok ? (Number(stok[alan]) || 0) : 0;
+      // Eski format alanları + yeni tam/yarım alanları
+      const tumAlbumAlanlari = [...albumAlanlari, "album3_tam","album3_yarim","album5_tam","album5_yarim","album7_tam","album7_yarim","album9_tam","album9_yarim","album11_tam","album11_yarim","album13_tam","album13_yarim","album15_tam","album15_yarim"];
+      for (const alan of tumAlbumAlanlari) {
+        albumSayilari[alan] = migStok ? (Number(migStok[alan]) || 0) : 0;
       }
 
       // Stoktaki takımlar × 200
@@ -5632,37 +5683,38 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
       };
     });
 
-    const albumTipleri = ["album3","album5","album7","album9","album11","album13","album15"];
-    const genelAlbumToplam: Record<string, number> = {};
-    for (const alan of albumTipleri) {
-      genelAlbumToplam[alan] = mekanOzetleri.reduce((s: number, m: any) => s + (m.albumSayilari[alan] || 0), 0);
-    }
-    genelAlbumToplam["paspartu"] = mekanOzetleri.reduce((s: number, m: any) => s + (m.albumSayilari["paspartu"] || 0), 0);
-    genelAlbumToplam["ribon"] = mekanOzetleri.reduce((s: number, m: any) => s + (m.albumSayilari["ribon"] || 0), 0);
-
     const genelRibonKapasite = mekanOzetleri.reduce((s: number, m: any) => s + m.toplamRibonKapasite, 0);
 
-    // Depo stoğunu dahil et
-    const depoStok: any = await ckv.get("depo_stok") || {};
+    // Depo stoğunu dahil et (tam/yarım migrasyonuyla)
+    const depoStokMigrated: any = migrateDepoStok(await ckv.get("depo_stok") || {});
     const depoAlbumSayilari: Record<string, number> = {};
-    for (const alan of albumTipleri) {
-      depoAlbumSayilari[alan] = Number(depoStok[alan]) || 0;
+    for (const s of [3, 5, 7, 9, 11, 13, 15]) {
+      depoAlbumSayilari[`album${s}_tam`] = Number(depoStokMigrated[`album${s}_tam`]) || 0;
+      depoAlbumSayilari[`album${s}_yarim`] = Number(depoStokMigrated[`album${s}_yarim`]) || 0;
     }
-    const depoRibonTakim = Number(depoStok.ribon) || 0;
-    const depoRibonlar: Record<string, number> = depoStok.ribonlar || {};
+    const depoRibonTakim = Number(depoStokMigrated.ribon) || 0;
+    const depoRibonlar: Record<string, number> = depoStokMigrated.ribonlar || {};
     const depoRibonAdet = depoRibonTakim * RIBON_PER_TAKIM;
 
-    // Genel toplam albüm dağılımına depo da dahil et
-    const genelAlbumToplam2: Record<string, number> = { ...genelAlbumToplam };
-    for (const alan of albumTipleri) {
-      genelAlbumToplam2[alan] = (genelAlbumToplam2[alan] || 0) + depoAlbumSayilari[alan];
+    // Genel toplam albüm dağılımı — tam/yarım ayrı (mekan + depo)
+    const genelAlbumToplam2: Record<string, number> = {};
+    for (const s of [3, 5, 7, 9, 11, 13, 15]) {
+      const tamKey = `album${s}_tam`;
+      const yarimKey = `album${s}_yarim`;
+      genelAlbumToplam2[tamKey] = mekanOzetleri.reduce((sum: number, m: any) => sum + (m.albumSayilari[tamKey] || 0), 0) + (depoAlbumSayilari[tamKey] || 0);
+      genelAlbumToplam2[yarimKey] = mekanOzetleri.reduce((sum: number, m: any) => sum + (m.albumSayilari[yarimKey] || 0), 0) + (depoAlbumSayilari[yarimKey] || 0);
     }
+    genelAlbumToplam2["paspartu"] = mekanOzetleri.reduce((s: number, m: any) => s + (m.albumSayilari["paspartu"] || 0), 0);
+    genelAlbumToplam2["ribon"] = mekanOzetleri.reduce((s: number, m: any) => s + (m.albumSayilari["ribon"] || 0), 0);
 
-    const albumDagilimiFinal = albumTipleri.map((alan: string) => ({
-      alan,
-      name: albumEtiketleri[alan],
-      color: albumRenkleri[alan],
-      count: genelAlbumToplam2[alan],
+    // Boyut bazlı dağılım (tam+yarım toplam + ayrı detay)
+    const albumDagilimiFinal = [3, 5, 7, 9, 11, 13, 15].map((sz) => ({
+      alan: `album${sz}`,
+      name: `${sz} Kare`,
+      color: albumRenkleri[`album${sz}`],
+      count: (genelAlbumToplam2[`album${sz}_tam`] || 0) + (genelAlbumToplam2[`album${sz}_yarim`] || 0),
+      tam: genelAlbumToplam2[`album${sz}_tam`] || 0,
+      yarim: genelAlbumToplam2[`album${sz}_yarim`] || 0,
     }));
 
     const genelRibonKapasiteFinal = genelRibonKapasite + depoRibonAdet;
@@ -5689,6 +5741,45 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
   }
 });
 
+// ── DEPO STOK: Tam Boy / Yarım Boy Migrasyon Helper ──
+// Eski format (album3, album5, ...) → yeni format (album3_tam, album3_yarim, ...)
+// Mevcut stoklar yarım boy olarak taşınır.
+function migrateDepoStok(stok: any): any {
+  if (!stok || typeof stok !== "object") return stok || {};
+  for (const s of [3, 5, 7, 9, 11, 13, 15]) {
+    const oldKey = `album${s}`;
+    const tamKey = `album${s}_tam`;
+    const yarimKey = `album${s}_yarim`;
+    if (stok[oldKey] !== undefined && stok[tamKey] === undefined && stok[yarimKey] === undefined) {
+      stok[yarimKey] = stok[oldKey];
+      stok[tamKey] = 0;
+      delete stok[oldKey];
+    }
+  }
+  return stok;
+}
+
+// Mekan stokunu tam/yarım formatına migrate et (eski album3 → album3_yarim)
+function migrateMekanStok(stok: any): any {
+  if (!stok || typeof stok !== "object") return stok || {};
+  for (const s of [3, 5, 7, 9, 11, 13, 15]) {
+    const oldKey = `album${s}`;
+    const tamKey = `album${s}_tam`;
+    const yarimKey = `album${s}_yarim`;
+    if (stok[oldKey] !== undefined && stok[tamKey] === undefined && stok[yarimKey] === undefined) {
+      stok[yarimKey] = stok[oldKey];
+      stok[tamKey] = 0;
+      delete stok[oldKey];
+    }
+  }
+  return stok;
+}
+
+// Depo stok alanından mekan stok alanına dönüştür: album3_tam → album3 (LEGACY — artık kullanılmayabilir)
+function depoAlanToMekanAlan(alan: string): string {
+  return alan.replace(/_tam$/, "").replace(/_yarim$/, "");
+}
+
 // ──────────────────────────────────────────
 // DEPO: Stok görüntüle
 // GET /make-server-4da0b637/depo/stok
@@ -5700,7 +5791,7 @@ app.get("/make-server-4da0b637/depo/stok", async (c) => {
     const role = user.user_metadata?.role;
     if (role === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
     const ckv = companyKvFor(getCompanyId(user));
-    const stok: any = await ckv.get("depo_stok") || {};
+    const stok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
     return c.json({ stok });
   } catch (err) {
     console.log("Depo stok error:", err);
@@ -5724,7 +5815,7 @@ app.post("/make-server-4da0b637/depo/giris", async (c) => {
     if (!alan || !miktar || miktar <= 0) return c.json({ error: "Alan ve pozitif miktar zorunludur." }, 400);
 
     const ckv = companyKvFor(getCompanyId(user));
-    const mevcutStok: any = await ckv.get("depo_stok") || {};
+    const mevcutStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
 
     // Ribon tip bazlı: kagitTipiId varsa ribonlar objesini güncelle
     if (alan === "ribon" && kagitTipiId) {
@@ -5784,7 +5875,7 @@ app.post("/make-server-4da0b637/depo/cikis", async (c) => {
     if (!alan || !miktar || miktar <= 0) return c.json({ error: "Alan ve pozitif miktar zorunludur." }, 400);
 
     const ckv = companyKvFor(getCompanyId(user));
-    const mevcutStok: any = await ckv.get("depo_stok") || {};
+    const mevcutStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
 
     let eskiDeger: number;
     if (alan === "ribon" && kagitTipiId) {
@@ -5872,9 +5963,19 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
     const { mekanId, albumSayilari, ribonTakim, ribonlar: bodyRibonlar } = await c.req.json();
     if (!mekanId) return c.json({ error: "mekanId zorunludur." }, 400);
 
-    const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15"];
+    const albumAlanlariYeni = ["album3_tam","album3_yarim","album5_tam","album5_yarim","album7_tam","album7_yarim","album9_tam","album9_yarim","album11_tam","album11_yarim","album13_tam","album13_yarim","album15_tam","album15_yarim"];
     const stokObj: Record<string, number> = {};
-    for (const alan of albumAlanlari) stokObj[alan] = Number(albumSayilari?.[alan]) || 0;
+    // Gelen veri tam/yarım formatında mı yoksa eski formatta mı kontrol et
+    const hasNewMekanFormat = albumAlanlariYeni.some(a => albumSayilari?.[a] !== undefined);
+    if (hasNewMekanFormat) {
+      for (const alan of albumAlanlariYeni) stokObj[alan] = Number(albumSayilari?.[alan]) || 0;
+    } else {
+      // Eski format → yarım'a migrate et
+      for (const s of [3, 5, 7, 9, 11, 13, 15]) {
+        stokObj[`album${s}_yarim`] = Number(albumSayilari?.[`album${s}`]) || 0;
+        stokObj[`album${s}_tam`] = 0;
+      }
+    }
     // ribonlar varsa toplam hesapla, yoksa eski ribonTakim kullan
     const ribonlarObj: Record<string, number> = bodyRibonlar && typeof bodyRibonlar === "object" ? bodyRibonlar : {};
     const ribonlarToplam = Object.values(ribonlarObj).reduce((s: number, v: any) => s + (Number(v) || 0), 0);
@@ -5883,8 +5984,21 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
 
     const ckv = companyKvFor(getCompanyId(user));
     if (mekanId === "depo") {
-      const depoStok: any = await ckv.get("depo_stok") || {};
-      for (const alan of albumAlanlari) depoStok[alan] = stokObj[alan];
+      const depoStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
+      // albumSayilari depo formatında olabilir (album3_tam, album3_yarim) veya eski formatta
+      for (const s of [3, 5, 7, 9, 11, 13, 15]) {
+        const tamKey = `album${s}_tam`;
+        const yarimKey = `album${s}_yarim`;
+        if (albumSayilari?.[tamKey] !== undefined || albumSayilari?.[yarimKey] !== undefined) {
+          // Yeni format gönderilmiş
+          depoStok[tamKey] = Number(albumSayilari[tamKey]) || 0;
+          depoStok[yarimKey] = Number(albumSayilari[yarimKey]) || 0;
+        } else if (albumSayilari?.[`album${s}`] !== undefined) {
+          // Eski format — yarım olarak ata
+          depoStok[yarimKey] = Number(albumSayilari[`album${s}`]) || 0;
+          depoStok[tamKey] = depoStok[tamKey] || 0;
+        }
+      }
       depoStok.ribon = stokObj.ribon;
       if (Object.keys(ribonlarObj).length > 0) depoStok.ribonlar = ribonlarObj;
       depoStok.guncellenmeTarihi = new Date().toISOString();
@@ -5920,8 +6034,10 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
       }
     }
 
-    const aktifStok = { ...(kayit[aktifField] || {}), ...stokObj };
+    const aktifStok = { ...migrateMekanStok({ ...(kayit[aktifField] || {}) }), ...stokObj };
     if (Object.keys(ribonlarObj).length > 0) aktifStok.ribonlar = ribonlarObj;
+    // Eski format alanları temizle
+    for (const s of [3, 5, 7, 9, 11, 13, 15]) delete aktifStok[`album${s}`];
     kayit[aktifField] = aktifStok;
     kayit.yoneticiGuncelleme = new Date().toISOString();
     await ckv.set(kvKey, kayit);
@@ -5956,8 +6072,12 @@ app.post("/make-server-4da0b637/stok/mekan/sifirla", async (c) => {
 
     const ckv = companyKvFor(getCompanyId(user));
     if (mekanId === "depo") {
-      const depoStok: any = { ...sifirStok, guncellenmeTarihi: new Date().toISOString() };
-      await ckv.set("depo_stok", depoStok);
+      const depoSifir: Record<string, any> = { ribon: 0, guncellenmeTarihi: new Date().toISOString() };
+      for (const s of [3, 5, 7, 9, 11, 13, 15]) {
+        depoSifir[`album${s}_tam`] = 0;
+        depoSifir[`album${s}_yarim`] = 0;
+      }
+      await ckv.set("depo_stok", depoSifir);
       console.log(`Depo stok sıfırlandı: ${user.user_metadata?.full_name}`);
       return c.json({ basarili: true });
     }
@@ -6020,12 +6140,16 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
     if (kaynakId === hedefId) {
       return c.json({ error: "Kaynak ve hedef aynı olamaz." }, 400);
     }
-    const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15","ribon"];
-    if (!albumAlanlari.includes(alan)) {
+    const albumAlanlariEski = ["album3","album5","album7","album9","album11","album13","album15"];
+    const albumAlanlariDepo = albumAlanlariEski.flatMap(a => [`${a}_tam`, `${a}_yarim`]);
+    const gecerliAlanlar = [...albumAlanlariEski, ...albumAlanlariDepo, "ribon"];
+    if (!gecerliAlanlar.includes(alan)) {
       return c.json({ error: "Geçersiz alan." }, 400);
     }
     // Ribon transferinde kagitTipiId zorunlu (yeni format)
     const isRibonTransfer = alan === "ribon" && !!transferKagitTipiId;
+    // Artık mekanlar da tam/yarım tutuyor — alan direkt kullanılır
+    const mekanAlan = alan;
 
     const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
     const kullaniciAdi = user.user_metadata?.full_name || user.email || "Bilinmeyen";
@@ -6035,37 +6159,32 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
     // Helper: mekan stok oku (bugün veya fallback)
     // ÖNEMLİ: Fallback durumunda fallback kaydının kendi tarihli key'i döndürülür,
     // bugünün key'i DEĞİL — böylece transfer yazarken yeni kayıt oluşturulmaz (mekan açılmaz).
+    // Mekan stoku eski formatta (album3 vb.) — mekanAlan kullanılır.
     const getMekanStok = async (mekanId: string) => {
       const todayKey = `stok_gunluk_${mekanId}_${today}`;
       const kayit: any = await ckv.get(todayKey);
       if (kayit) {
-        // Bugün kayıt var — vardiya açık mı kapandı mı?
         const aktifField = kayit.kapanisYapildi ? "kapanish" : "acilis";
-        const aktif = kayit[aktifField] || {};
-        return { kayit, kvKey: todayKey, aktif, alan_deger: Number(aktif[alan]) || 0, aktifField };
+        const aktif = migrateMekanStok({ ...(kayit[aktifField] || {}) });
+        return { kayit, kvKey: todayKey, aktif, alan_deger: Number(aktif[mekanAlan]) || 0, aktifField };
       }
-      // Bugün kayıt yok → en son kapanış kaydını bul ve onun key'ini kullan
       const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
       const mekanKayitlari = tumKayitlar
         .filter((k: any) => k.mekanId === mekanId && k.kapanisYapildi && k.kapanish)
         .sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
       if (mekanKayitlari.length > 0) {
         const fallbackKayit = mekanKayitlari[0];
-        // Fallback kaydının gerçek tarihli key'ini oluştur (bugün değil)
         const fallbackKey = `stok_gunluk_${mekanId}_${fallbackKayit.tarih}`;
-        const fallbackAktif = fallbackKayit.kapanish || {};
-        return { kayit: fallbackKayit, kvKey: fallbackKey, aktif: fallbackAktif, alan_deger: Number(fallbackAktif[alan]) || 0, aktifField: "kapanish" };
+        const fallbackAktif = migrateMekanStok({ ...(fallbackKayit.kapanish || {}) });
+        return { kayit: fallbackKayit, kvKey: fallbackKey, aktif: fallbackAktif, alan_deger: Number(fallbackAktif[mekanAlan]) || 0, aktifField: "kapanish" };
       }
-      // Hiç kayıt yok → boş döndür (yazma aşamasında yeni kayıt oluşturulur ama açılış sayılmaz)
       return { kayit: null, kvKey: todayKey, aktif: {}, alan_deger: 0, aktifField: "acilis" };
     };
 
-    // Helper: mekan stok yaz
-    // ÖNEMLİ: Transfer işleminde acilisYapildi set edilmez — mekan açılmış gibi gösterilmemeli.
+    // Helper: mekan stok yaz — mekanAlan (eski format) kullanır
     const setMekanStok = async (mekanId: string, kvKey: string, kayit: any, aktifField: string, aktif: any, yeniDeger: number) => {
       const yeniKayit: any = kayit ? { ...kayit } : { mekanId, tarih: today };
-      yeniKayit[aktifField] = { ...aktif, [alan]: yeniDeger };
-      // acilisYapildi KASITLI OLARAK set edilmiyor — transfer mekanı açmamalı
+      yeniKayit[aktifField] = { ...aktif, [mekanAlan]: yeniDeger };
       yeniKayit.stokTransferGuncelleme = new Date().toISOString();
       await ckv.set(kvKey, yeniKayit);
     };
@@ -6099,7 +6218,7 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
 
     // Kaynak: stok azalt
     if (kaynakId === "depo") {
-      const depoStok: any = await ckv.get("depo_stok") || {};
+      const depoStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
       if (isRibonTransfer) {
         eskiKaynakDeger = Number(depoStok.ribonlar?.[transferKagitTipiId]) || 0;
       } else {
@@ -6140,7 +6259,7 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
 
     // Hedef: stok artır
     if (hedefId === "depo") {
-      const depoStok: any = await ckv.get("depo_stok") || {};
+      const depoStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
       if (isRibonTransfer) {
         eskiHedefDeger = Number(depoStok.ribonlar?.[transferKagitTipiId]) || 0;
       } else {
@@ -6269,21 +6388,18 @@ app.get("/make-server-4da0b637/ekstra-is/kaynaklar", async (c) => {
       return { id: m.id, name: m.name, emoji: m.emoji || "📍", color: m.color || "#9dd9ea", albumSayilari, stokTarihi };
     }));
 
-    const depoStok: any = await ckv.get("depo_stok") || {};
+    const depoStokRaw: any = migrateDepoStok(await ckv.get("depo_stok") || {});
+    const depoAlbumSayilari: Record<string, number> = {};
+    for (const s of [3, 5, 7, 9, 11, 13, 15]) {
+      depoAlbumSayilari[`album${s}_tam`] = Number(depoStokRaw[`album${s}_tam`]) || 0;
+      depoAlbumSayilari[`album${s}_yarim`] = Number(depoStokRaw[`album${s}_yarim`]) || 0;
+    }
     const depo = {
       id: "depo",
       name: "Depo",
       emoji: "🏪",
-      albumSayilari: {
-        album3: Number(depoStok.album3) || 0,
-        album5: Number(depoStok.album5) || 0,
-        album7: Number(depoStok.album7) || 0,
-        album9: Number(depoStok.album9) || 0,
-        album11: Number(depoStok.album11) || 0,
-        album13: Number(depoStok.album13) || 0,
-        album15: Number(depoStok.album15) || 0,
-      },
-      ribonTakim: Number(depoStok.ribon) || 0,
+      albumSayilari: depoAlbumSayilari,
+      ribonTakim: Number(depoStokRaw.ribon) || 0,
     };
 
     // ── Tüm yazıcıları getir (ekipman kaydından) ─────────────────���────────
@@ -6390,15 +6506,25 @@ app.post("/make-server-4da0b637/ekstra-is/acilis", async (c) => {
 
     // Kaynak stoktan düş
     if (kaynakId === "depo") {
-      const depoStok: any = await ckv.get("depo_stok") || {};
+      const depoStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
+      // acilis objesi eski formatta (album3 vb.) — depoda _yarim'dan düş (varsayılan)
       for (const alan of albumAlanlari) {
         const istenen = Number(acilis[alan]) || 0;
         if (istenen <= 0) continue;
-        const mevcutStok = Number(depoStok[alan]) || 0;
-        if (mevcutStok < istenen) {
-          return c.json({ error: `Depo ${alan} stoğu yetersiz. Mevcut: ${mevcutStok}, İstenen: ${istenen}` }, 400);
+        // Önce yarımdan düşmeye çalış, yetmezse tamdan
+        const yarimKey = `${alan}_yarim`;
+        const tamKey = `${alan}_tam`;
+        const yarimMevcut = Number(depoStok[yarimKey]) || 0;
+        const tamMevcut = Number(depoStok[tamKey]) || 0;
+        if (yarimMevcut + tamMevcut < istenen) {
+          return c.json({ error: `Depo ${alan} stoğu yetersiz. Mevcut: ${yarimMevcut + tamMevcut}, İstenen: ${istenen}` }, 400);
         }
-        depoStok[alan] = mevcutStok - istenen;
+        if (yarimMevcut >= istenen) {
+          depoStok[yarimKey] = yarimMevcut - istenen;
+        } else {
+          depoStok[yarimKey] = 0;
+          depoStok[tamKey] = tamMevcut - (istenen - yarimMevcut);
+        }
       }
       depoStok.guncellenmeTarihi = new Date().toISOString();
       await ckv.set("depo_stok", depoStok);
@@ -6589,11 +6715,13 @@ app.post("/make-server-4da0b637/ekstra-is/kapalis", async (c) => {
 
     // İade stokunu seçilen hedefe aktar (depo veya mekan)
     if (iadeHedefId === "depo") {
-      const depoStok: any = await ckv.get("depo_stok") || {};
+      const depoStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
+      // kapalis eski formatta (album3 vb.) — depoya _yarim olarak iade et (varsayılan)
       for (const alan of albumAlanlari) {
         const iade = Number(kapalis[alan]) || 0;
         if (iade <= 0) continue;
-        depoStok[alan] = (Number(depoStok[alan]) || 0) + iade;
+        const yarimKey = `${alan}_yarim`;
+        depoStok[yarimKey] = (Number(depoStok[yarimKey]) || 0) + iade;
       }
       depoStok.guncellenmeTarihi = new Date().toISOString();
       await ckv.set("depo_stok", depoStok);
@@ -10077,8 +10205,12 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
 
     const stokSum = (obj: any): number => {
       if (!obj) return 0;
-      return ["album3","album5","album7","album9","album11","album13","album15","paspartu"]
-        .reduce((s: number, k: string) => s + (Number(obj[k]) || 0), 0);
+      let toplam = 0;
+      for (const s of [3, 5, 7, 9, 11, 13, 15]) {
+        toplam += (Number(obj[`album${s}`]) || 0) + (Number(obj[`album${s}_tam`]) || 0) + (Number(obj[`album${s}_yarim`]) || 0);
+      }
+      toplam += Number(obj.paspartu) || 0;
+      return toplam;
     };
 
     // Personel maaş: tarih bazlı günlük hesaplama (ayın gün sayısına göre)
@@ -14962,6 +15094,201 @@ app.post("/make-server-4da0b637/academy/toggle-global", async (c) => {
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
+// POST /academy/seed-guide — Uygulama Kullanım Rehberi seed'le (global)
+// Kategori yoksa oluşturur, varsa mevcut kategoriye eksik içerikleri ekler.
+app.post("/make-server-4da0b637/academy/seed-guide", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    if (role !== "yonetici") return c.json({ error: "Sadece yönetici bu işlemi yapabilir." }, 403);
+    const companyId = getCompanyId(user);
+    const now = new Date().toISOString();
+    const createdBy = user.user_metadata?.full_name || user.email || "Sistem";
+
+    // Kategoriyi bul veya oluştur
+    const globalCats: any[] = (await kv.get("academy_global_categories")) || [];
+    let cat = globalCats.find((c: any) => c.name === "Uygulama Kullanımı");
+    if (!cat) {
+      cat = { id: `gcat_guide_${Date.now()}`, name: "Uygulama Kullanımı", emoji: "📱", order: 0, global: true, createdByCompany: companyId };
+      globalCats.push(cat);
+      await kv.set("academy_global_categories", globalCats);
+    }
+    const catId = cat.id;
+
+    // Mevcut içerikleri al — title bazında duplicate kontrolü
+    const existingContents: any[] = (await kv.getByPrefix("academy_global_content_")) || [];
+    const existingTitles = new Set(existingContents.filter((c: any) => c.categoryId === catId).map((c: any) => c.title));
+
+    // Tüm rehber içerikleri
+    const allGuideContents = [
+      {
+        title: "Vardiya Açılış & Kapanış",
+        description: "Günlük açılış ve kapanış sürecinin detaylı rehberi",
+        order: 1,
+        data: { content: `Vardiya Açılışı her gün iş başında, Kapanış gün sonunda yapılır. Bu ikisi birlikte günlük stok ve satış takibinin temelini oluşturur.
+
+━━━━━━━━━━━━━━━━━━━━
+Vardiya AÇILIŞ
+━━━━━━━━━━━━━━━━━━━━
+
+1. STOK SAYIMI
+Açılışta tüm albümleri (3, 5, 7, 9, 11, 13, 15 Kare) ve ribon takımlarını fiziksel olarak saymanız gerekir.
+
+📌 Ribon Takımı Nedir?
+Ribon takımı, ribon kutusunun içindeki tek baskı filmi rulosudur. Kutu ile takımı karıştırmayın: Örneğin bir Citizen CX-02 kutusunda 2 takım, bir Kodak kutusunda 1 takım ribon bulunur. Uygulamada her yerde yalnızca takım sayısı baz alınır — kutu değil. Sayım yaparken açılmamış kutuları takıma çevirmeyi unutmayın.
+
+Ekranda dünkü kapanıştan gelen "önerilen" değerler yüklü olarak gelir — bu değerlere güvenip geçmeyin, mutlaka fiziksel sayımınızı yapın. Sayım sonucunuz önerilen değerden farklıysa, kendi saydığınız değeri girin. Sistem farkı otomatik algılar.
+
+⚠️ Anomali Hakkında:
+Açılıştaki sayımınız ile bir önceki kapanış değeri arasında fark varsa bu "anomali" olarak kaydedilir. Önemli: Bu anomali bir önceki kapanış vardiyasındaki ekibe yazılır, size değil. Uygulama her daim açılış sayımını dikkate alır. Çünkü fark onların kapanış sayımından kaynaklanmaktadır. Bu yüzden doğru saydığınızdan emin olun ve kendi değerinizi girin.
+
+2. YAZICI SAYAÇLARI
+Her yazıcının ekranındaki sayaç numarasını okuyup girin. En az 1 yazıcı sayacı girilmesi zorunludur. Açılışta yazıcı sayacı gözükmüyorsa vardiya açılışı yapılamaz. Yöneticinizle iletişime geçin. Eğer bir önce ki gün yazıcı sayacı "0" olarak bırakıldıysa açılışa "0" yazın ve daha sonra ribon değişimi yapın.
+
+3. REYON (Opsiyonel)
+Bugün reyon kullanılacaksa toggle'ı açın ve reyona koyduğunuz albüm adetlerini girin. Kapanışta reyonda kalan sayılacak, aradaki fark satılan olarak hesaplanacaktır.
+
+4. PERSONEL FOTOĞRAFI (Zorunlu)
+Vardiya başındaki ekibin fotoğrafını çekin. Fotoğraf olmadan açılış gönderilemez. Bulanık, karanlık ve anlamsız fotoğraf göndermemek için göndermeden önce kontrol edin.
+
+━━━━━━━━━━━━━━━━━━━━
+Vardiya KAPANIŞ
+━━━━━━━━━━━━━━━━━━━━
+
+1. YAZICI BİTİŞ SAYAÇLARI
+Her yazıcının güncel sayacını girin. Yazıcılar seri numaraları ile belirtilmiştir. Başka bir yazıcının bitişini başka bir yazıcıya girmemek için gereken dikkati gösterin. Gün içinde kaç ribon değiştirildi seri numarası ile kontrol ettiğiniz ilgili yazıcıya ve varsa toplam kaç fotoğraf iade edildi bilgilerini ekleyin. Bu bilgiler gereklidir. Dikkatle alanların tamamını doldurun.
+
+2. STOK KAPANIŞ SAYIMI
+Reyon açıksa reyonda kalan albümleri sayın. Ekleme yapıldıysa ilgili alanı doldurun. Reyon kapalıysa tüm stoğu baştan sayın. Sistem açılış stoku, satışlar ve eklemelere göre "beklenen" kapanış değerini hesaplar. Saydığınız değer beklenenden farklıysa anomali olarak kaydedilir. Dikkatli ve acele etmeden doğru değerleri girin.
+
+3. MEKAN FOTOĞRAFI (Zorunlu)
+Mekanın kapanış durumunun fotoğrafını çekin. Fotoğraf olmadan kapanış tamamlanamaz.
+
+4. GÖNDER
+"Vardiyayı Tamamla"ya basın.
+
+━━━━━━━━━━━━━━━━━━━━
+ÖNEMLİ NOTLAR
+━━━━━━━━━━━━━━━━━━━━
+
+• Fotoğrafı önce çekin, sonra sayımlara geçin
+• Önerilen değerlere körü körüne güvenmeyin — mutlaka fiziksel sayım yapın
+• Anomali uyarısı gelirse kendi sayımınızdan eminseniz "Yine de Gönder" diyebilirsiniz
+• Paspartu: Paspartu sayımı yapılmaz. Ancak paspartu azalmışsa, bir sonraki vardiyada çalışacak ekibe mutlaka bilgi verin ki tedarik süreci aksamamış olsun.
+
+👁️ Gözlemcilere Not:
+Gözlemciler, düzenli aralıklarla stok kontrolü yapmalıdır. Bu hem vardiyadaki personele yardımcı olur hem de olası sayım hatalarının erken tespit edilip önüne geçilmesini sağlar.` },
+      },
+      {
+        title: "Kare Sistemi",
+        description: "Fotoğraf kare girişi nasıl yapılır",
+        order: 2,
+        data: { content: `Kare Nedir?
+Kare, fotoğrafçının vardiyası boyunca çektiği toplam fotoğraf karesi sayısıdır.
+
+━━━━━━━━━━━━━━━━━━━━
+KARE GİRİŞİ NEREDE YAPILIR?
+━━━━━━━━━━━━━━━━━━━━
+
+Vardiya ekranında üstte 4 sekme bulunur: Açılış, Satış, Kare, Kapanış. "📷 Kare" sekmesine tıklayarak kare giriş ekranına geçersiniz.
+
+━━━━━━━━━━━━━━━━━━━━
+NASIL KAYDEDİLİR?
+━━━━━━━━━━━━━━━━━━━━
+
+Öncelikli olarak baskıyı yapacak kişinin kare girişi beklenir. Adımlar:
+
+1. Vardiya ekranında üst menüden "📷 Kare" sekmesine tıklayın
+2. Fotoğrafçıyı seçin — rotasyondaki personel listesi otomatik gelir
+3. "Kaç kare teslim edildi?" alanına kare sayısını girin
+4. "Kareyi Kaydet" butonuna basın
+5. Saat otomatik kaydedilir
+
+Birden fazla giriş yapabilirsiniz — örneğin sabah 100, öğleden sonra 150 kare girebilirsiniz. Sistem hepsini toplar. Günün tüm kayıtları ekranın altında listelenir.
+
+━━━━━━━━━━━━━━━━━━━━
+DOĞRULUK ÖNEMLİDİR
+━━━━━━━━━━━━━━━━━━━━
+
+Kare girişinin çok olması veya az olması daha iyi ya da daha kötü değildir. Önemli olan doğru olmasıdır. Sistem; kare sayısı, iade, satış ve ciro verilerini birlikte değerlendirerek orantılı bir hesaplama yapar. Yanlış kare girişi bu hesaplamaları bozar ve tüm vardiya verilerini olumsuz etkiler.
+
+━━━━━━━━━━━━━━━━━━━━
+KURALLAR
+━━━━━━━━━━━━━━━━━━━━
+
+• Sadece o gün rotasyonunuzda atandığınız mekanda kare kaydı yapabilirsiniz
+• Sadece pozitif sayı kabul edilir
+• Kapanış yapıldıktan sonra kare girişi değiştirilemez
+• Yanlış giriş varsa sadece yönetici silebilir` },
+      },
+      {
+        title: "Satış Girişi",
+        description: "Satış kaydetme, iskonto ve ödeme yöntemleri",
+        order: 3,
+        data: { content: `Satış Nasıl Kaydedilir?
+Vardiya ekranında üst menüden "⚡ Satış" sekmesine tıklayarak satış ekranına geçersiniz.
+
+━━━━━━━━━━━━━━━━━━━━
+ADIMLAR
+━━━━━━━━━━━━━━━━━━━━
+
+1. Ürün kartlarına tıklayarak sepete ekleyin (1 Fotoğraf, 3'lü, 5'li, 7'li, 9'lu, 11'li, 13'lü, 15'li). Her tıklama adedi 1 artırır. Sepetteki + ve − butonlarıyla adedi ayarlayabilirsiniz.
+2. İskonto uygulanacaksa 🏷️ İskonto butonuna basın, ₺ cinsinden indirim tutarını girin.
+3. "İlerle" butonuna basın.
+4. Ödeme yöntemini seçin: 💵 Nakit, 💳 Kredi Kartı veya 🏦 İban/Havale.
+5. "Satışı Yap" butonuyla satışı tamamlayın.
+
+━━━━━━━━━━━━━━━━━━━━
+DÖVİZLİ MÜŞTERİLER
+━━━━━━━━━━━━━━━━━━━━
+
+Satış ekranının alt kısmında canlı döviz kurları gösterilir. Yabancı müşteriye fiyat söylerken ilgili dövize tıklayarak karşılığını görebilirsiniz.
+
+Bazı mekanlar döviz cinsinden fiyatlandırılmıştır (ör: EUR). Bu mekanlarda ürün fiyatları otomatik olarak döviz cinsinden gösterilir ve satış kaydedilirken güncel kur üzerinden TL'ye çevrilir.
+
+━━━━━━━━━━━━━━━━━━━━
+SATIŞ İPTALİ
+━━━━━━━━━━━━━━━━━━━━
+
+Hatalı bir satışı iptal etmek için satış kaydının yanındaki × butonuna basın. İptal sebebi yazmanız zorunludur. Talebiniz yöneticiye iletilir ve 3 dakika içinde onay/red beklenir. Yönetici onaylamazsa satış geçerli kalır.
+
+━━━━━━━━━━━━━━━━━━━━
+ÇEVRİMDIŞI ÇALIŞMA
+━━━━━━━━━━━━━━━━━━━━
+
+İnternet bağlantısı kesilse bile satış kaydedebilirsiniz. Satışlar kuyruğa alınır ve bağlantı geldiğinde otomatik gönderilir. Bekleyen satışlar turuncu çerçeveyle gösterilir.
+
+━━━━━━━━━━━━━━━━━━━━
+DİKKAT
+━━━━━━━━━━━━━━━━━━━━
+
+• Ürün fiyatları mekan bazlı sabitlenmiştir, değiştirilemez
+• İskonto tutarı toplam fiyatı geçemez
+• Her satışta ödeme yöntemi seçilmesi zorunludur
+• Satış iptali sadece yönetici onayıyla gerçekleşir` },
+      },
+    ];
+
+    // Sadece henüz eklenmemiş içerikleri ekle
+    let eklenen = 0;
+    for (const guide of allGuideContents) {
+      if (existingTitles.has(guide.title)) continue;
+      const content = {
+        id: `gcnt_guide_${guide.title.replace(/\s+/g, '_').toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        categoryId: catId, type: "text",
+        title: guide.title, description: guide.description, data: guide.data,
+        order: guide.order, createdAt: now, createdBy, global: true, createdByCompany: companyId,
+      };
+      await kv.set(`academy_global_content_${content.id}`, content);
+      eklenen++;
+    }
+
+    console.log(`[Academy] Rehber güncellendi: ${eklenen} yeni içerik eklendi, kullanıcı=${createdBy}`);
+    return c.json({ ok: true, kategori: catId, yeniIcerik: eklenen, toplamIcerik: allGuideContents.length });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
 // POST /academy/announcement — Yönetici duyuru mesajı yaz/güncelle
 app.post("/make-server-4da0b637/academy/announcement", async (c) => {
   try {
@@ -15730,6 +16057,127 @@ app.put("/make-server-4da0b637/kasa/sirket/ayarlar", async (c) => {
     console.log("Kasa ayarlar PUT error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
+});
+
+// GET /kasa/eksik-analiz — Devirler vs Gelirler karşılaştırması
+app.get("/make-server-4da0b637/kasa/eksik-analiz", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
+    const reqCId = c.req.query("company_id");
+    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const ay = c.req.query("ay") || "2026-04";
+
+    const [devirler, gelirler] = await Promise.all([
+      ckv.getByPrefix("kasa_devir_"),
+      ckv.getByPrefix("isletme_gelir_"),
+    ]);
+
+    const ayDevirleri = (devirler || []).filter((d: any) => d.tarih?.startsWith(ay));
+    const ayGelirleri = (gelirler || []).filter((g: any) => g.date?.startsWith(ay));
+
+    // Her devir için eşleşen gelir var mı kontrol et
+    const eksikler: any[] = [];
+    for (const devir of ayDevirleri) {
+      const eslesme = ayGelirleri.find((g: any) =>
+        g.mekanId === devir.mekanId && g.date === devir.tarih
+      );
+      if (!eslesme) {
+        eksikler.push({
+          mekanAdi: devir.mekanAdi,
+          mekanId: devir.mekanId,
+          tarih: devir.tarih,
+          ciro: devir.ciro,
+          nakit: devir.nakit,
+          kart: devir.kart,
+          iban: devir.iban,
+        });
+      }
+    }
+
+    return c.json({
+      ay,
+      toplamDevir: ayDevirleri.length,
+      toplamGelir: ayGelirleri.length,
+      eksikSayisi: eksikler.length,
+      eksikler,
+      devirler: ayDevirleri.map((d: any) => ({ mekanAdi: d.mekanAdi, tarih: d.tarih, ciro: d.ciro })),
+      gelirler: ayGelirleri.map((g: any) => ({ description: g.description, date: g.date, amount: g.amount, mekanAdi: g.mekanAdi, id: g.id })),
+    });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// GET /ortaklar
+app.get("/make-server-4da0b637/ortaklar", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
+    const reqCId = c.req.query("company_id");
+    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const ortaklar = await ckv.get("pay_ortaklar") || [];
+    return c.json({ ortaklar });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// POST /ortaklar (kaydet/güncelle)
+app.post("/make-server-4da0b637/ortaklar", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
+    const reqCId = c.req.query("company_id");
+    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const { ortaklar } = await c.req.json();
+    if (!Array.isArray(ortaklar) || ortaklar.length === 0) return c.json({ error: "En az bir ortak gerekli." }, 400);
+    const toplam = ortaklar.reduce((s: number, o: any) => s + (o.yuzde || 0), 0);
+    if (Math.abs(toplam - 100) > 0.01) return c.json({ error: `Yüzdelerin toplamı 100 olmalı (şu an: ${toplam}).` }, 400);
+    await ckv.set("pay_ortaklar", ortaklar);
+    return c.json({ ortaklar });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// POST /kasa/paydagitim
+app.post("/make-server-4da0b637/dagitim", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
+    const reqCId = c.req.query("company_id");
+    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const { toplamTutar, ortaklar } = await c.req.json();
+    if (!toplamTutar || toplamTutar <= 0) return c.json({ error: "Toplam tutar zorunlu." }, 400);
+    if (!Array.isArray(ortaklar) || ortaklar.length === 0) return c.json({ error: "Ortak bilgisi zorunlu." }, 400);
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const dagitim = { id, toplamTutar, ortaklar, tarih: new Date().toISOString().split("T")[0], created_at: new Date().toISOString(), created_by: user.user_metadata?.full_name || user.email || "" };
+    await ckv.set(`pay_dagitim_${id}`, dagitim);
+    return c.json({ dagitim });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// GET /dagitimlar
+app.get("/make-server-4da0b637/dagitimlar", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role || "personel";
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
+    const reqCId = c.req.query("company_id");
+    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const all = (await ckv.getByPrefix("pay_dagitim_")) || [];
+    all.sort((a: any, b: any) => (b.created_at || "").localeCompare(a.created_at || ""));
+    return c.json({ dagitimlar: all });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
 // POST /kasa/sirket/ay-kapat — Ayı kapat ve bakiyeyi sonraki aya devret
@@ -16629,12 +17077,16 @@ app.get("/make-server-4da0b637/tedarikci/ozet", async (c) => {
       ckv.getByPrefix("cost_cari_"), ckv.getByPrefix("siparis_"), ckv.getByPrefix("teslimat_"), ckv.getByPrefix("tedarikci_odeme_"),
       ckv.get("cost_albums"), ckv.get("depo_stok"), ckv.getByPrefix("cost_paper_"), ckv.getByPrefix("stok_gunluk_"), ckv.getByPrefix("tedarikci_fiyat_"),
     ]);
-    // Genel stok: depo + tüm mekanların en son stok sayımı
-    const ds = depoStok || {};
-    const genelStok = { album3: ds.album3 || 0, album5: ds.album5 || 0, album7: ds.album7 || 0, album9: ds.album9 || 0, album11: ds.album11 || 0, album13: ds.album13 || 0, album15: ds.album15 || 0, paspartu: ds.paspartu || 0 };
-    const mekanSon = {};
+    // Genel stok: depo + tüm mekanların en son stok sayımı (boyut bazında toplam)
+    const ds: any = migrateDepoStok(depoStok || {});
+    const genelStok: Record<string, number> = {};
+    for (const s of [3, 5, 7, 9, 11, 13, 15]) {
+      genelStok[`album${s}`] = (Number(ds[`album${s}_tam`]) || 0) + (Number(ds[`album${s}_yarim`]) || 0);
+    }
+    genelStok.paspartu = ds.paspartu || 0;
+    const mekanSon: Record<string, any> = {};
     for (const s of (tumStoklar || [])) { const mid = s.mekanId; if (!mid) continue; if (!mekanSon[mid] || (s.tarih || "") > (mekanSon[mid].tarih || "")) mekanSon[mid] = s; }
-    for (const s of Object.values(mekanSon)) { const sayim = s.kapanish || s.acilis || {}; for (const k of Object.keys(genelStok)) genelStok[k] += (sayim[k] || 0); }
+    for (const s of Object.values(mekanSon)) { const sayim = (s as any).kapanish || (s as any).acilis || {}; for (const k of Object.keys(genelStok)) genelStok[k] += (Number(sayim[k]) || 0); }
     // Fiyat listeleri map
     const fiyatMap = {};
     for (const fl of (fiyatListeleri || [])) { if (fl.cariId) fiyatMap[fl.cariId] = fl; }
@@ -16838,8 +17290,8 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
       siparis.updatedAt = new Date().toISOString();
       await ckv.set(`siparis_${teslimat.siparisId}`, siparis);
     }
-    // Depo stok girişi — teslimat kalemlerini depoya ekle
-    const depoStok = await ckv.get("depo_stok") || {};
+    // Depo stok girişi — teslimat kalemlerini depoya ekle (tam/yarım ayrımıyla)
+    const depoStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
     for (const line of teslimat.lines) {
       const name = (line.productName || "").toLowerCase();
       if (name.includes("paspartu")) {
@@ -16847,7 +17299,9 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
       } else {
         const sizeMatch = name.match(/(\d+)/);
         if (sizeMatch) {
-          const key = `album${sizeMatch[1]}`;
+          const isTam = name.includes("tam");
+          const suffix = isTam ? "_tam" : "_yarim";
+          const key = `album${sizeMatch[1]}${suffix}`;
           depoStok[key] = (depoStok[key] || 0) + (line.quantity || 0);
         }
       }

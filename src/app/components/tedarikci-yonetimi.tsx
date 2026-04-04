@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Package, Truck, Banknote, CheckCircle2, XCircle, Clock, Plus, Send, Eye,
   RefreshCw, UserPlus, ChevronDown, ChevronUp, X, AlertCircle, ChevronRight,
-  FileText, Users,
+  FileText, Users, HelpCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SERVER_URL } from '../lib/supabase';
@@ -53,6 +53,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState('');
+  const [showTedGuide, setShowTedGuide] = useState(false);
 
   // Modals
   const [showInvite, setShowInvite] = useState(false);
@@ -380,11 +381,16 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                       const cari = cariler.find((c: any) => c.id === s.cariId);
                       const st = cari?.supplierType || '';
                       if (st === 'album') {
-                        const items = [3,5,7,9,11,13,15].map(sz => {
+                        const items: Array<{ productName: string; quantity: number; unitPrice: number }> = [];
+                        for (const sz of [3,5,7,9,11,13,15]) {
                           const a = (albumler || []).find((al: any) => al.size === sz || al.size === String(sz));
-                          const existing = (s.items || []).find((i: any) => i.productName?.includes(String(sz)));
-                          return { productName: `${sz} Kare`, quantity: existing?.quantity || 0, unitPrice: existing?.unitPrice || a?.yarimBoy || a?.tamBoy || 0 };
-                        });
+                          const existingTam = (s.items || []).find((i: any) => i.productName === `${sz} Kare Tam`);
+                          const existingYarim = (s.items || []).find((i: any) => i.productName === `${sz} Kare Yarım`);
+                          // Eski format desteği: "3 Kare" → yarım olarak al
+                          const existingEski = !existingTam && !existingYarim ? (s.items || []).find((i: any) => i.productName === `${sz} Kare`) : null;
+                          items.push({ productName: `${sz} Kare Tam`, quantity: existingTam?.quantity || 0, unitPrice: existingTam?.unitPrice || a?.tamBoy || 0 });
+                          items.push({ productName: `${sz} Kare Yarım`, quantity: existingYarim?.quantity || existingEski?.quantity || 0, unitPrice: existingYarim?.unitPrice || existingEski?.unitPrice || a?.yarimBoy || 0 });
+                        }
                         items.push({ productName: 'Paspartu', quantity: (s.items || []).find((i: any) => i.productName === 'Paspartu')?.quantity || 0, unitPrice: 0 });
                         setKarsiTeklifItems(items);
                       } else {
@@ -401,9 +407,11 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                       {karsiTeklifItems.map((item, idx) => {
                         const sizeMatch = item.productName.match(/(\d+)/);
                         const size = sizeMatch ? parseInt(sizeMatch[1]) : 0;
-                        const stokKey = item.productName === 'Paspartu' ? 'paspartu' : `album${size}`;
-                        const depo = depoStok[stokKey] || 0;
-                        const genel = genelStok[stokKey] || 0;
+                        const isTam = item.productName.includes('Tam');
+                        const depoKey = item.productName === 'Paspartu' ? 'paspartu' : `album${size}${isTam ? '_tam' : '_yarim'}`;
+                        const genelKey = item.productName === 'Paspartu' ? 'paspartu' : `album${size}`;
+                        const depo = depoStok[depoKey] || 0;
+                        const genel = genelStok[genelKey] || 0;
                         return (
                           <div key={idx} className="grid grid-cols-[1fr_42px_42px_50px_48px] items-center py-1 gap-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                             <span className="text-white text-[10px]">{item.productName}</span>
@@ -669,9 +677,18 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold text-white">Tedarikçi Yönetimi</h1>
-        <button onClick={fetchData} className="p-2 rounded-xl" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
-          <RefreshCw className={`w-5 h-5 text-white/50 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowTedGuide(true)}
+            className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition-all"
+            style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}
+          >
+            <HelpCircle className="w-4 h-4 text-amber-400" />
+          </button>
+          <button onClick={fetchData} className="p-2 rounded-xl" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+            <RefreshCw className={`w-5 h-5 text-white/50 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -824,12 +841,19 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
               </div>
               {[3,5,7,9,11,13,15].map(s => {
                 const a = (albumler || []).find((al: any) => al.size === s || al.size === String(s));
-                const flItem = (fiyatMap[selectedTedarikci.id]?.items || []).find((f: any) => f.productName === `${s} Kare`);
-                const fiyat = flItem?.fiyat || a?.yarimBoy || a?.tamBoy || 0;
+                const flTam = (fiyatMap[selectedTedarikci.id]?.items || []).find((f: any) => f.productName === `${s} Kare Tam`);
+                const flYarim = (fiyatMap[selectedTedarikci.id]?.items || []).find((f: any) => f.productName === `${s} Kare Yarım`);
+                // Eski format desteği
+                const flEski = (fiyatMap[selectedTedarikci.id]?.items || []).find((f: any) => f.productName === `${s} Kare`);
+                const tamFiyat = flTam?.fiyat || flEski?.fiyat || a?.tamBoy || 0;
+                const yarimFiyat = flYarim?.fiyat || flEski?.fiyat || a?.yarimBoy || 0;
                 return (
-                  <div key={s} className="px-4 py-2 border-b flex justify-between" style={{ borderColor: glassBorder }}>
+                  <div key={s} className="px-4 py-2 border-b flex justify-between items-center" style={{ borderColor: glassBorder }}>
                     <span className="text-white text-xs">{s} Kare</span>
-                    <span className="text-green-400 font-bold text-xs">₺{fiyat}</span>
+                    <div className="flex gap-3">
+                      <span className="text-[10px] text-white/40">Tam: <span className="text-green-400 font-bold">₺{tamFiyat}</span></span>
+                      <span className="text-[10px] text-white/40">Yarım: <span className="text-green-400 font-bold">₺{yarimFiyat}</span></span>
+                    </div>
                   </div>
                 );
               })}
@@ -974,7 +998,8 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                   const sizes = [3, 5, 7, 9, 11, 13, 15];
                   for (const s of sizes) {
                     const a = (albumler || []).find((al: any) => al.size === s || al.size === String(s));
-                    items.push({ productName: `${s} Kare`, quantity: 0, unitPrice: a?.yarimBoy || a?.tamBoy || 0 });
+                    items.push({ productName: `${s} Kare Tam`, quantity: 0, unitPrice: a?.tamBoy || 0 });
+                    items.push({ productName: `${s} Kare Yarım`, quantity: 0, unitPrice: a?.yarimBoy || 0 });
                   }
                   items.push({ productName: 'Paspartu', quantity: 0, unitPrice: 0 });
                   setOrderItems(items);
@@ -1005,11 +1030,14 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                   {orderItems.map((item, idx) => {
                     const sizeMatch = item.productName.match(/(\d+)/);
                     const size = sizeMatch ? parseInt(sizeMatch[1]) : 0;
-                    const stokKey = item.productName === 'Paspartu' ? 'paspartu' : `album${size}`;
-                    const depo = depoStok[stokKey] || 0;
-                    const genel = genelStok[stokKey] || 0;
+                    const isTam = item.productName.includes('Tam');
+                    const stokKeySuffix = isTam ? '_tam' : '_yarim';
+                    const depoKey = item.productName === 'Paspartu' ? 'paspartu' : `album${size}${stokKeySuffix}`;
+                    const genelKey = item.productName === 'Paspartu' ? 'paspartu' : `album${size}`;
+                    const depo = depoStok[depoKey] || 0;
+                    const genel = genelStok[genelKey] || 0;
                     const albumData = size ? (albumler || []).find((a: any) => a.size === size || a.size === String(size)) : null;
-                    const maliyet = albumData?.yarimBoy || albumData?.tamBoy || 0;
+                    const maliyet = isTam ? (albumData?.tamBoy || 0) : (albumData?.yarimBoy || 0);
                     const isPaspartu = item.productName === 'Paspartu';
                     const anlasmItems = (cariFiyat?.items || []);
                     const anlasmaFiyat = anlasmItems.find((f: any) => f.productName === item.productName)?.fiyat;
@@ -1190,7 +1218,11 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                 // Ürün listesini oluştur (henüz fiyat yoksa default)
                 if (priceListItems.length === 0 && st === 'album') {
                   const sizes = [3, 5, 7, 9, 11, 13, 15];
-                  const defaults = sizes.map(s => ({ productName: `${s} Kare`, fiyat: 0, currency: 'TRY' }));
+                  const defaults: Array<{ productName: string; fiyat: number; currency: string }> = [];
+                  for (const s of sizes) {
+                    defaults.push({ productName: `${s} Kare Tam`, fiyat: 0, currency: 'TRY' });
+                    defaults.push({ productName: `${s} Kare Yarım`, fiyat: 0, currency: 'TRY' });
+                  }
                   defaults.push({ productName: 'Paspartu', fiyat: 0, currency: 'TRY' });
                   setTimeout(() => setPriceListItems(defaults), 0);
                 }
@@ -1229,6 +1261,99 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
               </motion.button>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+      {/* Tedarikçi Yönetimi Rehber Modalı */}
+      <AnimatePresence>
+        {showTedGuide && (
+          <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowTedGuide(false)}>
+            <motion.div
+              initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }}
+              className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <HelpCircle className="w-4 h-4 text-ta" /> Tedarikçi Yönetimi Rehberi
+                </h3>
+                <button onClick={() => setShowTedGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                  <X className="w-4 h-4 text-white/60" />
+                </button>
+              </div>
+              <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+
+                <div>
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">📦 Bu Sayfa Ne İşe Yarar?</h4>
+                  <p>Tedarikçilerle olan tüm <span className="text-ta font-semibold">sipariş, teslimat ve ödeme</span> süreçlerini yönetin.</p>
+                  <p className="mt-1">• 4 ana sekme: Tedarikçiler · Siparişler · Teslimatlar · Ödemeler</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">👥 Tedarikçiler Sekmesi</h4>
+                  <p>Kayıtlı tedarikçilerin listesi ve detayları:</p>
+                  <p className="mt-1">• <span className="text-ta font-semibold">Tedarikçi Davet Et</span>: E-posta ile yeni tedarikçi davet edin</p>
+                  <p>• Her tedarikçi kartında <span className="text-ta font-semibold">kategori etiketi</span> (Ribon, Albüm vb.) görünür</p>
+                  <p>• <span className="text-emerald-400 font-semibold">Stok Açık</span> rozeti: Tedarikçinin stok kataloğu aktif</p>
+                  <p>• Tedarikçiye tıklayarak sipariş geçmişi, fiyat listesi ve bakiye detayını görün</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">🛒 Siparişler Sekmesi</h4>
+                  <p>Tüm siparişlerin takibi ve yönetimi:</p>
+                  <p className="mt-1">• <span className="text-ta font-semibold">+ Yeni Sipariş</span>: Tedarikçiye sipariş oluşturun</p>
+                  <p>• Sipariş durumları:</p>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5 ml-2">
+                    <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold" style={{ background: 'rgba(156,163,175,0.15)', color: '#9ca3af' }}>Taslak</span>
+                    <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold" style={{ background: 'rgba(96,165,250,0.15)', color: '#60a5fa' }}>Gönderildi</span>
+                    <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold" style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399' }}>Onaylandı</span>
+                    <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold" style={{ background: 'rgba(251,191,36,0.15)', color: '#fbbf24' }}>Kısmen Teslim</span>
+                  </div>
+                  <p className="mt-1.5">• Sipariş detayında <span className="text-amber-400 font-semibold">karşı teklif</span> oluşturabilirsiniz</p>
+                  <p>• Filtreleme: Tümü · Aktif · Teklif · Geçmiş · İptal</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">🚚 Teslimatlar Sekmesi</h4>
+                  <p>Siparişlerin teslimat durumlarını takip edin:</p>
+                  <p className="mt-1">• Kısmen veya tamamen teslim alınan ürünleri görüntüleyin</p>
+                  <p>• Teslimat onayı verin — stok otomatik güncellenir</p>
+                  <p>• Eksik teslimatlar <span className="text-amber-400 font-semibold">Kısmen Teslim</span> olarak işaretlenir</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">💰 Ödemeler Sekmesi</h4>
+                  <p>Tedarikçilere yapılan ödemelerin takibi:</p>
+                  <p className="mt-1">• Sipariş bazlı ödeme kaydı oluşturun</p>
+                  <p>• <span className="text-emerald-400 font-semibold">Ödendi</span> / <span className="text-amber-400 font-semibold">Beklemede</span> durumlarını takip edin</p>
+                  <p>• Kısmi ödeme desteği — kalan bakiye otomatik hesaplanır</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">📋 Fiyat Listesi</h4>
+                  <p>• Her tedarikçi için ürün bazlı <span className="text-ta font-semibold">fiyat listesi</span> tanımlayın</p>
+                  <p>• Fiyat listesi sipariş oluştururken otomatik olarak kullanılır</p>
+                  <p>• Fiyat güncelleme geçmişi kaydedilir</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">🔄 Sipariş Akışı</h4>
+                  <p className="text-white/50">Taslak → Gönderildi → Onaylandı → Kısmen Teslim → Teslim Edildi → Tamamlandı</p>
+                  <p className="mt-1">• Her aşamada bildirim gider</p>
+                  <p>• Tedarikçi portalından onay/red/teklif yapılabilir</p>
+                  <p>• İptal edilen siparişler ayrı filtrede görünür</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">⚡ Önemli Bilgiler</h4>
+                  <p>• Tedarikçi <span className="text-ta font-semibold">e-posta ile</span> davet edilir — portal erişimi otomatik açılır</p>
+                  <p>• Teslimat onayı sonrası stok miktarları otomatik güncellenir</p>
+                  <p>• Ödeme kayıtları <span className="text-ta font-semibold">Kasa</span> ile senkronize çalışır</p>
+                  <p>• Tüm işlemler kayıt altına alınır</p>
+                </div>
+
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

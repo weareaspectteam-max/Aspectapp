@@ -85,6 +85,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   const [formEmoji, setFormEmoji] = useState('📍');
   const [formColor, setFormColor] = useState('#9dd9ea');
   const [formPhotoPrice, setFormPhotoPrice] = useState('0');
+  const [formPriceCurrency, setFormPriceCurrency] = useState('TRY');
   const [formYearlyRent, setFormYearlyRent] = useState('0');
   const [formProfitTarget, setFormProfitTarget] = useState('0'); // yıllık kar hedefi ₺
   const [formYearlyRents, setFormYearlyRents] = useState<Record<string, string>>({}); // yıl bazlı kiralar
@@ -209,6 +210,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           emoji: formEmoji,
           color: formColor,
           photoPrice: parseFloat(formPhotoPrice) || 0,
+          priceCurrency: formPriceCurrency,
           yearlyRent: parseFloat(formYearlyRent) || 0,
           profitTarget: parseFloat(formProfitTarget) || 0,
           yearlyRents: Object.fromEntries(Object.entries(formYearlyRents).filter(([,v]) => parseFloat(v) > 0).map(([k,v]) => [k, parseFloat(v)])),
@@ -244,6 +246,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           emoji: formEmoji,
           color: formColor,
           photoPrice: parseFloat(formPhotoPrice) || 0,
+          priceCurrency: formPriceCurrency,
           yearlyRent: parseFloat(formYearlyRent) || 0,
           profitTarget: parseFloat(formProfitTarget) || 0,
           yearlyRents: Object.fromEntries(Object.entries(formYearlyRents).filter(([,v]) => parseFloat(v) > 0).map(([k,v]) => [k, parseFloat(v)])),
@@ -315,6 +318,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     setFormEmoji(location.emoji);
     setFormColor(location.color);
     setFormPhotoPrice((location.photoPrice ?? 0).toString());
+    setFormPriceCurrency((location as any).priceCurrency || 'TRY');
     setFormYearlyRent((location.yearlyRent ?? 0).toString());
     // profitTarget varsa onu kullan, yoksa eski profitPercentage'den hesapla (geriye uyumluluk)
     const pt = location.profitTarget ?? (location.profitPercentage && location.yearlyRent
@@ -340,6 +344,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     setFormEmoji('📍');
     setFormColor('#9dd9ea');
     setFormPhotoPrice('0');
+    setFormPriceCurrency('TRY');
     setFormYearlyRent('0');
     setFormProfitTarget('0');
     setFormYearlyRents({});
@@ -511,17 +516,29 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                 />
               </div>
 
-              {/* Fotoğraf Fiyatı */}
+              {/* Fotoğraf Fiyatı + Para Birimi */}
               <div>
-                <label className="text-sm font-semibold text-gray-300 mb-2 block">💰 1 Fotoğraf Fiyatı (₺)</label>
-                <input
-                  type="number"
-                  value={formPhotoPrice}
-                  onChange={(e) => setFormPhotoPrice(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-pink-400 transition-all"
-                  placeholder="200"
-                />
-                <p className="text-xs text-gray-400 mt-1">Albüm fiyatları bu değere göre</p>
+                <label className="text-sm font-semibold text-gray-300 mb-2 block">💰 1 Fotoğraf Fiyatı</label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    value={formPhotoPrice}
+                    onChange={(e) => setFormPhotoPrice(e.target.value)}
+                    className="flex-1 px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-pink-400 transition-all"
+                    placeholder="200"
+                  />
+                  <select
+                    value={formPriceCurrency}
+                    onChange={(e) => setFormPriceCurrency(e.target.value)}
+                    className="w-24 px-2 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white focus:outline-none focus:border-pink-400 transition-all"
+                  >
+                    <option value="TRY" className="bg-gray-900">₺ TRY</option>
+                    <option value="EUR" className="bg-gray-900">€ EUR</option>
+                    <option value="USD" className="bg-gray-900">$ USD</option>
+                    <option value="GBP" className="bg-gray-900">£ GBP</option>
+                  </select>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Albüm fiyatları bu değere göre{formPriceCurrency !== 'TRY' ? ` (${formPriceCurrency} — raporlar TL'ye çevrilir)` : ''}</p>
               </div>
 
               {/* Baskı Tipi */}
@@ -968,12 +985,12 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                       {[3, 5, 7, 9, 11, 13, 15].map((n) => (
                         <div key={n} className="flex justify-between">
                           <span className="text-gray-300">{n}'li:</span>
-                          <span className="font-bold text-white">₺{formatCurrency(parseFloat(formPhotoPrice) * n)}</span>
+                          <span className="font-bold text-white">{formPriceCurrency === 'EUR' ? '€' : formPriceCurrency === 'USD' ? '$' : formPriceCurrency === 'GBP' ? '£' : '₺'}{formatCurrency(parseFloat(formPhotoPrice) * n)}</span>
                         </div>
                       ))}
                       <div className="flex justify-between">
                         <span className="text-green-300">1 Fotoğraf:</span>
-                        <span className="font-bold text-green-300">₺{formatCurrency(parseFloat(formPhotoPrice))}</span>
+                        <span className="font-bold text-green-300">{formPriceCurrency === 'EUR' ? '€' : formPriceCurrency === 'USD' ? '$' : formPriceCurrency === 'GBP' ? '£' : '₺'}{formatCurrency(parseFloat(formPhotoPrice))}</span>
                       </div>
                     </div>
                   </div>

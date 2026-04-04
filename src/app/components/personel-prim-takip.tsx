@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   ChevronLeft, RefreshCw, Trophy, Clock, ChevronDown, ChevronUp,
   Calendar, AlertCircle, CheckCircle2, Banknote, TrendingUp,
-  Wallet, Star, Award, Users, User,
+  Wallet, Star, Award, Users, User, HelpCircle, X,
 } from 'lucide-react';
 import { getToken, buildHeaders, appendGhostParam } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
@@ -144,6 +144,7 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
   const [seciliAy, setSeciliAy] = useState(aylar[0].value);
   const [rapor, setRapor] = useState<Rapor | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showGuide, setShowGuide] = useState(false);
   const [error, setError] = useState('');
   const [acikGunler, setAcikGunler] = useState<Set<string>>(new Set());
 
@@ -216,6 +217,12 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
             </h1>
             <p className="text-xs" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>Kişisel hakediş geçmişi</p>
           </div>
+          <button
+            onClick={() => setShowGuide(true)}
+            style={{ padding: 10, borderRadius: 14, background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}
+          >
+            <HelpCircle className="w-4 h-4 text-amber-400" />
+          </button>
           <button
             onClick={fetchRapor}
             disabled={loading}
@@ -672,6 +679,70 @@ export function PersonelPrimTakip({ userRole, userName, onBack }: PersonelPrimTa
           </>
         )}
       </div>
+
+      {/* ── Rehber Modal ── */}
+      <AnimatePresence>
+        {showGuide && (
+          <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowGuide(false)}>
+            <motion.div
+              initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }}
+              className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <HelpCircle className="w-4 h-4 text-ta" /> Hakediş Rehberi
+                </h3>
+                <button onClick={() => setShowGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                  <X className="w-4 h-4 text-white/60" />
+                </button>
+              </div>
+              <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+
+                <div>
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">🏆 Hakediş Nedir?</h4>
+                  <p>Hakediş (prim), mekandaki günlük ciro belirli kotaları aştığında kazanılan ek gelirdir.</p>
+                  <p className="mt-1">• Her mekanın <span className="text-ta font-semibold">kota kademeleri</span> vardır (örn: 1. kademe ₺5.000, 2. kademe ₺8.000)</p>
+                  <p>• Günlük ciro bir kademeyi geçtiğinde, o kademenin hakediş tutarı kazanılır</p>
+                  <p>• Kademeler <span className="text-ta font-semibold">toplanarak</span> işlenir — her geçilen kademenin hakedişi bir üstekine eklenir</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">👥 Paylaşım</h4>
+                  <p>• Mekanda <span className="text-ta font-semibold">tek kişi</span> çalışıyorsa hakediş tamamı o kişiye aittir</p>
+                  <p>• <span className="text-ta font-semibold">Birden fazla kişi</span> çalışıyorsa hakediş eşit bölünür</p>
+                  <p>• Görev tipi <span className="text-amber-400 font-semibold">Gözlemci</span> olanlar hakediş paylaşımına dahil edilmez</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">📊 Bu Sayfa</h4>
+                  <p>• <span className="text-ta font-semibold">Dönem:</span> Üstteki ay seçiciden geçmiş dönemleri inceleyebilirsiniz</p>
+                  <p>• <span className="text-emerald-400 font-semibold">Toplam Kazanç:</span> Seçili dönemdeki toplam hakediş tutarı</p>
+                  <p>• <span className="text-ta font-semibold">Ödenen:</span> Yönetici tarafından ödenmiş olan tutar</p>
+                  <p>• <span className="text-amber-400 font-semibold">Alacağım:</span> Henüz ödenmemiş hakediş tutarı</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">📋 Kayıt Detayları</h4>
+                  <p>Her hakediş kaydında şunları görebilirsiniz:</p>
+                  <p className="mt-1">• Hangi mekanda, hangi tarihte kazanıldığı</p>
+                  <p>• O günkü ciro ve ulaşılan kademe</p>
+                  <p>• Hakediş tutarı ve kaç kişiyle bölüşüldüğü</p>
+                  <p>• Ödeme durumu: <span className="text-emerald-400 font-semibold">✓ Ödendi</span> veya <span className="text-amber-400 font-semibold">Bekliyor</span></p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">⚡ Önemli</h4>
+                  <p>• Hakediş, vardiya kapanışında otomatik hesaplanır — manuel giriş yapılmaz</p>
+                  <p>• Ödeme onayı yönetici tarafından yapılır</p>
+                  <p>• Bir gün birden fazla kademe aşılabilir — her kademe ayrı satır olarak görünür</p>
+                </div>
+
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

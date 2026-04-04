@@ -17,6 +17,38 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '5.1.1',
+    date: '2026-04-04',
+    title: 'Döviz Desteği & Rehber Butonları & Akademi Rehberi',
+    changes: [
+      { type: 'new', text: 'Mekan bazlı döviz desteği — fotoğraf fiyatını EUR/USD/GBP cinsinden ayarlama, satışta otomatik döviz gösterimi' },
+      { type: 'new', text: 'Depo stok tam/yarım boy ayrımı — tedarikçi siparişi ve depoda ayrı takip' },
+      { type: 'new', text: 'Akademi uygulama kullanım rehberi — Vardiya Açılış & Kapanış, Kare Sistemi, Satış Girişi' },
+      { type: 'new', text: 'Sayfa içi rehber butonları (?) — Rotasyon, Canlı Akış, Vardiya Raporları, Hakediş Takip, Hedef Takip, İzin Çizelgesi, Malzeme Yönetimi, Hakedişlerim, İzin Talepleri, Kasa, İşletme Genel Durum, Tedarikçi Yönetimi, Kişisel İzin Çizelgesi, Liderlik Tablosu, Görev Seçim' },
+      { type: 'improve', text: 'Döviz çevirici — mekan para birimi hariç diğer 3 döviz gösterilir' },
+      { type: 'improve', text: 'Tedarikçi siparişlerinde tam/yarım boy ayrımı (14 ürün satırı)' },
+      { type: 'improve', text: 'Akademi içerik kartları — Yazı/PDF/Link kartlarında başlık + özet yazısı' },
+      { type: 'fix', text: 'Vite HMR sürekli sayfa yenileme sorunu — .next klasörü watch listesinden hariç tutuldu' },
+    ],
+  },
+  {
+    version: '5.1.0',
+    date: '2026-04-04',
+    title: 'Borçlar Kasa Entegrasyonu & Pay Dağıtımı & Stok Tam/Yarım',
+    changes: [
+      { type: 'new', text: 'Borçlar sekmesi kasayla entegre — tahsilat kasaya giriş, ödeme kasadan çıkış' },
+      { type: 'new', text: 'Pay dağıtımı — ortakları tanımla, tutar gir, otomatik böl, kasadan düş' },
+      { type: 'new', text: 'Bakiye kartında alacak/verecek toplamları ve net bakiye gösterimi' },
+      { type: 'new', text: 'Borçlarda döviz desteği ($, EUR, £) — toplam TRY karşılığı ile' },
+      { type: 'new', text: 'Mekan stokları tam/yarım boy ayrımı — depodan tam boy albüm aktarma desteği' },
+      { type: 'improve', text: 'Bekleyen ödemeler accordion — kategori bazlı, personeller tek başlık altında' },
+      { type: 'improve', text: 'Kapanışta albüm düşümü: kendi tipi bittiyse diğer tipten düşülür, maliyet doğru hesaplanır' },
+      { type: 'improve', text: 'Genel stok dağılımında her boyut için T:X Y:X detay gösterimi' },
+      { type: 'improve', text: 'Stok güncelle ve transfer: mekanlar için de tam/yarım ayrı düzenleme' },
+      { type: 'fix', text: 'Supabase deploy: doğru function adıyla (make-server-4da0b637) deploy düzeltildi' },
+    ],
+  },
+  {
     version: '5.0.0',
     date: '2026-04-03',
     title: 'Tedarikçi Portalı & Sipariş Sistemi',

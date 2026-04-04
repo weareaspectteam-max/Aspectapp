@@ -4,7 +4,7 @@ import {
   ChevronLeft, RefreshCw, Trophy, Check, Clock,
   ChevronDown, ChevronUp, Filter, CreditCard,
   Calendar, AlertCircle, CheckCircle2, User, Users,
-  Banknote, X, TrendingUp, Undo2, Trash2, Settings2, Save,
+  Banknote, X, TrendingUp, Undo2, Trash2, Settings2, Save, HelpCircle,
 } from 'lucide-react';
 import { getToken, buildHeaders, appendGhostParam } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
@@ -149,6 +149,7 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   // Seçili kayıtlar: odemeKey → PrimKayit
   const [seciliMap, setSeciliMap] = useState<Map<string, PrimKayit>>(new Map());
@@ -373,6 +374,13 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
             </h1>
             <p className="text-xs" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>İsim bazlı prim yönetimi</p>
           </div>
+          <button
+            onClick={() => setShowGuide(true)}
+            className="active:scale-90 transition-all"
+            style={{ padding: 10, borderRadius: 14, background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}
+          >
+            <HelpCircle className="w-4 h-4 text-amber-400" />
+          </button>
           <button
             onClick={fetchRapor}
             disabled={loading}
@@ -963,6 +971,83 @@ export function PrimTakip({ userRole, onBack }: PrimTakipProps) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Hakediş Rehber Modalı */}
+      {showGuide && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowGuide(false)}>
+          <div
+            className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-amber-400" /> Hakediş Takip Rehberi
+              </h3>
+              <button onClick={() => setShowGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                <X className="w-4 h-4 text-white/60" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+
+              <div>
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🏆 Hakediş Nedir?</h4>
+                <p>Hakediş, mekanın günlük cirosu belirlenen <span className="text-amber-400 font-semibold">kota hedefini</span> geçtiğinde personele ödenen prim/komisyondur. O gün rotasyonda atanan tüm personel hakediş kazanır.</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🎯 Kota Sistemi</h4>
+                <p>Her mekan için birden fazla kademe belirlenebilir:</p>
+                <div className="mt-1.5 space-y-1">
+                  <p>• 🥉 <span className="text-white font-semibold">Kademe 1</span> — Örn: ₺500 ciro → ₺200 prim</p>
+                  <p>• 🥈 <span className="text-white font-semibold">Kademe 2</span> — Örn: ₺1.000 ciro → ₺350 prim</p>
+                  <p>• 🥇 <span className="text-white font-semibold">Kademe 3</span> — Örn: ₺1.500 ciro → ₺500 prim</p>
+                </div>
+                <p className="mt-1.5 text-white/50">Ciro ₺1.500'ü geçerse tüm kademeler birlikte kazanılır.</p>
+                <p className="mt-1">Kota ayarları: Mekan Yönetimi → ilgili mekan → Kota Kademeleri</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🎖️ Kıdem Çarpanı</h4>
+                <p>Personelin kıdemine göre hakediş çarpanla artırılır:</p>
+                <div className="mt-1.5 space-y-1">
+                  <p>• ⚪ <span className="text-white font-semibold">Kıdemsiz</span> — ×1.00 (değişmez)</p>
+                  <p>• 🔵 <span className="text-white font-semibold">Kıdemli</span> — ×1.15 (%15 fazla)</p>
+                  <p>• 💜 <span className="text-white font-semibold">Kıdemli+</span> — ×1.30 (%30 fazla)</p>
+                </div>
+                <p className="mt-1.5 text-white/50">Formül: Hakediş = Temel Tutar × Kıdem Çarpanı</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📊 Üst Kartlar</h4>
+                <p>• <span className="text-purple-400 font-semibold">Toplam</span> — Dönemdeki tüm hakediş tutarı</p>
+                <p>• <span className="text-emerald-400 font-semibold">Ödenen</span> — Ödemesi yapılmış tutar</p>
+                <p>• <span className="text-amber-400 font-semibold">Bekleyen</span> — Henüz ödenmemiş tutar</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">💰 Ödeme İşlemleri</h4>
+                <p>• Personel kartını açın → her kaydın yanında <span className="text-emerald-400 font-semibold">Öde</span> butonu var</p>
+                <p>• Ödeme yapıldığında otomatik gider kaydı oluşur</p>
+                <p>• Yanlış ödeme? → <span className="text-orange-400 font-semibold">İptal</span> butonu ile geri alabilirsiniz</p>
+                <p>• Toplu ödeme: Checkbox ile seçin → <span className="text-emerald-400 font-semibold">Seçilenleri Öde</span></p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📅 Dönem Seçimi</h4>
+                <p>Üstteki ay butonlarıyla son 6 ayın hakediş raporlarını görebilirsiniz. Kaydırarak eski aylara ulaşın.</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🔐 Yetkiler</h4>
+                <p>• <span className="text-white font-semibold">Yönetici</span> — Tüm işlemler + kıdem çarpan düzenleme</p>
+                <p>• <span className="text-white font-semibold">Üst Müdür</span> — Ödeme + çarpanları görüntüleme</p>
+                <p>• <span className="text-white font-semibold">Müdür / İdari</span> — Ödeme işlemleri</p>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

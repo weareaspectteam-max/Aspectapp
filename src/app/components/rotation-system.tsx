@@ -3,7 +3,7 @@ import {
   Users, MapPin, Send, Calendar, Clock, Plus, X, Check,
   ChevronRight, Edit2, Trash2, CheckCircle, XCircle,
   AlertCircle, CheckSquare, Square, CalendarX, FileText,
-  RefreshCw, Repeat, Zap, Star
+  RefreshCw, Repeat, Zap, Star, HelpCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabase';
@@ -92,6 +92,8 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('month');
   const [preselectedLocation, setPreselectedLocation] = useState<string>('');
   const [editingLeaveRequest, setEditingLeaveRequest] = useState<LeaveRequest | null>(null);
+  const [showRotationGuide, setShowRotationGuide] = useState(false);
+  const [showLeaveGuide, setShowLeaveGuide] = useState(false);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string>('');
 
@@ -875,6 +877,13 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                 <h2 className="text-base font-bold text-white flex items-center gap-2">
                   📍 Sabit Mekanlar
                 </h2>
+                <button
+                  onClick={() => setShowRotationGuide(true)}
+                  className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition-all"
+                  style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}
+                >
+                  <HelpCircle className="w-4 h-4 text-amber-400" />
+                </button>
               </div>
 
               <div className="space-y-3">
@@ -1601,6 +1610,13 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
               <h2 className="text-base font-bold text-white">
                 📨 Gönderilen Rotasyonlar
               </h2>
+              <button
+                onClick={() => setShowRotationGuide(true)}
+                className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition-all"
+                style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}
+              >
+                <HelpCircle className="w-4 h-4 text-amber-400" />
+              </button>
             </div>
 
             {/* Aktif rotasyonlar üstte — İzinli+Beklemede sonra — Geçmiş Rotasyonlar en altta */}
@@ -1890,8 +1906,17 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
                     <p className="text-[11px] text-white/35 leading-tight">Vardiya izin yönetimi</p>
                   </div>
                 </div>
-                <div className="flex items-center justify-center min-w-[36px] h-9 px-3 rounded-xl bg-white/6 border border-white/10">
-                  <span className="text-sm font-black text-white/70">{leaveRequests.length}</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowLeaveGuide(true)}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-95 transition-all"
+                    style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}
+                  >
+                    <HelpCircle className="w-4 h-4 text-amber-400" />
+                  </button>
+                  <div className="flex items-center justify-center min-w-[36px] h-9 px-3 rounded-xl bg-white/6 border border-white/10">
+                    <span className="text-sm font-black text-white/70">{leaveRequests.length}</span>
+                  </div>
                 </div>
               </div>
 
@@ -2334,6 +2359,202 @@ export function RotationSystem({ userName, userRole, accessToken, onLogout, onNa
           }}
         />
       )}
+
+      {/* Rotasyon Rehber Modalı */}
+      <AnimatePresence>
+        {showRotationGuide && (
+          <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowRotationGuide(false)}>
+            <motion.div
+              initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }}
+              className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <HelpCircle className="w-4 h-4 text-amber-400" /> {activeTab === 'assigned' ? 'Rotasyonlar Rehberi' : 'Görev Planlama Rehberi'}
+                </h3>
+                <button onClick={() => setShowRotationGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                  <X className="w-4 h-4 text-white/60" />
+                </button>
+              </div>
+              <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+                {activeTab === 'assigned' ? (<>
+                  <div>
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">📨 Bu Sayfa Ne Gösterir?</h4>
+                    <p>Gönderilmiş görevleri, izinli personeli ve beklemedeki personeli gösterir. Herkes kendi görevlerini ve genel durumu buradan takip eder.</p>
+                  </div>
+
+                  <div className="border-t border-white/8 pt-3">
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">✅ Aktif Rotasyonlar</h4>
+                    <p>Bugün ve gelecek tarihli gönderilmiş görevler üstte listelenir:</p>
+                    <p className="mt-1">• <span className="text-emerald-400 font-semibold">✅ Gönderildi</span> — Aktif görev</p>
+                    <p>• <span className="text-amber-400 font-semibold">🔄 Revize</span> — Görev güncellendi (kaç kez revize edildiği rozette görünür)</p>
+                    <p>• <span className="text-red-400 font-semibold">❌ İptal</span> — İptal edilen görev (neden belirtilir)</p>
+                  </div>
+
+                  <div className="border-t border-white/8 pt-3">
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">🕐 Zaman Dilimi İkonları</h4>
+                    <div className="space-y-0.5">
+                      <p>• 🌅 Sabah (06:00–12:00)</p>
+                      <p>• ☀️ Öğle (12:00–18:00)</p>
+                      <p>• 🌆 Akşam (18:00–22:00)</p>
+                      <p>• 🌙 Gece (22:00+)</p>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-white/8 pt-3">
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">👥 Görev Kartı İçeriği</h4>
+                    <p>• 📍 Mekan adı ve çalışma saati</p>
+                    <p>• 👤 Atanan personel listesi</p>
+                    <p>• 2+ kişi varsa görev tipleri: 📸 Foto/Satış · 🖨️ Baskı · 📒 Albüm · 👁️ Gözlemci</p>
+                    <p>• 📝 Varsa görev notları</p>
+                  </div>
+
+                  <div className="border-t border-white/8 pt-3">
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">🏖️ Bugün İzinli Personel</h4>
+                    <p>O gün izinli olan personel listesi. <span className="text-cyan-400 font-semibold">Dinamik</span> rozeti anlık güncellemeyi ifade eder.</p>
+                  </div>
+
+                  <div className="border-t border-white/8 pt-3">
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">⏳ Rotasyona Atanabilirsiniz</h4>
+                    <p>Henüz hiçbir mekana atanmamış, müsait personel listesi. Bu listedeyseniz yöneticinizden haber bekleyin.</p>
+                  </div>
+
+                  <div className="border-t border-white/8 pt-3">
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">📋 Geçmiş Rotasyonlar</h4>
+                    <p>Dünden önceki tamamlanmış görevler. Grileşmiş olarak gösterilir, en yeni en üstte.</p>
+                  </div>
+
+                  <div className="border-t border-white/8 pt-3">
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">⚡ Önemli</h4>
+                    <p>• Rotasyonda atanmadığınız mekanda <span className="text-red-400 font-semibold">vardiya açamaz, satış giremez, kare kaydedemezsiniz</span></p>
+                    <p>• Sadece <span className="text-ta font-semibold">Yönetici</span> bu kısıtlamayı atlayabilir</p>
+                  </div>
+                </>) : (<>
+                  <div>
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">📋 Görev Oluşturma</h4>
+                    <p>Her mekan kartındaki <span className="text-ta font-semibold">+ Görev Oluştur</span> butonuna basarak personel atayın.</p>
+                    <p className="mt-1">• Çalışma saatini girin (mekan saati otomatik gelir)</p>
+                    <p>• Personel seçin (birden fazla eklenebilir)</p>
+                    <p>• 2+ kişi varsa görev tipi atayın: 📸 Foto/Satış · 🖨️ Baskı · 📒 Albüm · 👁️ Gözlemci</p>
+                  </div>
+
+                  <div className="border-t border-white/8 pt-3">
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">📨 Gönderme</h4>
+                    <p>Görevler önce <span className="text-amber-400 font-semibold">taslak</span> olarak kaydedilir.</p>
+                    <p className="mt-1">• Tek görev: Kartın üzerindeki <span className="text-ta font-semibold">Gönder</span> butonuna basın</p>
+                    <p>• Toplu: Birden fazla seçin → <span className="text-ta font-semibold">Tümünü Gönder</span></p>
+                    <p>• Gönderildiğinde personele bildirim gider</p>
+                  </div>
+
+                  <div className="border-t border-white/8 pt-3">
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">✏️ Düzenleme & İptal</h4>
+                    <p>• Gönderilmiş görevi düzenleyebilirsiniz → durum <span className="text-amber-400 font-semibold">Revize</span> olur</p>
+                    <p>• İptal için neden yazmanız gerekir</p>
+                    <p>• İptal edilen görevler <span className="text-ta font-semibold">🔄 Yeniden Aktif Et</span> ile geri açılabilir</p>
+                  </div>
+
+                  <div className="border-t border-white/8 pt-3">
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">🏖️ İzinli & ⏳ Beklemede</h4>
+                    <p>• <span className="font-semibold text-orange-400">İzinli</span>: O gün çalışmayacak personel</p>
+                    <p>• <span className="font-semibold text-yellow-400">Beklemede</span>: Henüz atanmamış, müsait personel</p>
+                    <p>• Personeli bu gruplar arasında taşıyabilirsiniz</p>
+                  </div>
+
+                  <div className="border-t border-white/8 pt-3">
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">⚡ Önemli Kurallar</h4>
+                    <p>• Rotasyonda atanmayan personel <span className="text-red-400 font-semibold">vardiya açamaz, satış giremez, kare kaydedemez</span></p>
+                    <p>• Sadece <span className="text-ta font-semibold">Yönetici</span> rolü bu kısıtlamayı atlayabilir</p>
+                    <p>• Her işlem kayıt altına alınır — kim ne zaman atadı görülebilir</p>
+                  </div>
+
+                  <div className="border-t border-white/8 pt-3">
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">🎯 Görev Tipleri</h4>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      <span className="px-2 py-1 rounded-lg bg-emerald-500/15 text-emerald-400 text-[11px] font-bold">🟢 Düzenli İş</span>
+                      <span className="px-2 py-1 rounded-lg bg-pink-500/15 text-pink-400 text-[11px] font-bold">🩷 Ekstra İş</span>
+                      <span className="px-2 py-1 rounded-lg bg-purple-500/15 text-purple-400 text-[11px] font-bold">🟣 Özel Görev</span>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-white/8 pt-3">
+                    <h4 className="text-[13px] font-bold text-white mb-1.5">🔔 Bildirimler</h4>
+                    <p>• 📩 Görev atandığında personele bildirim gider</p>
+                    <p>• 🔄 Görev revize edildiğinde güncelleme bildirimi</p>
+                    <p>• ❌ Görev iptal edildiğinde iptal bildirimi</p>
+                    <p>• Rotasyon kanalına günlük plan mesajı gönderilir</p>
+                  </div>
+                </>)}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── İzin Rehber Modal ── */}
+      <AnimatePresence>
+        {showLeaveGuide && (
+          <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowLeaveGuide(false)}>
+            <motion.div
+              initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }}
+              className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <HelpCircle className="w-4 h-4 text-ta" /> İzin Yönetimi Rehberi
+                </h3>
+                <button onClick={() => setShowLeaveGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                  <X className="w-4 h-4 text-white/60" />
+                </button>
+              </div>
+              <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+
+                <div>
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">🏖️ İzin Talebi Oluşturma</h4>
+                  <p><span className="text-ta font-semibold">+ İzin Ekle</span> butonuna basarak yeni izin talebi oluşturabilirsiniz:</p>
+                  <p className="mt-1">• <span className="text-ta font-semibold">İzin Türü:</span> Yıllık İzin, Sağlık İzni veya Kişisel/Mazeret İzni</p>
+                  <p>• <span className="text-ta font-semibold">Tarih Seçimi:</span> Başlangıç ve bitiş tarihi (sadece ileri tarih)</p>
+                  <p>• <span className="text-ta font-semibold">Not:</span> İsteğe bağlı açıklama ekleyebilirsiniz</p>
+                  <p>• Talep <span className="text-amber-400 font-semibold">Beklemede</span> durumunda oluşturulur</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">✅ Onay / Red Süreci</h4>
+                  <p>Yönetici olarak bekleyen izin taleplerini değerlendirebilirsiniz:</p>
+                  <p className="mt-1">• <span className="text-emerald-400 font-semibold">✓ Onayla:</span> İzni onaylar, personel o tarihler için izinli sayılır</p>
+                  <p>• <span className="text-red-400 font-semibold">✗ Reddet:</span> Talebi reddeder, personele bildirim gider</p>
+                  <p>• <span className="text-ta font-semibold">Düzenle:</span> Tarihleri veya türü değiştirebilirsiniz</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">📅 Günlük İzin</h4>
+                  <p>İzin talebi oluşturmadan, rotasyon ekranından personeli <span className="text-orange-400 font-semibold">direkt izinli</span> olarak işaretleyebilirsiniz.</p>
+                  <p className="mt-1">• Bu yöntem acil durumlarda veya kısa süreli izinlerde kullanılır</p>
+                  <p>• İzin çizelgesinde <span className="text-orange-400 font-semibold">turuncu</span> olarak görünür</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">📋 Geçmiş</h4>
+                  <p><span className="text-ta font-semibold">Geçmişim</span> butonuyla önceki izin taleplerini ve durumlarını görebilirsiniz:</p>
+                  <p className="mt-1">• <span className="text-emerald-400 font-semibold">Onaylandı</span> — izin kullanıldı</p>
+                  <p>• <span className="text-red-400 font-semibold">Reddedildi</span> — talep kabul edilmedi</p>
+                  <p>• <span className="text-amber-400 font-semibold">Beklemede</span> — henüz değerlendirilmedi</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">⚡ Önemli Kurallar</h4>
+                  <p>• <span className="text-red-400 font-semibold">Geçmiş tarihe</span> izin talebi oluşturulamaz</p>
+                  <p>• Yönetici onaylamadan izin <span className="text-red-400 font-semibold">geçerli sayılmaz</span></p>
+                  <p>• İzinli personel rotasyona atanamaz ve vardiya açamaz</p>
+                  <p>• Onaylanan izinler <span className="text-ta font-semibold">İzin Çizelgesi</span>'nde kırmızı olarak görünür</p>
+                </div>
+
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -423,7 +423,9 @@ video (YouTube embed), text (yazi), pdf (dis link), gallery (resimler), quiz (co
 **Tab:** Kasa icinde 3. tab (📝 ikonu)
 **KV:** `kasa_borc_{id}` → `{ id, yon: "alacak"/"verecek", kisi, tutar, kalanTutar, currency, aciklama, tarih, odemeler: [{tutar, tarih, aciklama}] }`
 
-- Kasadan ve IGD'den bagimsiz — sadece bilgi amacli alacak/verecek takibi
+- Kasa ile entegre — borc eklenince/silinince kasaya yansiyor, tahsilat/odeme kasayi etkiliyor
+- Alacaklarda "Tahsilat Yap" (kasaya giris), Vereceklerde "Odeme Yap" (kasadan cikis)
+- IGD'de "Borclar — ..." aciklamasiyla gorunur
 - Doviz destegi: TRY, USD, EUR, GBP
 - Kismi/tam odeme yapilabilir
 - Kasa bakiyesini etkilemez
@@ -539,6 +541,70 @@ Odeme kaydedildiginde:
 ### Teslimat → Depo Stok
 - Teslimat onaylaninca depo_stok otomatik artar (paspartu haric)
 - Paspartu depoya eklenmez, fiyati toplam tutar olarak girilir (carpma yok)
+
+### Depo & Mekan Stok: Tam Boy / Yarim Boy Ayrimi
+- **depo_stok** ve **mekan stoklari** tam/yarim formatta: `album3_tam`, `album3_yarim`, ..., `album15_tam`, `album15_yarim`
+- Eski format (album3, album5 vb.) lazy migration ile yarim boy'a tasinir (`migrateMekanStok`, `migrateDepoStok`)
+- Mekanlar da tam/yarim tutuyor — depodan tam boy album aktarilabilir
+- Tedarikci siparisleri: urun adlari "3 Kare Tam", "3 Kare Yarim" seklinde
+- Transfer: alan direkt aktarilir (album3_tam → album3_tam), donusum yok
+- Maliyet hesabi: mekan.printType ile tamBoy/yarimBoy fiyat secilir. Kendi tipi bittiyse diger tipten dusulur ve o tipin fiyatiyla hesaplanir
+- Kapanis: satis album dusumu once mekanin printType'indan, bittiyse diger tipten yapilir. Farkli tip kullanimi `farkliTipKullanim` olarak kaydedilir
+
+---
+
+### Mekan Bazli Doviz Destegi
+- Mekan kaydinda `priceCurrency` alani: `'TRY' | 'USD' | 'EUR' | 'GBP'` (varsayilan: TRY)
+- Satis ekraninda urun fiyatlari mekanin para birimiyle gosterilir (€, $, £, ₺)
+- Satis kaydedilirken: `currency` = mekan para birimi, `currencyPrice` = doviz tutari, `finalPrice` = doviz × kur → TL
+- Raporlar, ciro, hakedis hep TL bazinda calisir (degismez)
+- Doviz widget: mekanin kendi para birimi haric diger 3 dovizi gosterir
+- Mevcut mekanlar etkilenmez (priceCurrency undefined = TRY)
+
+---
+
+## Guncelleme Notlari
+
+### 04.04.2026 (2. guncelleme)
+- **Depo Stok Tam/Yarim Ayrimi:** Depo stoku `album3_tam`, `album3_yarim` formatinda. Tedarikci siparisleri "3 Kare Tam" / "3 Kare Yarim" olarak. Teslimat onayinda depoya dogru alana eklenir.
+- **Mekan Bazli Doviz Destegi:** Mekan kaydina `priceCurrency` alani eklendi. Satis ekraninda urun fiyatlari mekanin para birimiyle gosterilir. Kayit TL'ye cevrilir.
+- **Akademi Uygulama Rehberi:** `POST /academy/seed-guide` endpoint'i — Vardiya Acilis & Kapanis, Kare Sistemi, Satis Girisi rehber icerikleri. "Rehber" butonu ile yukle.
+- **Sayfa Ici Rehber Butonlari:** Tum ana sayfalara ? butonu + detayli rehber modal eklendi (toplam 15 sayfa — detay asagidaki tabloda).
+
+### 04.04.2026
+- **Borclar — Kasa Entegrasyonu:** Borclar sekmesi kasayla entegre edildi. Alacaklarda "Tahsilat Yap" (kasaya giris), Vereceklerde "Odeme Yap" (kasadan cikis). Borc eklenince/silinince kasa + IGD etkileniyor. Aciklama: "Borclar — Tahsilat/Odeme/Verilen Borc/Alinan Borc — kisi adi"
+- **Pay Dagitimi:** Sirket kasasina "Pay Dagit" butonu eklendi. Ortaklari tanimla (isim + yuzde), toplam tutar gir, otomatik bol. Kasadan duser, IGD'de tek satir gorunur. Gecmis dagitimlar accordion ile listelenir. Sadece yonetici erisir. Endpoint'ler: `/ortaklar` (GET/POST), `/dagitim` (POST), `/dagitimlar` (GET). KV: `pay_ortaklar`, `pay_dagitim_{id}`
+- **Bekleyen Odemeler Accordion:** Kategori bazli gruplanip accordion olarak gosteriliyor. Personeller tek "Personel" basligi altinda toplanip, acilinca alt personeller ayri ayri gorunuyor.
+- **Bakiye Kartinda Alacak/Verecek:** Sirket kasasi bakiye kartinin sag ustunde alacak (yesil) ve verecek (kirmizi) toplamlari, altinda "Net Bakiye" gosteriliyor. Doviz borclar guncel kurla TRY'ye cevriliyor.
+- **Doviz Destegi Borclar:** Borc kartlarinda para birimi semboluyle gosteriliyor ($, EUR, £). Toplam alacak/verecek TRY'ye cevrili.
+- **Mekan Stok Tam/Yarim Ayrimi:** Mekan stoklari artik depo gibi `album3_tam`, `album3_yarim` formatinda tutuluyor. Lazy migration: eski `album3` → `album3_yarim` olarak tasinir. Acilis/kapanis, transfer, stok guncelle, genel stok dagilimi, anomali panosu tam/yarim destekliyor. Kapanis album dusumunde once mekanin kendi tipinden dusulur, bittiyse diger tipten dusulur ve maliyet o tipin fiyatiyla hesaplanir.
+
+---
+
+## Sayfa Ici Rehber Butonlari (?)
+
+Yonetici/mudur sayfalarinda amber renkli `?` (HelpCircle) butonlari eklenmistir. Basinca o sayfaya ozel aciklama modali acilir.
+
+| Sayfa | Dosya | Konum |
+|---|---|---|
+| Rotasyon — Gorev Planla | `rotation-system.tsx` | "Sabit Mekanlar" basliginin yaninda |
+| Rotasyon — Rotasyonlar | `rotation-system.tsx` | "Gonderilen Rotasyonlar" basliginin yaninda |
+| Canli Akis | `live-sales-feed.tsx` | Stat chip'lerin (satis/gelir/kare/toplam) yaninda |
+| Vardiya Raporlari | `vardiya-raporlari/vardiya-raporlari.tsx` | Refresh butonunun solunda |
+| Hakedis Takip | `prim-takip.tsx` | Refresh butonunun solunda |
+| Hedef Takip | `hedef-takip.tsx` | Refresh butonunun solunda |
+| Izin Cizelgesi | `personel-izin-cetveli.tsx` | Refresh butonunun solunda |
+| Malzeme Yonetimi | `equipment-page.tsx` | + butonunun solunda |
+| Hakedislerim (personel) | `personel-prim-takip.tsx` | Refresh butonunun solunda |
+| Rotasyon — Izinler | `rotation-system.tsx` | Izin Talepleri sayac yaninda |
+| Kasa | `kasa.tsx` | Baslik sag tarafi |
+| Isletme Genel Durum | `isletme-genel-durum.tsx` | Refresh butonunun solunda |
+| Tedarikci Yonetimi | `tedarikci-yonetimi.tsx` | Refresh butonunun solunda |
+| Kisisel Izin Cizelgesi | `kisisel-izin-cetveli.tsx` | Refresh butonunun solunda |
+| Liderlik Tablosu | `leaderboard.tsx` | Refresh butonunun solunda |
+| Gorev Secim (Mekan) | `project-selector.tsx` | Baslik sag ustu |
+
+Stil: `background: rgba(251,191,36,0.15)`, `border: 1px solid rgba(251,191,36,0.4)`, `boxShadow: 0 0 8px rgba(251,191,36,0.2)`, ikon: `text-amber-400`
 
 ---
 

@@ -1,6 +1,6 @@
 import { getTasks, getLocations } from '../services/rotation-service';
 import type { Task } from '../services/rotation-service';
-import { MapPin, Clock, Navigation, CheckCircle2, Lock, ArrowLeft, Zap, Loader2, Trophy } from 'lucide-react';
+import { MapPin, Clock, Navigation, CheckCircle2, Lock, ArrowLeft, Zap, Loader2, Trophy, HelpCircle, X } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { localDateStr, toLocalDateStr } from '../lib/date';
 import { authHeaders } from '../lib/api';
@@ -50,6 +50,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
   const [myRotationVenues, setMyRotationVenues] = useState<Set<string>>(new Set());
   const [pendingProject, setPendingProject] = useState<Project | null>(null);
   const [rotasyonYukleniyor, setRotasyonYukleniyor] = useState(true);
+  const [showGorevGuide, setShowGorevGuide] = useState(false);
   const [rotasyonDurumu, setRotasyonDurumu] = useState<'yukleniyor' | 'tanimlanmamis' | 'atanmamis' | 'hata' | 'tamam'>('yukleniyor');
   const [ekstraTasks, setEkstraTasks] = useState<Task[]>([]);
   const [ozelTasks, setOzelTasks] = useState<Task[]>([]);
@@ -587,10 +588,19 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
       )}
 
       <div className="mb-4">
-        <h2 className="text-2xl font-bold text-white mb-1 flex items-center gap-2">
-          Bugünkü Göreviniz
-          <span className="text-2xl">📍</span>
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-white mb-1 flex items-center gap-2">
+            Bugünkü Göreviniz
+            <span className="text-2xl">📍</span>
+          </h2>
+          <button
+            onClick={() => setShowGorevGuide(true)}
+            className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition-all"
+            style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}
+          >
+            <HelpCircle className="w-4 h-4 text-amber-400" />
+          </button>
+        </div>
         <p className="text-sm text-gray-400">Hangi projede çalışıyorsunuz?</p>
       </div>
 
@@ -797,6 +807,81 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
           <div className="flex items-center gap-2 text-sm text-[#a8e6cf] font-semibold">
             <Navigation className="w-4 h-4" />
             <span>Konum algılandı - En yakın projeler gösteriliyor</span>
+          </div>
+        </div>
+      )}
+      {/* Görev Seçim Rehber Modalı */}
+      {showGorevGuide && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowGorevGuide(false)}>
+          <div
+            className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-ta" /> Görev Seçim Rehberi
+              </h3>
+              <button onClick={() => setShowGorevGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                <X className="w-4 h-4 text-white/60" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+
+              <div>
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📍 Bu Sayfa Ne İşe Yarar?</h4>
+                <p>Bugün hangi <span className="text-ta font-semibold">mekanda çalışacağınızı</span> seçerek vardiya başlatın.</p>
+                <p className="mt-1">• Rotasyonda size atanmış mekanlar otomatik listelenir</p>
+                <p>• Mekan seçimi yapılmadan satış, kare veya vardiya işlemleri yapılamaz</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🔄 Rotasyon Kontrolü</h4>
+                <p>Sayfa açıldığında rotasyon bilginiz kontrol edilir:</p>
+                <p className="mt-1">• <span className="text-emerald-400 font-semibold">Atanmış</span>: Size görev atanmış mekanlar listelenir</p>
+                <p>• <span className="text-amber-400 font-semibold">Atanmamış</span>: Bugün için görev tanımlı değil — yöneticinize başvurun</p>
+                <p>• <span className="text-ta font-semibold">Yönetici</span> rolü rotasyondan muaftır, tüm mekanlara girebilir</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🏖️ Mekan Kartları</h4>
+                <p>Her mekan kartında şu bilgiler gösterilir:</p>
+                <p className="mt-1">• Mekan adı ve emoji ikonu</p>
+                <p>• Çalışma saatleri (ör. 09:00 – 17:00)</p>
+                <p>• Görev tipi: 📸 Foto/Satış · 🖨️ Baskı · 📒 Albüm · 👁️ Gözlemci</p>
+                <p>• GPS ile en yakın mekanlar öne sıralanır</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🩷 Ekstra İş & 🟣 Özel Görev</h4>
+                <p>Normal görevlerin dışında size özel atanmış görevler:</p>
+                <p className="mt-1">• <span className="text-pink-400 font-semibold">Ekstra İş</span>: Ek ücretli, normal görev dışı çalışmalar</p>
+                <p>• <span className="text-purple-400 font-semibold">Özel Görev</span>: Yönetici tarafından atanmış özel işler</p>
+                <p>• Bu görevlere tıklayarak doğrudan başlatabilirsiniz</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🎯 Kota & Hakediş</h4>
+                <p>Mekan seçildikten sonra kota ilerlemeniz görünür:</p>
+                <p className="mt-1">• Günlük / aylık satış kotanız ve mevcut ilerleme</p>
+                <p>• Kademe bazlı hakediş hedefleri</p>
+                <p>• Kota aşıldıkça sonraki kademeye geçilir</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📡 Konum Algılama</h4>
+                <p>GPS izni verilmişse en yakın mekanlar otomatik öne sıralanır.</p>
+                <p className="mt-1">• Konum bilgisi yalnızca sıralama için kullanılır</p>
+                <p>• GPS kapalıysa tüm mekanlar alfabetik listelenir</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">⚡ Önemli Kurallar</h4>
+                <p>• Rotasyonda <span className="text-red-400 font-semibold">atanmayan personel</span> vardiya açamaz, satış giremez, kare kaydedemez</p>
+                <p>• Mekan seçimi yaptıktan sonra ana sayfada vardiya işlemleri aktif olur</p>
+                <p>• Farklı mekana geçmek için bu sayfaya dönüp yeni seçim yapabilirsiniz</p>
+              </div>
+
+            </div>
           </div>
         </div>
       )}

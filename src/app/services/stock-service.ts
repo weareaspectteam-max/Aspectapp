@@ -17,9 +17,18 @@ export interface StokSayim {
   album11: number;
   album13: number;
   album15: number;
+  // Tam/yarım format (yeni)
+  album3_tam?: number; album3_yarim?: number;
+  album5_tam?: number; album5_yarim?: number;
+  album7_tam?: number; album7_yarim?: number;
+  album9_tam?: number; album9_yarim?: number;
+  album11_tam?: number; album11_yarim?: number;
+  album13_tam?: number; album13_yarim?: number;
+  album15_tam?: number; album15_yarim?: number;
   paspartu: number;
   ribon: number;                          // Toplam (geriye uyumluluk + sum of ribonlar)
   ribonlar?: Record<string, number>;      // kagitTipiId → takım sayısı
+  [key: string]: any;                     // Dinamik alan desteği
 }
 
 export const bosStok = (): StokSayim => ({
@@ -335,6 +344,13 @@ export const stokAlanAdi: Record<string, string> = {
   album7: '7 Kare',
   album9: '9 Kare',
   album11: '11 Kare',
+  album3_tam: '3 Tam', album3_yarim: '3 Yarım',
+  album5_tam: '5 Tam', album5_yarim: '5 Yarım',
+  album7_tam: '7 Tam', album7_yarim: '7 Yarım',
+  album9_tam: '9 Tam', album9_yarim: '9 Yarım',
+  album11_tam: '11 Tam', album11_yarim: '11 Yarım',
+  album13_tam: '13 Tam', album13_yarim: '13 Yarım',
+  album15_tam: '15 Tam', album15_yarim: '15 Yarım',
   album13: '13 Kare',
   album15: '15 Kare',
   ribon: 'Ribon Takımı',
@@ -343,5 +359,9 @@ export const stokAlanAdi: Record<string, string> = {
 export const stokAlanEmoji: Record<string, string> = {
   album3: '📘', album5: '📗', album7: '📙', album9: '📕',
   album11: '📔', album13: '📒', album15: '📓',
+  album3_tam: '📘', album3_yarim: '📘', album5_tam: '📗', album5_yarim: '📗',
+  album7_tam: '📙', album7_yarim: '📙', album9_tam: '📕', album9_yarim: '📕',
+  album11_tam: '📔', album11_yarim: '📔', album13_tam: '📒', album13_yarim: '📒',
+  album15_tam: '📓', album15_yarim: '📓',
   ribon: '🎞️',
 };

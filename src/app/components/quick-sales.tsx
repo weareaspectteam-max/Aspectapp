@@ -85,7 +85,7 @@ interface QuickSalesProps {
 
 const FRAME_STORAGE_KEY = 'aspect_frame_tracking';
 
-const albumItems = [
+const albumItemsLegacy = [
   { key: 'album3', label: '3 Kare', emoji: '📘' },
   { key: 'album5', label: '5 Kare', emoji: '📗' },
   { key: 'album7', label: '7 Kare', emoji: '📙' },
@@ -94,6 +94,39 @@ const albumItems = [
   { key: 'album13', label: '13 Kare', emoji: '📒' },
   { key: 'album15', label: '15 Kare', emoji: '📓' },
 ];
+const albumItemsNew = [
+  { key: 'album3_tam', label: '3 Tam', emoji: '📘' },
+  { key: 'album3_yarim', label: '3 Yarım', emoji: '📘' },
+  { key: 'album5_tam', label: '5 Tam', emoji: '📗' },
+  { key: 'album5_yarim', label: '5 Yarım', emoji: '📗' },
+  { key: 'album7_tam', label: '7 Tam', emoji: '📙' },
+  { key: 'album7_yarim', label: '7 Yarım', emoji: '📙' },
+  { key: 'album9_tam', label: '9 Tam', emoji: '📕' },
+  { key: 'album9_yarim', label: '9 Yarım', emoji: '📕' },
+  { key: 'album11_tam', label: '11 Tam', emoji: '📔' },
+  { key: 'album11_yarim', label: '11 Yarım', emoji: '📔' },
+  { key: 'album13_tam', label: '13 Tam', emoji: '📒' },
+  { key: 'album13_yarim', label: '13 Yarım', emoji: '📒' },
+  { key: 'album15_tam', label: '15 Tam', emoji: '📓' },
+  { key: 'album15_yarim', label: '15 Yarım', emoji: '📓' },
+];
+// Hangi format kullanılacağını stok verisine göre belirle
+const getAlbumItems = (stok: any) => {
+  if (!stok) return albumItemsLegacy;
+  const hasNew = albumItemsNew.some(a => (stok[a.key] || 0) > 0);
+  if (hasNew) {
+    // Sadece değeri > 0 olan tam/yarım field'ları göster + her boyutun en az yarım'ını göster
+    return albumItemsNew.filter(a => {
+      const val = stok[a.key] || 0;
+      if (val > 0) return true;
+      // Boyutun yarım versiyonunu her zaman göster (mekanın varsayılan tipi)
+      if (a.key.endsWith('_yarim')) return true;
+      return false;
+    });
+  }
+  return albumItemsLegacy;
+};
+const albumItems = albumItemsLegacy; // fallback for non-stok contexts
 
 
 export function QuickSales({ userName, userRole, accessToken, userId, onProjectSelect, preSelectedProject, onBack, onLogout, onNavigate, onEkstraIsSelect, onOzelIsSelect }: QuickSalesProps) {
@@ -125,8 +158,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [deleteKareEntry, setDeleteKareEntry] = useState<any | null>(null);
   const [deleteKareSaving, setDeleteKareSaving] = useState(false);
   const [showShiftEndSuccess, setShowShiftEndSuccess] = useState(false);
-  const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'EUR' | 'GBP' | null>(null);
+  const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'EUR' | 'GBP' | 'TRY' | null>(null);
   const [exchangeRates, setExchangeRates] = useState({ USD: 34.52, EUR: 37.89, GBP: 43.26 });
+  const [mekanPriceCurrency, setMekanPriceCurrency] = useState<string>('TRY');
   const [ratesLoading, setRatesLoading] = useState(false);
 
   // Mode tabs: shift-start | sales | frames | shift-end
@@ -157,6 +191,12 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   // ── SHIFT START state ──
   const [stokGunluk, setStokGunluk] = useState<StokGunluk | null>(null);
   const [dunKapanis, setDunKapanis] = useState<StokSayim | null>(null);
+
+  // Stok verisine göre tam/yarım veya eski format albumItems belirle
+  const aktifAlbumItems = useMemo(() => {
+    const stok = dunKapanis || stokGunluk?.acilis as any;
+    return getAlbumItems(stok);
+  }, [dunKapanis, stokGunluk]);
   const [acilisSayim, setAcilisSayim] = useState<StokSayim>(bosStok());
   const [acilisNot, setAcilisNot] = useState('');
   const [acilisAnomaliNeden, setAcilisAnomaliNeden] = useState('');
@@ -203,8 +243,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [showClosingCount, setShowClosingCount] = useState(false);
   const [showDamagedAlbums, setShowDamagedAlbums] = useState(false);
   const [closingCount, setClosingCount] = useState<{ shelfEnd: Record<string, number>; damagedAlbums: Record<string, number> }>({
-    shelfEnd: { album3: 0, album5: 0, album7: 0, album9: 0, album11: 0, album15: 0 },
-    damagedAlbums: { album3: 0, album5: 0, album7: 0, album9: 0, album11: 0, album15: 0 },
+    shelfEnd: { album3: 0, album5: 0, album7: 0, album9: 0, album11: 0, album13: 0, album15: 0 },
+    damagedAlbums: { album3: 0, album5: 0, album7: 0, album9: 0, album11: 0, album13: 0, album15: 0 },
   });
   const [venuePhotoTaken, setVenuePhotoTaken] = useState(false);
   const [venuePhotoPreview, setVenuePhotoPreview] = useState<string | null>(null);
@@ -629,6 +669,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
           if (mekan) {
             realMekanId = mekan.id;
             if (mekan.photoPrice && mekan.photoPrice > 0) setMekanPhotoPrice(mekan.photoPrice);
+            if (mekan.priceCurrency) setMekanPriceCurrency(mekan.priceCurrency);
             const pt = mekan.printType === 'tam' ? 'tam' : 'yarim';
             setMekanPrintType(pt);
             setMekanPrintTypeLoaded(true);
@@ -763,6 +804,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     load();
   }, [selectedProject]);
 
+  const currencySymbol = (c: string) => c === 'EUR' ? '€' : c === 'USD' ? '$' : c === 'GBP' ? '£' : '₺';
+  const pSym = currencySymbol(mekanPriceCurrency);
+
   const products = [
     { name: "1 Fotoğraf", price: mekanPhotoPrice,      color: 'from-[#9dd9ea] to-[#7ec8dd]', icon: '📸' },
     { name: "3'lü",       price: mekanPhotoPrice * 3,  color: 'from-[#b8d4f1] to-[#9cc0e8]', icon: '🎨' },
@@ -781,7 +825,17 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const calculateForeignCurrency = () => {
     if (!selectedCurrency) return '0.00';
     const discount = Number(discountAmount) || 0;
-    return ((totalPrice - discount) / exchangeRates[selectedCurrency]).toFixed(2);
+    const netAmount = totalPrice - discount;
+    if (mekanPriceCurrency === 'TRY') {
+      // TRY mekan → dövize çevir (TRY / kur)
+      return (netAmount / exchangeRates[selectedCurrency]).toFixed(2);
+    } else {
+      // Döviz mekan → önce TRY'ye çevir, sonra hedef dövize çevir
+      const mekanKur = exchangeRates[mekanPriceCurrency as keyof typeof exchangeRates] || 1;
+      const tlAmount = netAmount * mekanKur;
+      if (selectedCurrency === 'TRY' as any) return tlAmount.toFixed(2);
+      return (tlAmount / exchangeRates[selectedCurrency]).toFixed(2);
+    }
   };
 
   const addToCart = (productName: string, unitPrice: number) => {
@@ -817,8 +871,16 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     const mekanId = resolvedMekanId || selectedProject.id;
     const tarih = bugunTarih();
     const saleItems = cart.map(i => ({ product: i.product, quantity: i.quantity, unitPrice: i.unitPrice, color: i.color }));
-    const currency = selectedCurrency || 'TRY';
-    const currencyPrice = selectedCurrency ? Number(calculateForeignCurrency()) : null;
+    // Döviz mekanında: currency = mekan para birimi, currencyPrice = döviz tutarı, totalPrice TL'ye çevrilir
+    // TRY mekanında: selectedCurrency (manuel seçim) veya TRY
+    const isForeignMekan = mekanPriceCurrency !== 'TRY';
+    const currency = isForeignMekan ? mekanPriceCurrency : (selectedCurrency || 'TRY');
+    const foreignAmount = isForeignMekan ? (totalPrice - discount) : (selectedCurrency ? Number(calculateForeignCurrency()) : null);
+    const currencyPrice = foreignAmount;
+    // Döviz mekanında totalPrice ve discount'u TL'ye çevir
+    const kurOrani = isForeignMekan ? (exchangeRates[mekanPriceCurrency as keyof typeof exchangeRates] || 1) : 1;
+    const totalPriceTL = isForeignMekan ? Math.round(totalPrice * kurOrani) : totalPrice;
+    const discountTL = isForeignMekan ? Math.round(discount * kurOrani) : discount;
 
     // ── Çevrimdışı kontrolü: navigator.onLine hızlı ön kontrol ──
     const currentlyOnline = navigator.onLine;
@@ -835,8 +897,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         mekanId,
         tarih,
         items: saleItems,
-        totalPrice,
-        discount,
+        totalPrice: totalPriceTL,
+        discount: discountTL,
         paymentMethod,
         currency,
         currencyPrice,
@@ -849,9 +911,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       const pendingSale: Sale = {
         id: queueId,
         items: saleItems,
-        totalPrice,
-        discount,
-        finalPrice: totalPrice - discount,
+        totalPrice: totalPriceTL,
+        discount: discountTL,
+        finalPrice: totalPriceTL - discountTL,
         paymentMethod,
         currency,
         currencyPrice,
@@ -877,8 +939,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
           mekanId,
           tarih,
           items: saleItems,
-          totalPrice,
-          discount,
+          totalPrice: totalPriceTL,
+          discount: discountTL,
           paymentMethod,
           currency,
           currencyPrice,
@@ -905,8 +967,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         mekanId,
         tarih,
         items: saleItems,
-        totalPrice,
-        discount,
+        totalPrice: totalPriceTL,
+        discount: discountTL,
         paymentMethod,
         currency,
         currencyPrice,
@@ -919,9 +981,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       const pendingSale: Sale = {
         id: queueId,
         items: saleItems,
-        totalPrice,
-        discount,
-        finalPrice: totalPrice - discount,
+        totalPrice: totalPriceTL,
+        discount: discountTL,
+        finalPrice: totalPriceTL - discountTL,
         paymentMethod,
         currency,
         currencyPrice,
@@ -2097,7 +2159,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     <p className="text-xs text-[#9dd9ea] bg-[#9dd9ea]/10 border border-[#9dd9ea]/20 rounded-xl px-3 py-2 mb-2">
                       Reyona koyulan albüm adedini girin — kapanışta kalanı sayacaksınız, fark = satılan
                     </p>
-                    {albumItems.map(({ key, label, emoji }) => (
+                    {aktifAlbumItems.map(({ key, label, emoji }) => (
                       <div key={key} className="flex items-center justify-between bg-black/30 border border-white/10 rounded-xl px-4 py-3">
                         <div className="flex items-center gap-3">
                           <span className="text-xl">{emoji}</span>
@@ -2235,7 +2297,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     >
                       <div className="text-lg mb-0.5">{product.icon}</div>
                       <div className="text-[10px] font-bold leading-tight text-center">{product.name}</div>
-                      <div className="text-[10px] opacity-90 font-semibold mt-0.5">₺{product.price}</div>
+                      <div className="text-[10px] opacity-90 font-semibold mt-0.5">{pSym}{product.price}</div>
                       <div className="absolute top-1 right-1 w-5 h-5 bg-white/20 backdrop-blur rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <Plus className="w-3 h-3 text-[#2d3748]" />
                       </div>
@@ -2266,7 +2328,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                           </div>
                           <div>
                             <span className="font-semibold text-white block">{item.product}</span>
-                            <span className="text-xs text-gray-400">{item.quantity} × ₺{item.unitPrice} = ₺{item.quantity * item.unitPrice}</span>
+                            <span className="text-xs text-gray-400">{item.quantity} × {pSym}{item.unitPrice} = {pSym}{item.quantity * item.unitPrice}</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -2282,7 +2344,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                   </div>
                   <div className="bg-gradient-to-br from-[#b8d4f1] to-[#9dd9ea] rounded-2xl p-5 mb-4 shadow-lg">
                     <div className="text-[#2d3748]/70 text-sm mb-1">Toplam Tutar</div>
-                    <div className="text-[#2d3748] text-4xl font-bold">₺{totalPrice}</div>
+                    <div className="text-[#2d3748] text-4xl font-bold">{pSym}{totalPrice}</div>
                   </div>
                   {!showDiscount ? (
                     <div className="grid grid-cols-2 gap-3">
@@ -2315,10 +2377,10 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                         </div>
                         {discountAmount && Number(discountAmount) > 0 && (
                           <div className="bg-white/5 rounded-xl p-3 border-2 border-[#a8e6cf]/30 mb-3">
-                            <div className="flex items-center justify-between text-sm mb-1"><span className="text-gray-400">Orijinal:</span><span className="font-semibold text-white">₺{totalPrice}</span></div>
+                            <div className="flex items-center justify-between text-sm mb-1"><span className="text-gray-400">Orijinal:</span><span className="font-semibold text-white">{pSym}{totalPrice}</span></div>
                             <div className="flex items-center justify-between text-sm mb-1"><span className="text-[#ffd4a3] font-semibold">İskonto:</span><span className="font-semibold text-[#ffd4a3]">-₺{discountAmount}</span></div>
                             <div className="border-t border-white/20 my-2" />
-                            <div className="flex items-center justify-between"><span className="font-bold text-white">Ödenecek:</span><span className="font-bold text-2xl text-[#a8e6cf]">₺{totalPrice - Number(discountAmount)}</span></div>
+                            <div className="flex items-center justify-between"><span className="font-bold text-white">Ödenecek:</span><span className="font-bold text-2xl text-[#a8e6cf]">{pSym}{totalPrice - Number(discountAmount)}</span></div>
                           </div>
                         )}
                       </div>
@@ -2344,16 +2406,17 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                 </div>
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   {[
-                    { code: 'USD' as const, flag: '🇺🇸', rate: exchangeRates.USD, color: '[#a8e6cf]' },
-                    { code: 'EUR' as const, flag: '🇪🇺', rate: exchangeRates.EUR, color: '[#9dd9ea]' },
-                    { code: 'GBP' as const, flag: '🇬🇧', rate: exchangeRates.GBP, color: '[#ffd4a3]' },
-                  ].map(c => (
-                    <button key={c.code} onClick={() => setSelectedCurrency(c.code)}
+                    { code: 'TRY', flag: '🇹🇷', rate: 1, color: '[#ffb3ba]', sym: '₺' },
+                    { code: 'USD', flag: '🇺🇸', rate: exchangeRates.USD, color: '[#a8e6cf]', sym: '$' },
+                    { code: 'EUR', flag: '🇪🇺', rate: exchangeRates.EUR, color: '[#9dd9ea]', sym: '€' },
+                    { code: 'GBP', flag: '🇬🇧', rate: exchangeRates.GBP, color: '[#ffd4a3]', sym: '£' },
+                  ].filter(c => c.code !== mekanPriceCurrency).map(c => (
+                    <button key={c.code} onClick={() => setSelectedCurrency(c.code === 'TRY' ? (mekanPriceCurrency !== 'TRY' ? 'TRY' as any : null) : c.code as any)}
                       className={`bg-white/5 rounded-lg p-3 text-center transition-all active:scale-95 ${selectedCurrency === c.code ? `ring-2 ring-${c.color} bg-${c.color}/10` : 'hover:bg-white/10'}`}
                     >
                       <div className="text-xs text-gray-400 mb-1 flex items-center justify-center gap-1"><span>{c.flag}</span><span>{c.code}</span></div>
-                      <div className={`text-base font-bold text-${c.color}`}>₺{c.rate.toFixed(2)}</div>
-                      <div className="text-[10px] text-white/30 mt-0.5">1 {c.code}</div>
+                      <div className={`text-base font-bold text-${c.color}`}>{c.code === 'TRY' ? '₺ TRY' : `₺${c.rate.toFixed(2)}`}</div>
+                      <div className="text-[10px] text-white/30 mt-0.5">{c.code === 'TRY' ? 'Türk Lirası' : `1 ${c.code}`}</div>
                     </button>
                   ))}
                 </div>
@@ -2365,13 +2428,13 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                   <div className="space-y-2">
                     <div className="bg-white/5 rounded-lg p-3 border border-white/20">
                       <div className="text-xs text-gray-400 mb-1">{discountAmount && Number(discountAmount) > 0 ? 'Ödenecek Tutar' : 'Sepet Toplamı'}</div>
-                      <div className="text-2xl font-black text-white">₺{discountAmount && Number(discountAmount) > 0 ? totalPrice - Number(discountAmount) : totalPrice}</div>
+                      <div className="text-2xl font-black text-white">{pSym}{discountAmount && Number(discountAmount) > 0 ? totalPrice - Number(discountAmount) : totalPrice}</div>
                     </div>
                     {selectedCurrency && (
-                      <div className={`p-3 rounded-lg border-2 ${selectedCurrency === 'USD' ? 'bg-[#a8e6cf]/20 border-[#a8e6cf]/50' : selectedCurrency === 'EUR' ? 'bg-[#9dd9ea]/20 border-[#9dd9ea]/50' : 'bg-[#ffd4a3]/20 border-[#ffd4a3]/50'}`}>
+                      <div className={`p-3 rounded-lg border-2 ${selectedCurrency === 'TRY' ? 'bg-[#ffb3ba]/20 border-[#ffb3ba]/50' : selectedCurrency === 'USD' ? 'bg-[#a8e6cf]/20 border-[#a8e6cf]/50' : selectedCurrency === 'EUR' ? 'bg-[#9dd9ea]/20 border-[#9dd9ea]/50' : 'bg-[#ffd4a3]/20 border-[#ffd4a3]/50'}`}>
                         <div className="flex items-center justify-between">
-                          <div className="text-xs text-gray-400">{selectedCurrency === 'USD' ? '🇺🇸 USD' : selectedCurrency === 'EUR' ? '🇪🇺 EUR' : '🇬🇧 GBP'}</div>
-                          <div className={`text-3xl font-black ${selectedCurrency === 'USD' ? 'text-[#a8e6cf]' : selectedCurrency === 'EUR' ? 'text-[#9dd9ea]' : 'text-[#ffd4a3]'}`}>{calculateForeignCurrency()}</div>
+                          <div className="text-xs text-gray-400">{selectedCurrency === 'TRY' ? '🇹🇷 TRY' : selectedCurrency === 'USD' ? '🇺🇸 USD' : selectedCurrency === 'EUR' ? '🇪🇺 EUR' : '🇬🇧 GBP'}</div>
+                          <div className={`text-3xl font-black ${selectedCurrency === 'TRY' ? 'text-[#ffb3ba]' : selectedCurrency === 'USD' ? 'text-[#a8e6cf]' : selectedCurrency === 'EUR' ? 'text-[#9dd9ea]' : 'text-[#ffd4a3]'}`}>{selectedCurrency === 'TRY' ? `₺${((totalPrice - (Number(discountAmount) || 0)) * (exchangeRates[mekanPriceCurrency as keyof typeof exchangeRates] || 1)).toFixed(0)}` : calculateForeignCurrency()}</div>
                         </div>
                       </div>
                     )}
@@ -3003,7 +3066,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                               </p>
                             </div>
 
-                            {albumItems.map(({ key, label, emoji }) => {
+                            {aktifAlbumItems.map(({ key, label, emoji }) => {
                               const acilis = shiftShelves[key] || 0;
                               const gunIciEkleme = reyonGunIciEkleme[key] || 0;
                               const kapanis = reyonKapanisSayim[key as keyof StokSayim] || 0;
@@ -3166,11 +3229,11 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                             })()}
 
                             {/* Toplam satış özeti */}
-                            {albumItems.some(({ key }) => (shiftShelves[key] || 0) > 0 || (reyonGunIciEkleme[key] || 0) > 0) && (
+                            {aktifAlbumItems.some(({ key }) => (shiftShelves[key] || 0) > 0 || (reyonGunIciEkleme[key] || 0) > 0) && (
                               <div className="bg-[#a8e6cf]/10 border border-[#a8e6cf]/20 rounded-xl p-3">
                                 <p className="text-xs font-semibold text-[#a8e6cf] mb-2">🎯 Reyon satış özeti:</p>
                                 <div className="flex flex-wrap gap-x-4 gap-y-1">
-                                  {albumItems.map(({ key, label }) => {
+                                  {aktifAlbumItems.map(({ key, label }) => {
                                     const acilis = shiftShelves[key] || 0;
                                     const gunIciEkleme = reyonGunIciEkleme[key] || 0;
                                     if (acilis === 0 && gunIciEkleme === 0) return null;
@@ -3715,7 +3778,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
               <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border-2 border-white/20 rounded-2xl p-5 shadow-xl">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-gray-400 font-medium">Toplam Tutar:</span>
-                  <span className="text-3xl font-black text-white">₺{totalPrice}</span>
+                  <span className="text-3xl font-black text-white">{pSym}{totalPrice}</span>
                 </div>
                 {discountAmount && Number(discountAmount) > 0 && (
                   <>
@@ -3726,7 +3789,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     <div className="border-t border-white/20 pt-3 mt-3">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-white">Ödenecek:</span>
-                        <span className="text-4xl font-black bg-gradient-to-r from-[#a8e6cf] to-[#8dd9b8] bg-clip-text text-transparent">₺{totalPrice - Number(discountAmount)}</span>
+                        <span className="text-4xl font-black bg-gradient-to-r from-[#a8e6cf] to-[#8dd9b8] bg-clip-text text-transparent">{pSym}{totalPrice - Number(discountAmount)}</span>
                       </div>
                     </div>
                   </>

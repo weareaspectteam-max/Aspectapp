@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ArrowLeft, Loader2, RefreshCw, HelpCircle, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   getLeaveRequests,
@@ -92,6 +92,7 @@ export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, acce
   const [viewMonth, setViewMonth] = useState(thisMonth);
 
   const [loading, setLoading] = useState(true);
+  const [showIzinGuide, setShowIzinGuide] = useState(false);
   const [monthData, setMonthData] = useState<MonthData | null>(null);
   const [selectedDay, setSelectedDay] = useState<DayData | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -300,14 +301,23 @@ export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, acce
           <p className="text-[10px] text-white/40 uppercase tracking-widest font-semibold">Kişisel</p>
           <h1 className="text-sm font-black text-white tracking-tight">İzin Çizelgesi</h1>
         </div>
-        <button
-          onClick={loadData}
-          disabled={loading}
-          className="w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 disabled:opacity-40"
-          style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)' }}
-        >
-          <RefreshCw className={`w-3.5 h-3.5 text-white/60 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowIzinGuide(true)}
+            className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition-all"
+            style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}
+          >
+            <HelpCircle className="w-4 h-4 text-amber-400" />
+          </button>
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 disabled:opacity-40"
+            style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)' }}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-white/60 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 px-4 py-4 space-y-4 pb-28">
@@ -546,6 +556,82 @@ export function KisiselIzinCetveli({ userName, userId, userRole: _userRole, acce
           </p>
         )}
       </div>
+
+      {/* İzin Çizelgesi Rehber Modalı */}
+      <AnimatePresence>
+        {showIzinGuide && (
+          <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowIzinGuide(false)}>
+            <motion.div
+              initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }}
+              className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <HelpCircle className="w-4 h-4 text-ta" /> İzin Çizelgesi Rehberi
+                </h3>
+                <button onClick={() => setShowIzinGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                  <X className="w-4 h-4 text-white/60" />
+                </button>
+              </div>
+              <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+
+                <div>
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">📅 Bu Sayfa Ne İşe Yarar?</h4>
+                  <p>Kendi <span className="text-ta font-semibold">izin geçmişinizi</span> ay bazlı takvim üzerinde görüntüleyin.</p>
+                  <p className="mt-1">• Hangi günlerde çalıştığınızı, izinli olduğunuzu ve bekleyen taleplerinizi takip edin</p>
+                  <p>• Yalnızca <span className="text-amber-400 font-semibold">bu ay</span> ve <span className="text-amber-400 font-semibold">bir önceki ay</span> görüntülenebilir</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">📊 Üst Özet Kartları</h4>
+                  <p>Ayın istatistiklerini gösteren 3 kart:</p>
+                  <p className="mt-1">• <span className="text-ta font-semibold">Çalışma</span>: O ay çalıştığınız toplam gün sayısı</p>
+                  <p>• <span className="text-emerald-400 font-semibold">İzin</span>: Kullandığınız onaylı izin günleri</p>
+                  <p>• <span className="text-amber-400 font-semibold">Bekleyen</span>: Henüz onaylanmamış izin talepleri</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">🎨 Takvim Renk Kodları</h4>
+                  <div className="space-y-1.5 mt-1">
+                    <p>• <span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500/60 mr-1.5 align-middle"></span><span className="text-blue-400 font-semibold">Yıllık İzin</span>: Planlı yıllık izin günleri</p>
+                    <p>• <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500/60 mr-1.5 align-middle"></span><span className="text-red-400 font-semibold">Hastalık İzni</span>: Sağlık nedeniyle kullanılan izinler</p>
+                    <p>• <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500/60 mr-1.5 align-middle"></span><span className="text-amber-400 font-semibold">Mazeret İzni</span>: Kişisel nedenlerle alınan izinler</p>
+                    <p>• <span className="inline-block w-2.5 h-2.5 rounded-full bg-teal-500/60 mr-1.5 align-middle"></span><span className="text-teal-400 font-semibold">Günlük İzin</span>: Rotasyonda günlük verilen izinler</p>
+                    <p>• <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400/30 mr-1.5 align-middle border border-amber-500/30 border-dashed"></span><span className="text-amber-300 font-semibold">Bekliyor</span>: Onay bekleyen talepler</p>
+                    <p>• <span className="inline-block w-2.5 h-2.5 rounded-full bg-white/10 mr-1.5 align-middle"></span><span className="text-white/50 font-semibold">Çalışma Günü</span>: Normal çalışma günleri</p>
+                    <p>• <span className="inline-block w-2.5 h-2.5 rounded-full border-2 border-purple-400 mr-1.5 align-middle"></span><span className="text-purple-400 font-semibold">Bugün</span>: Bugünün tarihi</p>
+                  </div>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">👆 Gün Detayı</h4>
+                  <p>Takvimdeki herhangi bir güne tıklayarak o günün detayını görüntüleyin:</p>
+                  <p className="mt-1">• İzin türü ve kaynağı</p>
+                  <p>• Onay durumu (onaylı / beklemede)</p>
+                  <p>• Çalışma günü ise rotasyon bilgisi</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">📋 İzin Kaynakları</h4>
+                  <p>İzinler 3 farklı kaynaktan otomatik toplanır:</p>
+                  <p className="mt-1">• <span className="text-ta font-semibold">İzin Talebi</span>: İzin formundan gönderilen ve onaylanan talepler</p>
+                  <p>• <span className="text-ta font-semibold">Rotasyon İzni</span>: Rotasyon planında "izinli" olarak işaretlenen günler</p>
+                  <p>• <span className="text-ta font-semibold">Günlük Manuel</span>: Yöneticinin günlük olarak eklediği izinler</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">⚡ Önemli Bilgiler</h4>
+                  <p>• Sadece kendi izin geçmişinizi görebilirsiniz</p>
+                  <p>• Geçmiş günler için eklenen manuel izinler de takvime yansır</p>
+                  <p>• İzin talebinde bulunmak için <span className="text-ta font-semibold">Rotasyon → İzinler</span> sekmesini kullanın</p>
+                </div>
+
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

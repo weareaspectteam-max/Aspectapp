@@ -26,6 +26,13 @@ const ALAN_ADI: Record<string, string> = {
   album11: "11'li Albüm",
   album13: "13'lü Albüm",
   album15: "15'li Albüm",
+  album3_tam: "3 Tam Albüm", album3_yarim: "3 Yarım Albüm",
+  album5_tam: "5 Tam Albüm", album5_yarim: "5 Yarım Albüm",
+  album7_tam: "7 Tam Albüm", album7_yarim: "7 Yarım Albüm",
+  album9_tam: "9 Tam Albüm", album9_yarim: "9 Yarım Albüm",
+  album11_tam: "11 Tam Albüm", album11_yarim: "11 Yarım Albüm",
+  album13_tam: "13 Tam Albüm", album13_yarim: "13 Yarım Albüm",
+  album15_tam: "15 Tam Albüm", album15_yarim: "15 Yarım Albüm",
   paspartu: 'Paspartu',
   ribon:    'Ribon Takımı',
 };
@@ -33,6 +40,10 @@ const ALAN_ADI: Record<string, string> = {
 const ALAN_EMOJI: Record<string, string> = {
   album3:  '📷', album5:  '📷', album7:  '📷',
   album9:  '📷', album11: '📷', album13: '📷', album15: '📷',
+  album3_tam: '📷', album3_yarim: '📷', album5_tam: '📷', album5_yarim: '📷',
+  album7_tam: '📷', album7_yarim: '📷', album9_tam: '📷', album9_yarim: '📷',
+  album11_tam: '📷', album11_yarim: '📷', album13_tam: '📷', album13_yarim: '📷',
+  album15_tam: '📷', album15_yarim: '📷',
   paspartu: '🖼️', ribon: '🎀',
 };
 

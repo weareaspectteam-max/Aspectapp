@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft, TrendingUp, TrendingDown, Banknote, Plus, Edit2, Trash2,
   Search, Filter, Download, FileText, Printer, Users, ChevronDown, Check,
-  Loader2, Save, X, Sparkles
+  Loader2, Save, X, Sparkles, HelpCircle
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -149,6 +149,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [showIgdGuide, setShowIgdGuide] = useState(false);
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
@@ -824,9 +825,18 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
             </div>
             <p className="text-sm text-gray-400">Finansal Genel Bakış — Gelir, gider ve ödeme takibi</p>
           </div>
-          <button onClick={fetchData} disabled={isLoading} className="p-2 bg-white/10 border border-white/20 rounded-xl text-white hover:bg-white/20 transition-all">
-            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span className="text-sm">↻</span>}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowIgdGuide(true)}
+              className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition-all"
+              style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}
+            >
+              <HelpCircle className="w-4 h-4 text-amber-400" />
+            </button>
+            <button onClick={fetchData} disabled={isLoading} className="p-2 bg-white/10 border border-white/20 rounded-xl text-white hover:bg-white/20 transition-all">
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span className="text-sm">↻</span>}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1898,6 +1908,94 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                   allSalaries.reduce((s: number, sal: SalaryDef) => s + Math.round(sal.amount * (1 + (sal.extraCostPercentage || 0) / 100)), 0)
                 ).toLocaleString('tr-TR')}
               </span>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* İGD Rehber Modalı */}
+      {showIgdGuide && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowIgdGuide(false)}>
+          <div
+            className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-ta" /> İşletme Genel Durum Rehberi
+              </h3>
+              <button onClick={() => setShowIgdGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                <X className="w-4 h-4 text-white/60" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+
+              <div>
+                <h4 className="text-[13px] font-bold text-white mb-1.5">💼 Bu Sayfa Ne İşe Yarar?</h4>
+                <p>İşletmenin tüm <span className="text-ta font-semibold">gelir ve gider</span> hareketlerini tek ekranda takip edin.</p>
+                <p className="mt-1">• Toplam gelir, toplam gider, net kâr/zarar ve kâr marjı anlık hesaplanır</p>
+                <p>• Tüm veriler seçilen tarih aralığı ve mekana göre filtrelenir</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📊 Üst Kartlar</h4>
+                <p>• <span className="text-emerald-400 font-semibold">Toplam Gelir</span>: Seçilen dönemdeki satış cirosu (mekan bazlı veya genel)</p>
+                <p>• <span className="text-red-400 font-semibold">Toplam Gider</span>: Manuel kayıtlar + sabit giderler (maaş, kira, operasyonel)</p>
+                <p>• <span className="text-blue-400 font-semibold">Net Kâr/Zarar</span>: Gelir − Gider farkı</p>
+                <p>• <span className="text-white font-semibold">Kâr Marjı</span>: Net kâr / gelir yüzdesi</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📅 Tarih Filtreleri</h4>
+                <p>İki satır halinde hızlı tarih seçenekleri:</p>
+                <p className="mt-1">• <span className="text-ta font-semibold">Bugün · Dün · Bu Hafta · Bu Ay</span> — kısa dönem</p>
+                <p>• <span className="text-ta font-semibold">Son 3 Ay · Son 6 Ay · Son 1 Yıl · Tümü · Özel</span> — uzun dönem</p>
+                <p>• <span className="text-amber-400 font-semibold">Özel</span> seçeneğiyle başlangıç/bitiş tarihi belirleyebilirsiniz</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📍 Mekan Filtresi</h4>
+                <p>Verileri mekana göre daraltabilirsiniz:</p>
+                <p className="mt-1">• <span className="text-ta font-semibold">Tümü</span>: Tüm mekanların toplamı</p>
+                <p>• <span className="text-ta font-semibold">🏢 Genel</span>: Mekana bağlı olmayan gelir/giderler</p>
+                <p>• Belirli bir mekana tıklayarak o mekanın verilerini görüntüleyin</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">➕ Gelir & Gider Ekleme</h4>
+                <p>• <span className="text-emerald-400 font-semibold">+ Gelir Ekle</span>: Manuel gelir kaydı oluşturun (tutar, açıklama, mekan seçimi)</p>
+                <p>• <span className="text-ta font-semibold">+ Gider Ekle</span>: Gider kaydı oluşturun (kategori, tutar, personel detayı)</p>
+                <p className="mt-1">• Personel ödemelerinde <span className="text-ta font-semibold">kişi seçimi</span>, dönem ve ödeme tipi belirtilir</p>
+                <p>• Var olan kayıtları düzenleyebilir veya silebilirsiniz</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📊 Kategori Bazlı Özet</h4>
+                <p>Giderler kategoriye göre gruplanır ve toplam tutarları gösterilir.</p>
+                <p className="mt-1">• Her kategoriyi açarak alt detayları görebilirsiniz</p>
+                <p>• Yüzde dağılımı ile hangi kategoriye ne kadar harcandığını takip edin</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">⚙️ Sabit Giderler</h4>
+                <p>Otomatik hesaplanan kalemler:</p>
+                <p className="mt-1">• <span className="text-ta font-semibold">Maaşlar</span>: Tanımlı personel maaşları + ek maliyet yüzdesi</p>
+                <p>• <span className="text-ta font-semibold">Kiralar</span>: Mekan kiraları (yıllık / 12)</p>
+                <p>• <span className="text-ta font-semibold">Düzenli giderler</span>: Günlük/haftalık/aylık/yıllık tekrarlayan ödemeler</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📥 Dışa Aktarma</h4>
+                <p>• <span className="text-ta font-semibold">PDF</span>: Kategori özeti ve detaylı gider listesi</p>
+                <p>• <span className="text-ta font-semibold">CSV</span>: Excel'de açılabilir tablo formatında dışa aktarım</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">⚡ Erişim Yetkileri</h4>
+                <p>• <span className="text-ta font-semibold">Gider ekleme</span>: Yönetici, Üst Müdür, Müdür, İdari</p>
+                <p>• <span className="text-red-400 font-semibold">Gider silme</span>: Yalnızca Yönetici ve İdari</p>
+                <p>• Tüm işlemler kayıt altına alınır — kim ekledi/sildi izlenebilir</p>
+              </div>
+
             </div>
           </div>
         </div>

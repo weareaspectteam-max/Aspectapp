@@ -22,6 +22,7 @@ const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0
 interface StokSayim {
   album3: number; album5: number; album7: number; album9: number;
   album11: number; album13: number; album15: number;
+  [key: string]: any;
 }
 
 const bosStok = (): StokSayim => ({

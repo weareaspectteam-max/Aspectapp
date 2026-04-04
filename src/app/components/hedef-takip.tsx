@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Target, RefreshCw, Loader2, TrendingUp, ArrowLeft, ChevronDown, ChevronRight, Trophy, AlertTriangle, BarChart3 } from 'lucide-react';
+import { Target, RefreshCw, Loader2, TrendingUp, ArrowLeft, ChevronDown, ChevronRight, Trophy, AlertTriangle, BarChart3, HelpCircle, X } from 'lucide-react';
 import { projectId } from '../lib/supabase-info';
 import { buildHeaders, ghostParams } from '../lib/api';
 
@@ -482,6 +482,7 @@ export default function HedefTakip({ userName, userRole, accessToken, onNavigate
   const [veri, setVeri] = useState<{ tarih: string; yil: string; genel: GenelData; mekanlar: MekanData[] } | null>(null);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hata, setHata] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
 
   const yukle = async (yil?: number) => {
     setYukleniyor(true);
@@ -536,10 +537,17 @@ export default function HedefTakip({ userName, userRole, accessToken, onNavigate
               <p className="text-[10px] text-white/30">{veri?.yil || '...'} Yılı</p>
             </div>
           </div>
-          <button onClick={() => yukle()} disabled={yukleniyor}
-            className="w-9 h-9 rounded-xl bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-transform">
-            {yukleniyor ? <Loader2 className="w-4 h-4 text-white/40 animate-spin" /> : <RefreshCw className="w-4 h-4 text-white/40" />}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowGuide(true)}
+              className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform"
+              style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}>
+              <HelpCircle className="w-4 h-4 text-amber-400" />
+            </button>
+            <button onClick={() => yukle()} disabled={yukleniyor}
+              className="w-9 h-9 rounded-xl bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-transform">
+              {yukleniyor ? <Loader2 className="w-4 h-4 text-white/40 animate-spin" /> : <RefreshCw className="w-4 h-4 text-white/40" />}
+            </button>
+          </div>
         </div>
         {/* Yıl Filtresi */}
         {seciliYil !== buYil ? (
@@ -660,6 +668,84 @@ export default function HedefTakip({ userName, userRole, accessToken, onNavigate
               </div>
             );
           })()}
+        </div>
+      )}
+
+      {/* Hedef Takip Rehber Modalı */}
+      {showGuide && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowGuide(false)}>
+          <div className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-amber-400" /> Hedef Takip Rehberi
+              </h3>
+              <button onClick={() => setShowGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                <X className="w-4 h-4 text-white/60" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+
+              <div>
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🎯 Hedef Takip Nedir?</h4>
+                <p>Yıllık ciro, gider ve kâr hedeflerinizi takip etmenizi sağlar. Tüm mekanların toplamını ve mekan bazlı dökümü görebilirsiniz.</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📊 Üst Kartlar</h4>
+                <p>• <span className="text-emerald-400 font-semibold">Ciro</span> — Yıl içindeki toplam satış geliri</p>
+                <p>• <span className="text-red-400 font-semibold">Kira (yıllık)</span> — Tüm mekanların yıllık kira toplamı</p>
+                <p>• <span className="font-semibold" style={{ color: '#fbbf24' }}>Net Kâr</span> — Ciro − Kira − Tüm Giderler</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🏁 Kâra Ulaşma Hedefi</h4>
+                <p>İlerleme çubuğu hedefe ne kadar yaklaştığınızı gösterir.</p>
+                <p className="mt-1 text-white/50">Hedef = Yıllık Kira + Tüm Giderler + Kâr Hedefi</p>
+                <p>Kalan tutar hedefe ulaşmak için ne kadar ciro gerektiğini gösterir.</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">💸 Kâr vs Gider (Kira Hariç)</h4>
+                <p>Kira dışındaki gider kalemlerini ve kâr durumunu gösterir:</p>
+                <div className="mt-1 space-y-0.5">
+                  <p>• <span className="text-red-400 font-semibold">Personel</span> — Maaş giderleri</p>
+                  <p>• <span className="text-red-400 font-semibold">Operasyonel</span> — Baskı + albüm maliyetleri</p>
+                  <p>• <span className="text-red-400 font-semibold">Ulaşım / Ekipman / Malzeme</span> — Diğer gider kalemleri</p>
+                </div>
+                <p className="mt-1.5 text-white/50">Yeşil çubuk = kâr, kırmızı etiketler = gider kalemleri</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📈 Aylık Ciro vs Gider Grafiği</h4>
+                <p>12 aylık çubuk grafik:</p>
+                <p>• <span className="text-amber-400 font-semibold">Sarı çubuk</span> — O ayın cirosu</p>
+                <p>• <span className="text-red-400 font-semibold">Kırmızı çubuk</span> — O ayın gideri</p>
+                <p>• <span className="text-red-400 font-semibold">Kesik çizgi</span> — Aylık kira tutarı</p>
+                <p className="mt-1">Bir aya tıklayarak detaylı bilgi görebilirsiniz.</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📅 Ay Detayı</h4>
+                <p>Grafikteki bir aya tıklayınca o ayın detayı açılır:</p>
+                <p>• Ciro, gider ve kâr toplamı</p>
+                <p>• En iyi 5 ve en kötü 5 gün (ciro bazlı)</p>
+                <p>• 🏆 ve ⚠️ ikonlarıyla vurgulanır</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🏪 Mekan Bazlı Döküm</h4>
+                <p>Aşağı kaydırarak her mekanın ayrı raporunu görebilirsiniz. Her mekanda:</p>
+                <p>• Kendi ciro, kira, gider ve net kâr bilgisi</p>
+                <p>• Kendi aylık grafik ve en iyi/kötü günleri</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📆 Yıl Seçimi</h4>
+                <p>Sol üstteki yıl butonlarıyla geçmiş yılların verilerini karşılaştırabilirsiniz.</p>
+              </div>
+
+            </div>
+          </div>
         </div>
       )}
     </div>

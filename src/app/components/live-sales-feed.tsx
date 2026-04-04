@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { RefreshCw, Wifi, Camera, ShoppingBag, MapPin, ChevronDown, ChevronUp, TrendingUp, Clock, AlertCircle, Maximize2, Minimize2 } from 'lucide-react';
+import { RefreshCw, Wifi, Camera, ShoppingBag, MapPin, ChevronDown, ChevronUp, TrendingUp, Clock, AlertCircle, Maximize2, Minimize2, HelpCircle, X } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { authHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
@@ -285,6 +285,7 @@ export function LiveSalesFeed({
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [countdown, setCountdown] = useState(30);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showFeedGuide, setShowFeedGuide] = useState(false);
   const [pullDelta, setPullDelta] = useState(0);
   const touchStartY = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -580,6 +581,13 @@ export function LiveSalesFeed({
             label="toplam"
             color="#60a5fa"
           />
+          <button
+            onClick={() => setShowFeedGuide(true)}
+            className="w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-all shrink-0 ml-auto"
+            style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}
+          >
+            <HelpCircle className="w-4 h-4 text-amber-400" />
+          </button>
         </div>
 
         {/* ── FILTER + VIEW TOGGLE ROW ── */}
@@ -663,6 +671,68 @@ export function LiveSalesFeed({
 
       {!isFullscreen && (
         <NewBottomNav activeTab="live-feed" onTabChange={onNavigate} userRole={userRole} />
+      )}
+
+      {/* Canlı Akış Rehber Modalı */}
+      {showFeedGuide && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowFeedGuide(false)}>
+          <div
+            className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-amber-400" /> Canlı Akış Rehberi
+              </h3>
+              <button onClick={() => setShowFeedGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                <X className="w-4 h-4 text-white/60" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+
+              <div>
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📡 Canlı Akış Nedir?</h4>
+                <p>Tüm mekanlardan gelen satış ve kare kayıtlarını anlık olarak gösterir. Veriler otomatik veya manuel olarak yenilenir.</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📊 Üst Kartlar</h4>
+                <div className="space-y-1">
+                  <p>• <span className="text-white font-semibold">Satış</span> — Bugünkü toplam satış adedi</p>
+                  <p>• <span className="text-amber-400 font-semibold">₺ Gelir</span> — Bugünkü toplam ciro</p>
+                  <p>• <span className="text-white font-semibold">Kare</span> — Bugünkü toplam çekim sayısı</p>
+                  <p>• <span className="text-white font-semibold">Toplam</span> — Satış + kare toplam kayıt</p>
+                </div>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🔍 Filtreler</h4>
+                <p>• <span className="text-white font-semibold">Tümü</span> — Satış ve kare kayıtlarını birlikte gösterir</p>
+                <p>• <span className="text-white font-semibold">💰 Satış</span> — Sadece satış kayıtları</p>
+                <p>• <span className="text-white font-semibold">📷 Kare</span> — Sadece kare (çekim) kayıtları</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📍 Görünüm Modları</h4>
+                <p>• <span className="text-white font-semibold">Mekan</span> — Kayıtları mekana göre gruplar</p>
+                <p>• <span className="text-white font-semibold">Zaman</span> — Kayıtları zamana göre sıralar (en yeni üstte)</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🔄 Yenileme</h4>
+                <p>• Sağ üstteki <span className="text-white font-semibold">🔄</span> butonuyla manuel yenileyin</p>
+                <p>• Otomatik yenileme açılabilir (30 sn aralıkla)</p>
+                <p>• Aşağı çekerek de yenileyebilirsiniz (pull-to-refresh)</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🔲 Tam Ekran</h4>
+                <p>Sağ üstteki <span className="text-white font-semibold">↗️</span> butonuyla tam ekran moduna geçebilirsiniz. Alt menü gizlenir, daha fazla alan açılır.</p>
+              </div>
+
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

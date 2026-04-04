@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Trophy, Medal, Award, RefreshCw, Loader2, ChevronDown,
   Tag, TrendingUp, AlertTriangle, Users, MapPin,
-  ShieldCheck, Filter, Zap, Camera, Pencil, X, Check, MessageSquare,
+  ShieldCheck, Filter, Zap, Camera, Pencil, X, Check, MessageSquare, HelpCircle,
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { projectId } from '../lib/supabase-info';
@@ -203,6 +203,7 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
   const [mekanlar, setMekanlar] = useState<Mekan[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showLbGuide, setShowLbGuide] = useState(false);
   const [acikKart, setAcikKart] = useState<string | null>(null);
   const [showMekanFilter, setShowMekanFilter] = useState(false);
   // Quote state
@@ -298,6 +299,13 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
               {PERIOD_LABELS[period]} · {personeller.length} personel
             </p>
           </div>
+          <button
+            onClick={() => setShowLbGuide(true)}
+            className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition-all"
+            style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}
+          >
+            <HelpCircle className="w-4 h-4 text-amber-400" />
+          </button>
           <button
             onClick={fetchData} disabled={loading}
             className="w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90"
@@ -769,6 +777,92 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
       {/* Bottom Nav */}
       {['personel', 'operasyon', 'bekleyen'].includes(userRole) && (
         <NewBottomNav activeTab="leaderboard" onTabChange={onNavigate} userRole={userRole} />
+      )}
+
+      {/* Liderlik Tablosu Rehber Modalı */}
+      {showLbGuide && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowLbGuide(false)}>
+          <div
+            className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-ta" /> Liderlik Tablosu Rehberi
+              </h3>
+              <button onClick={() => setShowLbGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                <X className="w-4 h-4 text-white/60" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+
+              <div>
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🏆 Bu Sayfa Ne İşe Yarar?</h4>
+                <p>Personelin <span className="text-ta font-semibold">performans sıralamasını</span> çoklu metriklerle takip edin.</p>
+                <p className="mt-1">• 5 farklı metriğin ağırlıklı ortalamasıyla hesaplanan 0-100 arası toplam skor</p>
+                <p>• Dönem şampiyonları podyumda, tüm personel sıralı listede gösterilir</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📊 5 Performans Metriği</h4>
+                <div className="space-y-1.5 mt-1">
+                  <p>• <span className="font-semibold" style={{ color: C.green }}>İskonto Disiplini %25</span> — Verilen iskonto oranının düşüklüğü (az iskonto = yüksek puan)</p>
+                  <p>• <span className="font-semibold" style={{ color: C.cyan }}>Ort. Satış Tutarı %15</span> — Satış başına ortalama tutar</p>
+                  <p>• <span className="font-semibold" style={{ color: C.gold2 }}>Mekan Katkısı %25</span> — Farklı mekanlarda çalışma çeşitliliği</p>
+                  <p>• <span className="font-semibold" style={{ color: C.purple }}>Anomali Temizliği %20</span> — Anomali olmayan vardiya oranı</p>
+                  <p>• <span className="font-semibold" style={{ color: C.violet }}>Kare Performansı %15</span> — Kaydedilen toplam kare sayısı</p>
+                </div>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">👑 Dönem Şampiyonları</h4>
+                <p>Seçilen dönemde en yüksek skora sahip ilk 3 personel podyumda gösterilir.</p>
+                <p className="mt-1">• 🥇 <span className="text-amber-400 font-semibold">1. sıra</span> ortada, büyük profil</p>
+                <p>• 🥈 <span className="text-gray-300 font-semibold">2. sıra</span> solda · 🥉 <span className="text-amber-600 font-semibold">3. sıra</span> sağda</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📅 Dönem Filtreleri</h4>
+                <p>Farklı zaman dilimlerine göre sıralama görüntüleyin:</p>
+                <p className="mt-1">• <span className="text-ta font-semibold">Bu Hafta</span> · <span className="text-ta font-semibold">Bu Ay</span> · <span className="text-ta font-semibold">Bu Yıl</span> · <span className="text-ta font-semibold">Tüm Zamanlar</span></p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📍 Mekan Filtresi</h4>
+                <p>Sağ üstteki <span className="text-ta font-semibold">filtre</span> ikonu ile belirli bir mekana göre sıralama daraltılabilir.</p>
+                <p className="mt-1">• Mekan seçildiğinde sadece o mekandaki performans baz alınır</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🔢 Skor Halkası</h4>
+                <p>Her personelin sağındaki dairesel halka toplam skoru gösterir:</p>
+                <div className="flex flex-wrap gap-2 mt-1.5">
+                  <span className="px-2 py-1 rounded-lg text-[11px] font-bold" style={{ background: `${C.green}20`, color: C.green }}>75+ Yeşil</span>
+                  <span className="px-2 py-1 rounded-lg text-[11px] font-bold" style={{ background: `${C.cyan}20`, color: C.cyan }}>50-74 Mavi</span>
+                  <span className="px-2 py-1 rounded-lg text-[11px] font-bold" style={{ background: `${C.gold2}20`, color: C.gold2 }}>30-49 Altın</span>
+                  <span className="px-2 py-1 rounded-lg text-[11px] font-bold" style={{ background: 'rgba(248,113,113,0.15)', color: '#f87171' }}>0-29 Kırmızı</span>
+                </div>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">👆 Kart Detayı</h4>
+                <p>Personel kartına tıklayarak detay panelini açın:</p>
+                <p className="mt-1">• 5 metriğin ayrı ayrı bar grafikleri</p>
+                <p>• Ciro, satış adedi, ortalama satış tutarı</p>
+                <p>• Toplam iskonto, anomali vardiya oranı, toplam kare</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">⚡ Hesaplama Yöntemi</h4>
+                <p>Sıralama <span className="text-ta font-semibold">5 metriğin normalize edilmiş ağırlıklı ortalaması</span> ile hesaplanır.</p>
+                <p className="mt-1">• Her metrik 0-100 arasında normalize edilir</p>
+                <p>• Ağırlıklar: İskonto %25 · Mekan %25 · Anomali %20 · Ort. Satış %15 · Kare %15</p>
+                <p>• Sonuç: Toplam skor = ağırlıklı toplam</p>
+              </div>
+
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

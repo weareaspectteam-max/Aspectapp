@@ -280,11 +280,15 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                   const cari = portalData?.cari || {};
                   const albums: any[] = portalData?.albumler || [];
                   if (cari.supplierType === 'album') {
-                    const items = [3,5,7,9,11,13,15].map(sz => {
+                    const items: Array<{ productName: string; quantity: number; unitPrice: number }> = [];
+                    for (const sz of [3,5,7,9,11,13,15]) {
                       const a = albums.find((al: any) => al.size === sz || al.size === String(sz));
-                      const existing = (s.items || []).find((i: OrderItem) => i.productName?.includes(String(sz)));
-                      return { productName: `${sz} Kare`, quantity: existing?.quantity || 0, unitPrice: existing?.unitPrice || a?.yarimBoy || a?.tamBoy || 0 };
-                    });
+                      const existingTam = (s.items || []).find((i: OrderItem) => i.productName === `${sz} Kare Tam`);
+                      const existingYarim = (s.items || []).find((i: OrderItem) => i.productName === `${sz} Kare Yarım`);
+                      const existingEski = !existingTam && !existingYarim ? (s.items || []).find((i: OrderItem) => i.productName === `${sz} Kare`) : null;
+                      items.push({ productName: `${sz} Kare Tam`, quantity: existingTam?.quantity || 0, unitPrice: existingTam?.unitPrice || a?.tamBoy || 0 });
+                      items.push({ productName: `${sz} Kare Yarım`, quantity: existingYarim?.quantity || existingEski?.quantity || 0, unitPrice: existingYarim?.unitPrice || existingEski?.unitPrice || a?.yarimBoy || 0 });
+                    }
                     items.push({ productName: 'Paspartu', quantity: (s.items || []).find((i: OrderItem) => i.productName === 'Paspartu')?.quantity || 0, unitPrice: 0 });
                     setKarsiItems(items);
                   } else {
@@ -617,11 +621,15 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                 const albums: any[] = portalData?.albumler || [];
                 const fl = portalData?.fiyatListesi;
                 if (cari.supplierType === 'album') {
-                  const items = [3,5,7,9,11,13,15].map(s => {
+                  const items: Array<{ productName: string; quantity: number; unitPrice: number }> = [];
+                  for (const s of [3,5,7,9,11,13,15]) {
                     const a = albums.find((al: any) => al.size === s || al.size === String(s));
-                    const flItem = (fl?.items || []).find((f: any) => f.productName === `${s} Kare`);
-                    return { productName: `${s} Kare`, quantity: 0, unitPrice: flItem?.fiyat || a?.yarimBoy || a?.tamBoy || 0 };
-                  });
+                    const flTam = (fl?.items || []).find((f: any) => f.productName === `${s} Kare Tam`);
+                    const flYarim = (fl?.items || []).find((f: any) => f.productName === `${s} Kare Yarım`);
+                    const flEski = (fl?.items || []).find((f: any) => f.productName === `${s} Kare`);
+                    items.push({ productName: `${s} Kare Tam`, quantity: 0, unitPrice: flTam?.fiyat || flEski?.fiyat || a?.tamBoy || 0 });
+                    items.push({ productName: `${s} Kare Yarım`, quantity: 0, unitPrice: flYarim?.fiyat || flEski?.fiyat || a?.yarimBoy || 0 });
+                  }
                   items.push({ productName: 'Paspartu', quantity: 0, unitPrice: 0 });
                   setOfferItems(items);
                 } else {

@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, HelpCircle, X } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 import { publicAnonKey } from '../../lib/supabase-info';
 import { getToken, appendGhostParam } from '../../lib/api';
@@ -57,6 +57,9 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
   const [ayData, setAyData] = useState<any[]>([]);
   const [ayLoading, setAyLoading] = useState(false);
   const [ayAcik, setAyAcik] = useState<Set<string>>(new Set());
+
+  // Rehber
+  const [showGuide, setShowGuide] = useState(false);
 
   // Silme
   const [silOnayV, setSilOnayV] = useState<VardiyaKayit | null>(null);
@@ -232,13 +235,22 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
           </p>
         </div>
         {!secili && (
-          <button
-            onClick={aktifSekme === 'gun' ? () => { if (gunSecili) fetchGunDetay(gunSecili); else fetchGunListesi(gunTarihBas, gunTarihBit); } : handleAra}
-            className="w-9 h-9 rounded-2xl flex items-center justify-center transition-all active:scale-90"
-            style={{ background: 'rgba(var(--app-accent-rgb),0.1)', border: '1px solid rgba(var(--app-accent-rgb),0.2)' }}
-          >
-            <RefreshCw className={`w-4 h-4 text-ta ${(aktifSekme === 'gun' ? gunLoading : loading) ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowGuide(true)}
+              className="w-9 h-9 rounded-2xl flex items-center justify-center transition-all active:scale-90"
+              style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}
+            >
+              <HelpCircle className="w-4 h-4 text-amber-400" />
+            </button>
+            <button
+              onClick={aktifSekme === 'gun' ? () => { if (gunSecili) fetchGunDetay(gunSecili); else fetchGunListesi(gunTarihBas, gunTarihBit); } : handleAra}
+              className="w-9 h-9 rounded-2xl flex items-center justify-center transition-all active:scale-90"
+              style={{ background: 'rgba(var(--app-accent-rgb),0.1)', border: '1px solid rgba(var(--app-accent-rgb),0.2)' }}
+            >
+              <RefreshCw className={`w-4 h-4 text-ta ${(aktifSekme === 'gun' ? gunLoading : loading) ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         )}
       </div>
 
@@ -318,6 +330,93 @@ export function VardiyaRaporlari({ userName, userRole, onLogout, onNavigate }: P
           />
         )}
       </AnimatePresence>
+
+      {/* Vardiya Raporları Rehber Modalı */}
+      {showGuide && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowGuide(false)}>
+          <div
+            className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-amber-400" /> Vardiya Raporları Rehberi
+              </h3>
+              <button onClick={() => setShowGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                <X className="w-4 h-4 text-white/60" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+
+              <div>
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📊 Bu Sayfa Ne İşe Yarar?</h4>
+                <p>Kapanışı tamamlanmış vardiyaların finansal ve operasyonel raporlarını gösterir. Ciro, maliyet, kâr/zarar, personel performansı ve stok durumunu analiz edebilirsiniz.</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📋 Vardiya Bazlı</h4>
+                <p>Her kapanmış vardiyayı ayrı ayrı gösterir:</p>
+                <p className="mt-1">• <span className="text-white font-semibold">Ciro</span> — Toplam gelir</p>
+                <p>• <span className="text-emerald-400 font-semibold">Nakit</span> / <span className="text-blue-400 font-semibold">IBAN</span> / <span className="text-pink-400 font-semibold">Kredi Kartı</span> dağılımı</p>
+                <p>• <span className="text-white font-semibold">Kâr/Zarar</span> — Maliyet düşüldükten sonraki net kazanç</p>
+                <p>• <span className="text-orange-400 font-semibold">İskonto</span> — Yapılan toplam indirim</p>
+                <p>• <span className="text-red-400 font-semibold">Anomali</span> — Stok veya yazıcı uyumsuzlukları</p>
+                <p>• <span className="text-white font-semibold">Personel</span> — Kimin ne kadar katkı sağladığı (%)</p>
+                <p className="mt-1.5">Karta tıklayarak detaylı raporu açabilirsiniz.</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📅 Gün Bazlı</h4>
+                <p>Tüm mekanların günlük toplamını gösterir:</p>
+                <p className="mt-1">• Hızlı filtreler: <span className="text-blue-400 font-semibold">Bu Ay</span> · <span className="text-orange-400 font-semibold">Önceki Hafta</span> · <span className="text-emerald-400 font-semibold">Bu Hafta</span></p>
+                <p>• Günlük kartı açarak mekan bazlı dökümü görebilirsiniz</p>
+                <p>• Detay sayfasında <span className="text-white font-semibold">Excel</span> ve <span className="text-white font-semibold">PDF</span> olarak dışa aktarabilirsiniz</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📆 Ay Bazlı</h4>
+                <p>Aylık toplamları gösterir:</p>
+                <p className="mt-1">• Aylık ciro, maliyet ve kâr/zarar özeti</p>
+                <p>• Baskı özeti (basılan, satılan, iade)</p>
+                <p>• Ürün/albüm satış dağılımı</p>
+                <p>• ◀ ▶ butonlarıyla aylar arası gezinin</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">🔍 Filtre & Tarih Aralığı</h4>
+                <p>• <span className="text-white font-semibold">Başlangıç / Bitiş</span> tarihi seçin</p>
+                <p>• <span className="text-white font-semibold">Mekan</span> filtresi ile tek mekana odaklanın</p>
+                <p>• <span className="text-white font-semibold">Ara</span> butonuyla filtreleyin, <span className="text-white font-semibold">Sıfırla</span> ile temizleyin</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">💰 Maliyet Kalemleri</h4>
+                <div className="space-y-0.5">
+                  <p>• <span className="text-white font-semibold">Albüm Maliyeti</span> — Satılan albümlerin üretim maliyeti</p>
+                  <p>• <span className="text-white font-semibold">Baskı Maliyeti</span> — Kullanılan ribon/kağıt maliyeti</p>
+                  <p>• <span className="text-white font-semibold">Hakediş</span> — Personel prim/komisyon gideri</p>
+                  <p>• <span className="text-white font-semibold">Maaş</span> — Personel günlük maaş gideri</p>
+                  <p>• <span className="text-white font-semibold">Kira</span> — Mekan günlük kira gideri</p>
+                  <p className="mt-1 text-white/50">Brüt Kâr = Ciro − Toplam Maliyet</p>
+                </div>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">📤 Dışa Aktarma</h4>
+                <p>Detay sayfalarında:</p>
+                <p>• <span className="text-emerald-400 font-semibold">Excel</span> — Çok sayfalı detaylı tablo (özet, personel, yazıcı, albüm)</p>
+                <p>• <span className="text-red-400 font-semibold">PDF</span> — Profesyonel formatlı rapor çıktısı</p>
+              </div>
+
+              <div className="border-t border-white/8 pt-3">
+                <h4 className="text-[13px] font-bold text-white mb-1.5">⬇️ Önceki Gün</h4>
+                <p>Vardiya Bazlı sekmede listenin altındaki <span className="text-ta font-semibold">Önceki Gün</span> butonuyla daha eski vardiyaları yükleyebilirsiniz.</p>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

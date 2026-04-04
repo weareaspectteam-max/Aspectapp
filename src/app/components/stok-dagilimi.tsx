@@ -20,16 +20,40 @@ const ALBUM_TIPLERI = ['album3','album5','album7','album9','album11','album13','
 const ALAN_ETIKET: Record<string, string> = {
   album3:'3 Kare', album5:'5 Kare', album7:'7 Kare', album9:'9 Kare',
   album11:'11 Kare', album13:'13 Kare', album15:'15 Kare', ribon:'Ribon',
+  // Depo tam/yarım etiketleri
+  album3_tam:'3 Tam', album3_yarim:'3 Yarım',
+  album5_tam:'5 Tam', album5_yarim:'5 Yarım',
+  album7_tam:'7 Tam', album7_yarim:'7 Yarım',
+  album9_tam:'9 Tam', album9_yarim:'9 Yarım',
+  album11_tam:'11 Tam', album11_yarim:'11 Yarım',
+  album13_tam:'13 Tam', album13_yarim:'13 Yarım',
+  album15_tam:'15 Tam', album15_yarim:'15 Yarım',
 };
 const ALAN_RENK: Record<string, string> = {
   album3:'#9dd9ea', album5:'#a8e6cf', album7:'#ffd4a3', album9:'#ffb3ba',
   album11:'#d4a5ff', album13:'#b8d4f1', album15:'#ffc78f', ribon:'#f9a8d4',
+  // Depo tam/yarım renkleri
+  album3_tam:'#7cc5d6', album3_yarim:'#9dd9ea',
+  album5_tam:'#8cd4b5', album5_yarim:'#a8e6cf',
+  album7_tam:'#ebc28a', album7_yarim:'#ffd4a3',
+  album9_tam:'#e69aa3', album9_yarim:'#ffb3ba',
+  album11_tam:'#be8de6', album11_yarim:'#d4a5ff',
+  album13_tam:'#9fbdd9', album13_yarim:'#b8d4f1',
+  album15_tam:'#e6ad76', album15_yarim:'#ffc78f',
 };
 const SADECE_ALBUMLER = ['album3','album5','album7','album9','album11','album13','album15'] as const;
+// Depo albüm alanları (tam + yarım)
+const DEPO_ALBUMLER = [
+  'album3_tam','album3_yarim','album5_tam','album5_yarim',
+  'album7_tam','album7_yarim','album9_tam','album9_yarim',
+  'album11_tam','album11_yarim','album13_tam','album13_yarim',
+  'album15_tam','album15_yarim',
+] as const;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AlbumDagilimItem {
   alan: string; name: string; color: string; count: number;
+  tam?: number; yarim?: number;
 }
 interface MekanOzet {
   id: string; name: string; emoji: string; color: string;
@@ -192,6 +216,9 @@ function GenelAlbumCard({ dagilim, mekanlar, depo, kagitTipleri }: {
                   </div>
                   <div className="w-10 text-right text-xs font-bold text-white">{item.count}</div>
                   <div className="w-9 text-right text-[10px] text-white/30">%{pct}</div>
+                  {((item.tam || 0) > 0 || (item.yarim || 0) > 0) && (
+                    <div className="w-20 text-right text-[9px] text-white/25">T:{item.tam || 0} Y:{item.yarim || 0}</div>
+                  )}
                 </div>
               );
             })}
@@ -386,7 +413,11 @@ function MekanAlbumCard({
   kagitTipleri: Array<{ id: string; name: string }>;
 }) {
   const [acik, setAcik] = useState(false);
-  const albumToplam = SADECE_ALBUMLER.reduce((s, a) => s + (mekan.albumSayilari[a] || 0), 0);
+  // Tam/yarım formatını kontrol et
+  const hasNewFormat = DEPO_ALBUMLER.some(a => (mekan.albumSayilari[a] || 0) > 0);
+  const albumToplam = hasNewFormat
+    ? DEPO_ALBUMLER.reduce((s, a) => s + (mekan.albumSayilari[a] || 0), 0)
+    : SADECE_ALBUMLER.reduce((s, a) => s + (mekan.albumSayilari[a] || 0), 0);
   return (
     <div className="rounded-xl border border-white/10 bg-black/25 overflow-hidden">
       <button
@@ -417,21 +448,39 @@ function MekanAlbumCard({
           ) : albumToplam === 0 ? (
             <p className="text-xs text-white/25 text-center py-2">Tüm albümler sıfır</p>
           ) : (
-            SADECE_ALBUMLER.map(alan => {
+            (hasNewFormat ? [3, 5, 7, 9, 11, 13, 15].map(sz => {
+              const tamAdet = mekan.albumSayilari[`album${sz}_tam`] || 0;
+              const yarimAdet = mekan.albumSayilari[`album${sz}_yarim`] || 0;
+              const szToplam = tamAdet + yarimAdet;
+              if (szToplam === 0) return null;
+              const pct = albumToplam > 0 ? Math.round((szToplam / albumToplam) * 100) : 0;
+              return (
+                <div key={sz} className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-14 text-xs text-white/45">{sz} Kare</div>
+                    <div className="flex-1 h-5 bg-black/30 rounded overflow-hidden flex">
+                      {tamAdet > 0 && <div className="h-full transition-all" style={{ width: `${szToplam > 0 ? (tamAdet/szToplam)*pct : 0}%`, backgroundColor: ALAN_RENK[`album${sz}_tam`], opacity: 0.9 }} />}
+                      {yarimAdet > 0 && <div className="h-full transition-all" style={{ width: `${szToplam > 0 ? (yarimAdet/szToplam)*pct : 0}%`, backgroundColor: ALAN_RENK[`album${sz}_yarim`], opacity: 0.7 }} />}
+                    </div>
+                    <div className="w-8 text-right text-xs font-bold text-white">{szToplam}</div>
+                    <div className="w-20 text-right text-[9px] text-white/25">T:{tamAdet} Y:{yarimAdet}</div>
+                  </div>
+                </div>
+              );
+            }) : SADECE_ALBUMLER.map(alan => {
               const adet = mekan.albumSayilari[alan] || 0;
               const pct = albumToplam > 0 ? Math.round((adet / albumToplam) * 100) : 0;
               return (
                 <div key={alan} className="flex items-center gap-2">
                   <div className="w-14 text-xs text-white/45">{ALAN_ETIKET[alan]}</div>
                   <div className="flex-1 h-5 bg-black/30 rounded overflow-hidden">
-                    <div className="h-full rounded transition-all"
-                      style={{ width: `${pct}%`, backgroundColor: ALAN_RENK[alan], opacity: 0.8 }} />
+                    <div className="h-full rounded transition-all" style={{ width: `${pct}%`, backgroundColor: ALAN_RENK[alan], opacity: 0.8 }} />
                   </div>
                   <div className="w-8 text-right text-xs font-bold text-white">{adet}</div>
                   <div className="w-9 text-right text-[10px] text-white/28">%{pct}</div>
                 </div>
               );
-            })
+            }))
           )}
           {/* Ribon satırları — tip bazlı */}
           {mekan.ribonlar && Object.keys(mekan.ribonlar).length > 0 ? (
@@ -490,7 +539,11 @@ function DepoAlbumCard({
   kagitTipleri: Array<{ id: string; name: string }>;
 }) {
   const [acik, setAcik] = useState(false);
-  const toplam = SADECE_ALBUMLER.reduce((s, a) => s + (depo.albumSayilari[a] || 0), 0);
+  // Depo yeni formatta (album3_tam, album3_yarim) veya eski formatta olabilir
+  const hasNewFormat = DEPO_ALBUMLER.some(a => (depo.albumSayilari[a] || 0) > 0);
+  const toplam = hasNewFormat
+    ? DEPO_ALBUMLER.reduce((s, a) => s + (depo.albumSayilari[a] || 0), 0)
+    : SADECE_ALBUMLER.reduce((s, a) => s + (depo.albumSayilari[a] || 0), 0);
   return (
     <div className="rounded-xl border-2 border-white/15 bg-black/30 overflow-hidden">
       <button
@@ -510,21 +563,52 @@ function DepoAlbumCard({
       </button>
       {acik && (
         <div className="px-4 pb-4 pt-2 border-t border-white/8 space-y-2">
-          {SADECE_ALBUMLER.map(alan => {
-            const adet = depo.albumSayilari[alan] || 0;
-            const pct = toplam > 0 ? Math.round((adet / toplam) * 100) : 0;
-            return (
-              <div key={alan} className="flex items-center gap-2">
-                <div className="w-14 text-xs text-white/45">{ALAN_ETIKET[alan]}</div>
-                <div className="flex-1 h-5 bg-black/30 rounded overflow-hidden">
-                  <div className="h-full rounded transition-all"
-                    style={{ width: `${pct}%`, backgroundColor: ALAN_RENK[alan], opacity: 0.8 }} />
+          {hasNewFormat ? (
+            // Yeni format: tam/yarım ayrı göster (boyut bazında grupla)
+            [3, 5, 7, 9, 11, 13, 15].map(sz => {
+              const tamAdet = depo.albumSayilari[`album${sz}_tam`] || 0;
+              const yarimAdet = depo.albumSayilari[`album${sz}_yarim`] || 0;
+              const szToplam = tamAdet + yarimAdet;
+              return (
+                <div key={sz} className="space-y-0.5">
+                  <div className="text-[10px] text-white/35 font-semibold">{sz} Kare <span className="text-white/20">({szToplam})</span></div>
+                  <div className="flex items-center gap-2 pl-2">
+                    <div className="w-10 text-[10px] text-white/40">Tam</div>
+                    <div className="flex-1 h-4 bg-black/30 rounded overflow-hidden">
+                      <div className="h-full rounded transition-all"
+                        style={{ width: `${toplam > 0 ? Math.round((tamAdet / toplam) * 100) : 0}%`, backgroundColor: ALAN_RENK[`album${sz}_tam`], opacity: 0.8 }} />
+                    </div>
+                    <div className="w-7 text-right text-[11px] font-bold text-white">{tamAdet}</div>
+                  </div>
+                  <div className="flex items-center gap-2 pl-2">
+                    <div className="w-10 text-[10px] text-white/40">Yarım</div>
+                    <div className="flex-1 h-4 bg-black/30 rounded overflow-hidden">
+                      <div className="h-full rounded transition-all"
+                        style={{ width: `${toplam > 0 ? Math.round((yarimAdet / toplam) * 100) : 0}%`, backgroundColor: ALAN_RENK[`album${sz}_yarim`], opacity: 0.9 }} />
+                    </div>
+                    <div className="w-7 text-right text-[11px] font-bold text-white">{yarimAdet}</div>
+                  </div>
                 </div>
-                <div className="w-8 text-right text-xs font-bold text-white">{adet}</div>
-                <div className="w-9 text-right text-[10px] text-white/28">%{pct}</div>
-              </div>
-            );
-          })}
+              );
+            })
+          ) : (
+            // Eski format fallback
+            SADECE_ALBUMLER.map(alan => {
+              const adet = depo.albumSayilari[alan] || 0;
+              const pct = toplam > 0 ? Math.round((adet / toplam) * 100) : 0;
+              return (
+                <div key={alan} className="flex items-center gap-2">
+                  <div className="w-14 text-xs text-white/45">{ALAN_ETIKET[alan]}</div>
+                  <div className="flex-1 h-5 bg-black/30 rounded overflow-hidden">
+                    <div className="h-full rounded transition-all"
+                      style={{ width: `${pct}%`, backgroundColor: ALAN_RENK[alan], opacity: 0.8 }} />
+                  </div>
+                  <div className="w-8 text-right text-xs font-bold text-white">{adet}</div>
+                  <div className="w-9 text-right text-[10px] text-white/28">%{pct}</div>
+                </div>
+              );
+            })
+          )}
           {/* Ribon satırları — tip bazlı */}
           {depo.ribonlar && Object.keys(depo.ribonlar).length > 0 ? (
             Object.entries(depo.ribonlar).map(([tipId, adet]) => {
@@ -580,9 +664,13 @@ function StokGuncelleModal({
   kagitTipleri: Array<{ id: string; name: string }>;
   onClose: () => void; onSuccess: () => void;
 }) {
+  const isDepo = mekanId === 'depo';
+  const hasNewFormat = DEPO_ALBUMLER.some(a => (mevcutAlbumSayilari[a] || 0) > 0);
+  // Artık mekanlar da tam/yarım tutuyor — yeni format varsa veya depo ise DEPO_ALBUMLER kullan
+  const albumEditAlanlari = (hasNewFormat || isDepo) ? DEPO_ALBUMLER : SADECE_ALBUMLER;
   const [albumDegerleri, setAlbumDegerleri] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
-    SADECE_ALBUMLER.forEach(a => { init[a] = String(mevcutAlbumSayilari[a] || 0); });
+    albumEditAlanlari.forEach(a => { init[a] = String(mevcutAlbumSayilari[a] || 0); });
     return init;
   });
   // Kağıt tipine göre ribon değerleri
@@ -613,7 +701,7 @@ function StokGuncelleModal({
     try {
       const headers = await authHeaders();
       const albumSayilari: Record<string, number> = {};
-      SADECE_ALBUMLER.forEach(a => { albumSayilari[a] = Math.max(0, parseInt(albumDegerleri[a] || '0') || 0); });
+      albumEditAlanlari.forEach(a => { albumSayilari[a] = Math.max(0, parseInt(albumDegerleri[a] || '0') || 0); });
       // ribonlar objesi oluştur
       const ribonlar: Record<string, number> = {};
       for (const [k, v] of Object.entries(ribonlarDegerleri)) {
@@ -654,10 +742,10 @@ function StokGuncelleModal({
         <div className="overflow-y-auto px-5 py-4 space-y-3" style={{ maxHeight: 'calc(85vh - 140px)' }}>
           <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mb-1">Albümler (adet)</p>
           <div className="grid grid-cols-2 gap-2">
-            {SADECE_ALBUMLER.map(alan => (
+            {albumEditAlanlari.map(alan => (
               <div key={alan} className="rounded-xl border border-white/10 bg-white/4 px-3 py-2.5 flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ALAN_RENK[alan] }} />
-                <span className="text-xs text-white/55 flex-1">{ALAN_ETIKET[alan]}</span>
+                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ALAN_RENK[alan] || '#888' }} />
+                <span className="text-xs text-white/55 flex-1">{ALAN_ETIKET[alan] || alan}</span>
                 <input type="number" min={0} value={albumDegerleri[alan]}
                   onChange={e => setAlbumDegerleri(v => ({ ...v, [alan]: e.target.value }))}
                   className="w-16 text-right text-sm font-bold text-white bg-transparent outline-none" />
@@ -767,7 +855,9 @@ function DepoModal({
   depoRibonTakim?: number;
 }) {
   const [sekme, setSekme] = useState<'giris' | 'cikis' | 'gecmis'>('giris');
-  const [alan, setAlan] = useState('album3');
+  // Depo giriş/çıkış: tam/yarım alanları kullan
+  const depoGirisAlanlari = [...DEPO_ALBUMLER, 'ribon'] as const;
+  const [alan, setAlan] = useState<string>('album3_tam');
   const [secilenRibonTipi, setSecilenRibonTipi] = useState(kagitTipleri[0]?.id || '');
   const [miktar, setMiktar] = useState('');
   const [hedefMekan, setHedefMekan] = useState('');
@@ -880,7 +970,7 @@ function DepoModal({
               <div>
                 <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Ürün</label>
                 <div className="grid grid-cols-4 gap-1.5">
-                  {ALBUM_TIPLERI.map(a => {
+                  {depoGirisAlanlari.map(a => {
                     const mevcutStok = a === 'ribon' ? (depoRibonTakim || 0) : (depoAlbumSayilari?.[a] || 0);
                     return (
                       <button key={a} onClick={() => setAlan(a)}
@@ -1114,7 +1204,7 @@ function AktarimModal({
   const [sekme, setSekme] = useState<'aktarim' | 'gecmis'>('aktarim');
   const [kaynakId, setKaynakId] = useState('depo');
   const [hedefId, setHedefId] = useState(mekanlar[0]?.id || '');
-  const [alan, setAlan] = useState('album3');
+  const [alan, setAlan] = useState('album3_tam');
   const [secilenKagitTipiId, setSecilenKagitTipiId] = useState(kagitTipleri[0]?.id || '');
   const [miktar, setMiktar] = useState('');
   const [not, setNot] = useState('');
@@ -1172,6 +1262,8 @@ function AktarimModal({
       if (id === 'depo') setHedefId(mekanlar[0]?.id || '');
       else setHedefId('depo');
     }
+    // Kaynak değiştiğinde ürün alanını sıfırla — artık her kaynak tam/yarım
+    setAlan('album3_tam');
     setMiktar(''); setHata(''); setBasarili('');
   };
   const handleHedefChange = (id: string) => {
@@ -1349,11 +1441,11 @@ function AktarimModal({
                 </div>
               </div>
 
-              {/* Ürün seçimi — mevcut stok adedi her düğmede gösterilir */}
+              {/* Ürün seçimi — kaynak depo ise tam/yarım, mekan ise eski format */}
               <div>
                 <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Ürün</label>
                 <div className="grid grid-cols-4 gap-1.5">
-                  {ALBUM_TIPLERI.map(a => {
+                  {[...DEPO_ALBUMLER, 'ribon'].map(a => {
                     const { adet } = getKaynakStok(kaynakId, a);
                     return (
                       <button key={a} onClick={() => { setAlan(a); setMiktar(''); }}
@@ -1364,7 +1456,7 @@ function AktarimModal({
                             ? 'border-red-500/20 bg-red-500/5 text-white/25'
                             : 'border-white/8 bg-white/4 text-white/50 active:bg-white/8'
                         }`}>
-                        <span>{ALAN_ETIKET[a]}</span>
+                        <span className="text-[10px]">{ALAN_ETIKET[a] || a}</span>
                         <span className={`text-[9px] font-black ${
                           adet === 0 ? 'text-red-400/50' : adet <= 3 ? 'text-amber-400/80' : 'text-emerald-400/70'
                         }`}>{adet}</span>

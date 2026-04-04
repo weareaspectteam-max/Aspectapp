@@ -280,7 +280,7 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
     setContentForm({
       type: item.type, title: item.title, description: item.description,
       youtubeUrl: item.data?.youtubeId ? `https://youtube.com/watch?v=${item.data.youtubeId}` : '',
-      textContent: item.data?.content || '',
+      textContent: item.data?.content || item.data?.text || '',
       pdfUrl: item.data?.url || '',
       linkUrl: item.data?.url || '',
       linkLabel: item.data?.label || '',
@@ -291,7 +291,7 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
   };
 
   // ── Hesaplamalar ──
-  const catContents = selectedCat ? contents.filter(c => c.categoryId === selectedCat) : [];
+  const catContents = selectedCat ? contents.filter(c => c.categoryId === selectedCat).sort((a, b) => (a.order || 0) - (b.order || 0)) : [];
   const totalContents = contents.length;
   const completedCount = Object.values(progress).filter(p => p.watched).length;
   const selectedCatObj = categories.find(c => c.id === selectedCat);
@@ -348,7 +348,7 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
           {item.type === 'text' && (
             <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
               <div className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap">
-                {item.data?.content}
+                {item.data?.content || item.data?.text}
               </div>
             </div>
           )}
@@ -708,6 +708,21 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
                         <span className="text-[9px] font-bold" style={{ color: showHidden ? '#fbbf24' : 'rgba(255,255,255,0.3)' }}>{hiddenItems.length}</span>
                       </button>
                     )}
+                    {!loading && (
+                      <button onClick={async () => {
+                        try {
+                          const res = await fetch(appendGhostParam(`${API_BASE}/academy/seed-guide`), { method: 'POST', headers: await authHeaders() });
+                          const d = await res.json();
+                          if (!res.ok) throw new Error(d.error || 'Hata');
+                          alert(`Rehber güncellendi: ${d.yeniIcerik || d.icerikSayisi || 0} yeni içerik eklendi.`);
+                          fetchData();
+                        } catch (e: any) { alert(e.message); }
+                      }}
+                        className="h-8 px-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center gap-1.5 active:scale-95 transition-all">
+                        <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-[10px] font-bold text-emerald-400">Rehber</span>
+                      </button>
+                    )}
                     <button onClick={() => setShowCatForm(true)}
                       className="h-8 px-3 rounded-xl bg-ta/15 border border-ta/30 flex items-center gap-1.5 active:scale-95 transition-all">
                       <Plus className="w-3.5 h-3.5 text-ta" />
@@ -899,41 +914,53 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
                                 border: isWatched ? '1px solid rgba(16,185,129,0.12)' : '1px solid rgba(255,255,255,0.07)',
                               }}
                             >
-                              {/* Üst kısım — thumbnail veya ikon */}
+                              {/* Üst kısım — thumbnail veya içerik özeti */}
                               {item.type === 'video' && item.data?.youtubeId ? (
-                                <div className="relative w-full h-[100px] bg-black/30">
-                                  <img src={`https://img.youtube.com/vi/${item.data.youtubeId}/mqdefault.jpg`}
-                                    alt="" className="w-full h-full object-cover" style={{ opacity: isWatched ? 0.5 : 0.85 }} />
-                                  <div className="absolute inset-0 flex items-center justify-center">
-                                    <div className="w-9 h-9 rounded-full bg-black/50 backdrop-blur-sm border border-white/15 flex items-center justify-center">
-                                      <Play className="w-3.5 h-3.5 text-white ml-0.5" fill="white" />
+                                <>
+                                  <div className="relative w-full h-[100px] bg-black/30">
+                                    <img src={`https://img.youtube.com/vi/${item.data.youtubeId}/mqdefault.jpg`}
+                                      alt="" className="w-full h-full object-cover" style={{ opacity: isWatched ? 0.5 : 0.85 }} />
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                      <div className="w-9 h-9 rounded-full bg-black/50 backdrop-blur-sm border border-white/15 flex items-center justify-center">
+                                        <Play className="w-3.5 h-3.5 text-white ml-0.5" fill="white" />
+                                      </div>
                                     </div>
+                                    {isWatched && (
+                                      <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-emerald-500/90 flex items-center gap-0.5">
+                                        <CheckCircle className="w-2.5 h-2.5 text-white" />
+                                        <span className="text-[7px] font-bold text-white">İzlendi</span>
+                                      </div>
+                                    )}
                                   </div>
-                                  {isWatched && (
-                                    <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-emerald-500/90 flex items-center gap-0.5">
-                                      <CheckCircle className="w-2.5 h-2.5 text-white" />
-                                      <span className="text-[7px] font-bold text-white">İzlendi</span>
-                                    </div>
-                                  )}
-                                </div>
+                                  <div className="p-2.5">
+                                    <p className="text-[11px] font-semibold text-white leading-tight" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.title}</p>
+                                    {item.description && (
+                                      <p className="text-[9px] text-white/35 leading-snug mt-1" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.description}</p>
+                                    )}
+                                  </div>
+                                </>
                               ) : (
-                                <div className="relative w-full h-[72px] flex items-center justify-center"
-                                  style={{ background: `linear-gradient(135deg, ${meta.color}10, ${meta.color}05)` }}>
-                                  <Icon className="w-7 h-7" style={{ color: `${meta.color}50` }} />
-                                  <span className="absolute top-1.5 left-1.5 text-[7px] font-bold px-1.5 py-0.5 rounded"
-                                    style={{ background: `${meta.color}20`, color: `${meta.color}cc` }}>{meta.label}</span>
-                                  {isWatched && (
-                                    <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-emerald-500/90 flex items-center gap-0.5">
-                                      <CheckCircle className="w-2.5 h-2.5 text-white" />
+                                <div className="p-3.5 flex flex-col justify-between min-h-[120px]">
+                                  <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                      <span className="text-[8px] font-bold px-1.5 py-0.5 rounded"
+                                        style={{ background: `${meta.color}20`, color: `${meta.color}cc` }}>{meta.label}</span>
+                                      {isWatched && (
+                                        <div className="px-1.5 py-0.5 rounded bg-emerald-500/90 flex items-center gap-0.5">
+                                          <CheckCircle className="w-2.5 h-2.5 text-white" />
+                                        </div>
+                                      )}
                                     </div>
-                                  )}
+                                    <p className="text-[13px] font-bold text-white leading-tight mb-1.5" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.title}</p>
+                                    {item.description && (
+                                      <p className="text-[10px] text-white/40 leading-snug" style={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.description}</p>
+                                    )}
+                                  </div>
+                                  <div className="flex justify-end mt-2">
+                                    <Icon className="w-4 h-4" style={{ color: `${meta.color}40` }} />
+                                  </div>
                                 </div>
                               )}
-
-                              {/* Alt bilgi */}
-                              <div className="p-2.5">
-                                <p className="text-[11px] font-semibold text-white leading-tight" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.title}</p>
-                              </div>
 
                               {/* Admin overlay */}
                               {isAdmin && canEditItem(item) && (

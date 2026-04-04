@@ -8,7 +8,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   ChevronLeft, ChevronRight, X, Search, Users,
   Calendar, Clock, MapPin, AlertCircle, CheckCircle,
-  Loader2, RefreshCw,
+  Loader2, RefreshCw, HelpCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -399,6 +399,7 @@ export function PersonelIzinCetveli({
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [popup, setPopup] = useState<PopupInfo | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
 
   // Raw data
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
@@ -623,6 +624,13 @@ export function PersonelIzinCetveli({
               Aylık personel izin ve çalışma görünümü
             </p>
           </div>
+          <button
+            onClick={() => setShowGuide(true)}
+            className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', boxShadow: '0 0 8px rgba(251,191,36,0.2)' }}
+          >
+            <HelpCircle className="w-4 h-4 text-amber-400" />
+          </button>
           <button
             onClick={fetchData}
             disabled={loading}
@@ -952,6 +960,89 @@ export function PersonelIzinCetveli({
           onClose={() => setPopup(null)}
         />
       )}
+
+      {/* ── Rehber Modal ── */}
+      <AnimatePresence>
+        {showGuide && (
+          <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowGuide(false)}>
+            <motion.div
+              initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }}
+              className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <HelpCircle className="w-4 h-4 text-ta" /> İzin Çizelgesi Rehberi
+                </h3>
+                <button onClick={() => setShowGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                  <X className="w-4 h-4 text-white/60" />
+                </button>
+              </div>
+              <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+
+                <div>
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">📅 Genel Bakış</h4>
+                  <p>Bu sayfa, tüm personelin aylık izin ve çalışma durumunu tek ekranda gösterir.</p>
+                  <p className="mt-1">• Satırlar: personel listesi</p>
+                  <p>• Sütunlar: ayın günleri (1–31)</p>
+                  <p>• Her hücre bir <span className="text-ta font-semibold">renk kodu</span> ile o günün durumunu gösterir</p>
+                  <p>• Sağ taraftaki <span className="text-ta font-semibold">ÖZET</span> sütununda personelin o ayki toplam izin ve çalışma sayısı yer alır</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">🎨 Renk Kodları</h4>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-sm flex-shrink-0" style={{ background: '#22c55e' }} />
+                      <span><span className="text-emerald-400 font-semibold">Yeşil — Çalışıyor:</span> O gün rotasyonda göreve atanmış</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-sm flex-shrink-0" style={{ background: '#ef4444' }} />
+                      <span><span className="text-red-400 font-semibold">Kırmızı — Onaylı İzin:</span> İzin talebi onaylanmış</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-sm flex-shrink-0" style={{ background: '#f97316' }} />
+                      <span><span className="text-orange-400 font-semibold">Turuncu — Günlük İzin:</span> Yönetici tarafından o güne izinli işaretlenmiş</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-sm flex-shrink-0" style={{ background: '#eab308' }} />
+                      <span><span className="text-yellow-400 font-semibold">Sarı — Bekleyen İzin:</span> İzin talebi henüz onaylanmamış</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-sm flex-shrink-0" style={{ background: '#3b82f6' }} />
+                      <span><span className="text-blue-400 font-semibold">Mavi — Kayıtsız:</span> Ne görev atanmış ne izin var — rotasyon dışı</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">👆 Hücreye Tıklama</h4>
+                  <p>Herhangi bir renkli hücreye tıkladığınızda detay popup'ı açılır:</p>
+                  <p className="mt-1">• <span className="text-emerald-400 font-semibold">Yeşil hücre:</span> Hangi mekan, saat aralığı, görev tipi</p>
+                  <p>• <span className="text-red-400 font-semibold">Kırmızı/Turuncu:</span> İzin türü (yıllık, sağlık, kişisel) ve varsa not</p>
+                  <p>• <span className="text-yellow-400 font-semibold">Sarı:</span> Bekleyen izin talebi detayı</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">🔍 Arama & Navigasyon</h4>
+                  <p>• Üstteki arama kutusundan personel adına göre filtreleme yapabilirsiniz</p>
+                  <p>• <span className="text-ta font-semibold">← →</span> oklarıyla aylar arasında geçiş yapabilirsiniz</p>
+                  <p>• Bugünkü gün sütunu <span className="text-amber-400 font-semibold">vurgulanmış</span> olarak gösterilir</p>
+                  <p>• Tablo yatay kaydırılabilir — parmağınızla sola/sağa kaydırın</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">⚡ İpuçları</h4>
+                  <p>• <span className="text-blue-400 font-semibold">Mavi</span> hücre çok olan personel rotasyona yeterince dahil edilmemiş demektir</p>
+                  <p>• Bir personelin <span className="text-red-400 font-semibold">kırmızı</span> günleri fazlaysa izin hakkını kontrol edin</p>
+                  <p>• Hafta sonları dahil tüm günler gösterilir — çalışma planını buna göre değerlendirin</p>
+                </div>
+
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
