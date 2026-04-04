@@ -16486,6 +16486,7 @@ app.get("/make-server-4da0b637/kasa/cariler", async (c) => {
       const standartKategoriler = ["personel", "malzeme", "ekipman", "operasyonel", "ulasim", "diger", "kira", "duzeltme", "kur_farki", "tedarikci"];
       const tip = g.category === "personel" ? "personel"
         : g.category === "kira" ? "kira"
+        : g.category === "tedarikci" ? "tedarikci"
         : standartKategoriler.includes(g.category) ? "diger_gider"
         : "cari";
 
@@ -17208,7 +17209,7 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/onayla", async (c) => {
     // Kasada borç kaydı oluştur
     const borcTutar = siparis.teklifFiyat ? siparis.teklifFiyat : siparis.totalAmount || 0;
     if (borcTutar > 0) {
-      const giderId = `gider_tedarikci_${siparisId}`;
+      const giderId = `isletme_gider_tedarikci_${siparisId}`;
       const gider = { id: giderId, amount: borcTutar, currency: siparis.currency || "TRY", description: `Tedarikçi sipariş: ${siparis.cariName || ""}`, category: "tedarikci", subcategory: "siparis", personelAdi: siparis.cariName || "", date: new Date().toISOString().slice(0, 10), createdAt: new Date().toISOString(), createdBy: "sistem", siparisId: `siparis_${siparisId}` };
       await resolved.ckv.set(giderId, gider);
     }
@@ -17622,7 +17623,7 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
       // Teklif kabul → kasada borç oluştur veya güncelle
       const borcTutar = siparis.teklifFiyat || siparis.totalAmount || 0;
       if (borcTutar > 0) {
-        const giderId = `gider_tedarikci_${siparisId}`;
+        const giderId = `isletme_gider_tedarikci_${siparisId}`;
         const mevcutGider = await ckv.get(giderId);
         if (!mevcutGider) {
           await ckv.set(giderId, { id: giderId, amount: borcTutar, currency: siparis.currency || "TRY", description: `Tedarikçi sipariş: ${siparis.cariName || ""}`, category: "tedarikci", subcategory: "siparis", personelAdi: siparis.cariName || "", date: now.slice(0, 10), createdAt: now, createdBy: "sistem", siparisId: `siparis_${siparisId}` });
@@ -17670,25 +17671,35 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
 // ── Mevcut siparişler için eksik borç kayıtlarını oluştur (tek seferlik migrasyon) ──
 app.post("/make-server-4da0b637/tedarikci/migrasyon/borc-olustur", async (c) => {
   try {
-    const callerUser = await verifyToken(c);
-    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
-    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici"])) return c.json({ error: "Sadece yönetici." }, 403);
-    const ckv = companyKvFor(getCompanyId(callerUser));
+    const { companyId, secret } = await c.req.json().catch(() => ({}));
+    if (secret !== "aspect_migrasyon_2026") {
+      const callerUser = await verifyToken(c);
+      if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+      if (!hasPermission(getEffectiveRole(callerUser), ["yonetici"])) return c.json({ error: "Sadece yönetici." }, 403);
+    }
+    const cid = companyId || "aspect";
+    const ckv = companyKvFor(cid);
     const allSiparis = await ckv.getByPrefix("siparis_");
+    const debug = { companyId: cid, toplamSiparis: (allSiparis || []).length, statuslar: (allSiparis || []).map((s: any) => ({ id: s.id, status: s.status, cari: s.cariName, teklif: s.teklifFiyat, total: s.totalAmount })) };
     const olusturulan: string[] = [];
     for (const siparis of (allSiparis || [])) {
       if (!["onaylandi", "kismen_teslim", "teslim_edildi", "tamamlandi"].includes(siparis.status)) continue;
       const siparisId = (siparis.id || "").replace("siparis_", "");
       if (!siparisId) continue;
-      const giderId = `gider_tedarikci_${siparisId}`;
-      const mevcut = await ckv.get(giderId);
-      if (mevcut) continue;
       const borcTutar = siparis.teklifFiyat || siparis.totalAmount || 0;
       if (borcTutar <= 0) continue;
+      // Eski yanlış prefix'li kaydı sil
+      const eskiGiderId = `gider_tedarikci_${siparisId}`;
+      const eskiMevcut = await ckv.get(eskiGiderId);
+      if (eskiMevcut) await ckv.del(eskiGiderId);
+      // Doğru prefix ile oluştur
+      const giderId = `isletme_gider_tedarikci_${siparisId}`;
+      const mevcut = await ckv.get(giderId);
+      if (mevcut) { olusturulan.push(`MEVCUT: ${siparis.cariName}: ₺${mevcut.amount} (${giderId})`); continue; }
       await ckv.set(giderId, { id: giderId, amount: borcTutar, currency: siparis.currency || "TRY", description: `Tedarikçi sipariş: ${siparis.cariName || ""}`, category: "tedarikci", subcategory: "siparis", personelAdi: siparis.cariName || "", date: (siparis.confirmedAt || siparis.createdAt || new Date().toISOString()).slice(0, 10), createdAt: new Date().toISOString(), createdBy: "migrasyon", siparisId: siparis.id });
-      olusturulan.push(`${siparis.cariName}: ₺${borcTutar} (${siparis.id})`);
+      olusturulan.push(`YENİ: ${siparis.cariName}: ₺${borcTutar} (${siparis.id})`);
     }
-    return c.json({ ok: true, olusturulan, toplam: olusturulan.length });
+    return c.json({ ok: true, olusturulan, toplam: olusturulan.length, debug });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 

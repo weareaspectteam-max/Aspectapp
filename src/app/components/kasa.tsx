@@ -1095,7 +1095,16 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
           // Grup: personelAdi olanlar "Personel" altında, diğerleri category bazlı
           const grouped: Record<string, { label: string; items: any[]; toplam: number; subGroups?: Record<string, { label: string; items: any[]; toplam: number }> }> = {};
           for (const o of odemeler) {
-            if (o.personelAdi) {
+            if (o.category === 'tedarikci' && o.personelAdi) {
+              const grpKey = '__tedarikci__';
+              if (!grouped[grpKey]) grouped[grpKey] = { label: 'Tedarikçiler', items: [], toplam: 0, subGroups: {} };
+              grouped[grpKey].items.push(o);
+              grouped[grpKey].toplam += (o.kalanTutar || o.amount || 0);
+              const subKey = o.personelAdi;
+              if (!grouped[grpKey].subGroups![subKey]) grouped[grpKey].subGroups![subKey] = { label: subKey, items: [], toplam: 0 };
+              grouped[grpKey].subGroups![subKey].items.push(o);
+              grouped[grpKey].subGroups![subKey].toplam += (o.kalanTutar || o.amount || 0);
+            } else if (o.personelAdi) {
               if (!grouped['__personel__']) grouped['__personel__'] = { label: 'Personel', items: [], toplam: 0, subGroups: {} };
               grouped['__personel__'].items.push(o);
               grouped['__personel__'].toplam += (o.kalanTutar || o.amount || 0);
@@ -1918,7 +1927,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
                       <span className="text-lg">{cari.emoji}</span>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-white truncate">{cari.kisi}</p>
-                        <p className="text-[10px] text-white/30">{cari.tip === 'personel' ? 'Personel' : cari.tip === 'kira' ? 'Kira' : 'Cari'}</p>
+                        <p className="text-[10px] text-white/30">{cari.tip === 'personel' ? 'Personel' : cari.tip === 'kira' ? 'Kira' : cari.tip === 'tedarikci' ? 'Tedarikçi' : 'Cari'}</p>
                       </div>
                       <div className="text-right shrink-0">
                         {tampiamOdendi ? (
