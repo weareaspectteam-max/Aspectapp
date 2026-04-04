@@ -1039,56 +1039,54 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
               {orderCariId && supplierType === 'album' && (
                 <div className="space-y-0">
                   {/* Başlık satırı */}
-                  <div className="grid grid-cols-[auto_1fr_1fr] text-[8px] text-white/30 font-semibold px-1 pb-1 gap-x-2">
-                    <span className="w-20"></span>
-                    <div className="grid grid-cols-[28px_28px_36px_36px] gap-0.5 text-center">
-                      <span>Depo</span><span>Stok</span><span>Fiyat</span><span>Adet</span>
+                  <div className="flex items-center px-1 pb-1 gap-1">
+                    <span className="w-16"></span>
+                    <div className="flex-1 flex items-center justify-center gap-0.5">
+                      <span className="text-[8px] text-white/30 w-7 text-center">Depo</span>
+                      <span className="text-[8px] text-[#9dd9ea] font-bold w-8 text-center">▣ Tam</span>
                     </div>
-                    <div className="grid grid-cols-[28px_28px_36px_36px] gap-0.5 text-center">
-                      <span>Depo</span><span>Stok</span><span>Fiyat</span><span>Adet</span>
+                    <div className="flex-1 flex items-center justify-center gap-0.5">
+                      <span className="text-[8px] text-white/30 w-7 text-center">Depo</span>
+                      <span className="text-[8px] text-white/30 w-8 text-center">Fiyat</span>
+                      <span className="text-[8px] text-[#ffd4a3] font-bold w-9 text-center">▨ Yarım</span>
                     </div>
-                  </div>
-                  {/* Tam/Yarım başlık */}
-                  <div className="grid grid-cols-[auto_1fr_1fr] px-1 pb-1 gap-x-2">
-                    <span className="w-20"></span>
-                    <span className="text-[9px] text-[#9dd9ea] font-bold text-center">▣ Tam</span>
-                    <span className="text-[9px] text-[#ffd4a3] font-bold text-center">▨ Yarım</span>
                   </div>
                   {[3,5,7,9,11,13,15].map(size => {
                     const tamIdx = orderItems.findIndex(i => i.productName === `${size} Kare Tam`);
                     const yarimIdx = orderItems.findIndex(i => i.productName === `${size} Kare Yarım`);
                     if (tamIdx < 0 && yarimIdx < 0) return null;
                     const emojis: Record<number,string> = {3:'📘',5:'📗',7:'📙',9:'📕',11:'📔',13:'📒',15:'📓'};
-                    const albumData = (albumler || []).find((a: any) => a.size === size || a.size === String(size));
                     const anlasmItems = (cariFiyat?.items || []);
-                    const renderHalf = (idx: number, suffix: string, colorClass: string, bgClass: string) => {
-                      if (idx < 0) return <div className="grid grid-cols-[28px_28px_36px_36px] gap-0.5" />;
-                      const item = orderItems[idx];
-                      const depoKey = `album${size}${suffix}`;
-                      const depo = depoStok[depoKey] || 0;
-                      const genel = genelStok[`album${size}${suffix}`] || 0;
-                      const anlasma = anlasmItems.find((f: any) => f.productName === item.productName)?.fiyat;
-                      const fiyat = anlasma !== undefined ? anlasma : item.unitPrice;
-                      return (
-                        <div className="grid grid-cols-[28px_28px_36px_36px] gap-0.5 items-center">
-                          <span className="text-center text-[9px] text-amber-400 font-bold">{depo}</span>
-                          <span className="text-center text-[9px] text-cyan-400 font-bold">{genel}</span>
-                          <span className={`text-center text-[9px] font-bold ${colorClass}`}>{fiyat > 0 ? `₺${fiyat}` : '—'}</span>
-                          <input type="number" inputMode="numeric" min={0} value={item.quantity || ''}
-                            onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p))}
-                            className={`w-full px-0.5 py-1 rounded text-center text-white text-[10px] border ${bgClass}`}
-                            placeholder="0" />
-                        </div>
-                      );
-                    };
                     return (
-                      <div key={size} className="grid grid-cols-[auto_1fr_1fr] items-center py-1.5 px-1 gap-x-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <div className="w-20 flex items-center gap-1">
+                      <div key={size} className="flex items-center py-1.5 px-1 gap-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div className="w-16 flex items-center gap-1 shrink-0">
                           <span className="text-sm">{emojis[size]}</span>
                           <span className="text-white text-[11px] font-semibold">{size} Kare</span>
                         </div>
-                        {renderHalf(tamIdx, '_tam', 'text-[#9dd9ea]', 'bg-[#9dd9ea]/10 border-[#9dd9ea]/20')}
-                        {renderHalf(yarimIdx, '_yarim', 'text-[#ffd4a3]', 'bg-[#ffd4a3]/10 border-[#ffd4a3]/20')}
+                        {/* Tam tarafı: Depo + Adet */}
+                        <div className="flex-1 flex items-center justify-center gap-0.5">
+                          <span className="text-center text-[9px] text-amber-400 font-bold w-7">{depoStok[`album${size}_tam`] || 0}</span>
+                          <input type="number" inputMode="numeric" min={0} value={tamIdx >= 0 ? (orderItems[tamIdx].quantity || '') : ''}
+                            onChange={e => { if (tamIdx >= 0) setOrderItems(prev => prev.map((p, i) => i === tamIdx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p)); }}
+                            className="w-8 px-0.5 py-1 rounded text-center text-white text-[10px] border bg-[#9dd9ea]/10 border-[#9dd9ea]/20"
+                            placeholder="0" />
+                        </div>
+                        {/* Yarım tarafı: Depo + Fiyat + Adet */}
+                        {(() => {
+                          const yarimItem = yarimIdx >= 0 ? orderItems[yarimIdx] : null;
+                          const anlasma = yarimItem ? anlasmItems.find((f: any) => f.productName === yarimItem.productName)?.fiyat : undefined;
+                          const fiyat = anlasma !== undefined ? anlasma : (yarimItem?.unitPrice || 0);
+                          return (
+                            <div className="flex-1 flex items-center justify-center gap-0.5">
+                              <span className="text-center text-[9px] text-amber-400 font-bold w-7">{depoStok[`album${size}_yarim`] || 0}</span>
+                              <span className="text-center text-[9px] text-[#ffd4a3] font-bold w-8">{fiyat > 0 ? `₺${fiyat}` : '—'}</span>
+                              <input type="number" inputMode="numeric" min={0} value={yarimIdx >= 0 ? (orderItems[yarimIdx].quantity || '') : ''}
+                                onChange={e => { if (yarimIdx >= 0) setOrderItems(prev => prev.map((p, i) => i === yarimIdx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p)); }}
+                                className="w-9 px-0.5 py-1 rounded text-center text-white text-[10px] border bg-[#ffd4a3]/10 border-[#ffd4a3]/20"
+                                placeholder="0" />
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   })}
