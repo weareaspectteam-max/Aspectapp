@@ -17205,6 +17205,13 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/onayla", async (c) => {
     siparis.status = "onaylandi"; siparis.confirmedAt = new Date().toISOString(); siparis.updatedAt = new Date().toISOString();
     siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "tedarikci", mesaj: "Sipariş onaylandı" }];
     await resolved.ckv.set(`siparis_${siparisId}`, siparis);
+    // Kasada borç kaydı oluştur
+    const borcTutar = siparis.teklifFiyat ? siparis.teklifFiyat : siparis.totalAmount || 0;
+    if (borcTutar > 0) {
+      const giderId = `gider_tedarikci_${siparisId}`;
+      const gider = { id: giderId, amount: borcTutar, currency: siparis.currency || "TRY", description: `Tedarikçi sipariş: ${siparis.cariName || ""}`, category: "tedarikci", subcategory: "siparis", personelAdi: siparis.cariName || "", date: new Date().toISOString().slice(0, 10), createdAt: new Date().toISOString(), createdBy: "sistem", siparisId: `siparis_${siparisId}` };
+      await resolved.ckv.set(giderId, gider);
+    }
     return c.json({ ok: true, siparis });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -17236,8 +17243,9 @@ app.post("/make-server-4da0b637/tedarikci/teslimat", async (c) => {
     if (callerUser.user_metadata?.role !== "tedarikci") return c.json({ error: "Yetki yok." }, 403);
     const resolved = await resolveSupplierCompany(c, callerUser);
     if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
-    const { siparisId, lines, deliveryNote, deliveryDate } = await c.req.json();
-    if (!siparisId || !lines?.length) return c.json({ error: "SiparisId ve en az 1 kalem zorunlu." }, 400);
+    const { siparisId: rawSipId, lines, deliveryNote, deliveryDate } = await c.req.json();
+    if (!rawSipId || !lines?.length) return c.json({ error: "SiparisId ve en az 1 kalem zorunlu." }, 400);
+    const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
     const siparis = await resolved.ckv.get(`siparis_${siparisId}`);
     if (!siparis || siparis.cariId !== resolved.cariId) return c.json({ error: "Sipariş bulunamadı." }, 404);
     if (!["onaylandi","kismen_teslim"].includes(siparis.status)) return c.json({ error: "Bu sipariş için teslimat bildirilemez." }, 400);
@@ -17274,7 +17282,8 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
     if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
-    const teslimatId = c.req.param("id");
+    const rawId = c.req.param("id");
+    const teslimatId = rawId.startsWith("teslimat_") ? rawId.replace("teslimat_", "") : rawId;
     const teslimat = await ckv.get(`teslimat_${teslimatId}`);
     if (!teslimat) return c.json({ error: "Teslimat bulunamadı." }, 404);
     if (teslimat.status !== "beklemede") return c.json({ error: "Bu teslimat zaten işlenmiş." }, 400);
@@ -17321,7 +17330,8 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/reddet", async (c) => {
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
     if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
     const ckv = companyKvFor(getCompanyId(callerUser));
-    const teslimatId = c.req.param("id");
+    const rawId = c.req.param("id");
+    const teslimatId = rawId.startsWith("teslimat_") ? rawId.replace("teslimat_", "") : rawId;
     const teslimat = await ckv.get(`teslimat_${teslimatId}`);
     if (!teslimat || teslimat.status !== "beklemede") return c.json({ error: "Teslimat bulunamadı veya zaten işlenmiş." }, 400);
     const { reason } = await c.req.json();
@@ -17340,22 +17350,39 @@ app.post("/make-server-4da0b637/tedarikci/odemeler", async (c) => {
     if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
-    const { siparisId, amount, currency, paymentMethod, paymentDate } = await c.req.json();
-    if (!siparisId || !amount) return c.json({ error: "SiparisId ve tutar zorunlu." }, 400);
+    const { siparisId: rawSipId, cariId: directCariId, amount, currency, paymentMethod, paymentDate, aciklama } = await c.req.json();
+    if (!amount) return c.json({ error: "Tutar zorunlu." }, 400);
+    const isOnOdeme = !rawSipId || String(rawSipId).startsWith("on_odeme");
+    const now = new Date().toISOString();
+    const payDate = paymentDate || now.slice(0, 10);
+    const odemeId = `tedarikci_odeme_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    if (isOnOdeme) {
+      // Ön ödeme — siparişe bağlı değil, doğrudan cari'ye
+      if (!directCariId) return c.json({ error: "Ön ödeme için cariId zorunlu." }, 400);
+      const cari = await ckv.get(`cost_cari_${directCariId}`);
+      const cariName = cari?.name || directCariId;
+      const odeme = { id: odemeId, siparisId: null, cariId: directCariId, cariName, amount, currency: currency || "TRY", paymentMethod: paymentMethod || "havale", paymentDate: payDate, status: "beklemede", supplierConfirmed: false, createdAt: now, createdBy: callerUser.user_metadata?.full_name || "", tip: "on_odeme" };
+      await ckv.set(odemeId, odeme);
+      const giderId = `isletme_gider_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await ckv.set(giderId, { id: giderId.replace("isletme_gider_", ""), personelAdi: cariName, category: "tedarikci", amount, currency: currency || "TRY", date: payDate, description: aciklama || `Ön ödeme: ${cariName}`, created_at: now, created_by: callerUser.user_metadata?.full_name || "", odemeTipi: "on_odeme", cariId: directCariId });
+      await ckv.set(`kasa_odeme_${giderId.replace("isletme_gider_", "")}`, { giderId: giderId.replace("isletme_gider_", ""), odpiendi: true, odpienenTutar: amount, odemeler: [{ tutar: amount, tarih: payDate, aciklama: aciklama || `Ön ödeme: ${cariName}` }] });
+      if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "odeme_bildirimi", "Ödeme Kaydedildi", `₺${amount.toLocaleString("tr-TR")} ön ödeme kaydedildi`, { cariId: directCariId }, companyId);
+      return c.json({ ok: true, odeme });
+    }
+    // Normal sipariş ödemesi
+    const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
     const siparis = await ckv.get(`siparis_${siparisId}`);
     if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
-    const now = new Date().toISOString();
-    const odemeId = `tedarikci_odeme_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    const payDate = paymentDate || now.slice(0, 10);
     const odeme = { id: odemeId, siparisId, cariId: siparis.cariId, cariName: siparis.cariName, amount, currency: currency || siparis.currency || "TRY", paymentMethod: paymentMethod || "havale", paymentDate: payDate, status: "beklemede", supplierConfirmed: false, createdAt: now, createdBy: callerUser.user_metadata?.full_name || "" };
     await ckv.set(odemeId, odeme);
     const giderId = `isletme_gider_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    await ckv.set(giderId, { id: giderId.replace("isletme_gider_", ""), personelAdi: siparis.cariName, category: "tedarikci", amount, currency: currency || siparis.currency || "TRY", date: payDate, description: `Sipariş ödemesi: ${siparis.cariName}`, created_at: now, created_by: callerUser.user_metadata?.full_name || "", odemeTipi: "normal", cariId: siparis.cariId, siparisId });
+    await ckv.set(giderId, { id: giderId.replace("isletme_gider_", ""), personelAdi: siparis.cariName, category: "tedarikci", amount, currency: currency || siparis.currency || "TRY", date: payDate, description: aciklama || `Sipariş ödemesi: ${siparis.cariName}`, created_at: now, created_by: callerUser.user_metadata?.full_name || "", odemeTipi: "normal", cariId: siparis.cariId, siparisId });
     await ckv.set(`kasa_odeme_${giderId.replace("isletme_gider_", "")}`, { giderId: giderId.replace("isletme_gider_", ""), odpiendi: true, odpienenTutar: amount, odemeler: [{ tutar: amount, tarih: payDate, aciklama: `Tedarikçi ödemesi: ${siparis.cariName}` }] });
     const allOdeme = await ckv.getByPrefix("tedarikci_odeme_");
     const toplamOdenen = (allOdeme || []).filter((o) => o.siparisId === siparisId && o.status !== "reddedildi").reduce((a, o) => a + (o.amount || 0), 0);
     siparis.loglar = [...(siparis.loglar || []), { tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: `₺${amount.toLocaleString("tr-TR")} ödeme kaydedildi` }];
-    if (toplamOdenen >= siparis.totalAmount && siparis.status === "teslim_edildi") {
+    const expectedAmount = siparis.teklifFiyat ? siparis.teklifFiyat : siparis.totalAmount || 0;
+    if (toplamOdenen >= expectedAmount && siparis.status === "teslim_edildi") {
       siparis.status = "tamamlandi"; siparis.completedAt = now;
       siparis.loglar = [...(siparis.loglar || []), { tarih: now, kisi: "Sistem", taraf: "sistem", mesaj: "Sipariş tamamlandı — ödeme tam" }];
     }
@@ -17590,8 +17617,20 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
     if (aksiyon === "kabul") {
       siparis.teklifDurum = "kabul_edildi";
       siparis.teklifler = [...(siparis.teklifler || []), { taraf, fiyat: siparis.teklifFiyat, tarih: now, kisi: callerUser.user_metadata?.full_name || "", aksiyon: "kabul" }];
+      const wasNotOnaylandi = siparis.status !== "onaylandi";
       if (siparis.status === "gonderildi" || siparis.status === "taslak") siparis.status = "onaylandi";
       siparis.confirmedAt = now;
+      // Teklif kabul + sipariş onaylandıysa kasada borç oluştur
+      if (wasNotOnaylandi && siparis.status === "onaylandi") {
+        const borcTutar = siparis.teklifFiyat || siparis.totalAmount || 0;
+        if (borcTutar > 0) {
+          const giderId = `gider_tedarikci_${siparisId}`;
+          const mevcutGider = await ckv.get(giderId);
+          if (!mevcutGider) {
+            await ckv.set(giderId, { id: giderId, amount: borcTutar, currency: siparis.currency || "TRY", description: `Tedarikçi sipariş: ${siparis.cariName || ""}`, category: "tedarikci", subcategory: "siparis", personelAdi: siparis.cariName || "", date: now.slice(0, 10), createdAt: now, createdBy: "sistem", siparisId: `siparis_${siparisId}` });
+          }
+        }
+      }
     } else if (aksiyon === "red") {
       siparis.teklifDurum = "reddedildi";
       siparis.status = "iptal";
@@ -17605,7 +17644,7 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
       // Karşı teklifte ürün kalemleri değiştirilmişse güncelle
       if (items?.length) {
         siparis.items = items.map((it, idx) => ({ id: it.id || `item_${idx}_${Math.random().toString(36).slice(2, 6)}`, productName: it.productName || "", quantity: it.quantity || 0, unitPrice: it.unitPrice || 0, currency: it.currency || siparis.currency || "TRY", deliveredQuantity: 0 }));
-        siparis.totalAmount = siparis.items.reduce((a, it) => a + (it.quantity * it.unitPrice), 0);
+        siparis.totalAmount = siparis.items.reduce((a, it) => a + ((it.productName || "").toLowerCase().includes("paspartu") ? (it.unitPrice || 0) : (it.quantity * it.unitPrice)), 0);
       }
     }
     const logMesaj = aksiyon === "kabul" ? "Teklif kabul edildi" : aksiyon === "red" ? "Teklif reddedildi" : `₺${Number(fiyat).toLocaleString("tr-TR")} ${taraf === "admin" ? "teklif edildi" : "karşı teklif yapıldı"}`;
