@@ -1066,7 +1066,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                       const item = orderItems[idx];
                       const depoKey = `album${size}${suffix}`;
                       const depo = depoStok[depoKey] || 0;
-                      const genel = genelStok[`album${size}`] || 0;
+                      const genel = genelStok[`album${size}${suffix}`] || 0;
                       const anlasma = anlasmItems.find((f: any) => f.productName === item.productName)?.fiyat;
                       const fiyat = anlasma !== undefined ? anlasma : item.unitPrice;
                       return (

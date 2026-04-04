@@ -17098,11 +17098,24 @@ app.get("/make-server-4da0b637/tedarikci/ozet", async (c) => {
     const genelStok: Record<string, number> = {};
     for (const s of [3, 5, 7, 9, 11, 13, 15]) {
       genelStok[`album${s}`] = (Number(ds[`album${s}_tam`]) || 0) + (Number(ds[`album${s}_yarim`]) || 0);
+      genelStok[`album${s}_tam`] = Number(ds[`album${s}_tam`]) || 0;
+      genelStok[`album${s}_yarim`] = Number(ds[`album${s}_yarim`]) || 0;
     }
     genelStok.paspartu = ds.paspartu || 0;
     const mekanSon: Record<string, any> = {};
     for (const s of (tumStoklar || [])) { const mid = s.mekanId; if (!mid) continue; if (!mekanSon[mid] || (s.tarih || "") > (mekanSon[mid].tarih || "")) mekanSon[mid] = s; }
-    for (const s of Object.values(mekanSon)) { const sayim = (s as any).kapanish || (s as any).acilis || {}; for (const k of Object.keys(genelStok)) genelStok[k] += (Number(sayim[k]) || 0); }
+    for (const s of Object.values(mekanSon)) {
+      const sayim = (s as any).kapanish || (s as any).acilis || {};
+      for (const sz of [3, 5, 7, 9, 11, 13, 15]) {
+        const eskiVal = Number(sayim[`album${sz}`]) || 0;
+        const tamVal = Number(sayim[`album${sz}_tam`]) || 0;
+        const yarimVal = Number(sayim[`album${sz}_yarim`]) || 0;
+        genelStok[`album${sz}`] += eskiVal + tamVal + yarimVal;
+        genelStok[`album${sz}_tam`] += tamVal;
+        genelStok[`album${sz}_yarim`] += eskiVal + yarimVal; // eski format → yarım olarak say
+      }
+      genelStok.paspartu += Number(sayim.paspartu) || 0;
+    }
     // Fiyat listeleri map
     const fiyatMap = {};
     for (const fl of (fiyatListeleri || [])) { if (fl.cariId) fiyatMap[fl.cariId] = fl; }
