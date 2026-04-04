@@ -17054,7 +17054,7 @@ app.get("/make-server-4da0b637/tedarikci/portal", async (c) => {
     const aktivSiparis = mySiparis.filter((s) => !["tamamlandi","iptal","taslak"].includes(s.status)).length;
     const bekleyenTeslimat = myTeslimat.filter((t) => t.status === "beklemede").length;
     const kesinSiparisler = mySiparis.filter((s) => ["onaylandi", "kismen_teslim", "teslim_edildi", "tamamlandi"].includes(s.status));
-    const toplamSiparisTutar = kesinSiparisler.reduce((a, s) => a + (s.teklifDurum === "kabul_edildi" && s.teklifFiyat ? s.teklifFiyat : s.totalAmount || 0), 0);
+    const toplamSiparisTutar = kesinSiparisler.reduce((a, s) => a + (s.teklifFiyat || s.totalAmount || 0), 0);
     const toplamOdenen = myOdeme.filter((o) => o.status !== "reddedildi").reduce((a, o) => a + (o.amount || 0), 0);
     return c.json({ ok: true, cari: cari || {}, ozet: { aktivSiparis, bekleyenTeslimat, toplamSiparisTutar, toplamOdenen, kalanBorc: toplamSiparisTutar - toplamOdenen },
       siparisler: mySiparis.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
@@ -17617,18 +17617,20 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
     if (aksiyon === "kabul") {
       siparis.teklifDurum = "kabul_edildi";
       siparis.teklifler = [...(siparis.teklifler || []), { taraf, fiyat: siparis.teklifFiyat, tarih: now, kisi: callerUser.user_metadata?.full_name || "", aksiyon: "kabul" }];
-      const wasNotOnaylandi = siparis.status !== "onaylandi";
       if (siparis.status === "gonderildi" || siparis.status === "taslak") siparis.status = "onaylandi";
       siparis.confirmedAt = now;
-      // Teklif kabul + sipariş onaylandıysa kasada borç oluştur
-      if (wasNotOnaylandi && siparis.status === "onaylandi") {
-        const borcTutar = siparis.teklifFiyat || siparis.totalAmount || 0;
-        if (borcTutar > 0) {
-          const giderId = `gider_tedarikci_${siparisId}`;
-          const mevcutGider = await ckv.get(giderId);
-          if (!mevcutGider) {
-            await ckv.set(giderId, { id: giderId, amount: borcTutar, currency: siparis.currency || "TRY", description: `Tedarikçi sipariş: ${siparis.cariName || ""}`, category: "tedarikci", subcategory: "siparis", personelAdi: siparis.cariName || "", date: now.slice(0, 10), createdAt: now, createdBy: "sistem", siparisId: `siparis_${siparisId}` });
-          }
+      // Teklif kabul → kasada borç oluştur veya güncelle
+      const borcTutar = siparis.teklifFiyat || siparis.totalAmount || 0;
+      if (borcTutar > 0) {
+        const giderId = `gider_tedarikci_${siparisId}`;
+        const mevcutGider = await ckv.get(giderId);
+        if (!mevcutGider) {
+          await ckv.set(giderId, { id: giderId, amount: borcTutar, currency: siparis.currency || "TRY", description: `Tedarikçi sipariş: ${siparis.cariName || ""}`, category: "tedarikci", subcategory: "siparis", personelAdi: siparis.cariName || "", date: now.slice(0, 10), createdAt: now, createdBy: "sistem", siparisId: `siparis_${siparisId}` });
+        } else {
+          // Teklif fiyatı değişmiş olabilir — güncelle
+          mevcutGider.amount = borcTutar;
+          mevcutGider.description = `Tedarikçi sipariş: ${siparis.cariName || ""}`;
+          await ckv.set(giderId, mevcutGider);
         }
       }
     } else if (aksiyon === "red") {
@@ -17662,6 +17664,31 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
       if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "siparis_teklif", aksiyon === "kabul" ? "Teklif Kabul Edildi" : aksiyon === "red" ? "Teklif Reddedildi" : "Yeni Teklif", `₺${fiyat || siparis.teklifFiyat}`, { siparisId }, getCompanyId(callerUser));
     }
     return c.json({ ok: true, siparis });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// ── Mevcut siparişler için eksik borç kayıtlarını oluştur (tek seferlik migrasyon) ──
+app.post("/make-server-4da0b637/tedarikci/migrasyon/borc-olustur", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici"])) return c.json({ error: "Sadece yönetici." }, 403);
+    const ckv = companyKvFor(getCompanyId(callerUser));
+    const allSiparis = await ckv.getByPrefix("siparis_");
+    const olusturulan: string[] = [];
+    for (const siparis of (allSiparis || [])) {
+      if (!["onaylandi", "kismen_teslim", "teslim_edildi", "tamamlandi"].includes(siparis.status)) continue;
+      const siparisId = (siparis.id || "").replace("siparis_", "");
+      if (!siparisId) continue;
+      const giderId = `gider_tedarikci_${siparisId}`;
+      const mevcut = await ckv.get(giderId);
+      if (mevcut) continue;
+      const borcTutar = siparis.teklifFiyat || siparis.totalAmount || 0;
+      if (borcTutar <= 0) continue;
+      await ckv.set(giderId, { id: giderId, amount: borcTutar, currency: siparis.currency || "TRY", description: `Tedarikçi sipariş: ${siparis.cariName || ""}`, category: "tedarikci", subcategory: "siparis", personelAdi: siparis.cariName || "", date: (siparis.confirmedAt || siparis.createdAt || new Date().toISOString()).slice(0, 10), createdAt: new Date().toISOString(), createdBy: "migrasyon", siparisId: siparis.id });
+      olusturulan.push(`${siparis.cariName}: ₺${borcTutar} (${siparis.id})`);
+    }
+    return c.json({ ok: true, olusturulan, toplam: olusturulan.length });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 

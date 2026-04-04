@@ -881,7 +881,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
             <div className="space-y-3">
               {(() => {
                 const mySip = siparisler.filter((s: any) => s.cariId === selectedTedarikci.id && ['onaylandi', 'kismen_teslim', 'teslim_edildi', 'tamamlandi'].includes(s.status));
-                const toplam = mySip.reduce((a: number, s: any) => a + (s.totalAmount || 0), 0);
+                const toplam = mySip.reduce((a: number, s: any) => a + (s.teklifFiyat || s.totalAmount || 0), 0);
                 const odenen = odemeler.filter((o: any) => o.cariId === selectedTedarikci.id).reduce((a: number, o: any) => a + (o.amount || 0), 0);
                 const kalan = toplam - odenen;
                 return (
