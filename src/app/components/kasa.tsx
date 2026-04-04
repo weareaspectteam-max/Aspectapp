@@ -1095,28 +1095,26 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
           // Grup: personelAdi olanlar "Personel" altında, diğerleri category bazlı
           const grouped: Record<string, { label: string; items: any[]; toplam: number; subGroups?: Record<string, { label: string; items: any[]; toplam: number }> }> = {};
           for (const o of odemeler) {
-            if (o.category === 'tedarikci' && o.personelAdi) {
-              const grpKey = '__tedarikci__';
-              if (!grouped[grpKey]) grouped[grpKey] = { label: 'Tedarikçiler', items: [], toplam: 0, subGroups: {} };
+            // Kategori bazlı gruplama (öncelik: tedarikci > kira/operasyonel > personel > diğer)
+            const tutar = o.kalanTutar || o.amount || 0;
+            const addToGroup = (grpKey: string, label: string, useSubGroups: boolean) => {
+              if (!grouped[grpKey]) grouped[grpKey] = { label, items: [], toplam: 0, subGroups: useSubGroups ? {} : undefined };
               grouped[grpKey].items.push(o);
-              grouped[grpKey].toplam += (o.kalanTutar || o.amount || 0);
-              const subKey = o.personelAdi;
-              if (!grouped[grpKey].subGroups![subKey]) grouped[grpKey].subGroups![subKey] = { label: subKey, items: [], toplam: 0 };
-              grouped[grpKey].subGroups![subKey].items.push(o);
-              grouped[grpKey].subGroups![subKey].toplam += (o.kalanTutar || o.amount || 0);
-            } else if (o.personelAdi) {
-              if (!grouped['__personel__']) grouped['__personel__'] = { label: 'Personel', items: [], toplam: 0, subGroups: {} };
-              grouped['__personel__'].items.push(o);
-              grouped['__personel__'].toplam += (o.kalanTutar || o.amount || 0);
-              const subKey = o.personelAdi;
-              if (!grouped['__personel__'].subGroups![subKey]) grouped['__personel__'].subGroups![subKey] = { label: subKey, items: [], toplam: 0 };
-              grouped['__personel__'].subGroups![subKey].items.push(o);
-              grouped['__personel__'].subGroups![subKey].toplam += (o.kalanTutar || o.amount || 0);
+              grouped[grpKey].toplam += tutar;
+              if (useSubGroups && o.personelAdi) {
+                const subKey = o.personelAdi;
+                if (!grouped[grpKey].subGroups![subKey]) grouped[grpKey].subGroups![subKey] = { label: subKey, items: [], toplam: 0 };
+                grouped[grpKey].subGroups![subKey].items.push(o);
+                grouped[grpKey].subGroups![subKey].toplam += tutar;
+              }
+            };
+            if (o.category === 'tedarikci') {
+              addToGroup('__tedarikci__', 'Tedarikçiler', true);
+            } else if (o.category === 'personel' || (o.personelAdi && !['kira', 'operasyonel', 'malzeme', 'ekipman', 'ulasim', 'diger', 'tedarikci'].includes(o.category))) {
+              addToGroup('__personel__', 'Personel', true);
             } else {
               const key = o.category || 'Diğer';
-              if (!grouped[key]) grouped[key] = { label: key, items: [], toplam: 0 };
-              grouped[key].items.push(o);
-              grouped[key].toplam += (o.kalanTutar || o.amount || 0);
+              addToGroup(key, key, true);
             }
           }
           const gruplar = Object.values(grouped);

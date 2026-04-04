@@ -15434,11 +15434,19 @@ app.get("/make-server-4da0b637/kasa/sirket", async (c) => {
     }
 
     // Giderleri kategorize et: ödenen vs bekleyen
+    const tedarikciCarilerKasa = await ckv.getByPrefix("cost_cari_").catch(() => []) || [];
+    const tedarikciIsimKasa = new Set(tedarikciCarilerKasa.map((c: any) => (c.name || "").trim().toLowerCase()).filter(Boolean));
     const bekleyenOdemeler: any[] = [];
     let toplamOdpienenGider = 0;
     let toplamBekleyenGider = 0;
 
     for (const g of tumAyGiderleri) {
+      // Tedarikçi cari ismiyle eşleşiyorsa category'yi tedarikci yap
+      const nameToCheck = g.personelAdi || g.category || "";
+      if (nameToCheck && tedarikciIsimKasa.has(nameToCheck.trim().toLowerCase()) && g.category !== "tedarikci") {
+        if (!g.personelAdi) g.personelAdi = nameToCheck;
+        g.category = "tedarikci";
+      }
       const gId = g.id || g.otomatikKey || `gider_${g.date}_${g.amount}`;
       const odeme = odemeMap[gId];
 
@@ -16479,14 +16487,21 @@ app.get("/make-server-4da0b637/kasa/cariler", async (c) => {
 
     // Kişi/firma bazlı grupla
     const cariMap: Record<string, any> = {};
+    // Tedarikçi cari isimlerini yükle
+    const tedarikciCariler = await ckv.getByPrefix("cost_cari_").catch(() => []) || [];
+    const tedarikciIsimleri = new Set(tedarikciCariler.map((c: any) => (c.name || "").trim().toLowerCase()).filter(Boolean));
 
     for (const g of tumAyGiderleri) {
       const gId = g.id || g.otomatikKey || `gider_${g.date}_${g.amount}`;
+      const nameToCheckCari = g.personelAdi || g.category || "";
+      const isTedarikciCari = nameToCheckCari && tedarikciIsimleri.has(nameToCheckCari.trim().toLowerCase());
+      if (isTedarikciCari && !g.personelAdi) g.personelAdi = nameToCheckCari;
+      if (isTedarikciCari) g.category = "tedarikci";
       const kisi = g.personelAdi || g.category || "Diğer";
       const standartKategoriler = ["personel", "malzeme", "ekipman", "operasyonel", "ulasim", "diger", "kira", "duzeltme", "kur_farki", "tedarikci"];
-      const tip = g.category === "personel" ? "personel"
+      const tip = g.category === "personel" && !isTedarikciCari ? "personel"
         : g.category === "kira" ? "kira"
-        : g.category === "tedarikci" ? "tedarikci"
+        : g.category === "tedarikci" || isTedarikciCari ? "tedarikci"
         : standartKategoriler.includes(g.category) ? "diger_gider"
         : "cari";
 
