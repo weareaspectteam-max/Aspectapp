@@ -743,15 +743,14 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                       const flEski = (fl?.items || []).find((f: any) => f.productName === `${s} Kare`);
                       const tamFiyat = flTam?.fiyat || flEski?.fiyat || a?.tamBoy || 0;
                       const yarimFiyat = flYarim?.fiyat || flEski?.fiyat || a?.yarimBoy || 0;
+                      const emojis: Record<number,string> = {3:'📘',5:'📗',7:'📙',9:'📕',11:'📔',13:'📒',15:'📓'};
                       return (
-                        <div key={s}>
-                          <div className="px-4 py-1.5 border-b flex justify-between" style={{ borderColor: glassBorder }}>
-                            <span className="text-white text-xs">{s} Kare Tam</span>
-                            <span className="text-green-400 font-bold text-xs">₺{tamFiyat}</span>
-                          </div>
-                          <div className="px-4 py-1.5 border-b flex justify-between" style={{ borderColor: glassBorder }}>
-                            <span className="text-white text-xs">{s} Kare Yarım</span>
-                            <span className="text-green-400 font-bold text-xs">₺{yarimFiyat}</span>
+                        <div key={s} className="px-4 py-2 border-b flex items-center gap-2" style={{ borderColor: glassBorder }}>
+                          <span className="text-base">{emojis[s]}</span>
+                          <span className="text-white text-xs font-semibold w-12">{s} Kare</span>
+                          <div className="flex-1 flex items-center justify-end gap-3">
+                            <span className="text-[10px] text-[#9dd9ea]">Tam: <span className="font-bold">₺{tamFiyat}</span></span>
+                            <span className="text-[10px] text-[#ffd4a3]">Yarım: <span className="font-bold">₺{yarimFiyat}</span></span>
                           </div>
                         </div>
                       );
@@ -761,15 +760,31 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                     </div>
                   </>
                 ) : (
-                  <div className="p-3 space-y-2">
-                    {fiyatItems.map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <span className="flex-1 text-white text-xs">{item.productName}</span>
-                        <span className="text-white/30 text-[10px]">₺{item.eskiFiyat} →</span>
-                        <input type="number" min={0} value={item.yeniFiyat || ''} onChange={e => setFiyatItems(prev => prev.map((p, i) => i === idx ? { ...p, yeniFiyat: parseFloat(e.target.value) || 0 } : p))}
-                          className="w-16 px-2 py-1 rounded text-center text-green-400 bg-white/10 border border-white/20 text-xs" />
-                      </div>
-                    ))}
+                  <div className="p-3 space-y-1.5">
+                    {[3,5,7,9,11,13,15].map(s => {
+                      const tamIdx = fiyatItems.findIndex(i => i.productName === `${s} Kare Tam`);
+                      const yarimIdx = fiyatItems.findIndex(i => i.productName === `${s} Kare Yarım`);
+                      if (tamIdx < 0 && yarimIdx < 0) return null;
+                      const emojis: Record<number,string> = {3:'📘',5:'📗',7:'📙',9:'📕',11:'📔',13:'📒',15:'📓'};
+                      return (
+                        <div key={s} className="flex items-center gap-2 py-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <span className="text-base">{emojis[s]}</span>
+                          <span className="text-white text-xs font-semibold w-12">{s} Kare</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-[#9dd9ea]">Tam</span>
+                            <input type="number" min={0} value={tamIdx >= 0 ? (fiyatItems[tamIdx].yeniFiyat || '') : ''}
+                              onChange={e => { if (tamIdx >= 0) setFiyatItems(prev => prev.map((p, i) => i === tamIdx ? { ...p, yeniFiyat: parseFloat(e.target.value) || 0 } : p)); }}
+                              className="w-14 px-1 py-1 rounded text-center text-[#9dd9ea] bg-[#9dd9ea]/10 border border-[#9dd9ea]/20 text-xs" placeholder="0" />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-[#ffd4a3]">Yarım</span>
+                            <input type="number" min={0} value={yarimIdx >= 0 ? (fiyatItems[yarimIdx].yeniFiyat || '') : ''}
+                              onChange={e => { if (yarimIdx >= 0) setFiyatItems(prev => prev.map((p, i) => i === yarimIdx ? { ...p, yeniFiyat: parseFloat(e.target.value) || 0 } : p)); }}
+                              className="w-14 px-1 py-1 rounded text-center text-[#ffd4a3] bg-[#ffd4a3]/10 border border-[#ffd4a3]/20 text-xs" placeholder="0" />
+                          </div>
+                        </div>
+                      );
+                    })}
                     <div className="flex gap-2 pt-2">
                       <button onClick={() => setFiyatDuzenle(false)} className="flex-1 py-2 rounded-lg text-xs text-white/40 bg-white/5">Vazgeç</button>
                       <motion.button whileTap={{ scale: 0.95 }} onClick={async () => {

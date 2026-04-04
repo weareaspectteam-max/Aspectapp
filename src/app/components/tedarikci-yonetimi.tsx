@@ -863,12 +863,14 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                 const flEski = (fiyatMap[selectedTedarikci.id]?.items || []).find((f: any) => f.productName === `${s} Kare`);
                 const tamFiyat = flTam?.fiyat || flEski?.fiyat || a?.tamBoy || 0;
                 const yarimFiyat = flYarim?.fiyat || flEski?.fiyat || a?.yarimBoy || 0;
+                const emojis: Record<number,string> = {3:'📘',5:'📗',7:'📙',9:'📕',11:'📔',13:'📒',15:'📓'};
                 return (
-                  <div key={s} className="px-4 py-2 border-b flex justify-between items-center" style={{ borderColor: glassBorder }}>
-                    <span className="text-white text-xs">{s} Kare</span>
-                    <div className="flex gap-3">
-                      <span className="text-[10px] text-white/40">Tam: <span className="text-green-400 font-bold">₺{tamFiyat}</span></span>
-                      <span className="text-[10px] text-white/40">Yarım: <span className="text-green-400 font-bold">₺{yarimFiyat}</span></span>
+                  <div key={s} className="px-4 py-2 border-b flex items-center gap-2" style={{ borderColor: glassBorder }}>
+                    <span className="text-base">{emojis[s]}</span>
+                    <span className="text-white text-xs font-semibold w-12">{s} Kare</span>
+                    <div className="flex-1 flex items-center justify-end gap-3">
+                      <span className="text-[10px] text-[#9dd9ea]">Tam: <span className="font-bold">₺{tamFiyat}</span></span>
+                      <span className="text-[10px] text-[#ffd4a3]">Yarım: <span className="font-bold">₺{yarimFiyat}</span></span>
                     </div>
                   </div>
                 );
@@ -1036,55 +1038,79 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
               {/* Ürün listesi — albüm tipi */}
               {orderCariId && supplierType === 'album' && (
                 <div className="space-y-0">
-                  <div className="grid grid-cols-[1fr_42px_42px_50px_48px] text-[8px] text-white/30 font-semibold px-1 pb-1 gap-1">
-                    <span>Ürün</span>
-                    <span className="text-center">Depo</span>
-                    <span className="text-center">Genel</span>
-                    <span className="text-center">Fiyat</span>
-                    <span className="text-center">Adet</span>
+                  {/* Başlık satırı */}
+                  <div className="grid grid-cols-[auto_1fr_1fr] text-[8px] text-white/30 font-semibold px-1 pb-1 gap-x-2">
+                    <span className="w-20"></span>
+                    <div className="grid grid-cols-[28px_28px_36px_36px] gap-0.5 text-center">
+                      <span>Depo</span><span>Stok</span><span>Fiyat</span><span>Adet</span>
+                    </div>
+                    <div className="grid grid-cols-[28px_28px_36px_36px] gap-0.5 text-center">
+                      <span>Depo</span><span>Stok</span><span>Fiyat</span><span>Adet</span>
+                    </div>
                   </div>
-                  {orderItems.map((item, idx) => {
-                    const sizeMatch = item.productName.match(/(\d+)/);
-                    const size = sizeMatch ? parseInt(sizeMatch[1]) : 0;
-                    const isTam = item.productName.includes('Tam');
-                    const stokKeySuffix = isTam ? '_tam' : '_yarim';
-                    const depoKey = item.productName === 'Paspartu' ? 'paspartu' : `album${size}${stokKeySuffix}`;
-                    const genelKey = item.productName === 'Paspartu' ? 'paspartu' : `album${size}`;
-                    const depo = depoStok[depoKey] || 0;
-                    const genel = genelStok[genelKey] || 0;
-                    const albumData = size ? (albumler || []).find((a: any) => a.size === size || a.size === String(size)) : null;
-                    const maliyet = isTam ? (albumData?.tamBoy || 0) : (albumData?.yarimBoy || 0);
-                    const isPaspartu = item.productName === 'Paspartu';
+                  {/* Tam/Yarım başlık */}
+                  <div className="grid grid-cols-[auto_1fr_1fr] px-1 pb-1 gap-x-2">
+                    <span className="w-20"></span>
+                    <span className="text-[9px] text-[#9dd9ea] font-bold text-center">▣ Tam</span>
+                    <span className="text-[9px] text-[#ffd4a3] font-bold text-center">▨ Yarım</span>
+                  </div>
+                  {[3,5,7,9,11,13,15].map(size => {
+                    const tamIdx = orderItems.findIndex(i => i.productName === `${size} Kare Tam`);
+                    const yarimIdx = orderItems.findIndex(i => i.productName === `${size} Kare Yarım`);
+                    if (tamIdx < 0 && yarimIdx < 0) return null;
+                    const emojis: Record<number,string> = {3:'📘',5:'📗',7:'📙',9:'📕',11:'📔',13:'📒',15:'📓'};
+                    const albumData = (albumler || []).find((a: any) => a.size === size || a.size === String(size));
                     const anlasmItems = (cariFiyat?.items || []);
-                    const anlasmaFiyat = anlasmItems.find((f: any) => f.productName === item.productName)?.fiyat;
-                    if (isPaspartu) {
+                    const renderHalf = (idx: number, suffix: string, colorClass: string, bgClass: string) => {
+                      if (idx < 0) return <div className="grid grid-cols-[28px_28px_36px_36px] gap-0.5" />;
+                      const item = orderItems[idx];
+                      const depoKey = `album${size}${suffix}`;
+                      const depo = depoStok[depoKey] || 0;
+                      const genel = genelStok[`album${size}`] || 0;
+                      const anlasma = anlasmItems.find((f: any) => f.productName === item.productName)?.fiyat;
+                      const fiyat = anlasma !== undefined ? anlasma : item.unitPrice;
                       return (
-                        <div key={idx} className="grid grid-cols-[1fr_1fr_48px] items-center py-1.5 gap-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                          <span className="text-white text-[11px] font-medium">Paspartu</span>
-                          <input type="number" min={0} value={item.unitPrice || ''}
-                            onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, unitPrice: parseFloat(e.target.value) || 0 } : p))}
-                            className="w-full px-1 py-0.5 rounded text-center text-green-400 bg-white/10 border border-white/20 text-[10px]"
-                            placeholder="Toplam ₺ (0=bedelsiz)" />
-                          <input type="number" min={0} value={item.quantity || ''}
+                        <div className="grid grid-cols-[28px_28px_36px_36px] gap-0.5 items-center">
+                          <span className="text-center text-[9px] text-amber-400 font-bold">{depo}</span>
+                          <span className="text-center text-[9px] text-cyan-400 font-bold">{genel}</span>
+                          <span className={`text-center text-[9px] font-bold ${colorClass}`}>{fiyat > 0 ? `₺${fiyat}` : '—'}</span>
+                          <input type="number" inputMode="numeric" min={0} value={item.quantity || ''}
                             onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p))}
-                            className="w-full px-1 py-1 rounded-lg text-center text-white bg-white/10 border border-white/20 text-[11px]"
-                            placeholder="Adet" />
+                            className={`w-full px-0.5 py-1 rounded text-center text-white text-[10px] border ${bgClass}`}
+                            placeholder="0" />
                         </div>
                       );
-                    }
+                    };
                     return (
-                      <div key={idx} className="grid grid-cols-[1fr_42px_42px_50px_48px] items-center py-1.5 gap-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <span className="text-white text-[11px] font-medium">{item.productName}</span>
-                        <span className="text-center text-[10px] text-amber-400 font-bold">{depo}</span>
-                        <span className="text-center text-[10px] text-cyan-400 font-bold">{genel}</span>
-                        <span className="text-center text-[10px] text-green-400 font-bold">{anlasmaFiyat !== undefined ? `₺${anlasmaFiyat}` : (item.unitPrice > 0 ? `₺${item.unitPrice}` : '—')}</span>
-                        <input type="number" min={0} value={item.quantity || ''}
-                          onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p))}
-                          className="w-full px-1 py-1 rounded-lg text-center text-white bg-white/10 border border-white/20 text-[11px]"
-                          placeholder="0" />
+                      <div key={size} className="grid grid-cols-[auto_1fr_1fr] items-center py-1.5 px-1 gap-x-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div className="w-20 flex items-center gap-1">
+                          <span className="text-sm">{emojis[size]}</span>
+                          <span className="text-white text-[11px] font-semibold">{size} Kare</span>
+                        </div>
+                        {renderHalf(tamIdx, '_tam', 'text-[#9dd9ea]', 'bg-[#9dd9ea]/10 border-[#9dd9ea]/20')}
+                        {renderHalf(yarimIdx, '_yarim', 'text-[#ffd4a3]', 'bg-[#ffd4a3]/10 border-[#ffd4a3]/20')}
                       </div>
                     );
                   })}
+                  {/* Paspartu */}
+                  {(() => {
+                    const pasIdx = orderItems.findIndex(i => i.productName === 'Paspartu');
+                    if (pasIdx < 0) return null;
+                    return (
+                      <div className="flex items-center gap-2 py-1.5 px-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <span className="text-sm">🖼️</span>
+                        <span className="text-white text-[11px] font-semibold flex-1">Paspartu</span>
+                        <input type="number" min={0} value={orderItems[pasIdx].unitPrice || ''}
+                          onChange={e => setOrderItems(prev => prev.map((p, i) => i === pasIdx ? { ...p, unitPrice: parseFloat(e.target.value) || 0 } : p))}
+                          className="w-16 px-1 py-1 rounded text-center text-green-400 bg-white/10 border border-white/20 text-[10px]"
+                          placeholder="₺" />
+                        <input type="number" min={0} value={orderItems[pasIdx].quantity || ''}
+                          onChange={e => setOrderItems(prev => prev.map((p, i) => i === pasIdx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p))}
+                          className="w-12 px-1 py-1 rounded text-center text-white bg-white/10 border border-white/20 text-[10px]"
+                          placeholder="Adet" />
+                      </div>
+                    );
+                  })()}
                   <div className="flex justify-between pt-2 border-t border-white/10">
                     <span className="text-white/50 text-xs">Toplam:</span>
                     <span className="text-white font-bold text-sm">₺{orderItems.reduce((a, i) => a + (i.productName === 'Paspartu' ? (i.unitPrice || 0) : (i.quantity * i.unitPrice)), 0).toLocaleString('tr-TR')}</span>
@@ -1244,19 +1270,51 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                 }
                 return null;
               })()}
-              <div className="space-y-1">
-                {priceListItems.map((item, idx) => (
-                  <div key={idx} className="flex items-center gap-2 py-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span className="flex-1 text-white text-xs">{item.productName}</span>
-                    <div className="flex items-center gap-1">
+              <div className="space-y-1.5">
+                {[3,5,7,9,11,13,15].map(size => {
+                  const tamIdx = priceListItems.findIndex(i => i.productName === `${size} Kare Tam`);
+                  const yarimIdx = priceListItems.findIndex(i => i.productName === `${size} Kare Yarım`);
+                  if (tamIdx < 0 && yarimIdx < 0) return null;
+                  const emojis: Record<number,string> = {3:'📘',5:'📗',7:'📙',9:'📕',11:'📔',13:'📒',15:'📓'};
+                  return (
+                    <div key={size} className="flex items-center gap-2 py-1.5 px-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <span className="text-lg">{emojis[size]}</span>
+                      <span className="text-white text-xs font-semibold w-14">{size} Kare</span>
+                      <div className="flex items-center gap-1 flex-1">
+                        <span className="text-[10px] text-[#9dd9ea]">Tam</span>
+                        <span className="text-white/30 text-[10px]">₺</span>
+                        <input type="number" min={0} value={tamIdx >= 0 ? (priceListItems[tamIdx].fiyat || '') : ''}
+                          onChange={e => { if (tamIdx >= 0) setPriceListItems(prev => prev.map((p, i) => i === tamIdx ? { ...p, fiyat: parseFloat(e.target.value) || 0 } : p)); }}
+                          className="w-16 px-1.5 py-1 rounded-lg text-center text-[#9dd9ea] bg-[#9dd9ea]/10 border border-[#9dd9ea]/20 text-xs"
+                          placeholder="0" />
+                      </div>
+                      <div className="flex items-center gap-1 flex-1">
+                        <span className="text-[10px] text-[#ffd4a3]">Yarım</span>
+                        <span className="text-white/30 text-[10px]">₺</span>
+                        <input type="number" min={0} value={yarimIdx >= 0 ? (priceListItems[yarimIdx].fiyat || '') : ''}
+                          onChange={e => { if (yarimIdx >= 0) setPriceListItems(prev => prev.map((p, i) => i === yarimIdx ? { ...p, fiyat: parseFloat(e.target.value) || 0 } : p)); }}
+                          className="w-16 px-1.5 py-1 rounded-lg text-center text-[#ffd4a3] bg-[#ffd4a3]/10 border border-[#ffd4a3]/20 text-xs"
+                          placeholder="0" />
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* Paspartu */}
+                {(() => {
+                  const pasIdx = priceListItems.findIndex(i => i.productName === 'Paspartu');
+                  if (pasIdx < 0) return null;
+                  return (
+                    <div className="flex items-center gap-2 py-1.5 px-1">
+                      <span className="text-lg">🖼️</span>
+                      <span className="text-white text-xs font-semibold flex-1">Paspartu</span>
                       <span className="text-white/30 text-[10px]">₺</span>
-                      <input type="number" min={0} value={item.fiyat || ''}
-                        onChange={e => setPriceListItems(prev => prev.map((p, i) => i === idx ? { ...p, fiyat: parseFloat(e.target.value) || 0 } : p))}
+                      <input type="number" min={0} value={priceListItems[pasIdx].fiyat || ''}
+                        onChange={e => setPriceListItems(prev => prev.map((p, i) => i === pasIdx ? { ...p, fiyat: parseFloat(e.target.value) || 0 } : p))}
                         className="w-20 px-2 py-1 rounded-lg text-center text-green-400 bg-white/10 border border-white/20 text-xs"
                         placeholder="0" />
                     </div>
-                  </div>
-                ))}
+                  );
+                })()}
               </div>
               <motion.button whileTap={{ scale: 0.97 }}
                 onClick={async () => {
