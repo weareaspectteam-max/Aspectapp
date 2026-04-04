@@ -17,6 +17,25 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '5.2.0',
+    date: '2026-04-05',
+    title: 'Stok Tam/Yarım Filtre & Tedarikçi Sistem Düzeltmeleri & Kasa Entegrasyonu',
+    changes: [
+      { type: 'new', text: 'Sipariş onaylandığında kasada otomatik borç kaydı oluşuyor' },
+      { type: 'new', text: 'Tedarikçi ön ödeme desteği — siparişe bağlamadan cari\'ye doğrudan ödeme' },
+      { type: 'new', text: 'Kasa cari listesinde TEDARİKÇİLER ayrı grup olarak gösteriliyor' },
+      { type: 'improve', text: 'Açılış/kapanış stok sayımı: mekan printType\'ına göre sadece ilgili satır (tam veya yarım)' },
+      { type: 'improve', text: 'Fiyat listesi kompakt görünüm — tam/yarım aynı satırda, emoji + renk kodlu' },
+      { type: 'improve', text: 'Sipariş formu kompakt — tam/yarım aynı satırda, depo + fiyat + adet' },
+      { type: 'improve', text: 'Bakiye hesaplama teklif fiyatını doğru kullanıyor (totalAmount yerine teklifFiyat)' },
+      { type: 'improve', text: 'Bekleyen ödemelerde kategori bazlı alt gruplar (Ev Kirası, operasyonel vb.)' },
+      { type: 'fix', text: 'Tedarikçi teslimat/onay/red endpoint\'lerinde siparis_ prefix çift yazılma hatası' },
+      { type: 'fix', text: 'Karşı teklifte paspartu hesaplama düzeltmesi' },
+      { type: 'fix', text: 'Eski format stok verisi (album3) yeni formata (album3_yarim) otomatik migrasyon' },
+      { type: 'fix', text: 'Genel stok hesaplama: mekan stokları tam/yarım ayrımıyla toplanıyor' },
+    ],
+  },
+  {
     version: '5.1.1',
     date: '2026-04-04',
     title: 'Döviz Desteği & Rehber Butonları & Akademi Rehberi',
