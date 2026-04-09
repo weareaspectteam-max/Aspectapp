@@ -17,6 +17,21 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '5.3.0',
+    date: '2026-04-09',
+    title: 'İptal Sistemi Güçlendirme, Yeni Para Birimleri & Gerekçeli Satış',
+    changes: [
+      { type: 'new', text: 'Gerekçeli satış — ödeme ekranında gerekçe ekle butonu, canlı akışta 📝 gösterim' },
+      { type: 'new', text: 'Yeni para birimleri: BGN (Leva), RUB (Ruble), SAR (Riyal) — maliyet, satış, mekan, widget' },
+      { type: 'new', text: 'Satış listesinde kimin yaptığı (kaydeden) görünüyor' },
+      { type: 'improve', text: 'İptal talepleri: 3 dk timeout sonrası otomatik kilit + 24 saat sonra KV temizliği' },
+      { type: 'improve', text: 'İptal talepleri: şirketler arası izolasyon — başka şirketin talebini göremez/onaylayamaz' },
+      { type: 'improve', text: 'Mekan kota kademe limiti 6\'dan 15\'e çıkarıldı' },
+      { type: 'fix', text: 'Aynı satış için duplicate iptal talebi engellendi' },
+      { type: 'fix', text: 'Admin panelinde süresi dolan iptal taleplerinde butonlar gizlendi' },
+    ],
+  },
+  {
     version: '5.2.0',
     date: '2026-04-05',
     title: 'Stok Tam/Yarım Filtre & Tedarikçi Sistem Düzeltmeleri & Kasa Entegrasyonu',
@@ -33,6 +48,8 @@ const CHANGELOG: ChangelogEntry[] = [
       { type: 'fix', text: 'Karşı teklifte paspartu hesaplama düzeltmesi' },
       { type: 'fix', text: 'Eski format stok verisi (album3) yeni formata (album3_yarim) otomatik migrasyon' },
       { type: 'fix', text: 'Genel stok hesaplama: mekan stokları tam/yarım ayrımıyla toplanıyor' },
+      { type: 'new', text: 'Mekan zorluk katsayısı — liderlik tablosunda adil sıralama için mekan bazlı ×0.5–×2.0 çarpan' },
+      { type: 'new', text: 'Mekan Yönetimi detaylı rehber sayfası (?) — tüm alanların açıklaması, zorluk katsayısı örnekli' },
     ],
   },
   {
