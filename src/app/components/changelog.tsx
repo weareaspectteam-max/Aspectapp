@@ -25,7 +25,6 @@ const CHANGELOG: ChangelogEntry[] = [
       { type: 'new', text: 'Yeni para birimleri: BGN (Leva), RUB (Ruble), SAR (Riyal) — maliyet, satış, mekan, widget' },
       { type: 'new', text: 'Satış listesinde kimin yaptığı (kaydeden) görünüyor' },
       { type: 'improve', text: 'İptal talepleri: 3 dk timeout sonrası otomatik kilit + 24 saat sonra KV temizliği' },
-      { type: 'improve', text: 'İptal talepleri: şirketler arası izolasyon — başka şirketin talebini göremez/onaylayamaz' },
       { type: 'improve', text: 'Mekan kota kademe limiti 6\'dan 15\'e çıkarıldı' },
       { type: 'fix', text: 'Aynı satış için duplicate iptal talebi engellendi' },
       { type: 'fix', text: 'Admin panelinde süresi dolan iptal taleplerinde butonlar gizlendi' },
