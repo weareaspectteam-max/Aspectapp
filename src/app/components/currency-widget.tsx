@@ -28,12 +28,12 @@ async function fetchWithRetry(
 }
 
 export function CurrencyWidget() {
-  const [exchangeRates, setExchangeRates] = useState<{ USD: number; EUR: number; GBP: number } | null>(null);
-  const [trend, setTrend] = useState<{ USD: number; EUR: number; GBP: number } | null>(null);
+  const [exchangeRates, setExchangeRates] = useState<{ USD: number; EUR: number; GBP: number; BGN: number; RUB: number; SAR: number } | null>(null);
+  const [trend, setTrend] = useState<{ USD: number; EUR: number; GBP: number; BGN: number; RUB: number; SAR: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [source, setSource] = useState<string>('');
   const [fetchedAt, setFetchedAt] = useState<number | null>(null);
-  const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'EUR' | 'GBP' | null>(null);
+  const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'EUR' | 'GBP' | 'BGN' | 'RUB' | 'SAR' | null>(null);
   const [tryAmount, setTryAmount] = useState('');
 
   useEffect(() => {
@@ -72,7 +72,7 @@ export function CurrencyWidget() {
       if (res.ok) {
         const data = await res.json();
         if (data.rates) {
-          setExchangeRates({ USD: Number(data.rates.USD), EUR: Number(data.rates.EUR), GBP: Number(data.rates.GBP) });
+          setExchangeRates({ USD: Number(data.rates.USD), EUR: Number(data.rates.EUR), GBP: Number(data.rates.GBP), BGN: Number(data.rates.BGN) || 0, RUB: Number(data.rates.RUB) || 0, SAR: Number(data.rates.SAR) || 0 });
           setTrend(data.trend ?? null);
           setSource(data.source || 'live');
           setFetchedAt(data.fetchedAt || Date.now());
@@ -102,7 +102,7 @@ export function CurrencyWidget() {
     return `${Math.floor(diff / 60)} sa önce`;
   };
 
-  const trendLabel = (code: 'USD' | 'EUR' | 'GBP') => {
+  const trendLabel = (code: 'USD' | 'EUR' | 'GBP' | 'BGN' | 'RUB' | 'SAR') => {
     if (!trend) return null;
     const val = trend[code];
     if (val === 0 || isNaN(val)) return null;
@@ -116,6 +116,9 @@ export function CurrencyWidget() {
     { code: 'USD' as const, flag: '🇺🇸', color: '#a8e6cf', ring: 'ring-[#a8e6cf]', bg: 'bg-[#a8e6cf]/10' },
     { code: 'EUR' as const, flag: '🇪🇺', color: '#9dd9ea', ring: 'ring-[#9dd9ea]', bg: 'bg-[#9dd9ea]/10' },
     { code: 'GBP' as const, flag: '🇬🇧', color: '#ffd4a3', ring: 'ring-[#ffd4a3]', bg: 'bg-[#ffd4a3]/10' },
+    { code: 'BGN' as const, flag: '🇧🇬', color: '#c4b5fd', ring: 'ring-[#c4b5fd]', bg: 'bg-[#c4b5fd]/10' },
+    { code: 'RUB' as const, flag: '🇷🇺', color: '#f9a8d4', ring: 'ring-[#f9a8d4]', bg: 'bg-[#f9a8d4]/10' },
+    { code: 'SAR' as const, flag: '🇸🇦', color: '#86efac', ring: 'ring-[#86efac]', bg: 'bg-[#86efac]/10' },
   ];
 
   return (
@@ -145,7 +148,7 @@ export function CurrencyWidget() {
         </div>
       ) : exchangeRates ? (
         <>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-1.5">
             {CURRENCIES.map(c => {
               const t = trendLabel(c.code);
               const isSelected = selectedCurrency === c.code;

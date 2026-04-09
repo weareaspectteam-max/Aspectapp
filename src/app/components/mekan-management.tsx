@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { MapPin, Plus, Trash2, Edit2, X, Save, ArrowLeft, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { MapPin, Plus, Trash2, Edit2, X, Save, ArrowLeft, RefreshCw, AlertCircle, CheckCircle, HelpCircle } from 'lucide-react';
 import { projectId } from '../lib/supabase-info';
 import { buildHeaders, appendGhostParam } from '../lib/api';
 
@@ -24,6 +25,7 @@ export interface Location {
   profitTarget?: number;        // yıllık kar hedefi ₺
   photoPrice: number;
   printType?: 'tam' | 'yarim';
+  zorlukKatsayisi?: number; // 1.0 (kolay) - 2.0 (zor), liderlik tablosu için
   workingHours?: {
     start: string;
     end: string;
@@ -70,6 +72,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [showMekanGuide, setShowMekanGuide] = useState(false);
 
   // ── Tanı / diagnostik state ──────────────────────────────────
   const [diagStatus, setDiagStatus] = useState<'idle' | 'ok' | 'error'>('idle');
@@ -93,6 +96,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   const [yilEkleAcik, setYilEkleAcik] = useState(false);
   const [yilInput, setYilInput] = useState(String(new Date().getFullYear() - 1));
   const [formPrintType, setFormPrintType] = useState<'tam' | 'yarim'>('yarim');
+  const [formZorlukKatsayisi, setFormZorlukKatsayisi] = useState(1.0);
   const [formWorkingHoursStart, setFormWorkingHoursStart] = useState('09:00');
   const [formWorkingHoursEnd, setFormWorkingHoursEnd] = useState('18:00');
 
@@ -216,6 +220,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           yearlyRents: Object.fromEntries(Object.entries(formYearlyRents).filter(([,v]) => parseFloat(v) > 0).map(([k,v]) => [k, parseFloat(v)])),
           profitTargets: Object.fromEntries(Object.entries(formProfitTargets).filter(([,v]) => parseFloat(v) > 0).map(([k,v]) => [k, parseFloat(v)])),
           printType: formPrintType,
+          zorlukKatsayisi: formZorlukKatsayisi,
           workingHours: { start: formWorkingHoursStart, end: formWorkingHoursEnd },
           kotaKademeleri: formKotaKademeleri,
         }),
@@ -252,6 +257,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           yearlyRents: Object.fromEntries(Object.entries(formYearlyRents).filter(([,v]) => parseFloat(v) > 0).map(([k,v]) => [k, parseFloat(v)])),
           profitTargets: Object.fromEntries(Object.entries(formProfitTargets).filter(([,v]) => parseFloat(v) > 0).map(([k,v]) => [k, parseFloat(v)])),
           printType: formPrintType,
+          zorlukKatsayisi: formZorlukKatsayisi,
           workingHours: { start: formWorkingHoursStart, end: formWorkingHoursEnd },
           kotaKademeleri: formKotaKademeleri,
         }),
@@ -326,6 +332,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
       : 0);
     setFormProfitTarget(pt.toString());
     setFormPrintType(location.printType || 'yarim');
+    setFormZorlukKatsayisi(location.zorlukKatsayisi ?? 1.0);
     setFormWorkingHoursStart(location.workingHours?.start || '09:00');
     setFormWorkingHoursEnd(location.workingHours?.end || '18:00');
     setFormKotaKademeleri(location.kotaKademeleri || []);
@@ -350,6 +357,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     setFormYearlyRents({});
     setFormProfitTargets({});
     setFormPrintType('yarim');
+    setFormZorlukKatsayisi(1.0);
     setFormWorkingHoursStart('09:00');
     setFormWorkingHoursEnd('18:00');
     setFormKotaKademeleri([]);
@@ -415,13 +423,22 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           </button>
           <h1 className="text-3xl font-bold text-white">Mekan Yönetimi</h1>
           <span className="text-3xl">📍</span>
-          <button
-            onClick={loadMekanlar}
-            className="ml-auto flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 border-2 border-white/20 hover:bg-white/20 transition-all active:scale-95"
-            title="Yenile"
-          >
-            <RefreshCw className="w-4 h-4 text-gray-300" />
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => setShowMekanGuide(true)}
+              className="flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 border-2 border-white/20 hover:bg-white/20 transition-all active:scale-95"
+              title="Rehber"
+            >
+              <HelpCircle className="w-4 h-4 text-amber-400" />
+            </button>
+            <button
+              onClick={loadMekanlar}
+              className="flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 border-2 border-white/20 hover:bg-white/20 transition-all active:scale-95"
+              title="Yenile"
+            >
+              <RefreshCw className="w-4 h-4 text-gray-300" />
+            </button>
+          </div>
         </div>
         <p className="text-sm text-gray-400 ml-[52px]">
           {locations.length} mekan kayıtlı
@@ -536,6 +553,9 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                     <option value="EUR" className="bg-gray-900">€ EUR</option>
                     <option value="USD" className="bg-gray-900">$ USD</option>
                     <option value="GBP" className="bg-gray-900">£ GBP</option>
+                    <option value="BGN" className="bg-gray-900">лв BGN</option>
+                    <option value="RUB" className="bg-gray-900">₽ RUB</option>
+                    <option value="SAR" className="bg-gray-900">﷼ SAR</option>
                   </select>
                 </div>
                 <p className="text-xs text-gray-400 mt-1">Albüm fiyatları bu değere göre{formPriceCurrency !== 'TRY' ? ` (${formPriceCurrency} — raporlar TL'ye çevrilir)` : ''}</p>
@@ -559,6 +579,25 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                       {type === 'tam' ? 'Tam Boy' : 'Yarım Boy'}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Zorluk Katsayısı */}
+              <div>
+                <label className="text-sm font-semibold text-gray-300 mb-2 block">⚡ Zorluk Katsayısı <span className="text-white/30 font-normal">(Liderlik tablosu için)</span></label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range" min={0.5} max={2.0} step={0.1}
+                    value={formZorlukKatsayisi}
+                    onChange={e => setFormZorlukKatsayisi(parseFloat(e.target.value))}
+                    className="flex-1 accent-amber-400"
+                  />
+                  <span className={`text-lg font-bold min-w-[3rem] text-center ${formZorlukKatsayisi <= 0.8 ? 'text-green-400' : formZorlukKatsayisi <= 1.2 ? 'text-amber-400' : 'text-red-400'}`}>
+                    ×{formZorlukKatsayisi.toFixed(1)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-[10px] text-white/30 mt-1">
+                  <span>Kolay</span><span>Normal</span><span>Zor</span>
                 </div>
               </div>
 
@@ -954,7 +993,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                   })}
                 </div>
 
-                {formKotaKademeleri.length < 6 ? (
+                {formKotaKademeleri.length < 15 ? (
                   <button
                     onClick={() => setFormKotaKademeleri([...formKotaKademeleri, { hedef: 0, primTek: 0, primFotograf: 0, primBaski: 0, primAlbum: 0, primGozlemci: 0 }])}
                     className="mt-3 flex items-center gap-2 px-4 py-2 bg-yellow-600/30 border border-yellow-500/40 rounded-xl text-yellow-200 text-sm font-semibold hover:bg-yellow-600/50 transition-all active:scale-95"
@@ -965,7 +1004,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                 ) : (
                   <div className="mt-3 flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-gray-500 text-sm">
                     <span>👑</span>
-                    <span>Maksimum 6 kademe tanımlanabilir</span>
+                    <span>Maksimum 15 kademe tanımlanabilir</span>
                   </div>
                 )}
 
@@ -1149,6 +1188,11 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                                 🖨️ {location.printType === 'tam' ? 'Tam Boy' : 'Yarım Boy'}
                               </span>
                             )}
+                            {(location.zorlukKatsayisi ?? 1.0) !== 1.0 && (
+                              <span className={`${(location.zorlukKatsayisi || 1) > 1.2 ? 'text-red-400' : (location.zorlukKatsayisi || 1) < 0.9 ? 'text-green-400' : 'text-amber-400'}`}>
+                                ⚡ ×{(location.zorlukKatsayisi || 1).toFixed(1)}
+                              </span>
+                            )}
                             {/* Kota özeti */}
                             {location.kotaKademeleri && location.kotaKademeleri.length > 0 && (
                               <div className="flex items-center gap-1 flex-wrap mt-0.5">
@@ -1293,6 +1337,120 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
         </div>
 
       </div>
+
+      {/* Mekan Yönetimi Rehber Modalı */}
+      <AnimatePresence>
+        {showMekanGuide && (
+          <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setShowMekanGuide(false)}>
+            <motion.div
+              initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }}
+              className="w-full max-w-lg bg-[#1a1a2e] border border-white/10 rounded-2xl mb-8 mx-4 overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 bg-[#1a1a2e] border-b border-white/8 px-4 py-3 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <HelpCircle className="w-4 h-4 text-amber-400" /> Mekan Yönetimi Rehberi
+                </h3>
+                <button onClick={() => setShowMekanGuide(false)} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
+                  <X className="w-4 h-4 text-white/60" />
+                </button>
+              </div>
+              <div className="p-4 space-y-4 text-[12px] leading-relaxed text-white/70">
+
+                <div>
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">📍 Bu Sayfa Ne İşe Yarar?</h4>
+                  <p>Şirketinize ait tüm <span className="text-amber-400 font-semibold">mekanları (lokasyonları)</span> oluşturup yönettiğiniz merkezi sayfadır.</p>
+                  <p className="mt-1">Her mekan için fotoğraf fiyatı, baskı tipi, kira, kar hedefi, prim kademeleri ve zorluk katsayısı tanımlanır.</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">➕ Yeni Mekan Ekleme</h4>
+                  <p>Sağ alttaki <span className="text-pink-400 font-semibold">+ Yeni Mekan</span> butonuna tıklayın. Gerekli alanlar:</p>
+                  <p className="mt-1">• <span className="text-white font-semibold">Mekan Adı:</span> Lokasyonun adı (ör: Balık Hali, Kalekapısı)</p>
+                  <p>• <span className="text-white font-semibold">Emoji ve Renk:</span> Mekanı diğerlerinden ayıran görsel kimlik</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">💰 1 Fotoğraf Fiyatı</h4>
+                  <p>Mekan bazlı fotoğraf satış fiyatını ve para birimini belirler.</p>
+                  <p className="mt-1">• <span className="text-white font-semibold">TRY / EUR / USD / GBP</span> döviz desteği</p>
+                  <p>• Albüm fiyatları bu değere göre otomatik hesaplanır (ör: 3 Kare = 3 × fotoğraf fiyatı)</p>
+                  <p>• Satış ekranında seçilen döviz gösterilir</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">🖨️ Baskı Tipi (Tam / Yarım Boy)</h4>
+                  <p>Mekanda kullanılan kağıt boyutunu belirler:</p>
+                  <p className="mt-1">• <span className="text-[#9dd9ea] font-semibold">Tam Boy:</span> Bir kağıda 1 fotoğraf basılır</p>
+                  <p>• <span className="text-[#ffd4a3] font-semibold">Yarım Boy:</span> Bir kağıda 2 fotoğraf basılır (daha ekonomik)</p>
+                  <p className="mt-1">Bu ayar stok sayımı, maliyet hesaplama ve sipariş formlarını etkiler. Açılış/kapanışta sadece seçilen tip gösterilir.</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">⚡ Zorluk Katsayısı</h4>
+                  <p><span className="text-amber-400 font-semibold">Liderlik tablosu</span> sıralamasında adaleti sağlamak için kullanılır.</p>
+                  <p className="mt-1">• <span className="text-green-400 font-semibold">×0.5 – ×0.9 (Kolay):</span> Yoğun turist bölgesi, satış yapması kolay</p>
+                  <p>• <span className="text-amber-400 font-semibold">×1.0 (Normal):</span> Standart zorluk (varsayılan)</p>
+                  <p>• <span className="text-red-400 font-semibold">×1.1 – ×2.0 (Zor):</span> Az müşteri, zor satış, düşük ciro</p>
+                  <p className="mt-2 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
+                    <span className="text-amber-400 font-semibold">Örnek:</span> Personel A zor mekanda (×1.5) 1000₺ satış yapıyor → liderlik tablosunda 1500₺ olarak değerlendirilir. Personel B kolay mekanda (×0.8) 1500₺ yapıyor → 1200₺ olarak değerlendirilir. Böylece zor mekandaki personel haksızlığa uğramaz.
+                  </p>
+                  <p className="mt-1.5">Katsayı <span className="text-white font-semibold">ciro, brüt ciro ve kare performansını</span> etkiler. İskonto disiplini ve anomali temizliği etkilenmez.</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">🏠 Yıllık Kira</h4>
+                  <p>Mekanın yıllık kira bedelini girin. Bu değer:</p>
+                  <p className="mt-1">• <span className="text-white font-semibold">Günlük beklenti hesaplamasında</span> kullanılır (yıllık kira ÷ 365)</p>
+                  <p>• İşletme Genel Durum ve Aspect AI analizlerinde maliyet olarak görünür</p>
+                  <p>• Yıllar bazında farklı kira tanımlanabilir (geçmiş yılların karşılaştırması için)</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">🎯 Yıllık Kar Hedefi</h4>
+                  <p>Mekan bazlı kar hedefini belirler:</p>
+                  <p className="mt-1">• Günlük beklenti = (Yıllık Kira + Yıllık Kar Hedefi) ÷ 365</p>
+                  <p>• Hedef takip sayfasında ilerleme çubuğu olarak gösterilir</p>
+                  <p>• 0 bırakılırsa sadece kirayı karşılama hedefi uygulanır</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">🏅 Prim / Kota Kademeleri</h4>
+                  <p>Personel prim hesaplaması için kademe tanımlayın:</p>
+                  <p className="mt-1">• <span className="text-white font-semibold">Hedef:</span> Günlük satış hedefi (fotoğraf adedi)</p>
+                  <p>• <span className="text-white font-semibold">Tek Prim:</span> Hedefe ulaşıldığında baz prim (₺)</p>
+                  <p>• <span className="text-white font-semibold">Bantlar:</span> Fotoğrafçı, baskıcı, albümcü, gözlemci için ayrı prim bantları</p>
+                  <p className="mt-1">Birden fazla kademe ekleyerek kademeli prim sistemi oluşturabilirsiniz (ör: 50 fotoğrafa kadar ₺100, 100'e kadar ₺200).</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">⏰ Çalışma Saatleri</h4>
+                  <p>Mekanın açılış ve kapanış saatlerini belirler:</p>
+                  <p className="mt-1">• Rotasyon planlamasında referans olarak kullanılır</p>
+                  <p>• Vardiya raporlarında gecikme/erken kapanış tespiti için</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">✏️ Mekan Düzenleme / Silme</h4>
+                  <p>• Mekan kartındaki <span className="text-blue-400 font-semibold">kalem ikonu</span> ile düzenleme moduna geçin</p>
+                  <p>• <span className="text-red-400 font-semibold">Çöp kutusu ikonu</span> ile mekanı silin (onay istenir)</p>
+                  <p>• Mekan silindiğinde ilgili stok, rotasyon ve vardiya verileri korunur</p>
+                </div>
+
+                <div className="border-t border-white/8 pt-3">
+                  <h4 className="text-[13px] font-bold text-white mb-1.5">🔑 Yetki Seviyeleri</h4>
+                  <p>• <span className="text-emerald-400 font-semibold">Yönetici:</span> Tam erişim — ekleme, düzenleme, silme</p>
+                  <p>• <span className="text-blue-400 font-semibold">Üst Müdür:</span> Görüntüleme + düzenleme (silme hariç)</p>
+                  <p>• <span className="text-amber-400 font-semibold">Müdür:</span> Sadece görüntüleme</p>
+                  <p>• <span className="text-gray-500 font-semibold">Personel:</span> Erişim yok</p>
+                </div>
+
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

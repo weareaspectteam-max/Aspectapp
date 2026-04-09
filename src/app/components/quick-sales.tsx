@@ -134,6 +134,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [discountAmount, setDiscountAmount] = useState('');
   const [showPaymentMethod, setShowPaymentMethod] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'iban' | 'card' | null>(null);
+  const [showGerekce, setShowGerekce] = useState(false);
+  const [gerekceText, setGerekceText] = useState('');
   const [recentSales, setRecentSales] = useState<Sale[]>([]);
   const [satisSaving, setSatisSaving] = useState(false);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
@@ -149,8 +151,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [deleteKareEntry, setDeleteKareEntry] = useState<any | null>(null);
   const [deleteKareSaving, setDeleteKareSaving] = useState(false);
   const [showShiftEndSuccess, setShowShiftEndSuccess] = useState(false);
-  const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'EUR' | 'GBP' | 'TRY' | null>(null);
-  const [exchangeRates, setExchangeRates] = useState({ USD: 34.52, EUR: 37.89, GBP: 43.26 });
+  const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'EUR' | 'GBP' | 'BGN' | 'RUB' | 'SAR' | 'TRY' | null>(null);
+  const [exchangeRates, setExchangeRates] = useState({ USD: 34.52, EUR: 37.89, GBP: 43.26, BGN: 19.50, RUB: 0.38, SAR: 8.80 });
   const [mekanPriceCurrency, setMekanPriceCurrency] = useState<string>('TRY');
   const [ratesLoading, setRatesLoading] = useState(false);
 
@@ -598,7 +600,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         if (res.ok) {
           const data = await res.json();
           if (data.rates) {
-            setExchangeRates({ USD: Number(data.rates.USD), EUR: Number(data.rates.EUR), GBP: Number(data.rates.GBP) });
+            setExchangeRates({ USD: Number(data.rates.USD), EUR: Number(data.rates.EUR), GBP: Number(data.rates.GBP), BGN: Number(data.rates.BGN) || 19.50, RUB: Number(data.rates.RUB) || 0.38, SAR: Number(data.rates.SAR) || 8.80 });
           }
         }
       } catch (err: any) {
@@ -608,7 +610,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
           console.warn('QuickSales exchange rate fetch hatası — fallback kurlar kullanılıyor:', err?.message ?? err);
         }
         // Fallback: yaklaşık kurlar (sunucu erişilemezse)
-        setExchangeRates({ USD: 32.5, EUR: 35.2, GBP: 41.0 });
+        setExchangeRates({ USD: 32.5, EUR: 35.2, GBP: 41.0, BGN: 19.50, RUB: 0.38, SAR: 8.80 });
       } finally {
         setRatesLoading(false);
       }
@@ -795,7 +797,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     load();
   }, [selectedProject]);
 
-  const currencySymbol = (c: string) => c === 'EUR' ? '€' : c === 'USD' ? '$' : c === 'GBP' ? '£' : '₺';
+  const currencySymbol = (c: string) => c === 'EUR' ? '€' : c === 'USD' ? '$' : c === 'GBP' ? '£' : c === 'BGN' ? 'лв' : c === 'RUB' ? '₽' : c === 'SAR' ? '﷼' : '₺';
   const pSym = currencySymbol(mekanPriceCurrency);
 
   const products = [
@@ -916,7 +918,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       };
       setRecentSales(prev => [pendingSale, ...prev]);
       setSatisSaving(false);
-      setCart([]); setDiscountAmount(''); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null);
+      setCart([]); setDiscountAmount(''); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null); setShowGerekce(false); setGerekceText('');
       return;
     }
 
@@ -935,6 +937,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
           paymentMethod,
           currency,
           currencyPrice,
+          ...(gerekceText.trim() ? { gerekce: gerekceText.trim() } : {}),
         }),
       });
       const data = await res.json();
@@ -988,7 +991,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     } finally {
       setSatisSaving(false);
     }
-    setCart([]); setDiscountAmount(''); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null);
+    setCart([]); setDiscountAmount(''); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null); setShowGerekce(false); setGerekceText('');
   };
 
   // ── Satış İptal: onay akışı state ──
@@ -2424,18 +2427,21 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     <span className="text-[10px] text-gray-400">{ratesLoading ? 'Yükleniyor' : 'Canlı'}</span>
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="grid grid-cols-3 gap-2 mb-4">
                   {[
-                    { code: 'TRY', flag: '🇹🇷', rate: 1, color: '[#ffb3ba]', sym: '₺' },
-                    { code: 'USD', flag: '🇺🇸', rate: exchangeRates.USD, color: '[#a8e6cf]', sym: '$' },
-                    { code: 'EUR', flag: '🇪🇺', rate: exchangeRates.EUR, color: '[#9dd9ea]', sym: '€' },
-                    { code: 'GBP', flag: '🇬🇧', rate: exchangeRates.GBP, color: '[#ffd4a3]', sym: '£' },
+                    { code: 'TRY', flag: '🇹🇷', rate: 1, color: '#ffb3ba', sym: '₺' },
+                    { code: 'USD', flag: '🇺🇸', rate: exchangeRates.USD, color: '#a8e6cf', sym: '$' },
+                    { code: 'EUR', flag: '🇪🇺', rate: exchangeRates.EUR, color: '#9dd9ea', sym: '€' },
+                    { code: 'GBP', flag: '🇬🇧', rate: exchangeRates.GBP, color: '#ffd4a3', sym: '£' },
+                    { code: 'BGN', flag: '🇧🇬', rate: exchangeRates.BGN, color: '#c4b5fd', sym: 'лв' },
+                    { code: 'RUB', flag: '🇷🇺', rate: exchangeRates.RUB, color: '#f9a8d4', sym: '₽' },
+                    { code: 'SAR', flag: '🇸🇦', rate: exchangeRates.SAR, color: '#86efac', sym: '﷼' },
                   ].filter(c => c.code !== mekanPriceCurrency).map(c => (
                     <button key={c.code} onClick={() => setSelectedCurrency(c.code === 'TRY' ? (mekanPriceCurrency !== 'TRY' ? 'TRY' as any : null) : c.code as any)}
-                      className={`bg-white/5 rounded-lg p-3 text-center transition-all active:scale-95 ${selectedCurrency === c.code ? `ring-2 ring-${c.color} bg-${c.color}/10` : 'hover:bg-white/10'}`}
+                      style={{ background: selectedCurrency === c.code ? `${c.color}22` : 'rgba(255,255,255,0.05)', border: selectedCurrency === c.code ? `2px solid ${c.color}88` : '2px solid transparent', borderRadius: 12, padding: '10px 4px', textAlign: 'center', transition: 'all 0.15s', cursor: 'pointer' }}
                     >
                       <div className="text-xs text-gray-400 mb-1 flex items-center justify-center gap-1"><span>{c.flag}</span><span>{c.code}</span></div>
-                      <div className={`text-base font-bold text-${c.color}`}>{c.code === 'TRY' ? '₺ TRY' : `₺${c.rate.toFixed(2)}`}</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: c.color }}>{c.code === 'TRY' ? '₺ TRY' : `₺${c.rate.toFixed(2)}`}</div>
                       <div className="text-[10px] text-white/30 mt-0.5">{c.code === 'TRY' ? 'Türk Lirası' : `1 ${c.code}`}</div>
                     </button>
                   ))}
@@ -2450,14 +2456,21 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                       <div className="text-xs text-gray-400 mb-1">{discountAmount && Number(discountAmount) > 0 ? 'Ödenecek Tutar' : 'Sepet Toplamı'}</div>
                       <div className="text-2xl font-black text-white">{pSym}{discountAmount && Number(discountAmount) > 0 ? totalPrice - Number(discountAmount) : totalPrice}</div>
                     </div>
-                    {selectedCurrency && (
-                      <div className={`p-3 rounded-lg border-2 ${selectedCurrency === 'TRY' ? 'bg-[#ffb3ba]/20 border-[#ffb3ba]/50' : selectedCurrency === 'USD' ? 'bg-[#a8e6cf]/20 border-[#a8e6cf]/50' : selectedCurrency === 'EUR' ? 'bg-[#9dd9ea]/20 border-[#9dd9ea]/50' : 'bg-[#ffd4a3]/20 border-[#ffd4a3]/50'}`}>
+                    {selectedCurrency && (() => {
+                      const cMap: Record<string, { flag: string; color: string }> = {
+                        TRY: { flag: '🇹🇷', color: '#ffb3ba' }, USD: { flag: '🇺🇸', color: '#a8e6cf' }, EUR: { flag: '🇪🇺', color: '#9dd9ea' },
+                        GBP: { flag: '🇬🇧', color: '#ffd4a3' }, BGN: { flag: '🇧🇬', color: '#c4b5fd' }, RUB: { flag: '🇷🇺', color: '#f9a8d4' }, SAR: { flag: '🇸🇦', color: '#86efac' },
+                      };
+                      const ci = cMap[selectedCurrency] || cMap.TRY;
+                      return (
+                      <div style={{ padding: 12, borderRadius: 12, border: `2px solid ${ci.color}88`, background: `${ci.color}22` }}>
                         <div className="flex items-center justify-between">
-                          <div className="text-xs text-gray-400">{selectedCurrency === 'TRY' ? '🇹🇷 TRY' : selectedCurrency === 'USD' ? '🇺🇸 USD' : selectedCurrency === 'EUR' ? '🇪🇺 EUR' : '🇬🇧 GBP'}</div>
-                          <div className={`text-3xl font-black ${selectedCurrency === 'TRY' ? 'text-[#ffb3ba]' : selectedCurrency === 'USD' ? 'text-[#a8e6cf]' : selectedCurrency === 'EUR' ? 'text-[#9dd9ea]' : 'text-[#ffd4a3]'}`}>{selectedCurrency === 'TRY' ? `₺${((totalPrice - (Number(discountAmount) || 0)) * (exchangeRates[mekanPriceCurrency as keyof typeof exchangeRates] || 1)).toFixed(0)}` : calculateForeignCurrency()}</div>
+                          <div className="text-xs text-gray-400">{ci.flag} {selectedCurrency}</div>
+                          <div style={{ fontSize: 28, fontWeight: 900, color: ci.color }}>{selectedCurrency === 'TRY' ? `₺${((totalPrice - (Number(discountAmount) || 0)) * (exchangeRates[mekanPriceCurrency as keyof typeof exchangeRates] || 1)).toFixed(0)}` : calculateForeignCurrency()}</div>
                         </div>
                       </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div className="bg-white/5 rounded-lg p-4 border border-white/20 text-center"><div className="text-3xl mb-2">🛒</div><div className="text-sm text-gray-400">Sepete ürün ekleyin</div></div>
@@ -2556,6 +2569,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                                   <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{saleTime}</span>
                                 )}
                                 <span>{pmIcon} {sale.paymentMethod === 'cash' ? 'Nakit' : sale.paymentMethod === 'iban' ? 'IBAN' : 'Kart'}</span>
+                                {sale.kaydeden && <span className="text-[#9dd9ea]">👤 {sale.kaydeden}</span>}
                                 {sale.currency !== 'TRY' && sale.currencyPrice && (
                                   <span className="text-[#ffd4a3]">{sale.currency} {sale.currencyPrice}</span>
                                 )}
@@ -3848,13 +3862,47 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                   </button>
                 ))}
               </div>
+              {/* Gerekçe ekle butonu + textarea */}
+              <button
+                type="button"
+                onClick={() => { setShowGerekce(!showGerekce); if (showGerekce) setGerekceText(''); }}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  borderRadius: 14,
+                  border: showGerekce ? '1.5px solid rgba(255,212,163,0.4)' : '1.5px solid rgba(255,255,255,0.1)',
+                  background: showGerekce ? 'rgba(255,212,163,0.08)' : 'rgba(255,255,255,0.03)',
+                  color: showGerekce ? '#ffd4a3' : 'rgba(255,255,255,0.45)',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  transition: 'all 0.2s',
+                }}
+              >
+                <span>📝</span>
+                <span>{showGerekce ? 'Gerekçeyi kaldır' : 'Gerekçe ekle'}</span>
+              </button>
+              {showGerekce && (
+                <textarea
+                  value={gerekceText}
+                  onChange={(e) => setGerekceText(e.target.value)}
+                  placeholder="Satış gerekçesini yazın..."
+                  rows={2}
+                  className="w-full px-4 py-3 bg-white/5 border border-[#ffd4a3]/25 rounded-xl text-white text-sm placeholder-gray-500 focus:outline-none focus:border-[#ffd4a3] transition-all resize-none animate-in slide-in-from-top-2 duration-200"
+                />
+              )}
+
               <div className="grid grid-cols-2 gap-3">
-                <button type="button" onClick={() => { setShowPaymentMethod(false); setPaymentMethod(null); }} className="backdrop-blur-xl bg-white/10 border-2 border-white/20 text-white py-4 rounded-2xl font-bold text-base hover:bg-white/20 transition-all active:scale-[0.98]">Geri</button>
+                <button type="button" onClick={() => { setShowPaymentMethod(false); setPaymentMethod(null); setShowGerekce(false); setGerekceText(''); }} className="backdrop-blur-xl bg-white/10 border-2 border-white/20 text-white py-4 rounded-2xl font-bold text-base hover:bg-white/20 transition-all active:scale-[0.98]">Geri</button>
                 <button
                   type="button"
                   onClick={handleCompleteSale}
-                  disabled={!paymentMethod || satisSaving}
-                  className={`py-4 rounded-2xl font-bold text-base transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg ${paymentMethod && !satisSaving ? 'bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] text-[#2d3748] hover:shadow-xl cursor-pointer' : 'bg-white/5 text-gray-600 cursor-not-allowed opacity-50 border-2 border-white/10'}`}
+                  disabled={!paymentMethod || satisSaving || (showGerekce && !gerekceText.trim())}
+                  className={`py-4 rounded-2xl font-bold text-base transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg ${paymentMethod && !satisSaving && (!showGerekce || gerekceText.trim()) ? 'bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] text-[#2d3748] hover:shadow-xl cursor-pointer' : 'bg-white/5 text-gray-600 cursor-not-allowed opacity-50 border-2 border-white/10'}`}
                 >
                   {satisSaving ? (
                     <><span className="w-4 h-4 border-2 border-[#2d3748]/40 border-t-[#2d3748] rounded-full animate-spin" /> Kaydediliyor...</>

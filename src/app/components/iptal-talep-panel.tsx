@@ -334,7 +334,7 @@ export function IptalTalepPanel({ accessToken, userRole }: Props) {
                             fontSize: 9, fontWeight: 700, borderRadius: 6,
                             padding: '2px 6px', border: '1px solid rgba(220,38,38,0.3)',
                           }}>
-                            Karar ver
+                            Süresi doldu
                           </span>
                         )}
                       </div>
@@ -403,7 +403,8 @@ export function IptalTalepPanel({ accessToken, userRole }: Props) {
                       📝 {talep.neden || '(sebep belirtilmedi)'}
                     </p>
 
-                    {/* Butonlar */}
+                    {/* Butonlar — süresi dolmuşsa gizle */}
+                    {!expired ? (
                     <div style={{ display:'flex', gap: 8 }}>
                       <button
                         disabled={isLoading}
@@ -434,6 +435,11 @@ export function IptalTalepPanel({ accessToken, userRole }: Props) {
                         {isLoading ? '⏳' : '❌ Reddet'}
                       </button>
                     </div>
+                    ) : (
+                    <div style={{ textAlign: 'center', padding: '8px 0', color: 'rgba(248,113,113,0.6)', fontSize: 12, fontWeight: 600 }}>
+                      Bu talebin süresi doldu
+                    </div>
+                    )}
                   </div>
                 );
               })}

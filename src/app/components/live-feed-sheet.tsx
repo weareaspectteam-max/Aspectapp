@@ -23,6 +23,7 @@ interface FeedItem {
   currency?: string;
   currencyPrice?: number | null;
   iptal?: boolean;
+  gerekce?: string;
   photographerName?: string;
   frameCount?: number;
 }
@@ -303,6 +304,12 @@ function SatisCard({ item, mekanColor }: { item: FeedItem; mekanColor: string })
           </span>
         </div>
       </div>
+
+      {item.gerekce && (
+        <div className="text-[9px] text-[#ffd4a3]/70 mt-1.5 truncate">
+          📝 {item.gerekce}
+        </div>
+      )}
     </div>
   );
 }

@@ -25,6 +25,7 @@ interface FeedItem {
   currency?: string;
   currencyPrice?: number | null;
   iptal?: boolean;
+  gerekce?: string;
   // Sadece kare
   photographerName?: string;
   photographerId?: string;
@@ -152,6 +153,13 @@ function SatisBubble({ item }: { item: FeedItem }) {
         {item.currency && item.currency !== 'TRY' && item.currencyPrice && (
           <div className="text-[9px] text-white/30 mt-1 text-right">
             {item.currencyPrice} {item.currency}
+          </div>
+        )}
+
+        {/* Gerekçe */}
+        {item.gerekce && (
+          <div className="text-[9px] text-[#ffd4a3]/70 mt-1 truncate">
+            📝 {item.gerekce}
           </div>
         )}
       </div>

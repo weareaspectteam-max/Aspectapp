@@ -25,9 +25,12 @@ interface ExchangeRates {
   EUR: number;
   USD: number;
   GBP: number;
+  BGN: number;
+  RUB: number;
+  SAR: number;
 }
 
-type Currency = 'TRY' | 'EUR' | 'USD' | 'GBP';
+type Currency = 'TRY' | 'EUR' | 'USD' | 'GBP' | 'BGN' | 'RUB' | 'SAR';
 type Frequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 interface AlbumCost {
@@ -102,6 +105,9 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
     EUR: 35.50,
     USD: 32.80,
     GBP: 41.20,
+    BGN: 19.50,
+    RUB: 0.38,
+    SAR: 8.80,
   });
 
   // Albums
@@ -295,6 +301,9 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
         EUR: 1 / data.rates.EUR,
         USD: 1 / data.rates.USD,
         GBP: 1 / data.rates.GBP,
+        BGN: 1 / data.rates.BGN,
+        RUB: 1 / data.rates.RUB,
+        SAR: 1 / data.rates.SAR,
       };
       saveExchangeRates(newRates, true);
       alert('Kurlar başarıyla güncellendi!');
@@ -898,9 +907,9 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
 
           {!isAutoExchange && (
             <div className="space-y-3">
-              {(['EUR', 'USD', 'GBP'] as const).map((currency) => (
+              {(['EUR', 'USD', 'GBP', 'BGN', 'RUB', 'SAR'] as const).map((currency) => (
                 <div key={currency} className="flex items-center gap-3">
-                  <span className="text-xl">{currency === 'EUR' ? '🇪🇺' : currency === 'USD' ? '🇺🇸' : '🇬🇧'}</span>
+                  <span className="text-xl">{currency === 'EUR' ? '🇪🇺' : currency === 'USD' ? '🇺🇸' : currency === 'GBP' ? '🇬🇧' : currency === 'BGN' ? '🇧🇬' : currency === 'RUB' ? '🇷🇺' : '🇸🇦'}</span>
                   <span className="text-white font-semibold w-12">{currency}:</span>
                   <input
                     type="number" step="0.01"
@@ -918,9 +927,9 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
           {isAutoExchange && (
             <div className="space-y-3">
               <div className="space-y-2">
-                {(['EUR', 'USD', 'GBP'] as const).map((currency) => (
+                {(['EUR', 'USD', 'GBP', 'BGN', 'RUB', 'SAR'] as const).map((currency) => (
                   <div key={currency} className="flex items-center justify-between px-4 py-2" style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 12 }}>
-                    <span className="text-white font-semibold">{currency}:</span>
+                    <span className="text-white font-semibold">{currency === 'EUR' ? '🇪🇺' : currency === 'USD' ? '🇺🇸' : currency === 'GBP' ? '🇬🇧' : currency === 'BGN' ? '🇧🇬' : currency === 'RUB' ? '🇷🇺' : '🇸🇦'} {currency}:</span>
                     <span className="text-white font-bold">{formatDecimal(exchangeRates[currency])} TL</span>
                   </div>
                 ))}
