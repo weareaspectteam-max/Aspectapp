@@ -46,7 +46,7 @@ export const normalizeRibon = (sayim: StokSayim): StokSayim => {
 
 export interface VardiyaSatis {
   id: string;
-  items: { product: string; quantity: number; unitPrice: number; color: string }[];
+  items: { product: string; quantity: number; unitPrice: number; color: string; dijital?: boolean }[];
   totalPrice: number;
   discount: number;
   finalPrice: number;

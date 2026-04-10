@@ -20,6 +20,7 @@ export interface QueuedSale {
     quantity: number;
     unitPrice: number;
     color: string;
+    dijital?: boolean;
   }>;
   totalPrice: number;
   discount: number;

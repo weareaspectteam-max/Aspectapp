@@ -3524,6 +3524,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     for (const satis of satislar) {
       if (satis.iptal) continue;
       for (const item of (satis.items || [])) {
+        if (item.dijital) continue; // Dijital satışlar stoktan düşülmez
         const match = String(item.product || '').match(/^(\d+)/);
         if (match) {
           const sz = match[1];
@@ -10319,7 +10320,7 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
         else if (pm.includes("kredi") || pm.includes("kart") || pm.includes("card")) pMap[pid].krediTL += tutar;
         else pMap[pid].nakitTL += tutar;
         for (const item of (satis.items || [])) {
-          const ua = item.product || "Diger";
+          const ua = (item.dijital ? '📱 ' : '') + (item.product || "Diger");
           const qty = Number(item.quantity) || 1;
           const biTL = Number(item.unitPrice) || 0;
           if (!pMap[pid].urunler[ua]) pMap[pid].urunler[ua] = { adet: 0, toplamTL: 0 };

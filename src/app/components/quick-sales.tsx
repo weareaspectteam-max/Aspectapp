@@ -67,6 +67,7 @@ interface CartItem {
   quantity: number;
   color: string;
   unitPrice: number;
+  dijital?: boolean;
 }
 
 interface QuickSalesProps {
@@ -132,6 +133,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showDiscount, setShowDiscount] = useState(false);
   const [discountAmount, setDiscountAmount] = useState('');
+  const [discountMode, setDiscountMode] = useState<'iskonto' | 'fiyat'>('iskonto');
+  const [discountRawInput, setDiscountRawInput] = useState('');
   const [showPaymentMethod, setShowPaymentMethod] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'iban' | 'card' | null>(null);
   const [showGerekce, setShowGerekce] = useState(false);
@@ -863,7 +866,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     const discount = Number(discountAmount) || 0;
     const mekanId = resolvedMekanId || selectedProject.id;
     const tarih = bugunTarih();
-    const saleItems = cart.map(i => ({ product: i.product, quantity: i.quantity, unitPrice: i.unitPrice, color: i.color }));
+    const saleItems = cart.map(i => ({ product: i.product, quantity: i.quantity, unitPrice: i.unitPrice, color: i.color, ...(i.dijital ? { dijital: true } : {}) }));
     // Döviz mekanında: currency = mekan para birimi, currencyPrice = döviz tutarı, totalPrice TL'ye çevrilir
     // TRY mekanında: selectedCurrency (manuel seçim) veya TRY
     const isForeignMekan = mekanPriceCurrency !== 'TRY';
@@ -918,7 +921,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       };
       setRecentSales(prev => [pendingSale, ...prev]);
       setSatisSaving(false);
-      setCart([]); setDiscountAmount(''); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null); setShowGerekce(false); setGerekceText('');
+      setCart([]); setDiscountAmount(''); setDiscountRawInput(''); setDiscountMode('iskonto'); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null); setShowGerekce(false); setGerekceText('');
       return;
     }
 
@@ -991,7 +994,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     } finally {
       setSatisSaving(false);
     }
-    setCart([]); setDiscountAmount(''); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null); setShowGerekce(false); setGerekceText('');
+    setCart([]); setDiscountAmount(''); setDiscountRawInput(''); setDiscountMode('iskonto'); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null); setShowGerekce(false); setGerekceText('');
   };
 
   // ── Satış İptal: onay akışı state ──
@@ -2355,6 +2358,18 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setCart(prev => prev.map(c => c.product === item.product ? { ...c, dijital: !c.dijital } : c))}
+                            style={{
+                              padding: '4px 8px', borderRadius: 8, fontSize: 10, fontWeight: 700,
+                              background: item.dijital ? 'rgba(168,130,255,0.25)' : 'rgba(255,255,255,0.06)',
+                              border: item.dijital ? '1px solid rgba(168,130,255,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                              color: item.dijital ? '#c4b5fd' : 'rgba(255,255,255,0.3)',
+                              cursor: 'pointer', transition: 'all 0.2s',
+                            }}
+                          >
+                            {item.dijital ? '📱 DİJİTAL' : '📱'}
+                          </button>
                           <button onClick={() => removeFromCart(item.product)} className="w-8 h-8 rounded-lg bg-[#ffb3ba]/20 text-[#ffb3ba] hover:bg-[#ffb3ba]/30 flex items-center justify-center transition-all">
                             <X className="w-4 h-4" />
                           </button>
@@ -2381,34 +2396,69 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                   ) : (
                     <div className="space-y-3">
                       <div className="bg-gradient-to-br from-[#ffd4a3]/20 to-[#ffc78f]/10 rounded-2xl p-4 border-2 border-[#ffd4a3]/30">
-                        <label className="text-sm font-semibold text-white mb-2 block flex items-center gap-2">
-                          <Tag className="w-4 h-4 text-[#ffd4a3]" /><span>İskonto Tutarı</span>
-                        </label>
-                        <div className="bg-gradient-to-br from-[#ffd4a3] to-[#ffc78f] rounded-xl p-4 mb-3 text-right shadow-md">
-                          <div className="text-[#744210]/60 text-xs mb-1">TL</div>
-                          <div className="text-[#744210] text-3xl font-bold min-h-[40px] flex items-center justify-end">{discountAmount || '0'}</div>
+                        {/* Mod toggle */}
+                        <div className="flex rounded-xl overflow-hidden border border-white/15 mb-3">
+                          <button
+                            onClick={() => { setDiscountMode('iskonto'); setDiscountRawInput(''); setDiscountAmount(''); }}
+                            style={{ flex: 1, padding: '10px 0', fontSize: 13, fontWeight: 700, transition: 'all 0.2s', background: discountMode === 'iskonto' ? 'rgba(255,212,163,0.25)' : 'transparent', color: discountMode === 'iskonto' ? '#ffd4a3' : 'rgba(255,255,255,0.4)', borderRight: '1px solid rgba(255,255,255,0.1)' }}
+                          >
+                            İskonto Tutarı
+                          </button>
+                          <button
+                            onClick={() => { setDiscountMode('fiyat'); setDiscountRawInput(''); setDiscountAmount(''); }}
+                            style={{ flex: 1, padding: '10px 0', fontSize: 13, fontWeight: 700, transition: 'all 0.2s', background: discountMode === 'fiyat' ? 'rgba(168,230,207,0.25)' : 'transparent', color: discountMode === 'fiyat' ? '#a8e6cf' : 'rgba(255,255,255,0.4)' }}
+                          >
+                            Satış Fiyatı
+                          </button>
+                        </div>
+                        <div style={{ borderRadius: 16, padding: 16, marginBottom: 12, textAlign: 'right', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', background: discountMode === 'iskonto' ? 'linear-gradient(135deg, #ffd4a3, #ffc78f)' : 'linear-gradient(135deg, #a8e6cf, #8dd9b8)' }}>
+                          <div style={{ fontSize: 11, color: discountMode === 'iskonto' ? '#744210aa' : '#2d3748aa', marginBottom: 4 }}>{discountMode === 'iskonto' ? 'İskonto TL' : 'Satış Fiyatı TL'}</div>
+                          <div style={{ fontSize: 28, fontWeight: 800, color: discountMode === 'iskonto' ? '#744210' : '#2d3748', minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>{discountRawInput || '0'}</div>
                         </div>
                         <div className="grid grid-cols-3 gap-2 mb-3">
                           {['1','2','3','4','5','6','7','8','9'].map(num => (
-                            <button key={num} onClick={() => discountAmount.length < 6 && setDiscountAmount(discountAmount + num)} className="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xl font-bold py-3 rounded-xl transition-all active:scale-95">{num}</button>
+                            <button key={num} onClick={() => {
+                              if (discountRawInput.length >= 6) return;
+                              const newVal = discountRawInput + num;
+                              setDiscountRawInput(newVal);
+                              if (discountMode === 'iskonto') { setDiscountAmount(newVal); }
+                              else { const diff = totalPrice - Number(newVal); setDiscountAmount(diff > 0 ? String(diff) : '0'); }
+                            }} className="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xl font-bold py-3 rounded-xl transition-all active:scale-95">{num}</button>
                           ))}
                         </div>
                         <div className="grid grid-cols-3 gap-2 mb-3">
-                          <button onClick={() => setDiscountAmount('')} className="bg-[#ffb3ba]/20 text-[#ffb3ba] text-sm font-bold py-3 rounded-xl transition-all active:scale-95">C</button>
-                          <button onClick={() => discountAmount.length < 6 && setDiscountAmount(discountAmount + '0')} className="bg-white/10 text-white text-xl font-bold py-3 rounded-xl transition-all active:scale-95">0</button>
-                          <button onClick={() => setDiscountAmount(discountAmount.slice(0, -1))} className="bg-[#ffd4a3]/20 text-[#ffd4a3] text-sm font-bold py-3 rounded-xl transition-all active:scale-95">⌫</button>
+                          <button onClick={() => { setDiscountRawInput(''); setDiscountAmount(''); }} className="bg-[#ffb3ba]/20 text-[#ffb3ba] text-sm font-bold py-3 rounded-xl transition-all active:scale-95">C</button>
+                          <button onClick={() => {
+                            if (discountRawInput.length >= 6) return;
+                            const newVal = discountRawInput + '0';
+                            setDiscountRawInput(newVal);
+                            if (discountMode === 'iskonto') { setDiscountAmount(newVal); }
+                            else { const diff = totalPrice - Number(newVal); setDiscountAmount(diff > 0 ? String(diff) : '0'); }
+                          }} className="bg-white/10 text-white text-xl font-bold py-3 rounded-xl transition-all active:scale-95">0</button>
+                          <button onClick={() => {
+                            const newVal = discountRawInput.slice(0, -1);
+                            setDiscountRawInput(newVal);
+                            if (discountMode === 'iskonto') { setDiscountAmount(newVal); }
+                            else { const diff = totalPrice - (Number(newVal) || 0); setDiscountAmount(diff > 0 ? String(diff) : '0'); }
+                          }} className="bg-[#ffd4a3]/20 text-[#ffd4a3] text-sm font-bold py-3 rounded-xl transition-all active:scale-95">⌫</button>
                         </div>
-                        {discountAmount && Number(discountAmount) > 0 && (
+                        {(() => {
+                          const disc = Number(discountAmount) || 0;
+                          const odenecek = totalPrice - disc;
+                          if (disc <= 0 || odenecek < 0) return null;
+                          const pct = Math.round((disc / totalPrice) * 100);
+                          return (
                           <div className="bg-white/5 rounded-xl p-3 border-2 border-[#a8e6cf]/30 mb-3">
                             <div className="flex items-center justify-between text-sm mb-1"><span className="text-gray-400">Orijinal:</span><span className="font-semibold text-white">{pSym}{totalPrice}</span></div>
-                            <div className="flex items-center justify-between text-sm mb-1"><span className="text-[#ffd4a3] font-semibold">İskonto:</span><span className="font-semibold text-[#ffd4a3]">-₺{discountAmount}</span></div>
+                            <div className="flex items-center justify-between text-sm mb-1"><span className="text-[#ffd4a3] font-semibold">İskonto ({pct}%):</span><span className="font-semibold text-[#ffd4a3]">-₺{disc}</span></div>
                             <div className="border-t border-white/20 my-2" />
-                            <div className="flex items-center justify-between"><span className="font-bold text-white">Ödenecek:</span><span className="font-bold text-2xl text-[#a8e6cf]">{pSym}{totalPrice - Number(discountAmount)}</span></div>
+                            <div className="flex items-center justify-between"><span className="font-bold text-white">Ödenecek:</span><span className="font-bold text-2xl text-[#a8e6cf]">{pSym}{odenecek}</span></div>
                           </div>
-                        )}
+                          );
+                        })()}
                       </div>
                       <div className="grid grid-cols-2 gap-3">
-                        <button onClick={() => { setShowDiscount(false); setDiscountAmount(''); }} className="bg-white/10 text-white py-4 rounded-2xl font-bold text-base transition-all active:scale-[0.98]">İptal</button>
+                        <button onClick={() => { setShowDiscount(false); setDiscountAmount(''); setDiscountRawInput(''); setDiscountMode('iskonto'); }} className="bg-white/10 text-white py-4 rounded-2xl font-bold text-base transition-all active:scale-[0.98]">İptal</button>
                         <button onClick={handleProceed} className="bg-gradient-to-r from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] py-4 rounded-2xl font-bold text-base hover:shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg">
                           <Send className="w-5 h-5" /> İlerle
                         </button>
@@ -2531,7 +2581,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                       <div className="text-xs text-gray-400">Henüz satış kaydı yok</div>
                     </div>
                   ) : recentSales.map(sale => {
-                    const itemSummary = sale.items?.map(i => `${i.quantity}× ${i.product}`).join(', ') || '—';
+                    const itemSummary = sale.items?.map(i => `${i.dijital ? '📱 ' : ''}${i.quantity}× ${i.product}`).join(', ') || '—';
                     const saleTime = sale.timestamp
                       ? new Date(sale.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                       : '—';

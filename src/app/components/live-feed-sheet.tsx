@@ -15,7 +15,7 @@ interface FeedItem {
   mekanAdi: string;
   mekanEmoji: string;
   mekanColor: string;
-  items?: { product: string; quantity: number; unitPrice: number; color: string }[];
+  items?: { product: string; quantity: number; unitPrice: number; color: string; dijital?: boolean }[];
   totalPrice?: number;
   discount?: number;
   finalPrice?: number;
@@ -49,7 +49,7 @@ function payLabel(p?: string) {
 
 function productShort(items?: FeedItem['items']) {
   if (!items?.length) return '-';
-  return items.map(i => (i.quantity > 1 ? `${i.quantity}× ` : '') + i.product).join(' + ');
+  return items.map(i => (i.dijital ? '📱 ' : '') + (i.quantity > 1 ? `${i.quantity}× ` : '') + i.product).join(' + ');
 }
 
 function PulseDot() {

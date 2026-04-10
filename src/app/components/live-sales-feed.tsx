@@ -17,7 +17,7 @@ interface FeedItem {
   mekanEmoji: string;
   mekanColor: string;
   // Sadece satis
-  items?: { product: string; quantity: number; unitPrice: number; color: string }[];
+  items?: { product: string; quantity: number; unitPrice: number; color: string; dijital?: boolean }[];
   totalPrice?: number;
   discount?: number;
   finalPrice?: number;
@@ -53,7 +53,7 @@ const REFRESH_INTERVAL = 15_000;
 
 function productShort(items?: FeedItem['items']) {
   if (!items?.length) return '-';
-  return items.map(i => (i.quantity > 1 ? `${i.quantity}× ` : '') + i.product).join(' + ');
+  return items.map(i => (i.dijital ? '📱 ' : '') + (i.quantity > 1 ? `${i.quantity}× ` : '') + i.product).join(' + ');
 }
 
 function clockTime(ts: string) {
