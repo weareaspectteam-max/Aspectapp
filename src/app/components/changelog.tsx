@@ -17,6 +17,17 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '5.3.1',
+    date: '2026-04-10',
+    title: 'Dijital Satış, İskonto Satış Fiyatı Modu & Personel Kısıtlamaları',
+    changes: [
+      { type: 'new', text: 'Dijital satış — sepette ürün bazlı 📱 DİJİTAL badge, kapanışta stoktan düşülmez' },
+      { type: 'new', text: 'İskonto ekranına "Satış Fiyatı" modu — doğrudan son fiyat girişi, otomatik iskonto hesabı' },
+      { type: 'improve', text: 'Personel sadece kendi satışlarını görür, yönetici/müdür hepsini görür' },
+      { type: 'improve', text: 'Kota tutarları ve günlük ciro personelden gizli (kupa + eksik kalan görünür)' },
+    ],
+  },
+  {
     version: '5.3.0',
     date: '2026-04-09',
     title: 'İptal Sistemi Güçlendirme, Yeni Para Birimleri & Gerekçeli Satış',
