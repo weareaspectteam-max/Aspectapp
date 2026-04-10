@@ -66,6 +66,7 @@ interface IndirimIstatistikProps {
 }
 
 export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, onNavigate }: IndirimIstatistikProps) {
+  const showFinancials = ['yonetici', 'ust-mudur'].includes(userRole);
   const [personeller, setPersoneller] = useState<Personel[]>([]);
   const [mekanlar, setMekanlar]       = useState<Mekan[]>([]);
   const [ozet, setOzet]               = useState<Ozet | null>(null);
@@ -193,7 +194,7 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
                 {([
                   ['indirimOrani', '% Oran'],
                   ['indirimAdet',  '% Adet'],
-                  ['indirimTL',    '₺ Tutar'],
+                  ...(showFinancials ? [['indirimTL', '₺ Tutar'] as const] : []),
                 ] as const).map(([k, lbl]) => (
                   <button key={k} onClick={() => setSiralama(k)}
                     className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-all ${siralama === k ? 'bg-ta text-white' : 'bg-white/10 text-gray-300'}`}>
@@ -261,10 +262,14 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
                   {donem === 'uzun' ? 'Tüm zamanlardaki' : `Son 1 yıldaki (${ozet.kisaDonemBaslangic} itibaren)`}
                 </p>
                 <p className="text-sm text-white font-semibold">
-                  Toplam verilen indirim:{' '}
-                  <span className="text-rose-400 font-bold">
-                    ₺{ozet[donem].toplamIndirimTL.toLocaleString('tr-TR')}
-                  </span>
+                  {showFinancials ? (
+                    <>Toplam verilen indirim:{' '}
+                    <span className="text-rose-400 font-bold">
+                      ₺{ozet[donem].toplamIndirimTL.toLocaleString('tr-TR')}
+                    </span></>
+                  ) : (
+                    <>Toplam satış: <span className="text-white font-bold">{ozet[donem].toplamSatis.toLocaleString('tr-TR')} adet</span></>
+                  )}
                 </p>
               </div>
               <div className="text-right">
@@ -373,8 +378,8 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
                           </p>
                           <MetrikSatir label="Ort. indirim oranı" deger={`%${fmt(p.uzun.ortalamaIndirimOrani)}`} renk={oranRenk(p.uzun.ortalamaIndirimOrani).text} />
                           <MetrikSatir label="İndirimli satış %" deger={`%${fmt(p.uzun.indirimliSatisOrani)}`} />
-                          <MetrikSatir label="Toplam indirim"     deger={`₺${p.uzun.toplamIndirimTL.toLocaleString('tr-TR')}`} />
-                          <MetrikSatir label="Brüt ciro"          deger={`₺${p.uzun.toplamBrutoCiro.toLocaleString('tr-TR')}`} />
+                          {showFinancials && <MetrikSatir label="Toplam indirim" deger={`₺${p.uzun.toplamIndirimTL.toLocaleString('tr-TR')}`} />}
+                          {showFinancials && <MetrikSatir label="Brüt ciro" deger={`₺${p.uzun.toplamBrutoCiro.toLocaleString('tr-TR')}`} />}
                           <MetrikSatir label="Toplam satış"       deger={`${p.uzun.toplamSatis} adet`} />
                         </div>
 
@@ -385,8 +390,8 @@ export function IndirimIstatistik({ userName, userRole, accessToken, onLogout, o
                           </p>
                           <MetrikSatir label="Ort. indirim oranı" deger={`%${fmt(p.kisa.ortalamaIndirimOrani)}`} renk={oranRenk(p.kisa.ortalamaIndirimOrani).text} />
                           <MetrikSatir label="İndirimli satış %" deger={`%${fmt(p.kisa.indirimliSatisOrani)}`} />
-                          <MetrikSatir label="Toplam indirim"     deger={`₺${p.kisa.toplamIndirimTL.toLocaleString('tr-TR')}`} />
-                          <MetrikSatir label="Brüt ciro"          deger={`₺${p.kisa.toplamBrutoCiro.toLocaleString('tr-TR')}`} />
+                          {showFinancials && <MetrikSatir label="Toplam indirim" deger={`₺${p.kisa.toplamIndirimTL.toLocaleString('tr-TR')}`} />}
+                          {showFinancials && <MetrikSatir label="Brüt ciro" deger={`₺${p.kisa.toplamBrutoCiro.toLocaleString('tr-TR')}`} />}
                           <MetrikSatir label="Toplam satış"       deger={`${p.kisa.toplamSatis} adet`} />
                         </div>
                       </div>

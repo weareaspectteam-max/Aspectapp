@@ -201,18 +201,18 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
       { icon: '🗓️', label: 'Rotasyon Oluştur', q: '__ROT_CREATE__' },
       { icon: '🤖', label: 'Rotasyon Öner', q: '__ROT_SUGGEST__' },
       { icon: '📊', label: 'Günlük Özet', q: 'Bugünkü operasyon özetini göster' },
-      { icon: '🛍️', label: 'Albüm Satışları', q: 'Bugün ürün bazlı satış dökümü nedir?' },
       { icon: '📦', label: 'Stok Durumu', q: 'Stok durumu nedir?' },
       { icon: '🚨', label: 'Anomaliler', q: 'Bugün anomali var mı?' },
+      { icon: '👥', label: 'Personel', q: 'Bugün personel sıralaması nasıl?' },
       { icon: '🌅', label: 'Altın Saat', q: 'Bugün Fethiye altın saat kaçta?' },
       { icon: '📍', label: 'Mekan Detay', q: '__MEKAN_DETAY_MODAL__' },
       { icon: '🏖️', label: 'İzin Talebi', q: '__LEAVE_REQUEST__' },
       { icon: '📅', label: 'İzin Geçmişim', q: '__IZIN_GECMISIM__' },
     ],
     welcomeText: (name) => `Merhaba **${name}**! Ben Aspect AI. Mekan yönetimi, stok takibi ve personel performansı konularında yardımcı olabilirim.`,
-    blockedKeywords: [],
-    blockedMessage: '',
-    canSeeFinancials: true,
+    blockedKeywords: ['ciro', 'kâr', 'kar', 'maliyet', 'ödeme', 'indirim', 'gelir', 'gider', 'brüt', 'net kâr', 'kâr marjı', 'fiyat listesi', 'kira'],
+    blockedMessage: 'Bu bilgiye erişim yetkiniz bulunmuyor. Yöneticinize danışın.',
+    canSeeFinancials: false,
     canSeePersonnel: true,
     canSeeAnomalies: true,
     loadOzet: true,
@@ -1226,6 +1226,9 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
 
   // Ciro / kâr
   if (lower.includes('ciro') || lower.includes('kâr') || lower.includes('kar') || lower.includes('kazandık') || lower.includes('gelir')) {
+    if (!config.canSeeFinancials) {
+      return { text: config.blockedMessage || 'Bu bilgiye erişim yetkiniz bulunmuyor.' };
+    }
     if (d.toplamCiro === 0) {
       return {
         text: `**${d.tarihTR}** için henüz kayıtlı satış yok. Vardiya açılışı yapıldığında veriler burada görünecek.`,
@@ -1373,7 +1376,9 @@ function generateAIResponse(q: string, role: string, ozet: AIOzet | null, config
     }
     const best = d.personelSiralama[0];
     return {
-      text: `Bugünün en iyi performansı **${best.ad}** — **${best.satis} satış** ile **₺${best.ciro.toLocaleString('tr-TR')}** ciro sağladı. Harika bir gün!`,
+      text: config.canSeeFinancials
+        ? `Bugünün en iyi performansı **${best.ad}** — **${best.satis} satış** ile **₺${best.ciro.toLocaleString('tr-TR')}** ciro sağladı. Harika bir gün!`
+        : `Bugünün en iyi performansı **${best.ad}** — **${best.satis} satış** ile lider. Harika bir gün!`,
       card: { type: 'personnel', data: d },
     };
   }
@@ -1484,14 +1489,14 @@ function TypingIndicator() {
   );
 }
 
-function BriefingCard({ data }: { data: AIOzet }) {
+function BriefingCard({ data, hideFinancials }: { data: AIOzet; hideFinancials?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const shown = expanded ? data.mekanlar : data.mekanlar.slice(0, 2);
   return (
     <div className="mt-3 rounded-2xl border border-ta/25 bg-gradient-to-br from-ta/10 to-indigo-500/5 overflow-hidden">
       <div className="grid grid-cols-3 gap-px bg-white/8 border-b border-white/8">
         {[
-          { label: 'Ciro', val: `₺${(data.toplamCiro / 1000).toFixed(1)}K`, color: '#4ade80' },
+          ...(hideFinancials ? [] : [{ label: 'Ciro', val: `₺${(data.toplamCiro / 1000).toFixed(1)}K`, color: '#4ade80' }]),
           { label: 'Satış', val: `${data.toplamSatisAdet}`, color: 'var(--app-accent, #a855f7)' },
           { label: 'Mekan', val: `${data.mekanSayisi}`, color: '#fbbf24' },
         ].map(item => (
@@ -1507,7 +1512,7 @@ function BriefingCard({ data }: { data: AIOzet }) {
             <span className="text-sm text-white/80">{m.emoji} {m.name}</span>
             <div className="flex items-center gap-2">
               <span className="text-xs text-white/50">{m.satisAdet} satış</span>
-              <span className="text-xs font-semibold text-emerald-400">₺{m.ciro.toLocaleString('tr-TR')}</span>
+              {!hideFinancials && <span className="text-xs font-semibold text-emerald-400">₺{m.ciro.toLocaleString('tr-TR')}</span>}
             </div>
           </div>
         ))}
@@ -2456,8 +2461,8 @@ function MessageBubble({ msg, onFlowAction, isLastMsg, onNavigate, onDirectSave 
         </div>
         {msg.card && (
           <>
-            {msg.card.type === 'briefing' && <BriefingCard data={msg.card.data} />}
-            {msg.card.type === 'profit' && <BriefingCard data={msg.card.data} />}
+            {msg.card.type === 'briefing' && <BriefingCard data={msg.card.data} hideFinancials={!roleConfig.canSeeFinancials} />}
+            {msg.card.type === 'profit' && <BriefingCard data={msg.card.data} hideFinancials={!roleConfig.canSeeFinancials} />}
             {msg.card.type === 'stock' && <StockCard data={msg.card.data} />}
             {msg.card.type === 'anomaly' && <AnomalyCard data={msg.card.data} />}
             {msg.card.type === 'tip' && <TipCard data={msg.card.data} />}
@@ -2543,9 +2548,13 @@ function DailyBriefingTopCard({
       ) : mekanSayisi > 0 ? (
         <>
           <p className="text-sm text-white/75 leading-relaxed">
-            Bugün <strong className="text-white">{mekanSayisi} mekanda</strong> toplam{' '}
-            <strong className="text-emerald-400">₺{toplamCiro.toLocaleString('tr-TR')}</strong> ciro,{' '}
-            <strong className="text-white">%{karMarji}</strong> kâr marjı.
+            {hideFinancials ? (
+              <>Bugün <strong className="text-white">{mekanSayisi} mekanda</strong> toplam <strong className="text-white">{toplamSatisAdet} satış</strong> gerçekleşti.</>
+            ) : (
+              <>Bugün <strong className="text-white">{mekanSayisi} mekanda</strong> toplam{' '}
+              <strong className="text-emerald-400">₺{toplamCiro.toLocaleString('tr-TR')}</strong> ciro,{' '}
+              <strong className="text-white">%{karMarji}</strong> kâr marjı.</>
+            )}
           </p>
           {anomaliSayisi > 0 && (
             <p className="text-sm font-semibold text-amber-400 mt-1">

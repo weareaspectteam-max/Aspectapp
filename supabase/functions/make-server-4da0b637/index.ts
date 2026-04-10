@@ -3778,6 +3778,26 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     }
 
     console.log(`Stok kapanışı: ${mekanId} / ${tarih} by ${user.id} | kagitlar="${vardiyaToplam.paperName || 'YOK'}" | baskı: ${vardiyaToplam.toplamKullanilanBaskı} | cikis: ${vardiyaToplam.toplamCikisAdedi} | satılan: ${vardiyaToplam.toplamSatılanFotograf} | maliyet: ${vardiyaToplam.toplamMaliyet} TRY | bitisAnomali: ${kapanisYaziciAnomali ? `fark=${kapanisYaziciAnomali.fark}` : 'yok'}`);
+
+    // ── Otomatik checkout: kapanış yapılan mekandaki personeli checkout yap ──
+    try {
+      const mekanObjCheckout: any = await ckv.get(`mekan_${mekanId}`) || {};
+      const mekanAdiCheckout = mekanObjCheckout?.name || mekanId;
+      const allTasksCheckout: any[] = await ckv.getByPrefix("rotation_task_").catch(() => []) || [];
+      const checkoutTime = new Date().toISOString();
+      for (const t of allTasksCheckout) {
+        if (t.date !== tarih || t.location !== mekanAdiCheckout) continue;
+        if (!["sent", "revised"].includes(t.status)) continue;
+        for (const p of (t.personnel || [])) {
+          if (!p?.id) continue;
+          const existingCheckout = await ckv.get(`checkout_${p.id}_${tarih}`);
+          if (!existingCheckout) {
+            await ckv.set(`checkout_${p.id}_${tarih}`, { userId: p.id, tarih, checkOutTime: checkoutTime, autoCheckout: true, mekanId });
+          }
+        }
+      }
+    } catch (autoCoErr) { console.log("Auto checkout error (non-fatal):", autoCoErr); }
+
     return c.json({ kayit, anomali, beklenen, kapanisYaziciAnomali });
   } catch (err) {
     console.log("Post stok kapanis error:", err);
@@ -4188,6 +4208,12 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
     let toplamCiro = 0;
     let toplamAdet = 0;
     let toplamKare = 0;
+    let toplamBasilan = 0;
+    let toplamIadeFoto = 0;
+    let toplamIskontoDash = 0;
+    let toplamBrutCiroDash = 0;
+    let toplamDijitalAdet = 0;
+    let toplamFizikselAdet = 0;
     let anomaliSayisi = 0;
     const aktifMekanlar: any[] = [];
     const saatlikData: Record<number, { saat: number; adet: number; ciro: number }> = {};
@@ -4208,6 +4234,12 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       const mekanKare = kareKayitlari.reduce((s: number, k: any) => s + (k.frameCount || 0), 0);
       toplamKare += mekanKare;
 
+      // Kapanmış mekanlardan basılan ve iade fotoğraf toplanır
+      if (kayit.vardiyaToplam) {
+        toplamBasilan += kayit.vardiyaToplam.toplamCikisAdedi || 0;
+        toplamIadeFoto += kayit.vardiyaToplam.toplamIadeFotograf || 0;
+      }
+
       const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
       let mekanCiro = 0;
       let mekanAdet = 0;
@@ -4217,6 +4249,13 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
         const adet = (s.items || []).reduce((sum: number, item: any) => sum + (item.quantity || 1), 0) || 1;
         mekanCiro += finalPrice;
         mekanAdet += adet;
+        toplamIskontoDash += Number(s.discount) || 0;
+        toplamBrutCiroDash += Number(s.totalPrice) || finalPrice;
+        for (const item of (s.items || [])) {
+          const qty = Number(item.quantity) || 1;
+          if (item.dijital) toplamDijitalAdet += qty;
+          else toplamFizikselAdet += qty;
+        }
 
         if (s.timestamp) {
           const h = new Date(s.timestamp).getHours();
@@ -4306,13 +4345,48 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       .map(([id, v]) => ({ id, name: v.name, ciro: Math.round(v.ciro), satisAdet: v.satisAdet, mekan: v.mekan }))
       .sort((a, b) => b.ciro - a.ciro);
 
-    console.log(`Manager dashboard: ${today} — ciro:${toplamCiro} adet:${toplamAdet} kare:${toplamKare} anomali:${anomaliSayisi} personel:${personelPerformans.length}`);
+    // ── Aktif personel: bugün checkin yapmış + checkout yapmamış ──
+    const ckv2 = companyKvFor(effectiveCompanyId);
+    const [allCheckins2, allCheckouts2] = await Promise.all([
+      ckv2.getByPrefix("checkin_").catch(() => []),
+      ckv2.getByPrefix("checkout_").catch(() => []),
+    ]);
+    const bugunCheckins = (allCheckins2 || []).filter((ci: any) => ci?.tarih === today && ci?.userId);
+    const bugunCheckoutIds = new Set((allCheckouts2 || []).filter((co: any) => co?.tarih === today && co?.userId).map((co: any) => co.userId));
+    const aktifPersonel = bugunCheckins.filter((ci: any) => !bugunCheckoutIds.has(ci.userId));
+    const aktifPersonelSayisi = aktifPersonel.length;
+    const gecGirisSayisi = bugunCheckins.filter((ci: any) => ci.lateMin > 0).length;
+
+    // Toplam personel: Supabase auth'tan şirketin tüm personelini say
+    let toplamPersonelSayisi = 0;
+    try {
+      const sb = getAdminClient();
+      const { data: { users } } = await sb.auth.admin.listUsers({ perPage: 1000 });
+      const companyUsers = (users || []).filter((u: any) => {
+        const meta = u.user_metadata || {};
+        const userCid = (typeof meta.company_id === "string" && meta.company_id.length > 0) ? meta.company_id.toLowerCase() : "aspect";
+        return userCid === effectiveCompanyId.toLowerCase() && ['personel', 'operasyon', 'mudur', 'ust-mudur', 'yonetici', 'idari'].includes(meta.role);
+      });
+      toplamPersonelSayisi = companyUsers.length;
+      // Aktif personel detayını user isimleriyle zenginleştir
+      const userNameMap: Record<string, string> = {};
+      for (const u of companyUsers) { userNameMap[u.id] = u.user_metadata?.full_name || u.user_metadata?.name || u.email || u.id; }
+      for (const ci of aktifPersonel) { ci._name = userNameMap[ci.userId] || ci.userId; }
+    } catch {}
+
+    console.log(`Manager dashboard: ${today} — ciro:${toplamCiro} adet:${toplamAdet} kare:${toplamKare} anomali:${anomaliSayisi} personel:${personelPerformans.length} aktifPersonel:${aktifPersonelSayisi}/${toplamPersonelSayisi}`);
 
     return c.json({
       tarih: today,
       toplamCiro: Math.round(toplamCiro),
       toplamAdet,
       toplamKare,
+      toplamBasilan,
+      toplamIadeFoto,
+      toplamIskonto: Math.round(toplamIskontoDash),
+      toplamBrutCiro: Math.round(toplamBrutCiroDash),
+      toplamDijitalAdet,
+      toplamFizikselAdet,
       anomaliSayisi,
       aktifMekanSayisi: aktifMekanlar.length,
       toplamMekanSayisi: bugunKayitlar.length,
@@ -4321,6 +4395,10 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       albumDagilimi,
       mekanCiroList,
       personelPerformans,
+      aktifPersonelSayisi,
+      aktifPersonelDetay: aktifPersonel.map((ci: any) => ({ name: ci._name || ci.userId, mekan: ci.location || '', checkinZamani: ci.checkInTime || '' })),
+      toplamPersonelSayisi,
+      gecGirisSayisi,
     });
   } catch (err) {
     console.log("Manager dashboard-summary error:", err);

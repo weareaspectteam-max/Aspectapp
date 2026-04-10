@@ -43,11 +43,11 @@ const ROLE_TABS: Record<string, Tab[]> = {
     { key: 'rotation',  icon: Users,         color: '#fb923c' },
   ],
   'mudur': [
-    { key: 'dashboard', icon: Home,          color: 'var(--app-accent, #a855f7)' },
-    { key: 'live-feed', icon: Activity,      color: '#34d399' },
-    { key: 'aspect-ai', icon: Sparkles,      color: '#f472b6' },
-    { key: 'messaging', icon: MessageCircle, color: '#60a5fa', badge: true },
-    { key: 'rotation',  icon: Users,         color: '#fb923c' },
+    { key: 'dashboard',   icon: Home,          color: 'var(--app-accent, #a855f7)' },
+    { key: 'quick-sales', icon: Zap,           color: '#fb923c' },
+    { key: 'aspect-ai',   icon: Sparkles,      color: '#f472b6' },
+    { key: 'messaging',   icon: MessageCircle, color: '#60a5fa', badge: true },
+    { key: 'rotation',    icon: Users,         color: '#fb923c' },
   ],
   'operasyon': [
     { key: 'dashboard',   icon: Home,          color: 'var(--app-accent, #a855f7)' },

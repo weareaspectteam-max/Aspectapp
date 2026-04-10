@@ -213,7 +213,7 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
       } else {
         const data = await costRes.json();
         const er = data.exchangeRates;
-        setExchangeRates({ EUR: er.EUR, USD: er.USD, GBP: er.GBP });
+        setExchangeRates({ EUR: er.EUR || 35.50, USD: er.USD || 32.80, GBP: er.GBP || 41.20, BGN: er.BGN || 19.50, RUB: er.RUB || 0.38, SAR: er.SAR || 8.80 });
         setIsAutoExchange(er.isAuto || false);
         setAlbumCosts(data.albums || []);
         setPapers(data.papers || []);

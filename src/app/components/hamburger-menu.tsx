@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserRole } from './login';
-import { authHeaders } from '../lib/api';
+import { authHeaders, appendGhostParam } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 import { THEMES, applyTheme, getThemeById, getAccentHex } from '../lib/themes';
 import { Changelog } from './changelog';
@@ -110,8 +110,8 @@ function getSections(
       items: [
         { icon: Activity,      label: 'Canlı Feed',          roles: ['yonetici','ust-mudur'] as UserRole[],                                   action: () => go('live-feed')              },
         { icon: ClipboardList, label: 'İzin Çizelgesi',       roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],                    action: () => go('personel-izin-cetveli')  },
-        { icon: TrendingUp,    label: 'Hakediş Takip',        roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],                    action: () => go('prim-takip')             },
-        { icon: FileBarChart,  label: 'Vardiya Raporları',    roles: ['yonetici','ust-mudur','mudur','idari'] as UserRole[],                    action: () => go('vardiya-raporlari')      },
+        { icon: TrendingUp,    label: 'Hakediş Takip',        roles: ['yonetici','ust-mudur','idari'] as UserRole[],                    action: () => go('prim-takip')             },
+        { icon: FileBarChart,  label: 'Vardiya Raporları',    roles: ['yonetici','ust-mudur','idari'] as UserRole[],                    action: () => go('vardiya-raporlari')      },
         { icon: BarChart2,     label: 'İşletme Genel Durum',  roles: ['yonetici','ust-mudur'] as UserRole[],                                    action: () => go('isletme-genel-durum')    },
         { icon: Target,        label: 'Hedef Takibi',         roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('hedef-takip')            },
         { icon: Wallet,        label: 'Kasa',                 roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('kasa')                   },
@@ -159,10 +159,10 @@ function getSections(
       title: 'OYUN',
       color: '#22d3ee',
       items: [
-        { icon: Gamepad2, label: 'Aspect Runner 🏃', roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel','tedarikci'] as UserRole[], action: () => go('aspect-runner') },
-        { icon: Gamepad2, label: 'Aspect Quest 🗺️',  roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel','tedarikci'] as UserRole[], action: () => go('aspect-quest')  },
-        { icon: Camera,   label: 'Fotoğraf XOX 📷',  roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel','tedarikci'] as UserRole[], action: () => go('xox-game')      },
-        { icon: Gamepad2, label: 'Foto TKM 💰',       roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel','tedarikci'] as UserRole[], action: () => go('foto-tkm')      },
+        { icon: Gamepad2, label: 'Aspect Runner 🏃', roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('aspect-runner') },
+        { icon: Gamepad2, label: 'Aspect Quest 🗺️',  roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('aspect-quest')  },
+        { icon: Camera,   label: 'Fotoğraf XOX 📷',  roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('xox-game')      },
+        { icon: Gamepad2, label: 'Foto TKM 💰',       roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('foto-tkm')      },
       ],
     },
     {
@@ -293,6 +293,15 @@ export function HamburgerMenu({
   const [aiOperasyon, setAiOperasyon]         = useState(true);
   const [toggleLoading, setToggleLoading]     = useState<string | null>(null);
   const [settingsLoaded, setSettingsLoaded]   = useState(false);
+
+  /* ── Sistem Sıfırlama state ── */
+  const [sifirlaAcik, setSifirlaAcik] = useState(false);
+  const [sifirlaMod, setSifirlaMod] = useState<'tam' | 'finansal' | null>(null);
+  const [sifirlaAdim, setSifirlaAdim] = useState(1);
+  const [sifirlaAdi, setSifirlaAdi] = useState('');
+  const [sifirlaOnay, setSifirlaOnay] = useState('');
+  const [sifirlaYukleniyor, setSifirlaYukleniyor] = useState(false);
+  const resetSifirlaModal = () => { setSifirlaMod(null); setSifirlaAdim(1); setSifirlaAdi(''); setSifirlaOnay(''); };
 
   /* ── OpenAI Key state ── */
   const [companyKeyHas, setCompanyKeyHas]     = useState(false);
@@ -950,10 +959,10 @@ export function HamburgerMenu({
                                   label="Muhasebe"
                                   color="#60a5fa"
                                 >
-                                  <NavItem icon={<DollarSign style={{ width: 13, height: 13, color: '#60a5fa' }} />} label="Maliyet Yönetimi" desc="Maliyetleri takip et ve yönet" color="#60a5fa" onClick={() => { onNavigate('cost-management'); close(); }} />
-                                  <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#34d399' }} />} label="Hakediş Takip" desc="Hakediş ve performans takibi" color="#34d399" onClick={() => { onNavigate('prim-takip'); close(); }} />
+                                  {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<DollarSign style={{ width: 13, height: 13, color: '#60a5fa' }} />} label="Maliyet Yönetimi" desc="Maliyetleri takip et ve yönet" color="#60a5fa" onClick={() => { onNavigate('cost-management'); close(); }} />}
+                                  {['yonetici','ust-mudur','idari'].includes(userRole) && <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#34d399' }} />} label="Hakediş Takip" desc="Hakediş ve performans takibi" color="#34d399" onClick={() => { onNavigate('prim-takip'); close(); }} />}
                                   {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<TrendingUp style={{ width: 13, height: 13, color: '#6ee7b7' }} />} label="İşletme Genel Durum" desc="Gelir, gider ve kar/zarar takibi" color="#6ee7b7" onClick={() => { onNavigate('isletme-genel-durum'); close(); }} />}
-                                  <NavItem icon={<FileBarChart style={{ width: 13, height: 13, color: '#93c5fd' }} />} label="Vardiya Raporları" desc="Günlük vardiya özet raporları" color="#93c5fd" onClick={() => { onNavigate('vardiya-raporlari'); close(); }} />
+                                  {['yonetici','ust-mudur','idari'].includes(userRole) && <NavItem icon={<FileBarChart style={{ width: 13, height: 13, color: '#93c5fd' }} />} label="Vardiya Raporları" desc="Günlük vardiya özet raporları" color="#93c5fd" onClick={() => { onNavigate('vardiya-raporlari'); close(); }} />}
                                   {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<Target style={{ width: 13, height: 13, color: accentHex }} />} label="Hedef Takibi" desc="Mekan bazlı ciro ve kar hedefleri" color={accentHex} onClick={() => { onNavigate('hedef-takip'); close(); }} />}
                                   {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<Wallet style={{ width: 13, height: 13, color: '#fbbf24' }} />} label="Kasa" desc="Şirket ve kişisel kasa takibi" color="#fbbf24" onClick={() => { onNavigate('kasa'); close(); }} />}
                                 </SubAccordion>
@@ -967,7 +976,7 @@ export function HamburgerMenu({
                                   label="Lokasyon & İşletme"
                                   color={accentHex}
                                 >
-                                  <NavItem icon={<MapPin style={{ width: 13, height: 13, color: accentHex }} />} label="Mekan Yönetimi" desc="Proje mekanlarını yönet" color={accentHex} onClick={() => { onNavigate('mekan-management'); close(); }} />
+                                  {['yonetici','ust-mudur'].includes(userRole) && <NavItem icon={<MapPin style={{ width: 13, height: 13, color: accentHex }} />} label="Mekan Yönetimi" desc="Proje mekanlarını yönet" color={accentHex} onClick={() => { onNavigate('mekan-management'); close(); }} />}
                                 </SubAccordion>
 
                                 {/* ── 5. Malzeme & Stok ── */}
@@ -1257,6 +1266,94 @@ export function HamburgerMenu({
                                         </div>
                                       )}
                                     </div>
+
+                                    {/* ── Sistem Sıfırlama ── */}
+                                    <div style={{ marginTop: 8, borderRadius: 14, background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.12)', overflow: 'hidden' }}>
+                                      <button onClick={() => setSifirlaAcik(p => !p)} style={{ width: '100%', padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <AlertTriangle style={{ width: 14, height: 14, color: '#f87171' }} />
+                                        <span style={{ fontSize: 12, fontWeight: 700, color: '#f87171', flex: 1, textAlign: 'left' }}>Sistem Sıfırlama</span>
+                                        <span style={{ fontSize: 9, color: 'rgba(248,113,113,0.4)' }}>{sifirlaAcik ? '▲' : '▼'}</span>
+                                      </button>
+                                      {sifirlaAcik && (
+                                      <div style={{ padding: '0 12px 12px' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                          <button onClick={() => setSifirlaMod('finansal')} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.20)', cursor: 'pointer', textAlign: 'left' }}>
+                                            <span style={{ fontSize: 11, fontWeight: 700, color: '#fbbf24' }}>🟠 Finansal Verileri Sıfırla</span>
+                                            <p style={{ fontSize: 9, color: 'rgba(251,191,36,0.5)', marginTop: 4, lineHeight: 1.4 }}>Satışlar, giderler, kasa, primler silinir. Mekanlar ve kullanıcılar korunur.</p>
+                                          </button>
+                                          <button onClick={() => setSifirlaMod('tam')} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', cursor: 'pointer', textAlign: 'left' }}>
+                                            <span style={{ fontSize: 11, fontWeight: 700, color: '#f87171' }}>🔴 Tam Fabrika Sıfırlaması</span>
+                                            <p style={{ fontSize: 9, color: 'rgba(239,68,68,0.5)', marginTop: 4, lineHeight: 1.4 }}>Herşey silinir. Sadece yönetici hesabı korunur.</p>
+                                          </button>
+                                        </div>
+                                      </div>
+                                      )}
+                                    </div>
+
+                                    {/* Sıfırlama Onay Modalı */}
+                                    {sifirlaMod && (
+                                      <div style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={resetSifirlaModal}>
+                                        <div style={{ width: '100%', maxWidth: 380, borderRadius: 16, padding: 20, background: '#1a1a2e', border: `1px solid ${sifirlaMod === 'tam' ? 'rgba(239,68,68,0.25)' : 'rgba(251,191,36,0.25)'}` }} onClick={e => e.stopPropagation()}>
+                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                                            <span style={{ fontWeight: 700, fontSize: 15, color: sifirlaMod === 'tam' ? '#f87171' : '#fbbf24' }}>
+                                              {sifirlaMod === 'tam' ? '🔴 Tam Sıfırlama' : '🟠 Finansal Sıfırlama'}
+                                            </span>
+                                            <button onClick={resetSifirlaModal} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 18 }}>✕</button>
+                                          </div>
+
+                                          <div style={{ borderRadius: 10, padding: 10, fontSize: 10, lineHeight: 1.5, background: sifirlaMod === 'tam' ? 'rgba(239,68,68,0.06)' : 'rgba(251,191,36,0.06)', marginBottom: 12 }}>
+                                            <p style={{ fontWeight: 700, color: sifirlaMod === 'tam' ? '#f87171' : '#fbbf24', marginBottom: 4 }}>Silinecek:</p>
+                                            <p style={{ color: 'rgba(255,255,255,0.5)' }}>
+                                              {sifirlaMod === 'tam' ? 'Tüm veriler + tüm kullanıcılar (yönetici hariç)' : 'Satışlar, stok kayıtları, gelirler, giderler, kasa, primler, tedarikçi siparişleri, mesai kayıtları'}
+                                            </p>
+                                            {sifirlaMod === 'finansal' && (
+                                              <>
+                                                <p style={{ fontWeight: 700, color: '#34d399', marginTop: 8, marginBottom: 4 }}>Korunacak:</p>
+                                                <p style={{ color: 'rgba(255,255,255,0.5)' }}>Mekanlar, ekipmanlar, kullanıcılar, tedarikçi carileri, maliyet tanımları, akademi, rotasyonlar, mesajlar</p>
+                                              </>
+                                            )}
+                                          </div>
+
+                                          <div style={{ marginBottom: 10 }}>
+                                            <label style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', display: 'block', marginBottom: 4 }}>{sifirlaAdim === 1 ? '▶' : '✓'} Adım 1: Şirket adını yazın</label>
+                                            <input value={sifirlaAdi} onChange={e => { setSifirlaAdi(e.target.value); if (sifirlaAdim > 1) setSifirlaAdim(1); }} placeholder="Şirket adınız..." disabled={sifirlaAdim > 1}
+                                              style={{ width: '100%', padding: '8px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: 13, outline: 'none', opacity: sifirlaAdim > 1 ? 0.5 : 1 }} />
+                                            {sifirlaAdim === 1 && sifirlaAdi.trim() && (
+                                              <button onClick={() => setSifirlaAdim(2)} style={{ width: '100%', marginTop: 8, padding: '8px 0', borderRadius: 10, background: 'rgba(255,255,255,0.1)', border: 'none', color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Devam →</button>
+                                            )}
+                                          </div>
+
+                                          {sifirlaAdim >= 2 && (
+                                            <div style={{ marginBottom: 10 }}>
+                                              <label style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', display: 'block', marginBottom: 4 }}>▶ Adım 2: Şirket kodunu yazın</label>
+                                              <input value={sifirlaOnay} onChange={e => setSifirlaOnay(e.target.value)} placeholder="Şirket kodunuz..."
+                                                style={{ width: '100%', padding: '8px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: 13, outline: 'none' }} />
+                                            </div>
+                                          )}
+
+                                          {sifirlaAdim >= 2 && sifirlaOnay.trim() && (
+                                            <button disabled={sifirlaYukleniyor} onClick={async () => {
+                                              const msg = sifirlaMod === 'tam' ? 'SON UYARI: Tüm verileriniz ve kullanıcılarınız silinecek. GERİ ALINAMAZ. Devam?' : 'SON UYARI: Tüm finansal verileriniz silinecek. Mekanlar ve kullanıcılar korunur. Devam?';
+                                              if (!confirm(msg)) return;
+                                              setSifirlaYukleniyor(true);
+                                              try {
+                                                const res = await fetch(appendGhostParam(`${API_BASE}/sistem/fabrika-sifirla`), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ onay: sifirlaOnay, sirketAdi: sifirlaAdi, mod: sifirlaMod }) });
+                                                const data = await res.json();
+                                                if (!res.ok) { alert(data.error || 'Hata'); return; }
+                                                alert(`${data.mesaj}\n\nSayfa yenilenecek.`);
+                                                window.location.reload();
+                                              } catch { alert('Sunucu hatası'); } finally { setSifirlaYukleniyor(false); }
+                                            }} style={{ width: '100%', padding: '10px 0', borderRadius: 10, background: sifirlaMod === 'tam' ? 'rgba(239,68,68,0.8)' : 'rgba(251,191,36,0.8)', border: 'none', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: sifirlaYukleniyor ? 0.4 : 1 }}>
+                                              {sifirlaYukleniyor ? <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" /> : '🗑️'}
+                                              {sifirlaMod === 'tam' ? 'Tüm Verileri Sil ve Sıfırla' : 'Finansal Verileri Sıfırla'}
+                                            </button>
+                                          )}
+
+                                          <button onClick={resetSifirlaModal} style={{ width: '100%', marginTop: 8, padding: '6px 0', background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 11, cursor: 'pointer' }}>Vazgeç</button>
+                                        </div>
+                                      </div>
+                                    )}
+
                                   </SubAccordion>
                                 )}
 

@@ -140,7 +140,12 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [showGerekce, setShowGerekce] = useState(false);
   const [gerekceText, setGerekceText] = useState('');
   const [recentSales, setRecentSales] = useState<Sale[]>([]);
+  const [allSalesForKapanis, setAllSalesForKapanis] = useState<Sale[]>([]);
   const [satisSaving, setSatisSaving] = useState(false);
+  const [hasCheckedIn, setHasCheckedIn] = useState(true);
+  const [checkinWarningDismissed, setCheckinWarningDismissed] = useState(false);
+  const [showCheckinWarning, setShowCheckinWarning] = useState(false);
+  const [checkinWarningCallback, setCheckinWarningCallback] = useState<(() => void) | null>(null);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [pendingQueueCount, setPendingQueueCount] = useState(0);
   const [queueFlushing, setQueueFlushing] = useState(false);
@@ -387,12 +392,12 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
           // localStorage'dan sil
           offlineDequeue(qSale.id);
           // Pending kartı gerçek satışla değiştir
+          const realSale = { ...data.satis, project: qSale.projectName };
           setRecentSales(prev =>
-            prev.map(s =>
-              s._queueId === qSale.id
-                ? { ...data.satis, project: qSale.projectName }
-                : s
-            )
+            prev.map(s => s._queueId === qSale.id ? realSale : s)
+          );
+          setAllSalesForKapanis(prev =>
+            prev.map(s => s._queueId === qSale.id ? realSale : s)
           );
           setSaleRefreshTrigger(prev => prev + 1);
           flushedAny = true;
@@ -455,12 +460,12 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
           if (res.ok) {
             const data = await res.json();
             offlineDequeue(qSale.id);
+            const realSale2 = { ...data.satis, project: qSale.projectName };
             setRecentSales(prev =>
-              prev.map(s =>
-                s._queueId === qSale.id
-                  ? { ...data.satis, project: qSale.projectName }
-                  : s
-              )
+              prev.map(s => s._queueId === qSale.id ? realSale2 : s)
+            );
+            setAllSalesForKapanis(prev =>
+              prev.map(s => s._queueId === qSale.id ? realSale2 : s)
             );
             setSaleRefreshTrigger(prev => prev + 1);
             // Telegram gecikme bildirimi
@@ -797,9 +802,20 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       const yetkiliRoller = ['yonetici', 'ust-mudur', 'mudur', 'operasyon'];
       const gunlukSatislar = yetkiliRoller.includes(userRole) ? tumSatislar : tumSatislar.filter((s: any) => s.kaydedenId === userId);
       setRecentSales(gunlukSatislar);
+      setAllSalesForKapanis(tumSatislar);
       setFrameEntries(stokData.bugun?.kareKayitlari || []);
+
+      // ── 5. Check-in durumu kontrol ──
+      try {
+        const ciRes = await fetch(appendGhostParam(`${API_BASE_QS}/vardiya/bugun`), { headers: buildHeaders(accessToken) });
+        if (ciRes.ok) {
+          const ciData = await ciRes.json();
+          setHasCheckedIn(!!ciData.checkin);
+        }
+      } catch {}
     };
     load();
+    setCheckinWarningDismissed(false);
   }, [selectedProject]);
 
   const currencySymbol = (c: string) => c === 'EUR' ? '€' : c === 'USD' ? '$' : c === 'GBP' ? '£' : c === 'BGN' ? 'лв' : c === 'RUB' ? '₽' : c === 'SAR' ? '﷼' : '₺';
@@ -836,6 +852,13 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     }
   };
 
+  // Check-in uyarı kontrolü — işlem yapmadan önce çağır
+  const checkCheckinWarning = (callback: () => void) => {
+    if (hasCheckedIn || checkinWarningDismissed) { callback(); return; }
+    setCheckinWarningCallback(() => callback);
+    setShowCheckinWarning(true);
+  };
+
   const addToCart = (productName: string, unitPrice: number) => {
     const existing = cart.find(i => i.product === productName);
     const product = products.find(p => p.name === productName);
@@ -860,7 +883,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     if (cart.length === 0) { alert('Lütfen ürün seçin'); return; }
     const discount = Number(discountAmount) || 0;
     if (discount > 0 && totalPrice - discount < 0) { alert('İskonto tutarı toplam fiyattan fazla olamaz!'); return; }
-    setShowPaymentMethod(true);
+    checkCheckinWarning(() => setShowPaymentMethod(true));
   };
 
   const handleCompleteSale = async () => {
@@ -922,6 +945,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         _queueId: queueId,
       };
       setRecentSales(prev => [pendingSale, ...prev]);
+      setAllSalesForKapanis(prev => [pendingSale, ...prev]);
       setSatisSaving(false);
       setCart([]); setDiscountAmount(''); setDiscountRawInput(''); setDiscountMode('iskonto'); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null); setShowGerekce(false); setGerekceText('');
       return;
@@ -953,6 +977,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       }
       // Listeye ekle
       setRecentSales(prev => [{ ...data.satis, project: selectedProject.name }, ...prev]);
+      setAllSalesForKapanis(prev => [{ ...data.satis, project: selectedProject.name }, ...prev]);
       setSaleRefreshTrigger(prev => prev + 1);
     } catch (err) {
       // Ağ hatası — navigator.onLine yalan söyledi (zayıf sinyal vb.)
@@ -993,6 +1018,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         _queueId: queueId,
       };
       setRecentSales(prev => [pendingSale, ...prev]);
+      setAllSalesForKapanis(prev => [pendingSale, ...prev]);
     } finally {
       setSatisSaving(false);
     }
@@ -1038,6 +1064,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       });
       if (res.ok) {
         setRecentSales(prev => prev.filter(s => s.id !== satisId));
+        setAllSalesForKapanis(prev => prev.filter(s => s.id !== satisId));
       } else {
         const data = await res.json();
         console.error('executeCancelSale sunucu hatası:', data.error);
@@ -1140,6 +1167,12 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     if (!framePhotographer || !frameCount || !selectedProject) return;
     const count = parseInt(frameCount);
     if (isNaN(count) || count <= 0) return;
+
+    if (!hasCheckedIn && !checkinWarningDismissed) {
+      checkCheckinWarning(() => handleFrameSave());
+      return;
+    }
+
     const mekanId = resolvedMekanId || selectedProject.id;
     const tarih = bugunTarih();
 
@@ -1344,7 +1377,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   // ── Satışlardan albüm düşümü — backend stok/kapanis ile tutarlı ──
   const kapanisSatisAlbumDusum = useMemo(() => {
     const result: Record<string, number> = {};
-    for (const satis of recentSales) {
+    for (const satis of allSalesForKapanis) {
       for (const item of (satis.items || [])) {
         if (item.dijital) continue; // Dijital satışlar stoktan düşülmez
         const match = String(item.product || '').match(/^(\d+)/);
@@ -1355,7 +1388,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       }
     }
     return result;
-  }, [recentSales]);
+  }, [allSalesForKapanis]);
 
   const kapanisAnomaliDetect = (): Record<string, number> => {
     if (!stokGunluk?.acilis) return {};
@@ -1379,12 +1412,14 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   };
 
   const handleAcilisSubmitClick = () => {
-    const anomali = acilisAnomaliDetect();
-    if (Object.keys(anomali).length > 0) {
-      setShowAcilisAnomaliUyari(true);
-    } else {
-      handleShiftStartComplete();
-    }
+    checkCheckinWarning(() => {
+      const anomali = acilisAnomaliDetect();
+      if (Object.keys(anomali).length > 0) {
+        setShowAcilisAnomaliUyari(true);
+      } else {
+        handleShiftStartComplete();
+      }
+    });
   };
 
   const handleKapanisSubmitClick = () => {
@@ -4244,6 +4279,41 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
               </div>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* Check-in Uyarı Modal */}
+      {showCheckinWarning && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[110] flex items-center justify-center p-6">
+          <div className="w-full max-w-sm bg-[#1a1a2e] rounded-3xl border border-[#fbbf24]/30 shadow-2xl overflow-hidden">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 rounded-full bg-[#fbbf24]/15 border-2 border-[#fbbf24]/40 flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl">⚠️</span>
+              </div>
+              <h3 className="text-lg font-black text-white mb-2">Check-in Yapılmadı</h3>
+              <p className="text-sm text-white/50 leading-relaxed">Vardiya check-in yapmadan işlem yapıyorsunuz. İşlem kaydedilecek ama check-in yapmanız önerilir.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 px-6 pb-6">
+              <button
+                onClick={() => { setShowCheckinWarning(false); setCheckinWarningCallback(null); }}
+                className="py-3 rounded-xl font-bold text-sm transition-all active:scale-95"
+                style={{ background: 'rgba(157,217,234,0.15)', border: '1px solid rgba(157,217,234,0.35)', color: '#9dd9ea' }}
+              >
+                Check-in Yap
+              </button>
+              <button
+                onClick={() => {
+                  setCheckinWarningDismissed(true);
+                  setShowCheckinWarning(false);
+                  if (checkinWarningCallback) { checkinWarningCallback(); setCheckinWarningCallback(null); }
+                }}
+                className="py-3 rounded-xl font-bold text-sm transition-all active:scale-95"
+                style={{ background: 'rgba(255,180,50,0.15)', border: '1px solid rgba(255,180,50,0.35)', color: '#fbbf24' }}
+              >
+                Devam Et
+              </button>
+            </div>
           </div>
         </div>
       )}

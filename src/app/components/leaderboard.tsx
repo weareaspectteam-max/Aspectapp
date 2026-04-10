@@ -592,37 +592,56 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
               SKOR FORMÜLÜ — kaydırmalı pill bar
           ──────────────────────────────────────────── */}
           <div className="px-4 pt-3 pb-1">
-            <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
-              {[
-                { key: 'iskonto', icon: '📊', pct: Math.round((personeller[0]?.config?.iskonto ?? 0.25) * 100), color: C.green, label: 'İskonto Disiplini', desc: 'Personelin verdiği iskonto oranı. Az iskonto = yüksek puan.' },
-                { key: 'ortSatis', icon: '💰', pct: Math.round((personeller[0]?.config?.ortSatis ?? 0.15) * 100), color: C.cyan, label: 'Ort. Satış Tutarı', desc: 'Her satışın ortalama tutarı. Büyük paket = yüksek puan.' },
-                { key: 'mekanKatki', icon: '🏢', pct: Math.round((personeller[0]?.config?.mekanKatki ?? 0.30) * 100), color: C.gold2, label: 'Mekan Katkısı', desc: 'Ciro + kare katkısı birleşimi. Satıcı da fotoğrafçı da adil değerlendirilir.' },
-                { key: 'anomali', icon: '🔍', pct: Math.round((personeller[0]?.config?.anomali ?? 0.20) * 100), color: C.purple, label: 'Anomali Temizliği', desc: 'Stok sayım tutarsızlığı olmaması. Temiz = yüksek puan.' },
-                { key: 'devamsizlik', icon: '⏰', pct: Math.round((personeller[0]?.config?.devamsizlik ?? 0.10) * 100), color: C.violet, label: 'Devamsızlık', desc: 'Vardiyaya zamanında gelme oranı. Dakik = yüksek puan.' },
-              ].filter(m => m.pct > 0).map(m => (
-                <div key={m.key} className="relative flex-shrink-0">
+            <div className="flex gap-2 justify-center flex-wrap pb-0.5">
+              {(() => {
+                const metrikler = [
+                  { key: 'iskonto', icon: '📊', pct: Math.round((personeller[0]?.config?.iskonto ?? 0.25) * 100), color: C.green, label: 'İskonto Disiplini', desc: 'Personelin verdiği iskonto oranı. Az iskonto = yüksek puan.' },
+                  { key: 'ortSatis', icon: '💰', pct: Math.round((personeller[0]?.config?.ortSatis ?? 0.15) * 100), color: C.cyan, label: 'Ort. Satış Tutarı', desc: 'Her satışın ortalama tutarı. Büyük paket = yüksek puan.' },
+                  { key: 'mekanKatki', icon: '🏢', pct: Math.round((personeller[0]?.config?.mekanKatki ?? 0.30) * 100), color: C.gold2, label: 'Mekan Katkısı', desc: 'Ciro + kare katkısı birleşimi. Satıcı da fotoğrafçı da adil değerlendirilir.' },
+                  { key: 'anomali', icon: '🔍', pct: Math.round((personeller[0]?.config?.anomali ?? 0.20) * 100), color: C.purple, label: 'Anomali Temizliği', desc: 'Stok sayım tutarsızlığı olmaması. Temiz = yüksek puan.' },
+                  { key: 'devamsizlik', icon: '⏰', pct: Math.round((personeller[0]?.config?.devamsizlik ?? 0.10) * 100), color: C.violet, label: 'Devamsızlık', desc: 'Vardiyaya zamanında gelme oranı. Dakik = yüksek puan.' },
+                ].filter(m => m.pct > 0);
+                return metrikler.map(m => (
                   <button
-                    onClick={() => setOpenMetrikInfo(openMetrikInfo === m.key ? null : m.key)}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl transition-all active:scale-95"
-                    style={{ background: openMetrikInfo === m.key ? `${m.color}30` : `${m.color}12`, border: `1px solid ${openMetrikInfo === m.key ? `${m.color}60` : `${m.color}25`}` }}
+                    key={m.key}
+                    onClick={() => setOpenMetrikInfo(openMetrikInfo ? null : 'all')}
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl transition-all active:scale-95"
+                    style={{ background: openMetrikInfo ? `${m.color}20` : `${m.color}12`, border: `1px solid ${openMetrikInfo ? `${m.color}40` : `${m.color}25`}` }}
                   >
                     <span className="text-sm">{m.icon}</span>
                     <span className="text-xs font-bold" style={{ color: m.color }}>%{m.pct}</span>
                   </button>
-                  {openMetrikInfo === m.key && (
-                    <div
-                      className="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50 px-3 py-2.5 rounded-xl shadow-xl"
-                      style={{ background: '#1a1a2e', border: `1px solid ${m.color}40`, minWidth: 200, maxWidth: 240 }}
-                    >
-                      <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45" style={{ background: '#1a1a2e', borderTop: `1px solid ${m.color}40`, borderLeft: `1px solid ${m.color}40` }} />
-                      <p className="text-[11px] font-bold mb-1" style={{ color: m.color }}>{m.icon} {m.label}</p>
-                      <p className="text-[10px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>{m.desc}</p>
-                    </div>
-                  )}
-                </div>
-              ))}
+                ));
+              })()}
             </div>
-            {openMetrikInfo && <div className="fixed inset-0 z-40" onClick={() => setOpenMetrikInfo(null)} />}
+            {/* Tüm metriklerin açıklaması — herhangi birine tıklayınca açılır */}
+            {openMetrikInfo && (
+              <div className="mx-4 mt-2 rounded-2xl border border-white/10 overflow-hidden" style={{ background: 'rgba(26,26,46,0.95)' }}>
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/8">
+                  <span className="text-[11px] font-bold text-white/60">Skor Metrikleri</span>
+                  <button onClick={() => setOpenMetrikInfo(null)} className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center">
+                    <X className="w-3 h-3 text-white/40" />
+                  </button>
+                </div>
+                <div className="px-4 py-3 space-y-2.5">
+                  {[
+                    { icon: '📊', label: 'İskonto Disiplini', color: C.green, desc: 'Personelin verdiği iskonto oranı. Brüt ciro ile net ciro farkı ne kadar küçükse puan o kadar yüksek.' },
+                    { icon: '💰', label: 'Ort. Satış Tutarı', color: C.cyan, desc: 'Her satışın ortalama tutarı. Daha büyük paketler satan personel daha yüksek puan alır.' },
+                    { icon: '🏢', label: 'Mekan Katkısı', color: C.gold2, desc: 'Mekana sağlanan ciro katkısı ve çekilen kare katkısı birleşimi. Satıcı da fotoğrafçı da adil değerlendirilir.' },
+                    { icon: '🔍', label: 'Anomali Temizliği', color: C.purple, desc: 'Açılış/kapanış stok sayım tutarsızlığı olmaması. Anomali yoksa yüksek puan.' },
+                    { icon: '⏰', label: 'Devamsızlık', color: C.violet, desc: 'Vardiyaya zamanında gelme oranı. Geç giriş az = yüksek puan.' },
+                  ].map(m => (
+                    <div key={m.label} className="flex gap-2.5">
+                      <span className="text-sm flex-shrink-0 mt-0.5">{m.icon}</span>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold" style={{ color: m.color }}>{m.label}</p>
+                        <p className="text-[10px] leading-relaxed text-white/40">{m.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ────────────────────────────────────────────
@@ -823,7 +842,7 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <ShieldCheck className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: C.violet }} />
             <p className="text-[10px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.30)' }}>
-              Sıralama 5 metriğin normalize edilmiş ağırlıklı ortalamasıyla hesaplanır: İskonto %25 · Ort. Satış %15 · Mekan Katkı %25 · Anomali %20 · Kare %15
+              Sıralama 5 metriğin normalize edilmiş ağırlıklı ortalamasıyla hesaplanır. Ağırlıklar ayarlanabilir — metriklere tıklayarak detayları görebilirsiniz.
             </p>
           </div>
         </div>

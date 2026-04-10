@@ -42,6 +42,14 @@ interface DashboardData {
   anomaliSayisi: number;
   aktifMekanSayisi: number;
   toplamMekanSayisi: number;
+  aktifPersonelSayisi?: number;
+  toplamPersonelSayisi?: number;
+  gecGirisSayisi?: number;
+  toplamBasilan?: number;
+  toplamIadeFoto?: number;
+  toplamIskonto?: number;
+  toplamBrutCiro?: number;
+  aktifPersonelDetay?: { name: string; mekan: string; checkinZamani: string }[];
   aktifMekanlar: MekanDurum[];
   saatlikData: { saat: string; adet: number; ciro: number }[];
   albumDagilimi: { tip: string; adet: number }[];
@@ -266,6 +274,7 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
   const [error, setError]       = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [showPerformanceList, setShowPerformanceList] = useState(false);
+  const [showAktifPersonel, setShowAktifPersonel] = useState(false);
 
   const fetchData = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -391,65 +400,118 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
           transition={{ delay: 0.05 }}
           className="grid grid-cols-2 gap-3"
         >
-          {/* Günlük Ciro */}
-          <div style={{ ...glass, padding: 16, border: '1px solid rgba(52,211,153,0.25)', boxShadow: '0 4px 24px rgba(52,211,153,0.08)' }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-              <DollarSign className="w-5 h-5" style={{ color: COLORS.emerald }} />
+          {/* Günlük Ciro + İskonto */}
+          <div style={{ ...glass, padding: 0, border: '1px solid rgba(52,211,153,0.25)', boxShadow: '0 4px 24px rgba(52,211,153,0.08)', display: 'flex' }}>
+            <div style={{ flex: 1, padding: 16 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                <DollarSign className="w-4 h-4" style={{ color: COLORS.emerald }} />
+              </div>
+              <p className="text-[10px] font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Günlük Ciro</p>
+              {isLoading ? <div className="h-5 w-16 rounded-lg bg-white/10 animate-pulse" />
+                : <p className="text-lg font-black text-white leading-none">{formatTL(data?.toplamCiro ?? 0)}</p>}
+              <p className="text-[9px] mt-1" style={{ color: 'rgba(255,255,255,0.3)' }}>{data?.toplamAdet ?? 0} ürün satıldı</p>
             </div>
-            <p className="text-xs font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Günlük Ciro</p>
-            {isLoading ? <div className="h-6 w-20 rounded-lg bg-white/10 animate-pulse" />
-              : <p className="text-xl font-black text-white leading-none">{formatTL(data?.toplamCiro ?? 0)}</p>}
-            <p className="text-[10px] mt-1.5" style={{ color: 'rgba(255,255,255,0.3)' }}>{data?.toplamAdet ?? 0} ürün satıldı</p>
+            <div style={{ width: 1, background: 'rgba(52,211,153,0.15)', margin: '12px 0' }} />
+            <div style={{ flex: 1, padding: 16, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ marginBottom: 8 }}>
+                <p className="text-[9px] font-medium" style={{ color: '#ffd4a3' }}>🏷️ İskonto</p>
+                {isLoading ? <div className="h-4 w-12 rounded bg-white/10 animate-pulse mt-1" />
+                  : <p className="text-base font-black leading-none mt-0.5" style={{ color: '#ffd4a3' }}>₺{(data?.toplamIskonto ?? 0).toLocaleString('tr-TR')}</p>}
+              </div>
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 6 }}>
+                <p className="text-[9px] font-medium" style={{ color: 'rgba(255,255,255,0.4)' }}>Oran</p>
+                {isLoading ? <div className="h-4 w-8 rounded bg-white/10 animate-pulse mt-1" />
+                  : <p className="text-sm font-bold leading-none mt-0.5" style={{ color: '#ffd4a3' }}>
+                    %{(data?.toplamBrutCiro ?? 0) > 0 ? Math.round(((data?.toplamIskonto ?? 0) / (data?.toplamBrutCiro ?? 1)) * 100) : 0}
+                  </p>}
+              </div>
+            </div>
           </div>
 
-          {/* Aktif Mekan */}
-          <button
-            onClick={() => onNavigate('isletme-genel-durum')}
-            className="w-full text-left transition-all active:scale-95"
-            style={{ ...glass, padding: 16, border: '1px solid rgba(168,230,207,0.25)', boxShadow: '0 4px 24px rgba(168,230,207,0.08)' }}
-          >
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(168,230,207,0.15)', border: '1px solid rgba(168,230,207,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-              <MapPin className="w-5 h-5" style={{ color: '#a8e6cf' }} />
-            </div>
-            <p className="text-xs font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Aktif Mekan</p>
-            {isLoading ? <div className="h-6 w-12 rounded-lg bg-white/10 animate-pulse" />
-              : <p className="text-xl font-black text-white leading-none">{data?.aktifMekanSayisi ?? 0}</p>}
-            <p className="text-[10px] mt-1.5" style={{ color: 'rgba(255,255,255,0.3)' }}>/ {data?.toplamMekanSayisi ?? 0} toplam</p>
-          </button>
-
-          {/* Fotoğraf Karesi */}
-          <div style={{ ...glass, padding: 16, border: '1px solid rgba(var(--app-accent-rgb),0.25)', boxShadow: '0 4px 24px rgba(var(--app-accent-rgb),0.08)' }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(var(--app-accent-rgb),0.15)', border: '1px solid rgba(var(--app-accent-rgb),0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-              <Camera className="w-5 h-5" style={{ color: 'var(--app-accent, #a855f7)' }} />
-            </div>
-            <p className="text-xs font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Fotoğraf Karesi</p>
-            {isLoading ? <div className="h-6 w-16 rounded-lg bg-white/10 animate-pulse" />
-              : <p className="text-xl font-black text-white leading-none">{(data?.toplamKare ?? 0).toLocaleString('tr-TR')}</p>}
-            <p className="text-[10px] mt-1.5" style={{ color: 'rgba(255,255,255,0.3)' }}>bugün çekildi</p>
+          {/* Aktif Mekan + Aktif Personel */}
+          <div style={{ ...glass, padding: 0, border: '1px solid rgba(168,230,207,0.25)', boxShadow: '0 4px 24px rgba(168,230,207,0.08)', display: 'flex' }}>
+            {/* Sol: Aktif Mekan */}
+            <button onClick={() => onNavigate('quick-sales')} className="text-left transition-all active:scale-95" style={{ flex: 1, padding: 16, background: 'transparent', border: 'none', cursor: 'pointer' }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(168,230,207,0.15)', border: '1px solid rgba(168,230,207,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                <MapPin className="w-4 h-4" style={{ color: '#a8e6cf' }} />
+              </div>
+              <p className="text-[10px] font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Aktif Mekan</p>
+              {isLoading ? <div className="h-5 w-10 rounded-lg bg-white/10 animate-pulse" />
+                : <p className="text-lg font-black text-white leading-none">{data?.aktifMekanSayisi ?? 0}</p>}
+              <p className="text-[9px] mt-1" style={{ color: 'rgba(255,255,255,0.3)' }}>/ {data?.toplamMekanSayisi ?? 0} toplam</p>
+            </button>
+            {/* Dikey ayırıcı */}
+            <div style={{ width: 1, background: 'rgba(168,230,207,0.15)', margin: '12px 0' }} />
+            {/* Sağ: Aktif Personel → popup */}
+            <button onClick={() => setShowAktifPersonel(!showAktifPersonel)} className="text-left transition-all active:scale-95" style={{ flex: 1, padding: 16, background: 'transparent', border: 'none', cursor: 'pointer' }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(157,217,234,0.15)', border: '1px solid rgba(157,217,234,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                <Users className="w-4 h-4" style={{ color: '#9dd9ea' }} />
+              </div>
+              <p className="text-[10px] font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Aktif Personel</p>
+              {isLoading ? <div className="h-5 w-10 rounded-lg bg-white/10 animate-pulse" />
+                : <p className="text-lg font-black text-white leading-none">{data?.aktifPersonelSayisi ?? 0}</p>}
+              <p className="text-[9px] mt-1" style={{ color: 'rgba(255,255,255,0.3)' }}>/ {data?.toplamPersonelSayisi ?? 0} toplam</p>
+            </button>
           </div>
 
-          {/* Anomali */}
-          <button
-            onClick={() => onNavigate('anomali-panosu')}
-            className="w-full text-left transition-all active:scale-95"
-            style={{
-              ...glass,
-              padding: 16,
-              border: hasAnomali ? '1px solid rgba(248,113,113,0.45)' : '1px solid rgba(255,255,255,0.1)',
-              background: hasAnomali ? 'rgba(248,113,113,0.12)' : 'rgba(255,255,255,0.05)',
-              boxShadow: hasAnomali ? '0 4px 24px rgba(248,113,113,0.18)' : 'none',
-            }}
-          >
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: hasAnomali ? 'rgba(248,113,113,0.2)' : 'rgba(255,255,255,0.08)', border: `1px solid ${hasAnomali ? 'rgba(248,113,113,0.4)' : 'rgba(255,255,255,0.15)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-              <AlertTriangle className="w-5 h-5" style={{ color: hasAnomali ? '#f87171' : 'rgba(255,255,255,0.3)' }} />
+          {/* Fotoğraf Karesi + Basılan/İade */}
+          <div style={{ ...glass, padding: 0, border: '1px solid rgba(var(--app-accent-rgb),0.25)', boxShadow: '0 4px 24px rgba(var(--app-accent-rgb),0.08)', display: 'flex' }}>
+            <div style={{ flex: 1, padding: 16 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(var(--app-accent-rgb),0.15)', border: '1px solid rgba(var(--app-accent-rgb),0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                <Camera className="w-4 h-4" style={{ color: 'var(--app-accent, #a855f7)' }} />
+              </div>
+              <p className="text-[10px] font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Kare Sayısı</p>
+              {isLoading ? <div className="h-5 w-12 rounded-lg bg-white/10 animate-pulse" />
+                : <p className="text-lg font-black text-white leading-none">{(data?.toplamKare ?? 0).toLocaleString('tr-TR')}</p>}
+              <p className="text-[9px] mt-1" style={{ color: 'rgba(255,255,255,0.3)' }}>bugün çekildi</p>
             </div>
-            <p className="text-xs font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Anomali</p>
-            {isLoading ? <div className="h-6 w-8 rounded-lg bg-white/10 animate-pulse" />
-              : <p className="text-xl font-black leading-none" style={{ color: hasAnomali ? '#f87171' : 'white' }}>{anomali}</p>}
-            <p className="text-[10px] mt-1.5" style={{ color: hasAnomali ? 'rgba(248,113,113,0.6)' : 'rgba(255,255,255,0.3)' }}>
-              {hasAnomali ? 'detay için tıkla →' : 'anomali yok'}
-            </p>
-          </button>
+            <div style={{ width: 1, background: 'rgba(var(--app-accent-rgb),0.15)', margin: '12px 0' }} />
+            <div style={{ flex: 1, padding: 16, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ marginBottom: 8 }}>
+                <p className="text-[9px] font-medium" style={{ color: '#a8e6cf' }}>🖨️ Basılan</p>
+                {isLoading ? <div className="h-4 w-10 rounded bg-white/10 animate-pulse mt-1" />
+                  : <p className="text-base font-black leading-none mt-0.5" style={{ color: '#a8e6cf' }}>{(data?.toplamBasilan ?? 0).toLocaleString('tr-TR')}</p>}
+              </div>
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 6 }}>
+                <p className="text-[9px] font-medium" style={{ color: (data?.toplamIadeFoto ?? 0) > 0 ? '#f87171' : 'rgba(255,255,255,0.4)' }}>↩️ İade</p>
+                {isLoading ? <div className="h-4 w-8 rounded bg-white/10 animate-pulse mt-1" />
+                  : <p className="text-sm font-bold leading-none mt-0.5" style={{ color: (data?.toplamIadeFoto ?? 0) > 0 ? '#f87171' : 'rgba(255,255,255,0.5)' }}>{data?.toplamIadeFoto ?? 0}</p>}
+              </div>
+            </div>
+          </div>
+
+          {/* Anomali + Geç Giriş */}
+          {(() => {
+            const gecGiris = data?.gecGirisSayisi ?? 0;
+            const hasGecGiris = gecGiris > 0;
+            return (
+              <div style={{ ...glass, padding: 0, border: hasAnomali ? '1px solid rgba(248,113,113,0.3)' : hasGecGiris ? '1px solid rgba(255,180,50,0.3)' : '1px solid rgba(255,255,255,0.1)', display: 'flex' }}>
+                <button onClick={() => onNavigate('anomali-panosu')} className="text-left transition-all active:scale-95" style={{ flex: 1, padding: 16, background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 10, background: hasAnomali ? 'rgba(248,113,113,0.2)' : 'rgba(255,255,255,0.08)', border: `1px solid ${hasAnomali ? 'rgba(248,113,113,0.4)' : 'rgba(255,255,255,0.15)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                    <AlertTriangle className="w-4 h-4" style={{ color: hasAnomali ? '#f87171' : 'rgba(255,255,255,0.3)' }} />
+                  </div>
+                  <p className="text-[10px] font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Anomali</p>
+                  {isLoading ? <div className="h-5 w-8 rounded-lg bg-white/10 animate-pulse" />
+                    : <p className="text-lg font-black leading-none" style={{ color: hasAnomali ? '#f87171' : 'white' }}>{anomali}</p>}
+                  <p className="text-[9px] mt-1" style={{ color: hasAnomali ? 'rgba(248,113,113,0.6)' : 'rgba(255,255,255,0.3)' }}>
+                    {hasAnomali ? 'detay →' : 'anomali yok'}
+                  </p>
+                </button>
+                <div style={{ width: 1, background: 'rgba(255,255,255,0.08)', margin: '12px 0' }} />
+                <button onClick={() => onNavigate('vardiya-istatistikleri')} className="text-left transition-all active:scale-95" style={{ flex: 1, padding: 16, background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 10, background: hasGecGiris ? 'rgba(255,180,50,0.2)' : 'rgba(255,255,255,0.08)', border: `1px solid ${hasGecGiris ? 'rgba(255,180,50,0.4)' : 'rgba(255,255,255,0.15)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                    <Clock className="w-4 h-4" style={{ color: hasGecGiris ? '#fbbf24' : 'rgba(255,255,255,0.3)' }} />
+                  </div>
+                  <p className="text-[10px] font-medium mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>Geç Giriş</p>
+                  {isLoading ? <div className="h-5 w-8 rounded-lg bg-white/10 animate-pulse" />
+                    : <p className="text-lg font-black leading-none" style={{ color: hasGecGiris ? '#fbbf24' : 'white' }}>{gecGiris}</p>}
+                  <p className="text-[9px] mt-1" style={{ color: hasGecGiris ? 'rgba(255,180,50,0.6)' : 'rgba(255,255,255,0.3)' }}>
+                    {hasGecGiris ? 'detay →' : 'geç giriş yok'}
+                  </p>
+                </button>
+              </div>
+            );
+          })()}
         </motion.div>
 
         {/* ── Döviz Widget ── */}
@@ -812,6 +874,53 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
         onSendMessage={() => { setShowPerformanceList(false); onNavigate('messaging'); }}
         liveData={data?.personelPerformans}
       />
+
+      {/* Aktif Personel Modal */}
+      {showAktifPersonel && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[100] flex items-center justify-center p-4" onClick={() => setShowAktifPersonel(false)}>
+          <div className="w-full max-w-sm bg-[#1a1a2e] rounded-3xl border border-white/10 shadow-2xl max-h-[60vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-white/8 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5" style={{ color: '#9dd9ea' }} />
+                <h3 className="text-base font-bold text-white">Aktif Personel</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: 'rgba(157,217,234,0.15)', color: '#9dd9ea' }}>{data?.aktifPersonelSayisi ?? 0} / {data?.toplamPersonelSayisi ?? 0}</span>
+              </div>
+              <button onClick={() => setShowAktifPersonel(false)} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
+                <span className="text-white/50 text-sm">✕</span>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-3">
+              {(data?.aktifPersonelDetay?.length ?? 0) === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-2xl mb-2">😴</p>
+                  <p className="text-sm text-white/40">Şu an aktif personel yok</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {data!.aktifPersonelDetay!.map((p: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-3 rounded-xl" style={{ background: 'rgba(157,217,234,0.06)', border: '1px solid rgba(157,217,234,0.12)' }}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-[#9dd9ea]/20 flex items-center justify-center flex-shrink-0">
+                          <span className="text-sm">👤</span>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-white truncate">{p.name}</p>
+                          {p.mekan && <p className="text-[10px] text-[#a8e6cf]">📍 {p.mekan}</p>}
+                        </div>
+                      </div>
+                      {p.checkinZamani && (
+                        <span className="text-[10px] text-white/30 flex-shrink-0">
+                          🕐 {new Date(p.checkinZamani).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

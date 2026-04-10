@@ -152,7 +152,8 @@ const ODEME_LABEL: Record<string, string> = {
   foreign: '💱 Döviz',
 };
 
-export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
+export function SatisRaporu({ onNavigate, accessToken, userRole }: SatisRaporuProps) {
+  const showFinancials = ['yonetici', 'ust-mudur'].includes(userRole);
   const [filterKey, setFilterKey]       = useState<FilterKey>('bu-ay');
   const [customStart, setCustomStart]   = useState('');
   const [customEnd, setCustomEnd]       = useState('');
@@ -340,6 +341,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
         {data && data.toplamSatisAdet > 0 && (
           <>
             <div className="grid grid-cols-2 gap-2">
+              {showFinancials && (
               <SummaryCard
                 title="Toplam Ciro"
                 value={`₺${data.toplamCiro.toLocaleString('tr-TR')}`}
@@ -347,13 +349,15 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                 icon={<TrendingUp className="w-4 h-4" />}
                 color={COLORS.emerald}
               />
+              )}
               <SummaryCard
                 title="Toplam Satış"
                 value={data.toplamSatisAdet.toString()}
-                sub={`₺${avgSale.toLocaleString('tr-TR')} ort.`}
+                sub={showFinancials ? `₺${avgSale.toLocaleString('tr-TR')} ort.` : `${data.toplamSatisAdet} adet`}
                 icon={<ShoppingBag className="w-4 h-4" />}
                 color={COLORS.blue}
               />
+              {showFinancials && (
               <SummaryCard
                 title="Toplam İskonto"
                 value={`₺${data.toplamIskonto.toLocaleString('tr-TR')}`}
@@ -361,6 +365,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                 icon={<BarChart3 className="w-4 h-4" />}
                 color={COLORS.orange}
               />
+              )}
               <SummaryCard
                 title="En Çok Satan"
                 value={topAlbum}
@@ -414,7 +419,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                             </div>
                             <div className="flex items-center gap-2">
                               <div className="text-right">
-                                <span className="text-xs font-black" style={{ color: COLORS.emerald }}>₺{m.ciro.toLocaleString('tr-TR')}</span>
+                                {showFinancials && <span className="text-xs font-black" style={{ color: COLORS.emerald }}>₺{m.ciro.toLocaleString('tr-TR')}</span>}
                                 <span className="text-[10px] ml-1.5" style={{ color: 'rgba(255,255,255,0.3)' }}>{m.satisAdet} satış</span>
                               </div>
                               <ChevronDown className="w-3.5 h-3.5 shrink-0 transition-transform" style={{ color: 'rgba(255,255,255,0.3)', transform: isMekanExpanded ? 'rotate(180deg)' : 'none' }} />
@@ -422,8 +427,8 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                           </div>
                           <BarRow
                             label=""
-                            value={m.ciro}
-                            max={data.mekanlar[0]?.ciro || 1}
+                            value={showFinancials ? m.ciro : m.satisAdet}
+                            max={showFinancials ? (data.mekanlar[0]?.ciro || 1) : (data.mekanlar[0]?.satisAdet || 1)}
                             color={m.color || COLORS.violet}
                             right=""
                           />
@@ -438,7 +443,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                                   <div className="h-full rounded-full" style={{ width: `${Math.round((a.adet / (m.albumKirilimi[0]?.adet || 1)) * 100)}%`, background: m.color || COLORS.violet }} />
                                 </div>
                                 <span className="text-[10px] font-bold shrink-0" style={{ color: m.color || COLORS.violet }}>{a.adet} ad.</span>
-                                <span className="text-[10px] font-bold shrink-0" style={{ color: COLORS.emerald }}>₺{a.ciro.toLocaleString('tr-TR')}</span>
+                                {showFinancials && <span className="text-[10px] font-bold shrink-0" style={{ color: COLORS.emerald }}>₺{a.ciro.toLocaleString('tr-TR')}</span>}
                               </div>
                             ))}
                           </div>
@@ -448,10 +453,12 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                   })}
                 </div>
                 {/* Toplam */}
+                {showFinancials && (
                 <div className="flex justify-between items-center mt-4 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                   <span className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>Toplam</span>
                   <span className="text-sm font-black" style={{ color: COLORS.emerald }}>₺{data.toplamCiro.toLocaleString('tr-TR')}</span>
                 </div>
+                )}
               </div>
             )}
 
@@ -479,14 +486,16 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-bold text-white truncate">{p.name}</p>
-                            <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>{p.satisAdet} satış · İsk: ₺{p.iskonto.toLocaleString('tr-TR')}</p>
+                            <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>{p.satisAdet} satış{showFinancials ? ` · İsk: ₺${p.iskonto.toLocaleString('tr-TR')}` : ''}</p>
                           </div>
+                          {showFinancials && (
                           <div className="text-right shrink-0">
                             <p className="text-sm font-black" style={{ color: COLORS.emerald }}>₺{p.ciro.toLocaleString('tr-TR')}</p>
                             <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
                               %{data.toplamCiro > 0 ? Math.round((p.ciro / data.toplamCiro) * 100) : 0}
                             </p>
                           </div>
+                          )}
                           <ChevronDown className="w-3.5 h-3.5 shrink-0 transition-transform" style={{ color: 'rgba(255,255,255,0.3)', transform: isExpanded ? 'rotate(180deg)' : 'none' }} />
                         </button>
                         {isExpanded && p.albumKirilimi && p.albumKirilimi.length > 0 && (
@@ -501,7 +510,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                                     <div className="h-full rounded-full" style={{ width: `${Math.round((a.adet / (p.albumKirilimi[0]?.adet || 1)) * 100)}%`, background: COLORS.violet }} />
                                   </div>
                                   <span className="text-[10px] font-bold shrink-0" style={{ color: COLORS.violet }}>{a.adet} ad.</span>
-                                  <span className="text-[10px] font-bold shrink-0" style={{ color: COLORS.emerald }}>₺{a.ciro.toLocaleString('tr-TR')}</span>
+                                  {showFinancials && <span className="text-[10px] font-bold shrink-0" style={{ color: COLORS.emerald }}>₺{a.ciro.toLocaleString('tr-TR')}</span>}
                                 </div>
                               );
                             })}
@@ -531,7 +540,7 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                           <span className="text-xs font-bold text-white">{a.tip}</span>
                           <div className="text-right">
                             <span className="text-xs font-black" style={{ color: c }}>{a.adet} adet</span>
-                            {a.ciro > 0 && <span className="text-[10px] ml-1.5" style={{ color: 'rgba(255,255,255,0.3)' }}>₺{a.ciro.toLocaleString('tr-TR')}</span>}
+                            {showFinancials && a.ciro > 0 && <span className="text-[10px] ml-1.5" style={{ color: 'rgba(255,255,255,0.3)' }}>₺{a.ciro.toLocaleString('tr-TR')}</span>}
                           </div>
                         </div>
                         <div className="rounded-full overflow-hidden" style={{ height: 6, background: 'rgba(255,255,255,0.07)' }}>
@@ -564,10 +573,16 @@ export function SatisRaporu({ onNavigate, accessToken }: SatisRaporuProps) {
                         <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>{o.adet} işlem</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-black" style={{ color: COLORS.teal }}>₺{o.ciro.toLocaleString('tr-TR')}</p>
-                        <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                          %{data.toplamCiro > 0 ? Math.round((o.ciro / data.toplamCiro) * 100) : 0}
-                        </p>
+                        {showFinancials ? (
+                          <>
+                            <p className="text-sm font-black" style={{ color: COLORS.teal }}>₺{o.ciro.toLocaleString('tr-TR')}</p>
+                            <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                              %{data.toplamCiro > 0 ? Math.round((o.ciro / data.toplamCiro) * 100) : 0}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-sm font-black text-white">{o.adet} işlem</p>
+                        )}
                       </div>
                     </div>
                   ))}
