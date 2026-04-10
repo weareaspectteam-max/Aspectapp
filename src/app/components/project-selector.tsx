@@ -432,9 +432,11 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                       Günlük Ciro
                     </span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {['yonetici', 'ust-mudur', 'mudur', 'operasyon'].includes(userRole || '') && (
                       <span style={{ fontSize: 11, fontWeight: 800, color: glowColor ?? 'rgba(255,255,255,0.5)' }}>
                         {formatTLc(ciro)}
                       </span>
+                      )}
                       {primBilgi ? (
                         <div style={{
                           display: 'inline-flex', alignItems: 'center', gap: 3,
@@ -504,6 +506,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                           }}>
                             {i + 1}. Kot
                           </span>
+                          {['yonetici', 'ust-mudur', 'mudur', 'operasyon'].includes(userRole || '') && (
                           <span style={{
                             fontSize: 7,
                             fontWeight: 700,
@@ -513,6 +516,7 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                           }}>
                             {achieved ? `+${formatTLc(k.primTek || 0)}` : formatTLc(k.hedef)}
                           </span>
+                          )}
                         </div>
                       );
                     })}

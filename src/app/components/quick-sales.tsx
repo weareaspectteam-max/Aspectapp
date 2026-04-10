@@ -793,7 +793,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       setStokYukleniyor(false);
 
       // ── 4. Satışlar ve kare kayıtları stok kaydından gelir ──
-      const gunlukSatislar = (stokData.bugun?.satislar || []).filter((s: any) => !s.iptal);
+      const tumSatislar = (stokData.bugun?.satislar || []).filter((s: any) => !s.iptal);
+      const yetkiliRoller = ['yonetici', 'ust-mudur', 'mudur', 'operasyon'];
+      const gunlukSatislar = yetkiliRoller.includes(userRole) ? tumSatislar : tumSatislar.filter((s: any) => s.kaydedenId === userId);
       setRecentSales(gunlukSatislar);
       setFrameEntries(stokData.bugun?.kareKayitlari || []);
     };
@@ -1344,6 +1346,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     const result: Record<string, number> = {};
     for (const satis of recentSales) {
       for (const item of (satis.items || [])) {
+        if (item.dijital) continue; // Dijital satışlar stoktan düşülmez
         const match = String(item.product || '').match(/^(\d+)/);
         if (match) {
           const alan = `album${match[1]}`;
