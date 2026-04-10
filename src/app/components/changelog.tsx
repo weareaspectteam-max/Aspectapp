@@ -23,8 +23,6 @@ const CHANGELOG: ChangelogEntry[] = [
     changes: [
       { type: 'new', text: 'Dijital satış — sepette ürün bazlı 📱 DİJİTAL badge, kapanışta stoktan düşülmez' },
       { type: 'new', text: 'İskonto ekranına "Satış Fiyatı" modu — doğrudan son fiyat girişi, otomatik iskonto hesabı' },
-      { type: 'improve', text: 'Personel sadece kendi satışlarını görür, yönetici/müdür hepsini görür' },
-      { type: 'improve', text: 'Kota tutarları ve günlük ciro personelden gizli (kupa + eksik kalan görünür)' },
     ],
   },
   {

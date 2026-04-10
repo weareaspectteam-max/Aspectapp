@@ -9538,9 +9538,20 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
       return true;
     });
 
+    // ── 2b. Leaderboard config KV'den oku ──
+    const lbConfig: any = await ckv.get("leaderboard_config_v1") || null;
+    const W_ISKONTO = lbConfig?.iskontoPuan ?? 0.25;
+    const W_ORTSATIS = lbConfig?.ortSatisPuan ?? 0.15;
+    const W_MEKANKATKI = lbConfig?.mekanKatkiPuan ?? 0.30;
+    const W_ANOMALI = lbConfig?.anomaliPuan ?? 0.20;
+    const W_DEVAMSIZLIK = lbConfig?.devamsizlikPuan ?? 0.10;
+    const W_MEKAN_CIRO = lbConfig?.mekanKatkiCiroAgirlik ?? 0.65;
+    const W_MEKAN_KARE = lbConfig?.mekanKatkiKareAgirlik ?? 0.35;
+
     // ── 3. Personel satış aggregation ──
     const personMap: Record<string, any> = {};
     const mekanTotalCiro: Record<string, number> = {};
+    const mekanTotalKare: Record<string, number> = {};
 
     for (const kayit of filtrelenmis) {
       const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
@@ -9564,6 +9575,7 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
             id: pid, ad: pad, avatar: "👤",
             ciro: 0, brutCiro: 0, iskonto: 0, satisAdet: 0,
             ciroByMekan: {} as Record<string, number>,
+            kareByMekan: {} as Record<string, number>,
             toplamKare: 0,
           };
         }
@@ -9576,6 +9588,7 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
       }
 
       // ── Kare kayıtları aggregation ──
+      if (!mekanTotalKare[mekanId]) mekanTotalKare[mekanId] = 0;
       for (const kare of (kayit.kareKayitlari || [])) {
         const pid = kare.photographerId;
         if (!pid) continue;
@@ -9584,10 +9597,15 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
             id: pid, ad: kare.photographerName || "Bilinmiyor", avatar: "👤",
             ciro: 0, brutCiro: 0, iskonto: 0, satisAdet: 0,
             ciroByMekan: {} as Record<string, number>,
+            kareByMekan: {} as Record<string, number>,
             toplamKare: 0,
           };
         }
-        personMap[pid].toplamKare += Math.round((Number(kare.frameCount) || 0) * zorlukK);
+        const kareVal = Math.round((Number(kare.frameCount) || 0) * zorlukK);
+        personMap[pid].toplamKare += kareVal;
+        if (!personMap[pid].kareByMekan[mekanId]) personMap[pid].kareByMekan[mekanId] = 0;
+        personMap[pid].kareByMekan[mekanId] += kareVal;
+        mekanTotalKare[mekanId] += kareVal;
       }
     }
 
@@ -9661,22 +9679,51 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
       }
     }
 
+    // ── 5b. Devamsızlık: checkin verilerinden geç giriş ──
+    const allCheckins: any[] = await ckv.getByPrefix("checkin_").catch(() => []) || [];
+    const personGecGiris: Record<string, number> = {}; // userId → geç giriş sayısı
+    for (const ci of allCheckins) {
+      if (!ci?.userId || !(ci.lateMin > 0) || !ci.tarih) continue;
+      if (baslangic && ci.tarih < baslangic) continue;
+      if (bitis && ci.tarih > bitis) continue;
+      personGecGiris[ci.userId] = (personGecGiris[ci.userId] || 0) + 1;
+    }
+
     // ── 6. Ham metrikler ──
-    const liste: any[] = Object.values(personMap).filter((p: any) => p.satisAdet > 0);
+    const liste: any[] = Object.values(personMap).filter((p: any) => p.satisAdet > 0 || p.toplamKare > 0);
 
     for (const p of liste) {
       p.ortSatis = p.satisAdet > 0 ? p.ciro / p.satisAdet : 0;
       p.iskontoDisipling = p.brutCiro > 0 ? 1 - (p.iskonto / p.brutCiro) : 1;
-      let mekanKatkiScore = 0;
-      for (const [mid, pciro] of Object.entries(p.ciroByMekan as Record<string, number>)) {
-        const mtotal = mekanTotalCiro[mid] || 1;
-        mekanKatkiScore += (pciro / mtotal) * (pciro / p.ciro);
+
+      // Mekan Katkısı: ciro payı × W_MEKAN_CIRO + kare payı × W_MEKAN_KARE
+      let ciroKatki = 0;
+      if (p.ciro > 0) {
+        for (const [mid, pciro] of Object.entries(p.ciroByMekan as Record<string, number>)) {
+          const mtotal = mekanTotalCiro[mid] || 1;
+          ciroKatki += (pciro / mtotal) * (pciro / p.ciro);
+        }
       }
-      p.mekanKatki = mekanKatkiScore;
+      let kareKatki = 0;
+      if (p.toplamKare > 0) {
+        for (const [mid, pkare] of Object.entries(p.kareByMekan as Record<string, number>)) {
+          const mtotal = mekanTotalKare[mid] || 1;
+          kareKatki += (pkare / mtotal) * (pkare / p.toplamKare);
+        }
+      }
+      p.mekanKatki = ciroKatki * W_MEKAN_CIRO + kareKatki * W_MEKAN_KARE;
+
       p.anomaliVardiya = personAnomalSet[p.id]?.size || 0;
       p.toplamVardiya = personVardiya[p.id]?.size || 0;
       p.anomaliOran = p.toplamVardiya > 0 ? p.anomaliVardiya / p.toplamVardiya : 0;
       p.anomaliTemizligi = 1 - p.anomaliOran;
+
+      // Devamsızlık
+      p.gecGirisSayisi = personGecGiris[p.id] || 0;
+      p.devamsizlik = p.toplamVardiya > 0 ? 1 - (p.gecGirisSayisi / p.toplamVardiya) : 1;
+
+      // Satış yapıp yapmadığı flag
+      p._satisBased = p.satisAdet > 0;
     }
 
     // ── 7. Normalizasyon (0–100) ──
@@ -9695,17 +9742,36 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
     normalize(liste, "ortSatis", "ortSatisPuan");
     normalize(liste, "mekanKatki", "mekanKatkiPuan");
     normalize(liste, "anomaliTemizligi", "anomaliPuan");
-    normalize(liste, "toplamKare", "karePuan");
+    normalize(liste, "devamsizlik", "devamsizlikPuan");
 
-    // ── 8. Ağırlıklı toplam skor ──
-    // İskonto %25 | OrtSatış %15 | MekanKatkı %25 | Anomali %20 | Kare %15
+    // ── 8. Ağırlıklı toplam skor (config'den veya varsayılan) ──
     for (const p of liste) {
+      // Satış yapmayan personelde iskonto/ort.satış atlanır, kalan oranlanır
+      let w_iskonto = W_ISKONTO;
+      let w_ortSatis = W_ORTSATIS;
+      let w_mekanKatki = W_MEKANKATKI;
+      let w_anomali = W_ANOMALI;
+      let w_devamsizlik = W_DEVAMSIZLIK;
+
+      if (!p._satisBased) {
+        // Satış metrikleri atla, kalanı oranla
+        const kalanToplam = w_mekanKatki + w_anomali + w_devamsizlik;
+        if (kalanToplam > 0) {
+          const oran = 1.0 / kalanToplam;
+          w_mekanKatki *= oran;
+          w_anomali *= oran;
+          w_devamsizlik *= oran;
+        }
+        w_iskonto = 0;
+        w_ortSatis = 0;
+      }
+
       p.toplamSkor = Math.round(
-        (p.iskontoPuan    || 0) * 0.25 +
-        (p.ortSatisPuan   || 0) * 0.15 +
-        (p.mekanKatkiPuan || 0) * 0.25 +
-        (p.anomaliPuan    || 0) * 0.20 +
-        (p.karePuan       || 0) * 0.15
+        (p.iskontoPuan     || 0) * w_iskonto +
+        (p.ortSatisPuan    || 0) * w_ortSatis +
+        (p.mekanKatkiPuan  || 0) * w_mekanKatki +
+        (p.anomaliPuan     || 0) * w_anomali +
+        (p.devamsizlikPuan || 0) * w_devamsizlik
       );
     }
 
@@ -9723,7 +9789,7 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
         ortSatisPuan:   p.ortSatisPuan   || 0,
         mekanKatkiPuan: p.mekanKatkiPuan || 0,
         anomaliPuan:    p.anomaliPuan    || 0,
-        karePuan:       p.karePuan       || 0,
+        devamsizlikPuan: p.devamsizlikPuan || 0,
       },
       ham: {
         ciro:           Math.round(p.ciro),
@@ -9734,6 +9800,12 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
         anomaliVardiya: p.anomaliVardiya,
         toplamVardiya:  p.toplamVardiya,
         toplamKare:     p.toplamKare || 0,
+        gecGirisSayisi: p.gecGirisSayisi || 0,
+      },
+      config: {
+        iskonto: W_ISKONTO, ortSatis: W_ORTSATIS, mekanKatki: W_MEKANKATKI,
+        anomali: W_ANOMALI, devamsizlik: W_DEVAMSIZLIK,
+        mekanCiro: W_MEKAN_CIRO, mekanKare: W_MEKAN_KARE,
       },
     }));
 
@@ -9800,6 +9872,65 @@ app.put("/make-server-4da0b637/leaderboard/quotes", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.log("Leaderboard quotes PUT error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────
+// LEADERBOARD CONFIG: Ayarları getir / kaydet
+// ──────────────────────────────────────────────────────────────
+app.get("/make-server-4da0b637/leaderboard/config", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur", "mudur"].includes(role)) return c.json({ error: "Yetki yok." }, 403);
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    const reqCId = c.req.query("company_id");
+    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const config = await ckv.get("leaderboard_config_v1");
+    const defaults = {
+      iskontoPuan: 0.25, ortSatisPuan: 0.15, mekanKatkiPuan: 0.30,
+      anomaliPuan: 0.20, devamsizlikPuan: 0.10,
+      mekanKatkiCiroAgirlik: 0.65, mekanKatkiKareAgirlik: 0.35,
+    };
+    return c.json({ config: config || defaults, isDefault: !config });
+  } catch (err) {
+    console.log("Leaderboard config GET error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+app.put("/make-server-4da0b637/leaderboard/config", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role;
+    if (role !== "yonetici") return c.json({ error: "Sadece yönetici bu ayarları değiştirebilir." }, 403);
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    const reqCId = c.req.query("company_id");
+    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const body = await c.req.json();
+    const { iskontoPuan, ortSatisPuan, mekanKatkiPuan, anomaliPuan, devamsizlikPuan, mekanKatkiCiroAgirlik, mekanKatkiKareAgirlik } = body;
+    // Toplam %100 validasyonu
+    const toplam = (Number(iskontoPuan) || 0) + (Number(ortSatisPuan) || 0) + (Number(mekanKatkiPuan) || 0) + (Number(anomaliPuan) || 0) + (Number(devamsizlikPuan) || 0);
+    if (Math.abs(toplam - 1.0) > 0.01) return c.json({ error: `Ağırlıklar toplamı %100 olmalı (şu an: %${Math.round(toplam * 100)}).` }, 400);
+    const config = {
+      iskontoPuan: Number(iskontoPuan) || 0,
+      ortSatisPuan: Number(ortSatisPuan) || 0,
+      mekanKatkiPuan: Number(mekanKatkiPuan) || 0,
+      anomaliPuan: Number(anomaliPuan) || 0,
+      devamsizlikPuan: Number(devamsizlikPuan) || 0,
+      mekanKatkiCiroAgirlik: Number(mekanKatkiCiroAgirlik) || 0.65,
+      mekanKatkiKareAgirlik: Number(mekanKatkiKareAgirlik) || 0.35,
+      updatedAt: new Date().toISOString(),
+      updatedBy: user.id,
+    };
+    await ckv.set("leaderboard_config_v1", config);
+    console.log(`[Leaderboard Config] Güncellendi by ${user.id}:`, JSON.stringify(config));
+    return c.json({ ok: true, config });
+  } catch (err) {
+    console.log("Leaderboard config PUT error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });

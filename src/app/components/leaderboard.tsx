@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Trophy, Medal, Award, RefreshCw, Loader2, ChevronDown,
-  Tag, TrendingUp, AlertTriangle, Users, MapPin,
-  ShieldCheck, Filter, Zap, Camera, Pencil, X, Check, MessageSquare, HelpCircle,
+  Tag, TrendingUp, AlertTriangle, Users, MapPin, Clock,
+  ShieldCheck, Filter, Zap, Camera, Pencil, X, Check, MessageSquare, HelpCircle, Settings,
 } from 'lucide-react';
 import { NewBottomNav } from './new-bottom-nav';
 import { projectId } from '../lib/supabase-info';
@@ -204,6 +204,9 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showLbGuide, setShowLbGuide] = useState(false);
+  const [showLbConfig, setShowLbConfig] = useState(false);
+  const [lbConfig, setLbConfig] = useState<any>(null);
+  const [lbConfigSaving, setLbConfigSaving] = useState(false);
   const [acikKart, setAcikKart] = useState<string | null>(null);
   const [showMekanFilter, setShowMekanFilter] = useState(false);
   // Quote state
@@ -299,6 +302,24 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
               {PERIOD_LABELS[period]} · {personeller.length} personel
             </p>
           </div>
+          {['yonetici', 'ust-mudur', 'mudur'].includes(userRole) && (
+          <button
+            onClick={async () => {
+              setShowLbConfig(true);
+              if (!lbConfig) {
+                try {
+                  const token = await getToken();
+                  const res = await fetch(appendGhostParam(`${API_BASE}/leaderboard/config`), { headers: buildHeaders(token) });
+                  if (res.ok) { const d = await res.json(); setLbConfig(d.config); }
+                } catch {}
+              }
+            }}
+            className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition-all"
+            style={{ background: 'rgba(168,130,255,0.15)', border: '1px solid rgba(168,130,255,0.4)' }}
+          >
+            <Settings className="w-4 h-4" style={{ color: '#c4b5fd' }} />
+          </button>
+          )}
           <button
             onClick={() => setShowLbGuide(true)}
             className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition-all"
@@ -571,12 +592,12 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
           <div className="px-4 pt-3 pb-1">
             <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
               {[
-                { label: 'İskonto Disiplini', pct: '%25', color: C.green,  icon: Tag },
-                { label: 'Ort. Satış Tutarı', pct: '%15', color: C.cyan,   icon: TrendingUp },
-                { label: 'Mekan Katkısı',     pct: '%25', color: C.gold2,  icon: MapPin },
-                { label: 'Anomali Temizliği', pct: '%20', color: C.purple, icon: ShieldCheck },
-                { label: 'Kare Performansı',  pct: '%15', color: C.violet, icon: Camera },
-              ].map(({ label, pct, color, icon: Icon }) => (
+                { label: 'İskonto Disiplini', pct: `%${Math.round((personeller[0]?.config?.iskonto ?? 0.25) * 100)}`, color: C.green,  icon: Tag },
+                { label: 'Ort. Satış Tutarı', pct: `%${Math.round((personeller[0]?.config?.ortSatis ?? 0.15) * 100)}`, color: C.cyan,   icon: TrendingUp },
+                { label: 'Mekan Katkısı',     pct: `%${Math.round((personeller[0]?.config?.mekanKatki ?? 0.30) * 100)}`, color: C.gold2,  icon: MapPin },
+                { label: 'Anomali Temizliği', pct: `%${Math.round((personeller[0]?.config?.anomali ?? 0.20) * 100)}`, color: C.purple, icon: ShieldCheck },
+                { label: 'Devamsızlık',       pct: `%${Math.round((personeller[0]?.config?.devamsizlik ?? 0.10) * 100)}`, color: C.violet, icon: Clock },
+              ].filter(m => m.pct !== '%0').map(({ label, pct, color, icon: Icon }) => (
                 <div
                   key={label}
                   className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-2xl"
@@ -646,7 +667,9 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
                           </p>
                         )}
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>{p.ham.satisAdet} satış</span>
+                          {(showCiro || p.id === userId) && (
+                            <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.35)' }}>{p.ham.satisAdet} satış</span>
+                          )}
                           {showCiro && (
                             <span className="text-[10px] font-semibold" style={{ color: C.green }}>
                               ₺{p.ham.ciro.toLocaleString('tr-TR')}
@@ -678,11 +701,11 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
                     >
                       {/* 5 metrik bar */}
                       <div className="space-y-2.5">
-                        <MetrikBar label="İsk. Disiplini" puan={p.metrikler.iskontoPuan}    color={C.green}  icon={Tag} />
-                        <MetrikBar label="Ort. Satış"     puan={p.metrikler.ortSatisPuan}   color={C.cyan}   icon={TrendingUp} />
-                        <MetrikBar label="Mekan Katkı"    puan={p.metrikler.mekanKatkiPuan} color={C.gold2}  icon={MapPin} />
-                        <MetrikBar label="Anomali"        puan={p.metrikler.anomaliPuan}    color={C.purple} icon={ShieldCheck} />
-                        <MetrikBar label="Kare Perf."     puan={p.metrikler.karePuan}       color={C.violet} icon={Camera} />
+                        <MetrikBar label="İsk. Disiplini" puan={p.metrikler.iskontoPuan}     color={C.green}  icon={Tag} />
+                        <MetrikBar label="Ort. Satış"     puan={p.metrikler.ortSatisPuan}    color={C.cyan}   icon={TrendingUp} />
+                        <MetrikBar label="Mekan Katkı"    puan={p.metrikler.mekanKatkiPuan}  color={C.gold2}  icon={MapPin} />
+                        <MetrikBar label="Anomali"        puan={p.metrikler.anomaliPuan}     color={C.purple} icon={ShieldCheck} />
+                        <MetrikBar label="Devamsızlık"    puan={p.metrikler.devamsizlikPuan || 0} color={C.violet} icon={Clock} />
                       </div>
 
                       {/* Ham veri grid */}
@@ -693,14 +716,18 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
                             <p className="text-sm font-bold" style={{ color: C.green }}>₺{p.ham.ciro.toLocaleString('tr-TR')}</p>
                           </div>
                         )}
-                        <div className="rounded-2xl p-2.5" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                          <p className="text-[9px] mb-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Satış Adedi</p>
-                          <p className="text-sm font-bold text-white">{p.ham.satisAdet}</p>
-                        </div>
-                        <div className="rounded-2xl p-2.5" style={{ background: `${C.cyan}0d`, border: `1px solid ${C.cyan}20` }}>
-                          <p className="text-[9px] mb-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Ort. Satış</p>
-                          <p className="text-sm font-bold" style={{ color: C.cyan }}>₺{p.ham.ortSatis.toLocaleString('tr-TR')}</p>
-                        </div>
+                        {(showCiro || p.id === userId) && (
+                          <div className="rounded-2xl p-2.5" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                            <p className="text-[9px] mb-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Satış Adedi</p>
+                            <p className="text-sm font-bold text-white">{p.ham.satisAdet}</p>
+                          </div>
+                        )}
+                        {(showCiro || p.id === userId) && (
+                          <div className="rounded-2xl p-2.5" style={{ background: `${C.cyan}0d`, border: `1px solid ${C.cyan}20` }}>
+                            <p className="text-[9px] mb-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Ort. Satış</p>
+                            <p className="text-sm font-bold" style={{ color: C.cyan }}>₺{p.ham.ortSatis.toLocaleString('tr-TR')}</p>
+                          </div>
+                        )}
                         {showCiro && (
                           <div className="rounded-2xl p-2.5" style={{ background: `${C.gold2}0d`, border: `1px solid ${C.gold2}20` }}>
                             <p className="text-[9px] mb-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Toplam İskonto</p>
@@ -732,6 +759,20 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
                           <p className="text-[9px] mb-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Toplam Kare</p>
                           <p className="text-sm font-bold" style={{ color: C.violet }}>
                             {p.ham.toplamKare > 0 ? `${p.ham.toplamKare.toLocaleString('tr-TR')} 📷` : '—'}
+                          </p>
+                        </div>
+                        <div
+                          className="rounded-2xl p-2.5"
+                          style={{
+                            background: (p.ham.gecGirisSayisi || 0) > 0 ? 'rgba(248,113,113,0.08)' : `${C.green}0d`,
+                            border: (p.ham.gecGirisSayisi || 0) > 0 ? '1px solid rgba(248,113,113,0.20)' : `1px solid ${C.green}20`,
+                          }}
+                        >
+                          <p className="text-[9px] mb-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Devamsızlık</p>
+                          <p className="text-sm font-bold" style={{ color: (p.ham.gecGirisSayisi || 0) > 0 ? '#f87171' : C.green }}>
+                            {(p.ham.gecGirisSayisi || 0) > 0
+                              ? `${p.ham.gecGirisSayisi} geç giriş`
+                              : 'Dakik ✓'}
                           </p>
                         </div>
                       </div>
@@ -856,10 +897,147 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
                 <h4 className="text-[13px] font-bold text-white mb-1.5">⚡ Hesaplama Yöntemi</h4>
                 <p>Sıralama <span className="text-ta font-semibold">5 metriğin normalize edilmiş ağırlıklı ortalaması</span> ile hesaplanır.</p>
                 <p className="mt-1">• Her metrik 0-100 arasında normalize edilir</p>
-                <p>• Ağırlıklar: İskonto %25 · Mekan %25 · Anomali %20 · Ort. Satış %15 · Kare %15</p>
+                <p>• Ağırlıklar ayarlanabilir (varsayılan: İskonto %25 · Mekan %30 · Anomali %20 · Ort. Satış %15 · Devamsızlık %10)</p>
                 <p>• Sonuç: Toplam skor = ağırlıklı toplam</p>
               </div>
 
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── AYAR PANELİ MODAL ── */}
+      {showLbConfig && lbConfig && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[100] flex items-center justify-center p-4" onClick={() => setShowLbConfig(false)}>
+          <div className="w-full max-w-md bg-[#1a1a2e] rounded-3xl border border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-white/8">
+              <div className="flex items-center gap-2">
+                <Settings className="w-5 h-5" style={{ color: '#c4b5fd' }} />
+                <h3 className="text-base font-bold text-white">Liderlik Ayarları</h3>
+              </div>
+              <button onClick={() => setShowLbConfig(false)} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center"><X className="w-4 h-4 text-white/50" /></button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <p className="text-[11px] text-white/40">Metrik ağırlıklarını ayarlayın. Toplam %100 olmalıdır.</p>
+
+              {/* Metrik ağırlıkları */}
+              {[
+                { key: 'iskontoPuan', label: 'İskonto Disiplini', icon: '📊', color: '#34d399' },
+                { key: 'ortSatisPuan', label: 'Ort. Satış Tutarı', icon: '💰', color: '#67e8f9' },
+                { key: 'mekanKatkiPuan', label: 'Mekan Katkısı', icon: '🏢', color: '#fbbf24' },
+                { key: 'anomaliPuan', label: 'Anomali Temizliği', icon: '🔍', color: '#a78bfa' },
+                { key: 'devamsizlikPuan', label: 'Devamsızlık', icon: '⏰', color: '#c4b5fd' },
+              ].map(m => (
+                <div key={m.key} className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="text-base">{m.icon}</span>
+                    <span className="text-sm font-semibold text-white truncate">{m.label}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold" style={{ color: m.color }}>%</span>
+                    <input
+                      type="number" min="0" max="100" step="5"
+                      value={Math.round((lbConfig[m.key] || 0) * 100)}
+                      disabled={userRole !== 'yonetici'}
+                      onChange={e => setLbConfig({ ...lbConfig, [m.key]: Number(e.target.value) / 100 })}
+                      className="w-16 px-2 py-1.5 bg-white/5 border border-white/15 rounded-lg text-white text-sm text-center font-bold focus:outline-none focus:border-[#c4b5fd] disabled:opacity-40"
+                    />
+                  </div>
+                </div>
+              ))}
+
+              {/* Toplam gösterge */}
+              {(() => {
+                const toplam = Math.round(((lbConfig.iskontoPuan || 0) + (lbConfig.ortSatisPuan || 0) + (lbConfig.mekanKatkiPuan || 0) + (lbConfig.anomaliPuan || 0) + (lbConfig.devamsizlikPuan || 0)) * 100);
+                const gecerli = toplam === 100;
+                return (
+                  <div className="flex items-center justify-between px-3 py-2 rounded-xl" style={{ background: gecerli ? 'rgba(34,197,94,0.1)' : 'rgba(248,113,113,0.1)', border: gecerli ? '1px solid rgba(34,197,94,0.3)' : '1px solid rgba(248,113,113,0.3)' }}>
+                    <span className="text-xs font-semibold" style={{ color: gecerli ? '#34d399' : '#f87171' }}>Toplam</span>
+                    <span className="text-sm font-bold" style={{ color: gecerli ? '#34d399' : '#f87171' }}>%{toplam} {gecerli ? '✓' : '(100 olmalı)'}</span>
+                  </div>
+                );
+              })()}
+
+              {/* Mekan Katkısı iç oranı */}
+              <div className="border-t border-white/8 pt-3">
+                <p className="text-[11px] text-white/40 mb-3">Mekan Katkısı iç dağılımı (Ciro / Kare)</p>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 flex items-center gap-2">
+                    <span className="text-xs text-white/60">Ciro</span>
+                    <input
+                      type="number" min="0" max="100" step="5"
+                      value={Math.round((lbConfig.mekanKatkiCiroAgirlik || 0.65) * 100)}
+                      disabled={userRole !== 'yonetici'}
+                      onChange={e => {
+                        const v = Number(e.target.value) / 100;
+                        setLbConfig({ ...lbConfig, mekanKatkiCiroAgirlik: v, mekanKatkiKareAgirlik: Math.max(0, 1 - v) });
+                      }}
+                      className="w-16 px-2 py-1.5 bg-white/5 border border-white/15 rounded-lg text-white text-sm text-center font-bold focus:outline-none focus:border-[#fbbf24] disabled:opacity-40"
+                    />
+                    <span className="text-xs font-bold" style={{ color: '#fbbf24' }}>%</span>
+                  </div>
+                  <div className="flex-1 flex items-center gap-2">
+                    <span className="text-xs text-white/60">Kare</span>
+                    <input
+                      type="number" min="0" max="100" step="5"
+                      value={Math.round((lbConfig.mekanKatkiKareAgirlik || 0.35) * 100)}
+                      disabled={userRole !== 'yonetici'}
+                      onChange={e => {
+                        const v = Number(e.target.value) / 100;
+                        setLbConfig({ ...lbConfig, mekanKatkiKareAgirlik: v, mekanKatkiCiroAgirlik: Math.max(0, 1 - v) });
+                      }}
+                      className="w-16 px-2 py-1.5 bg-white/5 border border-white/15 rounded-lg text-white text-sm text-center font-bold focus:outline-none focus:border-[#c4b5fd] disabled:opacity-40"
+                    />
+                    <span className="text-xs font-bold" style={{ color: '#c4b5fd' }}>%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Kaydet butonu (sadece yönetici) */}
+              {userRole === 'yonetici' && (
+                <button
+                  onClick={async () => {
+                    const toplam = Math.round(((lbConfig.iskontoPuan || 0) + (lbConfig.ortSatisPuan || 0) + (lbConfig.mekanKatkiPuan || 0) + (lbConfig.anomaliPuan || 0) + (lbConfig.devamsizlikPuan || 0)) * 100);
+                    if (toplam !== 100) { alert(`Toplam %100 olmalı (şu an: %${toplam})`); return; }
+                    setLbConfigSaving(true);
+                    try {
+                      const token = await getToken();
+                      const res = await fetch(appendGhostParam(`${API_BASE}/leaderboard/config`), {
+                        method: 'PUT', headers: buildHeaders(token),
+                        body: JSON.stringify(lbConfig),
+                      });
+                      if (res.ok) { setShowLbConfig(false); fetchData(); }
+                      else { const d = await res.json(); alert(d.error || 'Hata oluştu'); }
+                    } catch { alert('Bağlantı hatası'); }
+                    setLbConfigSaving(false);
+                  }}
+                  disabled={lbConfigSaving}
+                  className="w-full py-3 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
+                  style={{ background: 'linear-gradient(135deg, #c4b5fd, #a78bfa)', color: '#1a1a2e' }}
+                >
+                  {lbConfigSaving ? '⏳ Kaydediliyor...' : '💾 Kaydet'}
+                </button>
+              )}
+
+              {/* Açıklama bölümü */}
+              <div className="border-t border-white/8 pt-4 space-y-3">
+                <h4 className="text-xs font-bold text-white/60">Metrik Açıklamaları</h4>
+                {[
+                  { icon: '📊', title: 'İskonto Disiplini', desc: 'Personelin verdiği iskonto oranı. Brüt ciro ile net ciro farkı ne kadar küçükse puan o kadar yüksek. Gereksiz indirimden kaçınan personel ödüllendirilir.' },
+                  { icon: '💰', title: 'Ort. Satış Tutarı', desc: 'Her satışın ortalama tutarı. Toplam ciro / satış adedi. Daha büyük paketler satan personel daha yüksek puan alır.' },
+                  { icon: '🏢', title: 'Mekan Katkısı', desc: 'İki bileşenden oluşur: mekana sağlanan ciro katkısı ve çekilen kare katkısı. Ciro/kare iç oranını yönetici belirler. Satıcı da fotoğrafçı da adil şekilde değerlendirilir.' },
+                  { icon: '🔍', title: 'Anomali Temizliği', desc: 'Açılış ve kapanış stok sayımlarında tutarsızlık olup olmadığını ölçer. Anomali çıkmayan vardiya oranı ne kadar yüksekse puan o kadar yüksek.' },
+                  { icon: '⏰', title: 'Devamsızlık', desc: 'Vardiyaya zamanında gelme oranını ölçer. Geç giriş yapılan vardiya sayısı ne kadar azsa puan o kadar yüksek. Düzenli ve dakik personel ödüllendirilir.' },
+                ].map(m => (
+                  <div key={m.title} className="flex gap-2">
+                    <span className="text-sm flex-shrink-0">{m.icon}</span>
+                    <div>
+                      <p className="text-[11px] font-bold text-white/70">{m.title}</p>
+                      <p className="text-[10px] text-white/35 leading-relaxed">{m.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
