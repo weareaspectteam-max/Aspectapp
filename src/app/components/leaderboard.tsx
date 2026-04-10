@@ -57,8 +57,9 @@ type Period = 'bu-hafta' | 'bu-ay' | 'bu-yil' | 'tum-zamanlar';
 
 interface Personel {
   id: string; ad: string; avatar: string; sira: number; toplamSkor: number;
-  metrikler: { iskontoPuan: number; ortSatisPuan: number; mekanKatkiPuan: number; anomaliPuan: number; karePuan: number; };
-  ham: { ciro: number; satisAdet: number; iskonto: number; brutCiro: number; ortSatis: number; anomaliVardiya: number; toplamVardiya: number; toplamKare: number; };
+  metrikler: { iskontoPuan: number; ortSatisPuan: number; mekanKatkiPuan: number; anomaliPuan: number; karePuan?: number; devamsizlikPuan?: number; };
+  ham: { ciro: number; satisAdet: number; iskonto: number; brutCiro: number; ortSatis: number; anomaliVardiya: number; toplamVardiya: number; toplamKare: number; gecGirisSayisi?: number; };
+  config?: { iskonto: number; ortSatis: number; mekanKatki: number; anomali: number; devamsizlik: number; mekanCiro: number; mekanKare: number; };
 }
 interface Mekan { id: string; name: string; emoji: string; }
 interface LeaderboardProps {
@@ -205,6 +206,7 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
   const [error, setError] = useState('');
   const [showLbGuide, setShowLbGuide] = useState(false);
   const [showLbConfig, setShowLbConfig] = useState(false);
+  const [openMetrikInfo, setOpenMetrikInfo] = useState<string | null>(null);
   const [lbConfig, setLbConfig] = useState<any>(null);
   const [lbConfigSaving, setLbConfigSaving] = useState(false);
   const [acikKart, setAcikKart] = useState<string | null>(null);
@@ -592,23 +594,35 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
           <div className="px-4 pt-3 pb-1">
             <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
               {[
-                { label: 'İskonto Disiplini', pct: `%${Math.round((personeller[0]?.config?.iskonto ?? 0.25) * 100)}`, color: C.green,  icon: Tag },
-                { label: 'Ort. Satış Tutarı', pct: `%${Math.round((personeller[0]?.config?.ortSatis ?? 0.15) * 100)}`, color: C.cyan,   icon: TrendingUp },
-                { label: 'Mekan Katkısı',     pct: `%${Math.round((personeller[0]?.config?.mekanKatki ?? 0.30) * 100)}`, color: C.gold2,  icon: MapPin },
-                { label: 'Anomali Temizliği', pct: `%${Math.round((personeller[0]?.config?.anomali ?? 0.20) * 100)}`, color: C.purple, icon: ShieldCheck },
-                { label: 'Devamsızlık',       pct: `%${Math.round((personeller[0]?.config?.devamsizlik ?? 0.10) * 100)}`, color: C.violet, icon: Clock },
-              ].filter(m => m.pct !== '%0').map(({ label, pct, color, icon: Icon }) => (
-                <div
-                  key={label}
-                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-2xl"
-                  style={{ background: `${color}12`, border: `1px solid ${color}25` }}
-                >
-                  <Icon className="w-3 h-3 flex-shrink-0" style={{ color }} />
-                  <span className="text-[10px] font-semibold whitespace-nowrap" style={{ color: 'rgba(255,255,255,0.65)' }}>{label}</span>
-                  <span className="text-[10px] font-bold ml-0.5" style={{ color }}>{pct}</span>
+                { key: 'iskonto', icon: '📊', pct: Math.round((personeller[0]?.config?.iskonto ?? 0.25) * 100), color: C.green, label: 'İskonto Disiplini', desc: 'Personelin verdiği iskonto oranı. Az iskonto = yüksek puan.' },
+                { key: 'ortSatis', icon: '💰', pct: Math.round((personeller[0]?.config?.ortSatis ?? 0.15) * 100), color: C.cyan, label: 'Ort. Satış Tutarı', desc: 'Her satışın ortalama tutarı. Büyük paket = yüksek puan.' },
+                { key: 'mekanKatki', icon: '🏢', pct: Math.round((personeller[0]?.config?.mekanKatki ?? 0.30) * 100), color: C.gold2, label: 'Mekan Katkısı', desc: 'Ciro + kare katkısı birleşimi. Satıcı da fotoğrafçı da adil değerlendirilir.' },
+                { key: 'anomali', icon: '🔍', pct: Math.round((personeller[0]?.config?.anomali ?? 0.20) * 100), color: C.purple, label: 'Anomali Temizliği', desc: 'Stok sayım tutarsızlığı olmaması. Temiz = yüksek puan.' },
+                { key: 'devamsizlik', icon: '⏰', pct: Math.round((personeller[0]?.config?.devamsizlik ?? 0.10) * 100), color: C.violet, label: 'Devamsızlık', desc: 'Vardiyaya zamanında gelme oranı. Dakik = yüksek puan.' },
+              ].filter(m => m.pct > 0).map(m => (
+                <div key={m.key} className="relative flex-shrink-0">
+                  <button
+                    onClick={() => setOpenMetrikInfo(openMetrikInfo === m.key ? null : m.key)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl transition-all active:scale-95"
+                    style={{ background: openMetrikInfo === m.key ? `${m.color}30` : `${m.color}12`, border: `1px solid ${openMetrikInfo === m.key ? `${m.color}60` : `${m.color}25`}` }}
+                  >
+                    <span className="text-sm">{m.icon}</span>
+                    <span className="text-xs font-bold" style={{ color: m.color }}>%{m.pct}</span>
+                  </button>
+                  {openMetrikInfo === m.key && (
+                    <div
+                      className="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50 px-3 py-2.5 rounded-xl shadow-xl"
+                      style={{ background: '#1a1a2e', border: `1px solid ${m.color}40`, minWidth: 200, maxWidth: 240 }}
+                    >
+                      <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45" style={{ background: '#1a1a2e', borderTop: `1px solid ${m.color}40`, borderLeft: `1px solid ${m.color}40` }} />
+                      <p className="text-[11px] font-bold mb-1" style={{ color: m.color }}>{m.icon} {m.label}</p>
+                      <p className="text-[10px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>{m.desc}</p>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
+            {openMetrikInfo && <div className="fixed inset-0 z-40" onClick={() => setOpenMetrikInfo(null)} />}
           </div>
 
           {/* ────────────────────────────────────────────
