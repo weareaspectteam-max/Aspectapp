@@ -2511,10 +2511,11 @@ function MessageBubble({ msg, onFlowAction, isLastMsg, onNavigate, onDirectSave 
 // ─── DailyBriefingTopCard ────────────────────────────────────────────────────
 
 function DailyBriefingTopCard({
-  ozet, loading, onDetay, onAnomali
+  ozet, loading, onDetay, onAnomali, hideFinancials
 }: {
   ozet: AIOzet | null;
   loading: boolean;
+  hideFinancials?: boolean;
   onDetay: () => void;
   onAnomali: () => void;
 }) {
@@ -4243,6 +4244,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
             <DailyBriefingTopCard
               ozet={ozet}
               loading={ozetLoading}
+              hideFinancials={!roleConfig.canSeeFinancials}
               onDetay={() => sendMessage('Bugünkü operasyon özetini göster')}
               onAnomali={() => sendMessage('Bugün anomali var mı?')}
             />
