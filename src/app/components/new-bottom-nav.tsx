@@ -44,6 +44,7 @@ const ROLE_TABS: Record<string, Tab[]> = {
   ],
   'mudur': [
     { key: 'dashboard',   icon: Home,          color: 'var(--app-accent, #a855f7)' },
+    { key: 'live-feed',   icon: Activity,      color: '#34d399' },
     { key: 'quick-sales', icon: Zap,           color: '#fb923c' },
     { key: 'aspect-ai',   icon: Sparkles,      color: '#f472b6' },
     { key: 'messaging',   icon: MessageCircle, color: '#60a5fa', badge: true },
