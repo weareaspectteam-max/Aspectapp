@@ -26,6 +26,7 @@ export interface Location {
   photoPrice: number;
   printType?: 'tam' | 'yarim';
   zorlukKatsayisi?: number; // 1.0 (kolay) - 2.0 (zor), liderlik tablosu için
+  kareCharpani?: number; // müşteri sayısı × çarpan = kare kotası (default: 5)
   workingHours?: {
     start: string;
     end: string;
@@ -97,6 +98,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
   const [yilInput, setYilInput] = useState(String(new Date().getFullYear() - 1));
   const [formPrintType, setFormPrintType] = useState<'tam' | 'yarim'>('yarim');
   const [formZorlukKatsayisi, setFormZorlukKatsayisi] = useState(1.0);
+  const [formKareCharpani, setFormKareCharpani] = useState(5);
   const [formWorkingHoursStart, setFormWorkingHoursStart] = useState('09:00');
   const [formWorkingHoursEnd, setFormWorkingHoursEnd] = useState('18:00');
 
@@ -221,6 +223,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           profitTargets: Object.fromEntries(Object.entries(formProfitTargets).filter(([,v]) => parseFloat(v) > 0).map(([k,v]) => [k, parseFloat(v)])),
           printType: formPrintType,
           zorlukKatsayisi: formZorlukKatsayisi,
+          kareCharpani: formKareCharpani,
           workingHours: { start: formWorkingHoursStart, end: formWorkingHoursEnd },
           kotaKademeleri: formKotaKademeleri,
         }),
@@ -258,6 +261,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
           profitTargets: Object.fromEntries(Object.entries(formProfitTargets).filter(([,v]) => parseFloat(v) > 0).map(([k,v]) => [k, parseFloat(v)])),
           printType: formPrintType,
           zorlukKatsayisi: formZorlukKatsayisi,
+          kareCharpani: formKareCharpani,
           workingHours: { start: formWorkingHoursStart, end: formWorkingHoursEnd },
           kotaKademeleri: formKotaKademeleri,
         }),
@@ -333,6 +337,7 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
     setFormProfitTarget(pt.toString());
     setFormPrintType(location.printType || 'yarim');
     setFormZorlukKatsayisi(location.zorlukKatsayisi ?? 1.0);
+    setFormKareCharpani((location as any).kareCharpani ?? 5);
     setFormWorkingHoursStart(location.workingHours?.start || '09:00');
     setFormWorkingHoursEnd(location.workingHours?.end || '18:00');
     setFormKotaKademeleri(location.kotaKademeleri || []);
@@ -598,6 +603,25 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                 </div>
                 <div className="flex justify-between text-[10px] text-white/30 mt-1">
                   <span>Kolay</span><span>Normal</span><span>Zor</span>
+                </div>
+              </div>
+
+              {/* Kare Çarpanı */}
+              <div>
+                <label className="text-sm font-semibold text-gray-300 mb-2 block">📸 Kare Çarpanı <span className="text-white/30 font-normal">(Müşteri × Çarpan = Kare Kotası)</span></label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range" min={1} max={15} step={1}
+                    value={formKareCharpani}
+                    onChange={e => setFormKareCharpani(parseInt(e.target.value))}
+                    className="flex-1 accent-cyan-400"
+                  />
+                  <span className="text-lg font-bold min-w-[3rem] text-center text-cyan-400">
+                    ×{formKareCharpani}
+                  </span>
+                </div>
+                <div className="text-[10px] text-white/30 mt-1">
+                  Örn: 100 müşteri × {formKareCharpani} = {100 * formKareCharpani} kare kota
                 </div>
               </div>
 
@@ -1192,6 +1216,9 @@ export function MekanManagement({ userRole, accessToken, onNavigate }: MekanMana
                               <span className={`${(location.zorlukKatsayisi || 1) > 1.2 ? 'text-red-400' : (location.zorlukKatsayisi || 1) < 0.9 ? 'text-green-400' : 'text-amber-400'}`}>
                                 ⚡ ×{(location.zorlukKatsayisi || 1).toFixed(1)}
                               </span>
+                            )}
+                            {(location as any).kareCharpani && (location as any).kareCharpani !== 5 && (
+                              <span className="text-cyan-400">📸 ×{(location as any).kareCharpani}</span>
                             )}
                             {/* Kota özeti */}
                             {location.kotaKademeleri && location.kotaKademeleri.length > 0 && (

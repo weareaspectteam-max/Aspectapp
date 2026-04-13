@@ -8428,6 +8428,169 @@ app.post("/make-server-4da0b637/stok/kare", async (c) => {
   }
 });
 
+// POST /stok/musteri-sayisi — Mekana günlük müşteri sayısı gir (tek sefer, sonra kilitlenir)
+app.post("/make-server-4da0b637/stok/musteri-sayisi", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const body = await c.req.json();
+    const { mekanId, tarih, musteriSayisi } = body;
+    if (!mekanId || !tarih || !musteriSayisi) {
+      return c.json({ error: "mekanId, tarih ve musteriSayisi zorunludur." }, 400);
+    }
+    const count = parseInt(musteriSayisi);
+    if (isNaN(count) || count <= 0) return c.json({ error: "Geçersiz müşteri sayısı." }, 400);
+
+    const companyId = getCompanyId(user);
+    const ckv = companyKvFor(companyId);
+    const existing = await ckv.get(`stok_gunluk_${mekanId}_${tarih}`) || { mekanId, tarih };
+
+    // Zaten girilmişse sadece yönetici/müdür düzeltebilir
+    if (existing.musteriSayisi && !["yonetici", "ust-mudur", "mudur"].includes(callerRole)) {
+      return c.json({ error: "Müşteri sayısı zaten girilmiş. Düzeltme için yöneticinize başvurun." }, 400);
+    }
+
+    existing.musteriSayisi = count;
+    existing.musteriSayisiGiren = user.user_metadata?.name || user.email || "";
+    existing.musteriSayisiGirenId = user.id;
+    existing.musteriSayisiZamani = new Date().toISOString();
+    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, existing);
+
+    console.log(`Müşteri sayısı kaydedildi: ${mekanId}/${tarih} → ${count} (by ${user.email})`);
+    return c.json({ success: true, musteriSayisi: count });
+  } catch (err) {
+    console.log("musteri-sayisi error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// GET /kare/performans — Personel performans hesaplama (çekim % + baskı dönüşüm %)
+// Query: baslangic, bitis, mekanId? (opsiyonel)
+app.get("/make-server-4da0b637/kare/performans", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
+
+    const companyId = getCompanyId(user);
+    const ckv = companyKvFor(companyId);
+    const baslangic = c.req.query("baslangic") || bizDateTR();
+    const bitis = c.req.query("bitis") || bizDateTR();
+    const filterMekanId = c.req.query("mekanId") || "";
+
+    // Tüm mekanları al
+    const mekanlar: any[] = await ckv.getByPrefix("mekan_") || [];
+    const mekanMap: Record<string, any> = {};
+    for (const m of mekanlar) mekanMap[m.id] = m;
+
+    // Tarih aralığındaki günleri oluştur
+    const gunler: string[] = [];
+    const startD = new Date(baslangic);
+    const endD = new Date(bitis);
+    for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+      gunler.push(d.toISOString().split("T")[0]);
+    }
+
+    // Personel bazlı performans toplama
+    const personelPerf: Record<string, {
+      id: string; ad: string;
+      gunler: { tarih: string; mekanId: string; mekanAd: string; mekanEmoji: string; musteriSayisi: number; kota: number; kisiBasiKota: number; cektigiKare: number; cekimYuzde: number; baskiDonusumYuzde: number }[];
+      toplamKare: number; toplamSorumluMusteri: number;
+    }> = {};
+
+    // Her gün her mekan için stok verisini çek ve hesapla
+    for (const tarih of gunler) {
+      const mekanIds = filterMekanId ? [filterMekanId] : mekanlar.map(m => m.id);
+
+      for (const mekanId of mekanIds) {
+        const stok: any = await ckv.get(`stok_gunluk_${mekanId}_${tarih}`);
+        if (!stok) continue;
+
+        const musteriSayisi = stok.musteriSayisi || 0;
+        if (!musteriSayisi) continue; // müşteri sayısı girilmemişse hesaplama yapma
+
+        const mekan = mekanMap[mekanId];
+        const kareCharpani = mekan?.kareCharpani || 5;
+        const kota = musteriSayisi * kareCharpani;
+
+        const kareKayitlari: any[] = stok.kareKayitlari || [];
+        if (kareKayitlari.length === 0) continue;
+
+        // Fotoğrafçı bazlı kare toplamı
+        const fotografciKare: Record<string, { ad: string; toplam: number }> = {};
+        for (const k of kareKayitlari) {
+          if (!k.photographerId) continue;
+          if (!fotografciKare[k.photographerId]) {
+            fotografciKare[k.photographerId] = { ad: k.photographerName || "", toplam: 0 };
+          }
+          fotografciKare[k.photographerId].toplam += k.frameCount || 0;
+        }
+
+        const fotografciSayisi = Object.keys(fotografciKare).length;
+        if (fotografciSayisi === 0) continue;
+
+        const kisiBasiKota = Math.round(kota / fotografciSayisi);
+        const toplamCekilen = Object.values(fotografciKare).reduce((s, f) => s + f.toplam, 0);
+
+        // Baskı dönüşüm: kapanış verisi
+        const toplamBasilan = stok.vardiyaToplam?.toplamCikisAdedi || 0;
+        const baskiDonusumYuzde = toplamCekilen > 0 ? Math.round((toplamBasilan / toplamCekilen) * 100) : 0;
+
+        // Her fotoğrafçıya performans yaz
+        for (const [pid, data] of Object.entries(fotografciKare)) {
+          if (!personelPerf[pid]) {
+            personelPerf[pid] = { id: pid, ad: data.ad, gunler: [], toplamKare: 0, toplamSorumluMusteri: 0 };
+          }
+          const cekimYuzde = kisiBasiKota > 0 ? Math.round((data.toplam / kisiBasiKota) * 100) : 0;
+          personelPerf[pid].gunler.push({
+            tarih, mekanId,
+            mekanAd: mekan?.name || mekanId,
+            mekanEmoji: mekan?.emoji || "📍",
+            musteriSayisi, kota, kisiBasiKota,
+            cektigiKare: data.toplam,
+            cekimYuzde,
+            baskiDonusumYuzde,
+          });
+          personelPerf[pid].toplamKare += data.toplam;
+          personelPerf[pid].toplamSorumluMusteri += kisiBasiKota;
+        }
+      }
+    }
+
+    // Ortalama hesapla ve listeye dönüştür
+    const personeller = Object.values(personelPerf).map(p => {
+      const gunSayisi = p.gunler.length;
+      const ortCekimYuzde = gunSayisi > 0 ? Math.round(p.gunler.reduce((s, g) => s + g.cekimYuzde, 0) / gunSayisi) : 0;
+      const ortBaskiDonusumYuzde = gunSayisi > 0 ? Math.round(p.gunler.reduce((s, g) => s + g.baskiDonusumYuzde, 0) / gunSayisi) : 0;
+      return {
+        ...p,
+        gunSayisi,
+        ortCekimYuzde,
+        ortBaskiDonusumYuzde,
+      };
+    }).sort((a, b) => b.ortCekimYuzde - a.ortCekimYuzde);
+
+    const toplamPersonel = personeller.length;
+    const genelOrtCekim = toplamPersonel > 0 ? Math.round(personeller.reduce((s, p) => s + p.ortCekimYuzde, 0) / toplamPersonel) : 0;
+    const genelOrtBaski = toplamPersonel > 0 ? Math.round(personeller.reduce((s, p) => s + p.ortBaskiDonusumYuzde, 0) / toplamPersonel) : 0;
+
+    return c.json({
+      baslangic, bitis,
+      toplamPersonel,
+      genelOrtCekimYuzde: genelOrtCekim,
+      genelOrtBaskiDonusumYuzde: genelOrtBaski,
+      personeller,
+    });
+  } catch (err) {
+    console.log("kare/performans error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 // ──────────────────────────────────────────
 // VARDIYA KARE SİLME
 // DELETE /stok/kare/:mekanId/:tarih/:id

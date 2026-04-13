@@ -186,6 +186,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [frameShowSuccess, setFrameShowSuccess] = useState(false);
   const [frameSaving, setFrameSaving] = useState(false);
   const [frameEntries, setFrameEntries] = useState<any[]>([]);
+  const [musteriSayisi, setMusteriSayisi] = useState('');
+  const [musteriSayisiKayitli, setMusteriSayisiKayitli] = useState(false);
+  const [musteriSayisiSaving, setMusteriSayisiSaving] = useState(false);
   const [pendingFrameCount, setPendingFrameCount] = useState(0);
   const [frameFlushing, setFrameFlushing] = useState(false);
 
@@ -804,6 +807,13 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       setRecentSales(gunlukSatislar);
       setAllSalesForKapanis(tumSatislar);
       setFrameEntries(stokData.bugun?.kareKayitlari || []);
+      if (stokData.bugun?.musteriSayisi) {
+        setMusteriSayisi(String(stokData.bugun.musteriSayisi));
+        setMusteriSayisiKayitli(true);
+      } else {
+        setMusteriSayisi('');
+        setMusteriSayisiKayitli(false);
+      }
 
       // ── 5. Check-in durumu kontrol ──
       try {
@@ -1160,6 +1170,31 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       alert('Bağlantı hatası.');
     } finally {
       setDeleteKareSaving(false);
+    }
+  };
+
+  const handleMusteriSayisiSave = async () => {
+    if (!musteriSayisi || !selectedProject) return;
+    const count = parseInt(musteriSayisi);
+    if (isNaN(count) || count <= 0) return;
+    setMusteriSayisiSaving(true);
+    try {
+      const headers = buildHeaders(accessToken);
+      const res = await fetch(`${API_BASE_QS}/stok/musteri-sayisi`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ mekanId: selectedProject.id, tarih: bugunTarih(), musteriSayisi: count }),
+      });
+      if (res.ok) {
+        setMusteriSayisiKayitli(true);
+      } else {
+        const data = await res.json().catch(() => ({ error: 'Hata' }));
+        alert(data.error || 'Müşteri sayısı kaydedilemedi.');
+      }
+    } catch {
+      alert('Bağlantı hatası.');
+    } finally {
+      setMusteriSayisiSaving(false);
     }
   };
 
@@ -2734,6 +2769,51 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                   <div className="font-bold text-white text-sm">{selectedProject.name}</div>
                   <div className="text-xs text-[#d4b5f7]/70">Seçili mekan</div>
                 </div>
+              </div>
+
+              {/* Müşteri Sayısı Girişi */}
+              <div className="backdrop-blur-xl bg-gradient-to-br from-[#ffd4a3]/10 to-[#ffd4a3]/5 border border-[#ffd4a3]/25 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">👥</span>
+                  <span className="font-black text-white text-sm">Bugünkü Müşteri Sayısı</span>
+                  {musteriSayisiKayitli && <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">✓ Kayıtlı</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    placeholder="Müşteri sayısı..."
+                    value={musteriSayisi}
+                    onChange={e => { if (!musteriSayisiKayitli) setMusteriSayisi(e.target.value); }}
+                    readOnly={musteriSayisiKayitli && !['yonetici', 'ust-mudur', 'mudur'].includes(userRole)}
+                    inputMode="numeric"
+                    className={`flex-1 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-lg font-black placeholder-gray-600 outline-none text-center ${musteriSayisiKayitli ? 'opacity-60' : 'focus:border-[#ffd4a3]/50'}`}
+                  />
+                  {!musteriSayisiKayitli ? (
+                    <button
+                      onClick={handleMusteriSayisiSave}
+                      disabled={!musteriSayisi || parseInt(musteriSayisi) <= 0 || musteriSayisiSaving}
+                      className={`px-4 py-3 rounded-xl font-bold text-sm transition-all ${
+                        musteriSayisi && parseInt(musteriSayisi) > 0 && !musteriSayisiSaving
+                          ? 'bg-[#ffd4a3] text-[#2d3748] active:scale-95'
+                          : 'bg-white/10 text-gray-500 cursor-not-allowed'
+                      }`}
+                    >
+                      {musteriSayisiSaving ? '...' : 'Kaydet'}
+                    </button>
+                  ) : ['yonetici', 'ust-mudur', 'mudur'].includes(userRole) && (
+                    <button
+                      onClick={() => setMusteriSayisiKayitli(false)}
+                      className="px-3 py-3 rounded-xl text-xs font-bold border border-white/15 text-white/50 active:scale-95"
+                    >
+                      Düzelt
+                    </button>
+                  )}
+                </div>
+                {musteriSayisi && parseInt(musteriSayisi) > 0 && (
+                  <div className="text-[11px] text-[#ffd4a3]/60 text-center">
+                    Kota: {musteriSayisi} müşteri × {(selectedProject as any)?.kareCharpani || 5} = <span className="font-bold text-[#ffd4a3]">{parseInt(musteriSayisi) * ((selectedProject as any)?.kareCharpani || 5)} kare</span>
+                  </div>
+                )}
               </div>
 
               {!framePhotographer ? (
