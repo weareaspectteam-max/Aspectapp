@@ -247,17 +247,6 @@ export function OperationsDashboard({ userName, userId = '', accessToken = '', o
         </p>
       </div>
 
-      {/* ── Vardiya Başlat Kartı ── */}
-      {userId && (
-        <ShiftCheckInCard
-          userId={userId}
-          userName={userName}
-          accessToken={accessToken}
-          tasks={rotasyonTasks}
-          tasksLoading={rotasyonLoading}
-        />
-      )}
-
       {/* ── 4 Stat Kartı ── */}
       <div className="grid grid-cols-2 gap-3">
         <StatCard
@@ -293,6 +282,17 @@ export function OperationsDashboard({ userName, userId = '', accessToken = '', o
 
       {/* ── Döviz Widget ── */}
       <CurrencyWidget />
+
+      {/* ── Vardiya Başlat Kartı ── */}
+      {userId && (
+        <ShiftCheckInCard
+          userId={userId}
+          userName={userName}
+          accessToken={accessToken}
+          tasks={rotasyonTasks}
+          tasksLoading={rotasyonLoading}
+        />
+      )}
 
       {/* ── Lokasyon Dağılımı (albüm dağılımı gibi) ── */}
       {lokasyonDagilim.length > 0 && (
