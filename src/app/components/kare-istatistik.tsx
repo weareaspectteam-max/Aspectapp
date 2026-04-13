@@ -400,7 +400,7 @@ export function KareIstatistik({ userName, userRole, onNavigate }: KareIstatisti
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ color: 'white', fontSize: 13, fontWeight: 700 }}>{p.ad}</p>
                         <p style={{ color: 'rgba(255,255,255,0.30)', fontSize: 9 }}>
-                          {p.gunSayisi} gün · {p.toplamKare.toLocaleString('tr-TR')} kare · 👥 {p.toplamSorumluMusteri.toLocaleString('tr-TR')}
+                          Vardiya adedi - {p.gunSayisi} · Teslim Edilen Kare {p.toplamKare.toLocaleString('tr-TR')} · Sorumlu olduğu kişi 👥 {p.toplamSorumluMusteri.toLocaleString('tr-TR')}
                         </p>
                       </div>
 
@@ -479,7 +479,7 @@ export function KareIstatistik({ userName, userRole, onNavigate }: KareIstatisti
                                   👥{g.musteriSayisi}
                                 </span>
                                 <span style={{ fontSize: 10, fontWeight: 800, color: '#60a5fa' }}>
-                                  {g.cektigiKare}
+                                  📸 {g.cektigiKare}
                                 </span>
                                 <div style={{
                                   padding: '1px 5px', borderRadius: 5, fontSize: 9, fontWeight: 800,
