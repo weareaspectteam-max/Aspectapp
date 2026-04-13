@@ -1177,7 +1177,7 @@ function MainApp() {
     if (isStaffRole) {
       return <StaffPersonalDashboard userName={userName} userId={userId} accessToken={accessToken} onLogout={handleLogout} onNavigate={handleNavigate} />;
     } else if (isOperationsRole) {
-      return <OperationsDashboard userName={userName} onLogout={handleLogout} onNavigate={handleNavigate} />;
+      return <OperationsDashboard userName={userName} userId={userId} accessToken={accessToken} onLogout={handleLogout} onNavigate={handleNavigate} />;
     } else if (isAdministrativeRole) {
       return <AdministrativeDashboard userName={userName} onLogout={handleLogout} onNavigate={handleNavigate} />;
     } else if (userRole === 'ust-mudur') {

@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 
 import { CurrencyWidget } from './currency-widget';
-import { authHeaders, ghostParams } from '../lib/api';
+import { ShiftCheckInCard } from './shift-checkin-card';
+import { authHeaders, ghostParams, buildHeaders, getToken, appendGhostParam } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
 const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -123,14 +124,16 @@ interface Mekan        { id: string; name: string; emoji: string; }
 interface StokOzet     { vardiyaDurumu: string; veriVar: boolean; name: string; emoji: string; }
 interface LeaveRequest { id: string; status: string; staffName?: string; type?: string; }
 
-interface Props { userName: string; onLogout: () => void; onNavigate: (tab: string) => void; }
+interface Props { userName: string; userId?: string; accessToken?: string; onLogout: () => void; onNavigate: (tab: string) => void; }
 
-export function OperationsDashboard({ userName, onNavigate }: Props) {
+export function OperationsDashboard({ userName, userId = '', accessToken = '', onNavigate }: Props) {
   const [staffMembers,  setStaffMembers]  = useState<StaffMember[]>([]);
   const [todayTasks,    setTodayTasks]    = useState<Task[]>([]);
   const [mekanlar,      setMekanlar]      = useState<Mekan[]>([]);
   const [stokOzetler,   setStokOzetler]   = useState<StokOzet[]>([]);
   const [pendingLeaves, setPendingLeaves] = useState<LeaveRequest[]>([]);
+  const [rotasyonTasks, setRotasyonTasks] = useState<any[]>([]);
+  const [rotasyonLoading, setRotasyonLoading] = useState(true);
 
   const loadAll = useCallback(async () => {
     try {
@@ -179,6 +182,30 @@ export function OperationsDashboard({ userName, onNavigate }: Props) {
     return () => clearInterval(iv);
   }, [loadAll]);
 
+  /* ── Vardiya kartı için kendi rotasyon görevlerimi çek ── */
+  const fetchMyRotasyon = useCallback(async () => {
+    if (!userId) { setRotasyonLoading(false); return; }
+    setRotasyonLoading(true);
+    try {
+      const token = accessToken || await getToken();
+      const res = await fetch(appendGhostParam(`${SERVER}/rotasyon/gorevler`), { headers: buildHeaders(token) });
+      if (!res.ok) { setRotasyonLoading(false); return; }
+      const data = await res.json();
+      const tasks: any[] = data.tasks || [];
+      const myTasks = tasks.filter((t: any) =>
+        Array.isArray(t.personnel) && t.personnel.some((p: any) => p.id === userId)
+        && ['sent', 'revised'].includes(t.status)
+      );
+      setRotasyonTasks(myTasks);
+    } catch (e) {
+      console.error('[OpsDash] rotasyon fetch error:', e);
+    } finally {
+      setRotasyonLoading(false);
+    }
+  }, [userId, accessToken]);
+
+  useEffect(() => { fetchMyRotasyon(); }, [fetchMyRotasyon]);
+
   /* ── Türetilen değerler ── */
   const activeStaff   = staffMembers.filter(s => s.status === 'active').length;
   const totalStaff    = staffMembers.length;
@@ -219,6 +246,17 @@ export function OperationsDashboard({ userName, onNavigate }: Props) {
           Tüm operasyonların canlı özeti · {new Date().toLocaleDateString('tr-TR')}
         </p>
       </div>
+
+      {/* ── Vardiya Başlat Kartı ── */}
+      {userId && (
+        <ShiftCheckInCard
+          userId={userId}
+          userName={userName}
+          accessToken={accessToken}
+          tasks={rotasyonTasks}
+          tasksLoading={rotasyonLoading}
+        />
+      )}
 
       {/* ── 4 Stat Kartı ── */}
       <div className="grid grid-cols-2 gap-3">
