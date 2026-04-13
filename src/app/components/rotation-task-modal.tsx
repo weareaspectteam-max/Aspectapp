@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, MapPin, Clock, Users, Check, AlertCircle, Zap, Sparkles, Loader2, Info } from 'lucide-react';
+import { X, MapPin, Clock, Users, Check, AlertCircle, Zap, Sparkles, Loader2, Info, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   saveTask,
@@ -65,6 +65,7 @@ export function RotationTaskModal({
   }>({ show: false, personnelId: '', personnelName: '' });
   const [confirmedDailyLeaveIds, setConfirmedDailyLeaveIds] = useState<string[]>([]);
   const [showLegend, setShowLegend] = useState(false);
+  const [personnelSearch, setPersonnelSearch] = useState('');
   const legendRef = useRef<HTMLDivElement>(null);
 
   // ==========================================
@@ -526,8 +527,30 @@ export function RotationTaskModal({
                   <Users className="w-4 h-4" />
                   Personel Seçimi * ({selectedPersonnel.length} seçildi)
                 </label>
+                <div className="relative mb-2">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="İsim ara…"
+                    value={personnelSearch}
+                    onChange={(e) => setPersonnelSearch(e.target.value)}
+                    className="w-full pl-8 pr-8 py-2 text-sm bg-white/5 border border-white/10 rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#9dd9ea]/50"
+                  />
+                  {personnelSearch && (
+                    <button
+                      onClick={() => setPersonnelSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto p-2 bg-white/5 rounded-xl border-2 border-white/10">
-                  {staffMembers.map((staff) => {
+                  {staffMembers
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+                    .filter((s) => s.name.toLowerCase().includes(personnelSearch.toLowerCase()))
+                    .map((staff) => {
                     const isSelected = selectedPersonnel.includes(staff.id);
                     const isFixedOnLeave = isPersonnelFixedOnLeave(staff);
                     const isDailyOnLeave = isPersonnelDailyOnLeave(staff);
