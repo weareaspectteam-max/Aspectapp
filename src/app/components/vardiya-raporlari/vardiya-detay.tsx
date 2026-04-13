@@ -876,6 +876,37 @@ export function VardiyaDetay({ v, onBack }: { v: VardiyaKayit; onBack: () => voi
                   </div>
                 )}
 
+                {/* Performans kutuları */}
+                {(p as any).cekimYuzde != null && (
+                  <>
+                    <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '10px 0' }} />
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div style={{ background: 'rgba(74,222,128,0.08)', border: `1px solid ${(p as any).cekimYuzde >= 100 ? 'rgba(74,222,128,0.25)' : (p as any).cekimYuzde >= 80 ? 'rgba(251,191,36,0.25)' : 'rgba(248,113,113,0.25)'}`, borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                        <p style={{ fontSize: 8, color: 'rgba(255,255,255,0.45)', fontWeight: 600, marginBottom: 2 }}>📸 ÇEKİM PERFORMANSI</p>
+                        <p style={{ fontSize: 16, fontWeight: 900, color: (p as any).cekimYuzde >= 100 ? '#4ade80' : (p as any).cekimYuzde >= 80 ? '#fbbf24' : '#f87171' }}>%{(p as any).cekimYuzde}</p>
+                        <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.30)', marginTop: 2 }}>{p.kare} / {(p as any).kisiBasiKota} kare <span style={{ color: 'rgba(255,255,255,0.20)' }}>(kota: {(p as any).toplamKota})</span></p>
+                      </div>
+                      <div style={{ background: 'rgba(157,217,234,0.08)', border: `1px solid ${(p as any).baskiDonusumYuzde >= 70 ? 'rgba(74,222,128,0.25)' : (p as any).baskiDonusumYuzde >= 50 ? 'rgba(251,191,36,0.25)' : 'rgba(248,113,113,0.25)'}`, borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                        <p style={{ fontSize: 8, color: 'rgba(255,255,255,0.45)', fontWeight: 600, marginBottom: 2 }}>🖨️ BASKI DÖNÜŞÜMÜ</p>
+                        <p style={{ fontSize: 16, fontWeight: 900, color: (p as any).baskiDonusumYuzde >= 70 ? '#4ade80' : (p as any).baskiDonusumYuzde >= 50 ? '#fbbf24' : '#f87171' }}>%{(p as any).baskiDonusumYuzde || 0}</p>
+                        <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.30)', marginTop: 2 }}>basılan / çekilen</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+                      <div style={{ background: 'rgba(255,212,163,0.06)', border: '1px solid rgba(255,212,163,0.18)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                        <p style={{ fontSize: 8, color: 'rgba(255,255,255,0.45)', fontWeight: 600, marginBottom: 2 }}>👥 SORUMLU MÜŞTERİ</p>
+                        <p style={{ fontSize: 16, fontWeight: 900, color: '#ffd4a3' }}>{(p as any).musteriSayisi || 0}</p>
+                        <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.30)', marginTop: 2 }}>/ {(p as any).toplamMusteri || 0} toplam</p>
+                      </div>
+                      <div style={{ background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.18)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                        <p style={{ fontSize: 8, color: 'rgba(255,255,255,0.45)', fontWeight: 600, marginBottom: 2 }}>🎯 KİŞİ BAŞI KOTA</p>
+                        <p style={{ fontSize: 16, fontWeight: 900, color: '#60a5fa' }}>{(p as any).kisiBasiKota || 0}</p>
+                        <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.30)', marginTop: 2 }}>/ {(p as any).toplamKota || 0} toplam kota</p>
+                      </div>
+                    </div>
+                  </>
+                )}
+
                 {/* Personel katkı ve kazanç */}
                 {(() => {
                   const personelKareToplam = v.personeller.reduce((s, pp) => s + pp.kare, 0);

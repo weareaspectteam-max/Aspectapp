@@ -11956,6 +11956,41 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
       const kullanilanBaski = Number(vt?.["toplamKullanilanBaskı"]) || 0;
       const birimBaskiMaliyeti = kullanilanBaski > 0 ? parseFloat((mekanBaskiMaliyeti / basilanFotograf).toFixed(2)) : 0;
 
+      // Performans verileri
+      const mekanMusteriSayisi = kayit.musteriSayisi || 0;
+      const mekanKareCharpani = mekan.kareCharpani || 5;
+      const mekanKota = mekanMusteriSayisi * mekanKareCharpani;
+      const mekanBaskiDonusumYuzde = mekanKare > 0 ? Math.round((basilanFotograf / mekanKare) * 100) : 0;
+      // Fotoğrafçı sayısı (kare girişi yapan unique personel)
+      const mekanFotografciIds = new Set<string>();
+      for (const kk of kareKayitlari) { if (kk.photographerId) mekanFotografciIds.add(kk.photographerId); }
+      const mekanFotografciSayisi = mekanFotografciIds.size;
+      const mekanKisiBasiKota = mekanFotografciSayisi > 0 ? Math.round(mekanKota / mekanFotografciSayisi) : 0;
+      // Kişi başı müşteri
+      const mekanKisiBasiMusteri = mekanFotografciSayisi > 0 ? Math.round(mekanMusteriSayisi / mekanFotografciSayisi) : 0;
+
+      // Personel bazlı çekim yüzdesi hesapla (personelMap'e ekle)
+      for (const kk of kareKayitlari) {
+        const pid = kk.photographerId;
+        if (!pid || !personelMap[pid]) continue;
+        if (!personelMap[pid]._mekanPerf) personelMap[pid]._mekanPerf = [];
+        // Aynı mekana birden fazla kare girişi olabilir, toplamı al
+      }
+      // Fotoğrafçı bazlı kare toplamı (bu mekanda)
+      const fotografciKareBuMekan: Record<string, number> = {};
+      for (const kk of kareKayitlari) {
+        if (!kk.photographerId) continue;
+        fotografciKareBuMekan[kk.photographerId] = (fotografciKareBuMekan[kk.photographerId] || 0) + (Number(kk.frameCount) || 0);
+      }
+      for (const [pid, pKare] of Object.entries(fotografciKareBuMekan)) {
+        if (!personelMap[pid]) continue;
+        if (!personelMap[pid]._perfData) personelMap[pid]._perfData = { toplamKota: 0, toplamMusteri: 0, mekanlar: [] };
+        const cekimYuzde = mekanKisiBasiKota > 0 ? Math.round((pKare / mekanKisiBasiKota) * 100) : 0;
+        personelMap[pid]._perfData.toplamKota += mekanKisiBasiKota;
+        personelMap[pid]._perfData.toplamMusteri += mekanKisiBasiMusteri;
+        personelMap[pid]._perfData.mekanlar.push({ mekanAd: mekan.name, cekimYuzde, baskiDonusumYuzde: mekanBaskiDonusumYuzde, musteriSayisi: mekanMusteriSayisi, kisiBasiMusteri: mekanKisiBasiMusteri, kota: mekanKota, kisiBasiKota: mekanKisiBasiKota, cektigiKare: pKare });
+      }
+
       mekanOzetleri.push({
         id: kayit.mekanId,
         name: mekan.name,
@@ -11977,6 +12012,12 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
         birimBaskiMaliyeti,
         paperName: vt?.paperName || null,
         printType: mekan.printType || "yarim",
+        musteriSayisi: mekanMusteriSayisi,
+        kareCharpani: mekanKareCharpani,
+        kota: mekanKota,
+        baskiDonusumYuzde: mekanBaskiDonusumYuzde,
+        fotografciSayisi: mekanFotografciSayisi,
+        kisiBasiKota: mekanKisiBasiKota,
       });
     }
 
@@ -12139,11 +12180,24 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
       const primToplam = Math.round(personelPrimMap[p.id] || 0);
       const gecGiris = gecGirisPersonelSet.has(p.id);
       const gecGirisDk = gecGirisPersonelDk[p.id] || 0;
+      // Performans verileri
+      const perf = p._perfData || null;
+      const cekimYuzde = perf && perf.toplamKota > 0 ? Math.round((p.kare / perf.toplamKota) * 100) : null;
+      // Baskı dönüşüm: personelin çalıştığı mekanların ortalaması
+      const baskiDonusumYuzde = perf && perf.mekanlar.length > 0 ? Math.round(perf.mekanlar.reduce((s: number, m: any) => s + m.baskiDonusumYuzde, 0) / perf.mekanlar.length) : null;
+
       return {
         id: p.id, ad: p.ad, ciro: Math.round(p.ciro), satisAdet: p.satisAdet,
         iskonto: Math.round(p.iskonto), kare: p.kare, gunlukMaas, primToplam,
         mekanlar: Array.from(p.mekanlar),
         gecGiris, gecGirisDk,
+        // Performans
+        cekimYuzde,
+        baskiDonusumYuzde,
+        musteriSayisi: perf?.toplamMusteri || null,
+        kisiBasiKota: perf?.toplamKota || null,
+        toplamKota: perf?.mekanlar.reduce((s: number, m: any) => s + m.kota, 0) || null,
+        toplamMusteri: perf?.mekanlar.reduce((s: number, m: any) => s + m.musteriSayisi, 0) || null,
       };
     }).sort((a: any, b: any) => b.ciro - a.ciro);
 
@@ -12302,6 +12356,10 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
         acilanMekan,
         kapananMekan,
         toplamMekan: gunKayitlar.length,
+        // Performans özet
+        toplamMusteriSayisi: mekanOzetleri.reduce((s: number, m: any) => s + (m.musteriSayisi || 0), 0),
+        toplamKota: mekanOzetleri.reduce((s: number, m: any) => s + (m.kota || 0), 0),
+        baskiDonusumYuzde: toplamKare > 0 ? Math.round((toplamBasilanFotograf / toplamKare) * 100) : 0,
       } : undefined,
       maliyet: !isMultiDay ? {
         baskiMaliyeti: Math.round(toplamBaskiMaliyet),

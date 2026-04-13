@@ -680,6 +680,11 @@ export function GunTab({
                               </div>
                               <p className="text-[10px] mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>
                                 {p.satisAdet} sat{'\u0131\u015F'} {'\u00B7'} {p.kare} kare
+                                {p.cekimYuzde != null && (
+                                  <span style={{ marginLeft: 6, padding: '1px 5px', borderRadius: 4, fontSize: 9, fontWeight: 800, background: p.cekimYuzde >= 100 ? 'rgba(74,222,128,0.15)' : p.cekimYuzde >= 80 ? 'rgba(251,191,36,0.15)' : 'rgba(248,113,113,0.15)', border: `1px solid ${p.cekimYuzde >= 100 ? 'rgba(74,222,128,0.3)' : p.cekimYuzde >= 80 ? 'rgba(251,191,36,0.3)' : 'rgba(248,113,113,0.3)'}`, color: p.cekimYuzde >= 100 ? '#4ade80' : p.cekimYuzde >= 80 ? '#fbbf24' : '#f87171' }}>
+                                    {'\uD83D\uDCF8'} %{p.cekimYuzde}
+                                  </span>
+                                )}
                               </p>
                             </div>
                             <p className="text-xs font-black" style={{ color: '#34d399' }}>{'\u20BA'}{(p.ciro || 0).toLocaleString('tr-TR')}</p>
