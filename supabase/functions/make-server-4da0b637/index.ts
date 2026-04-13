@@ -8538,6 +8538,7 @@ app.get("/make-server-4da0b637/kare/performans", async (c) => {
         if (fotografciSayisi === 0) continue;
 
         const kisiBasiKota = Math.round(kota / fotografciSayisi);
+        const kisiBasiMusteri = Math.round(musteriSayisi / fotografciSayisi);
         const toplamCekilen = Object.values(fotografciKare).reduce((s, f) => s + f.toplam, 0);
 
         // Baskı dönüşüm: kapanış verisi
@@ -8554,13 +8555,13 @@ app.get("/make-server-4da0b637/kare/performans", async (c) => {
             tarih, mekanId,
             mekanAd: mekan?.name || mekanId,
             mekanEmoji: mekan?.emoji || "📍",
-            musteriSayisi, kota, kisiBasiKota,
+            musteriSayisi, kisiBasiMusteri, kota, kisiBasiKota,
             cektigiKare: data.toplam,
             cekimYuzde,
             baskiDonusumYuzde,
           });
           personelPerf[pid].toplamKare += data.toplam;
-          personelPerf[pid].toplamSorumluMusteri += kisiBasiKota;
+          personelPerf[pid].toplamSorumluMusteri += kisiBasiMusteri;
         }
       }
     }
