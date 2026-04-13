@@ -113,12 +113,12 @@ export function KareIstatistik({ userName, userRole, onNavigate }: KareIstatisti
   const [mekanlar, setMekanlar] = useState<MekanOption[]>([]);
 
   // Filtreler
-  const [baslangic, setBaslangic] = useState(ayBaslangic());
+  const [baslangic, setBaslangic] = useState(bugun());
   const [bitis, setBitis] = useState(bugun());
   const [seciliMekan, setSeciliMekan] = useState('');
   const [personelFilter, setPersonelFilter] = useState('');
   const [filtreAcik, setFiltreAcik] = useState(false);
-  const [tarihPreset, setTarihPreset] = useState('bu-ay');
+  const [tarihPreset, setTarihPreset] = useState('bugun');
 
   // Açık personel detayları
   const [acikPersoneller, setAcikPersoneller] = useState<Set<string>>(new Set());
@@ -476,10 +476,13 @@ export function KareIstatistik({ userName, userRole, onNavigate }: KareIstatisti
                                   {g.mekanAd}
                                 </span>
                                 <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)' }}>
-                                  👥{g.musteriSayisi}
+                                  👥{g.musteriSayisi}/{g.kisiBasiMusteri || '—'}
+                                </span>
+                                <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.35)' }}>
+                                  🎯{g.kisiBasiKota}
                                 </span>
                                 <span style={{ fontSize: 10, fontWeight: 800, color: '#60a5fa' }}>
-                                  📸 {g.cektigiKare}
+                                  📸{g.cektigiKare}
                                 </span>
                                 <div style={{
                                   padding: '1px 5px', borderRadius: 5, fontSize: 9, fontWeight: 800,

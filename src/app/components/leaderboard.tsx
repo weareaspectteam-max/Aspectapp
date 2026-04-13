@@ -217,7 +217,7 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
   const [quoteInput, setQuoteInput] = useState('');
   const [savingQuote, setSavingQuote] = useState(false);
 
-  const showCiro = ['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(userRole);
+  const showCiro = ['yonetici', 'ust-mudur', 'mudur'].includes(userRole);
 
   const fetchData = useCallback(async () => {
     setLoading(true); setError('');
@@ -487,7 +487,7 @@ export function Leaderboard({ userName, userId, userRole, accessToken, onLogout,
                         <p className="text-center text-xs font-bold text-white mb-0.5 leading-tight px-1 truncate w-full">
                           {p.ad.split(' ')[0]}
                         </p>
-                        <p className="text-[10px] mb-1.5" style={{ color: 'rgba(255,255,255,0.30)' }}>{p.ham.satisAdet} satış</p>
+                        {showCiro && <p className="text-[10px] mb-1.5" style={{ color: 'rgba(255,255,255,0.30)' }}>{p.ham.satisAdet} satış</p>}
 
                         {/* Quote alanı */}
                         <div className="w-full mb-1.5 min-h-[28px] flex flex-col items-center gap-1">
