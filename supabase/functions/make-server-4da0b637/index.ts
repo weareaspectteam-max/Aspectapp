@@ -8398,7 +8398,8 @@ app.post("/make-server-4da0b637/stok/kare", async (c) => {
     if (isNaN(count) || count <= 0) return c.json({ error: "Geçersiz kare sayısı." }, 400);
 
     // Rotasyon yetkisi kontrolü
-    const yetkiliKare = await checkRotasyonYetkisi(user.id, callerRole, mekanId, tarih);
+    const companyId = getCompanyId(user);
+    const yetkiliKare = await checkRotasyonYetkisi(user.id, callerRole, mekanId, tarih, companyId);
     if (!yetkiliKare) {
       console.log(`Rotasyon yetki reddi — kare: user=${user.id}, role=${callerRole}, mekan=${mekanId}, tarih=${tarih}`);
       return c.json({ error: "Bu mekana bugünkü rotasyonunuzda atanmamışsınız. Kare kaydı yapma yetkiniz yok." }, 403);

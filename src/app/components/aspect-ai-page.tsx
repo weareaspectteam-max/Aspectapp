@@ -2436,12 +2436,13 @@ function AnomalyCard({ data }: { data: any[] }) {
   );
 }
 
-function MessageBubble({ msg, onFlowAction, isLastMsg, onNavigate, onDirectSave }: {
+function MessageBubble({ msg, onFlowAction, isLastMsg, onNavigate, onDirectSave, hideFinancials }: {
   msg: Message;
   onFlowAction?: (command: string) => void;
   isLastMsg?: boolean;
   onNavigate?: (tab: string) => void;
   onDirectSave?: (data: RotationFlowState, status: 'sent' | 'draft') => Promise<void>;
+  hideFinancials?: boolean;
 }) {
   const isUser = msg.role === 'user';
   return (
@@ -2461,8 +2462,8 @@ function MessageBubble({ msg, onFlowAction, isLastMsg, onNavigate, onDirectSave 
         </div>
         {msg.card && (
           <>
-            {msg.card.type === 'briefing' && <BriefingCard data={msg.card.data} hideFinancials={!roleConfig.canSeeFinancials} />}
-            {msg.card.type === 'profit' && <BriefingCard data={msg.card.data} hideFinancials={!roleConfig.canSeeFinancials} />}
+            {msg.card.type === 'briefing' && <BriefingCard data={msg.card.data} hideFinancials={hideFinancials} />}
+            {msg.card.type === 'profit' && <BriefingCard data={msg.card.data} hideFinancials={hideFinancials} />}
             {msg.card.type === 'stock' && <StockCard data={msg.card.data} />}
             {msg.card.type === 'anomaly' && <AnomalyCard data={msg.card.data} />}
             {msg.card.type === 'tip' && <TipCard data={msg.card.data} />}
@@ -2523,6 +2524,7 @@ function DailyBriefingTopCard({
   const anomaliSayisi = ozet?.anomaliler?.length ?? 0;
   const mekanSayisi = ozet?.mekanSayisi ?? 0;
   const toplamCiro = ozet?.toplamCiro ?? 0;
+  const toplamSatisAdet = ozet?.toplamSatisAdet ?? 0;
   const iskonto = ozet?.toplamIskonto ?? 0;
   const karMarji = toplamCiro > 0
     ? Math.min(85, Math.max(60, Math.round((1 - (iskonto / toplamCiro) * 0.4) * 78)))
@@ -4293,6 +4295,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
               onFlowAction={(cmd) => sendMessage(cmd)}
               isLastMsg={idx === messages.length - 1}
               onNavigate={onNavigate}
+              hideFinancials={!roleConfig.canSeeFinancials}
               onDirectSave={async (flowData, status) => {
                 // Direkt kaydet — state/closure bağımlılığı yok, card'dan gelen data kullanılır
                 const makeId = () => Date.now().toString();
