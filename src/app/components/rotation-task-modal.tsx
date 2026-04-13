@@ -231,6 +231,8 @@ export function RotationTaskModal({
         ? prev.filter(id => id !== personnelId)
         : [...prev, personnelId]
     );
+    // Ekleme yapıldıysa aramayı temizle — hızlıca sonraki kişiyi arayabilmek için
+    if (!isAlreadySelected) setPersonnelSearch('');
   };
 
   const handleConfirmDailyLeave = () => {
@@ -238,6 +240,7 @@ export function RotationTaskModal({
     setSelectedPersonnel(prev => [...prev, personnelId]);
     setConfirmedDailyLeaveIds(prev => [...prev, personnelId]);
     setShowDailyLeaveConfirm({ show: false, personnelId: '', personnelName: '' });
+    setPersonnelSearch('');
   };
 
   const handleCancelDailyLeave = () => {
@@ -545,7 +548,26 @@ export function RotationTaskModal({
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto p-2 bg-white/5 rounded-xl border-2 border-white/10">
+                {/* Seçilen personel chip-bar */}
+                {selectedPersonnel.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {selectedPersonnel.map((id) => {
+                      const s = staffMembers.find(st => st.id === id);
+                      if (!s) return null;
+                      return (
+                        <button
+                          key={id}
+                          onClick={() => handleTogglePersonnel(id)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-[#9dd9ea] text-[#2d3748] text-xs font-semibold active:scale-95 transition-all"
+                        >
+                          {s.name}
+                          <X className="w-3 h-3 opacity-60" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto p-2 bg-white/5 rounded-xl border-2 border-white/10">
                   {staffMembers
                     .slice()
                     .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
@@ -564,7 +586,7 @@ export function RotationTaskModal({
                           handleTogglePersonnel(staff.id, isDailyOnLeave);
                         }}
                         disabled={isFixedOnLeave || isSaving}
-                        className={`flex flex-col items-start gap-0.5 px-3 py-2 rounded-xl transition-all ${
+                        className={`flex flex-col items-start gap-0.5 px-2.5 py-1.5 rounded-xl transition-all ${
                           isFixedOnLeave
                             ? 'bg-red-500/40 text-gray-300 cursor-not-allowed opacity-70'
                             : isDailyOnLeave
@@ -580,9 +602,9 @@ export function RotationTaskModal({
                                   : 'bg-white/10 text-gray-300 hover:bg-white/20 active:scale-95'
                         }`}
                       >
-                        <div className="flex items-center gap-2 w-full">
-                          {isSelected && !isFixedOnLeave && <Check className="w-4 h-4 flex-shrink-0" />}
-                          <span className="text-sm truncate flex-1 text-left">{staff.name}</span>
+                        <div className="flex items-center gap-1.5 w-full">
+                          {isSelected && !isFixedOnLeave && <Check className="w-3.5 h-3.5 flex-shrink-0" />}
+                          <span className="text-xs truncate flex-1 text-left">{staff.name}</span>
                         </div>
                         {hasConflict && (
                           <div className="w-full pl-0">
