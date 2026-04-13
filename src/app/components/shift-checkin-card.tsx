@@ -13,13 +13,13 @@ function trNow() {
   return new Date(Date.now() + 3 * 60 * 60 * 1000);
 }
 /**
- * İş günü tarihi: TR 00:00-04:59 → hâlâ önceki takvim günü.
- * Vardiyalar sabah 05:00'da sona erer; gece 03:00'da hâlâ dünün vardiyası devam eder.
+ * İş günü tarihi: TR 00:00-06:59 → hâlâ önceki takvim günü.
+ * Backend bizDateTR() ile aynı kırılım (< 7) kullanılmalı.
  */
 function bizTodayStr(): string {
   const trMs  = Date.now() + 3 * 60 * 60 * 1000;
   const trHour = new Date(trMs).getUTCHours();
-  if (trHour < 5) {
+  if (trHour < 7) {
     return new Date(trMs - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
   }
   return new Date(trMs).toISOString().split('T')[0];
@@ -158,6 +158,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
 
   const [, setRefreshTick] = useState(0); // saniye sayacı — her tick render tetikler
   const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState('');
   const [showLateModal, setShowLateModal] = useState(false);
   const [lateDelayMin, setLateDelayMin] = useState('');
   const [lateReason, setLateReason] = useState('Trafik');
@@ -256,6 +257,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
   const handleCheckIn = async () => {
     if (!todayTask) return;
     setActionLoading(true);
+    setActionError('');
     try {
       const token = accessToken || await getToken();
       const res = await fetch(`${API_BASE}/vardiya/checkin`, {
@@ -270,13 +272,15 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
         }),
       });
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({ error: 'Bilinmeyen hata' }));
         console.error('[ShiftCard] checkin error:', err);
+        setActionError(err.error || `Giriş yapılamadı (${res.status})`);
         return;
       }
       await fetchStatus();
     } catch (e) {
       console.error('[ShiftCard] handleCheckIn error:', e);
+      setActionError('Bağlantı hatası — lütfen tekrar deneyin.');
     } finally {
       setActionLoading(false);
     }
@@ -286,6 +290,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
   const handleCheckOut = async () => {
     if (!todayTask) return;
     setActionLoading(true);
+    setActionError('');
     try {
       const token = accessToken || await getToken();
       const res = await fetch(`${API_BASE}/vardiya/checkout`, {
@@ -294,13 +299,15 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
         body: JSON.stringify({ plannedEnd: todayTask.endTime, erken: false }),
       });
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({ error: 'Bilinmeyen hata' }));
         console.error('[ShiftCard] checkout error:', err);
+        setActionError(err.error || `Çıkış yapılamadı (${res.status})`);
         return;
       }
       await fetchStatus();
     } catch (e) {
       console.error('[ShiftCard] handleCheckOut error:', e);
+      setActionError('Bağlantı hatası — lütfen tekrar deneyin.');
     } finally {
       setActionLoading(false);
     }
@@ -310,6 +317,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
   const handleEarlyCheckOut = async () => {
     if (!todayTask) return;
     setActionLoading(true);
+    setActionError('');
     try {
       const token = accessToken || await getToken();
       const res = await fetch(`${API_BASE}/vardiya/checkout`, {
@@ -318,13 +326,15 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
         body: JSON.stringify({ plannedEnd: todayTask.endTime, erken: true }),
       });
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({ error: 'Bilinmeyen hata' }));
         console.error('[ShiftCard] earlyCheckout error:', err);
+        setActionError(err.error || `Geçici çıkış yapılamadı (${res.status})`);
         return;
       }
       await fetchStatus();
     } catch (e) {
       console.error('[ShiftCard] handleEarlyCheckOut error:', e);
+      setActionError('Bağlantı hatası — lütfen tekrar deneyin.');
     } finally {
       setActionLoading(false);
     }
@@ -334,6 +344,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
   const handleResume = async () => {
     if (!todayTask) return;
     setActionLoading(true);
+    setActionError('');
     try {
       const token = accessToken || await getToken();
       const res = await fetch(`${API_BASE}/vardiya/checkin`, {
@@ -348,13 +359,15 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
         }),
       });
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({ error: 'Bilinmeyen hata' }));
         console.error('[ShiftCard] resume error:', err);
+        setActionError(err.error || `Devam edilemedi (${res.status})`);
         return;
       }
       await fetchStatus();
     } catch (e) {
       console.error('[ShiftCard] handleResume error:', e);
+      setActionError('Bağlantı hatası — lütfen tekrar deneyin.');
     } finally {
       setActionLoading(false);
     }
@@ -874,6 +887,22 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
           }}>
             <CheckCircle2 style={{ width: 13, height: 13 }} />
             Geç kalma bildirimi gönderildi · {lateNotice.delayMin}dk · {lateNotice.reason}
+          </div>
+        )}
+
+        {/* HATA MESAJI */}
+        {actionError && (
+          <div
+            onClick={() => setActionError('')}
+            style={{
+              marginTop: 10, padding: '10px 14px', borderRadius: 10,
+              background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.30)',
+              display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+            }}
+          >
+            <AlertCircle style={{ width: 14, height: 14, color: '#f87171', flexShrink: 0 }} />
+            <span style={{ fontSize: 12, color: '#f87171', fontWeight: 600 }}>{actionError}</span>
+            <X style={{ width: 12, height: 12, color: 'rgba(248,113,113,0.50)', marginLeft: 'auto', flexShrink: 0 }} />
           </div>
         )}
       </>

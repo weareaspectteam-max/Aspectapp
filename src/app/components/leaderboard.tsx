@@ -46,7 +46,7 @@ function fmt(d: Date) { return d.toISOString().split('T')[0]; }
 function bizToday(): string {
   const trMs   = Date.now() + 3 * 60 * 60 * 1000;
   const trHour = new Date(trMs).getUTCHours();
-  if (trHour < 5) return new Date(trMs - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  if (trHour < 7) return new Date(trMs - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
   return new Date(trMs).toISOString().split('T')[0];
 }
 

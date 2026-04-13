@@ -56,11 +56,11 @@ function trNow() {
   return new Date(Date.now() + 3 * 60 * 60 * 1000);
 }
 function fmt(d: Date) { return d.toISOString().split('T')[0]; }
-/** İş günü tarihi: TR 00:00-04:59 → önceki takvim günü (vardiya 05:00'da biter). */
+/** İş günü tarihi: TR 00:00-06:59 → önceki takvim günü. Backend bizDateTR() ile aynı kırılım (< 7). */
 function bizToday(): string {
   const trMs   = Date.now() + 3 * 60 * 60 * 1000;
   const trHour = new Date(trMs).getUTCHours();
-  if (trHour < 5) return new Date(trMs - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  if (trHour < 7) return new Date(trMs - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
   return new Date(trMs).toISOString().split('T')[0];
 }
 function getMonthDates() {

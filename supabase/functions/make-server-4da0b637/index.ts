@@ -14211,13 +14211,25 @@ app.post("/make-server-4da0b637/vardiya/checkin", async (c) => {
     // Sessions yönetimi
     const ckv = companyKvFor(getCompanyId(user));
     const existingSessions: any[] = (await ckv.get(`sessions_${userId}_${tarih}`)) || [];
-    const isResume = existingSessions.length > 0;
 
-    // Zaten aktif oturum varsa hata dön
+    // Mevcut checkin verisini oku — farklı görev mi kontrol et
+    const existingCheckin: any = await ckv.get(`checkin_${userId}_${tarih}`);
+    const isNewShift = !existingCheckin || (taskId && existingCheckin.taskId !== taskId);
+    const isResume = existingSessions.length > 0 && !isNewShift;
+
+    // Zaten aktif oturum varsa hata dön (aynı görev için)
     if (isResume) {
       const lastSession = existingSessions[existingSessions.length - 1];
       if (!lastSession.checkOut) {
         return c.json({ error: "Zaten aktif bir vardiya var." }, 400);
+      }
+    }
+
+    // Farklı görev ise ve önceki görev hâlâ aktifse, önce onu kapat
+    if (isNewShift && existingSessions.length > 0) {
+      const lastSession = existingSessions[existingSessions.length - 1];
+      if (!lastSession.checkOut) {
+        lastSession.checkOut = checkInTime; // önceki görevi şimdi kapat
       }
     }
 
@@ -14226,13 +14238,14 @@ app.post("/make-server-4da0b637/vardiya/checkin", async (c) => {
       checkOut: null as string | null,
       lateMin: (!isResume && isLate) ? lateMin : 0,
       type: isResume ? "resume" : "initial",
+      taskId: taskId || null,
     };
     const updatedSessions = [...existingSessions, newSession];
     await ckv.set(`sessions_${userId}_${tarih}`, updatedSessions);
 
-    // İlk giriş: checkin_ anahtarını geriye dönük uyumluluk için yaz
+    // checkin_ anahtarını her zaman güncelle (farklı görev veya ilk giriş)
     const data = { checkInTime, plannedStart, plannedEnd, location, locationIcon, taskId, lateMin: (!isResume && isLate) ? lateMin : 0, userId, tarih };
-    if (!isResume) {
+    if (!isResume || isNewShift) {
       await ckv.set(`checkin_${userId}_${tarih}`, data);
     }
     // Her durumda checkout_ ve paused_ anahtarlarını temizle
@@ -14243,7 +14256,7 @@ app.post("/make-server-4da0b637/vardiya/checkin", async (c) => {
     const nowTrMM = String(now.getUTCMinutes()).padStart(2, "0");
     const nowTrStr = `${nowTrHH}:${nowTrMM}`;
 
-    if (isResume) {
+    if (isResume && !isNewShift) {
       console.log(`[Vardiya] Devam: ${userName} — ${tarih} ${nowTrStr}`);
       const tg = `▶️ <b>Vardiya Devam Etti</b>\n\n👤 <b>${userName}</b> vardiyasına geri döndü.\n📍 ${locationIcon || "📍"} ${location || "Bilinmiyor"}\n🕐 Dönüş saati: <b>${nowTrStr}</b>\n📅 Tarih: ${tarih}\n🔄 Oturum: ${updatedSessions.length}. giriş`;
       sendTelegramMessage(tg, "HTML", getCompanyId(user)).catch(() => {});
@@ -14258,7 +14271,7 @@ app.post("/make-server-4da0b637/vardiya/checkin", async (c) => {
       sendTelegramMessage(tg, "HTML", getCompanyId(user)).catch(() => {});
     }
 
-    return c.json({ success: true, data, isLate: !isResume && isLate, lateMin: (!isResume && isLate) ? lateMin : 0, isResume });
+    return c.json({ success: true, data, isLate: !isResume && isLate, lateMin: (!isResume && isLate) ? lateMin : 0, isResume, isNewShift });
   } catch (err) {
     console.log("vardiya/checkin error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);

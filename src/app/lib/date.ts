@@ -24,19 +24,20 @@ export const toLocalDateStr = (date: Date): string => {
 /**
  * ── İŞ GÜNÜ TARİHİ (Business Date) ─────────────────────────────────────────
  * Turistik fotoğrafçılık vardiyaları gece geçer; iş günü 05:00 TR'de başlar.
- * Kural:  TR saati 00:00 – 04:59 → hâlâ önceki takvim günüdür.
- *         TR saati 05:00+        → yeni iş günüdür.
+ * Kural:  TR saati 00:00 – 06:59 → hâlâ önceki takvim günüdür.
+ *         TR saati 07:00+        → yeni iş günüdür.
+ * Backend bizDateTR() ile aynı kırılım (< 7) kullanılmalı.
  *
  * Örnek:
  *   TR 03:45 → bizDateStr() = dünün tarihi  (vardiya henüz bitmedi)
- *   TR 05:01 → bizDateStr() = bugünün tarihi (yeni vardiya dönemi)
+ *   TR 07:01 → bizDateStr() = bugünün tarihi (yeni vardiya dönemi)
  */
 export const bizDateStr = (): string => {
   // Date.now() + 3h → UTC offset'i ile TR saatini UTC üzerinden okuruz
   const trMs  = Date.now() + 3 * 60 * 60 * 1000;
   const trHour = new Date(trMs).getUTCHours();
-  // TR 00:00-04:59 → önceki iş günü
-  if (trHour < 5) {
+  // TR 00:00-06:59 → önceki iş günü
+  if (trHour < 7) {
     return new Date(trMs - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
   }
   return new Date(trMs).toISOString().split('T')[0];
