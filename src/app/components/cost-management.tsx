@@ -907,20 +907,37 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
 
           {!isAutoExchange && (
             <div className="space-y-3">
-              {(['EUR', 'USD', 'GBP', 'BGN', 'RUB', 'SAR'] as const).map((currency) => (
-                <div key={currency} className="flex items-center gap-3">
-                  <span className="text-xl">{currency === 'EUR' ? '🇪🇺' : currency === 'USD' ? '🇺🇸' : currency === 'GBP' ? '🇬🇧' : currency === 'BGN' ? '🇧🇬' : currency === 'RUB' ? '🇷🇺' : '🇸🇦'}</span>
-                  <span className="text-white font-semibold w-12">{currency}:</span>
-                  <input
-                    type="number" step="0.01"
-                    value={exchangeRates[currency].toFixed(2)}
-                    onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) saveExchangeRates({ ...exchangeRates, [currency]: parseFloat(v.toFixed(2)) }, false); }}
-                    onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) e.target.value = v.toFixed(2); }}
-                    style={{ width: 110, padding: '8px 12px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: 'white', outline: 'none', fontSize: 14 }}
-                  />
-                  <span style={{ color: 'rgba(255,255,255,0.4)' }}>TL</span>
-                </div>
-              ))}
+              {(['EUR', 'USD', 'GBP', 'BGN', 'RUB', 'SAR'] as const).map((currency) => {
+                const flag = currency === 'EUR' ? '🇪🇺' : currency === 'USD' ? '🇺🇸' : currency === 'GBP' ? '🇬🇧' : currency === 'BGN' ? '🇧🇬' : currency === 'RUB' ? '🇷🇺' : '🇸🇦';
+                const step = currency === 'RUB' ? 0.01 : 0.10;
+                const adjust = (dir: 1 | -1) => {
+                  const v = Math.max(0, parseFloat((exchangeRates[currency] + dir * step).toFixed(2)));
+                  saveExchangeRates({ ...exchangeRates, [currency]: v }, false);
+                };
+                return (
+                  <div key={currency} className="flex items-center gap-2">
+                    <span className="text-lg">{flag}</span>
+                    <span className="text-white font-semibold text-sm w-11">{currency}:</span>
+                    <button
+                      onClick={() => adjust(-1)}
+                      style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.15)', color: 'white', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                    >−</button>
+                    <input
+                      type="number" step="0.01" inputMode="decimal"
+                      value={exchangeRates[currency].toFixed(2)}
+                      onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) saveExchangeRates({ ...exchangeRates, [currency]: parseFloat(v.toFixed(2)) }, false); }}
+                      onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) e.target.value = v.toFixed(2); }}
+                      onFocus={(e) => e.target.select()}
+                      style={{ flex: 1, minWidth: 0, padding: '8px 10px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, color: 'white', outline: 'none', fontSize: 15, fontWeight: 600, textAlign: 'center' }}
+                    />
+                    <button
+                      onClick={() => adjust(1)}
+                      style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(157,217,234,0.15)', border: '1px solid rgba(157,217,234,0.30)', color: '#9dd9ea', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                    >+</button>
+                    <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>TL</span>
+                  </div>
+                );
+              })}
             </div>
           )}
 
