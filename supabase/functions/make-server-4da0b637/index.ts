@@ -8444,7 +8444,9 @@ app.post("/make-server-4da0b637/stok/musteri-sayisi", async (c) => {
     const count = parseInt(musteriSayisi);
     if (isNaN(count) || count <= 0) return c.json({ error: "Geçersiz müşteri sayısı." }, 400);
 
-    const companyId = getCompanyId(user);
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    const reqCId = c.req.query("company_id");
+    const companyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
     const ckv = companyKvFor(companyId);
     const existing = await ckv.get(`stok_gunluk_${mekanId}_${tarih}`) || { mekanId, tarih };
 
@@ -8476,7 +8478,9 @@ app.get("/make-server-4da0b637/kare/performans", async (c) => {
     const callerRole = user.user_metadata?.role;
     if (callerRole === "bekleyen") return c.json({ error: "Yetki yok." }, 403);
 
-    const companyId = getCompanyId(user);
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    const reqCId = c.req.query("company_id");
+    const companyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
     const ckv = companyKvFor(companyId);
     const baslangic = c.req.query("baslangic") || bizDateTR();
     const bitis = c.req.query("bitis") || bizDateTR();
