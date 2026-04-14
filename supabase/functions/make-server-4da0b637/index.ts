@@ -43,6 +43,15 @@ async function retryOp<T>(
 }
 
 const getMekanlarFor = async (companyId: string): Promise<any[]> => {
+  // SQL read (KV fallback)
+  try {
+    const db = getAdminClient();
+    const { data, error } = await db.from("venues").select("id, extra_data").eq("company_id", companyId);
+    if (!error && data && data.length > 0) {
+      return data.map((v: any) => v.extra_data ? { ...v.extra_data, id: v.id } : v).filter((m: any) => m && m.name && m.emoji);
+    }
+  } catch {}
+  // KV fallback
   const ckv = companyKvFor(companyId);
   const all: any[] = await retryOp(() => ckv.getByPrefix("mekan_"), 3, 300) || [];
   return all.filter((m: any) => m && m.name && m.emoji);
@@ -19069,7 +19078,7 @@ app.post("/make-server-4da0b637/migration/ref-data", async (c) => {
         kare_charpani: Number(m.kareCharpani) || 5,
         working_hours: m.workingHours || null,
         kota_kademeleri: m.kotaKademeleri || null,
-        extra_data: { yearlyRents: m.yearlyRents, profitTargets: m.profitTargets, dailyCostPercentage: m.dailyCostPercentage, profitPercentage: m.profitPercentage },
+        extra_data: m,
       }));
       const { error } = await db.from("venues").upsert(venueRows, { onConflict: "id" });
       log.push(error ? `venues HATA: ${error.message}` : `venues: ${venueRows.length} kayıt`);
