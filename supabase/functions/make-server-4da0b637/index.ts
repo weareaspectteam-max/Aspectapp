@@ -3426,7 +3426,29 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
     };
 
     await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
-    console.log(`Stok açılışı: ${mekanId} / ${tarih} by ${user.id} | ${printerData?.length || 0} yazıcı | ${printerAnomali.length} yazıcı anomali`);
+
+    // ── PostgreSQL dual-write (açılış) ──
+    try {
+      const db = getAdminClient();
+      await db.from("stock_movements").insert({
+        company_id: companyId,
+        venue_id: mekanId,
+        date: tarih,
+        type: "opening",
+        stock_data: migSayim,
+        printer_data: printerData || null,
+        anomaly_data: anomali,
+        customer_count: existing.musteriSayisi || null,
+        performed_by_id: user.id,
+        performed_by_name: user.user_metadata?.full_name || user.email,
+        notes: acilisNot || null,
+        timestamp: kayit.acilisZamani,
+      });
+    } catch (sqlErr) {
+      console.log(`[dual-write] SQL açılış HATA: ${sqlErr}`);
+    }
+
+    console.log(`Stok açılışı (dual): ${mekanId} / ${tarih} by ${user.id} | ${printerData?.length || 0} yazıcı | ${printerAnomali.length} yazıcı anomali`);
 
     // ── Telegram: Açılış bildirimi (fotoğraflı veya metin) ─────────────
     try {
@@ -3751,6 +3773,28 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     };
 
     await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
+
+    // ── PostgreSQL dual-write (kapanış) ──
+    try {
+      const db = getAdminClient();
+      await db.from("stock_movements").insert({
+        company_id: companyId,
+        venue_id: mekanId,
+        date: tarih,
+        type: "closing",
+        stock_data: migKapSayim,
+        printer_data: enrichedPrinterData || null,
+        shift_total: vardiyaToplam || null,
+        anomaly_data: anomali,
+        customer_count: existing.musteriSayisi || null,
+        performed_by_id: user.id,
+        performed_by_name: user.user_metadata?.full_name || user.email,
+        notes: kapanisNot || null,
+        timestamp: kayit.kapanisZamani,
+      });
+    } catch (sqlErr) {
+      console.log(`[dual-write] SQL kapanış HATA: ${sqlErr}`);
+    }
 
     // ── Telegram: Kapanış bildirimi (fotoğraflı veya metin) ─────────────────
     try {
@@ -8531,7 +8575,20 @@ app.post("/make-server-4da0b637/stok/musteri-sayisi", async (c) => {
     existing.musteriSayisiZamani = new Date().toISOString();
     await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, existing);
 
-    console.log(`Müşteri sayısı kaydedildi: ${mekanId}/${tarih} → ${count} (by ${user.email})`);
+    // ── PostgreSQL dual-write (müşteri sayısı → stock_movements customer_count) ──
+    try {
+      const db = getAdminClient();
+      // Mevcut opening/closing kayıtlarının customer_count'unu güncelle
+      await db.from("stock_movements")
+        .update({ customer_count: count })
+        .eq("company_id", companyId)
+        .eq("venue_id", mekanId)
+        .eq("date", tarih);
+    } catch (sqlErr) {
+      console.log(`[dual-write] SQL müşteri sayısı HATA: ${sqlErr}`);
+    }
+
+    console.log(`Müşteri sayısı kaydedildi (dual): ${mekanId}/${tarih} → ${count} (by ${user.email})`);
     return c.json({ success: true, musteriSayisi: count });
   } catch (err) {
     console.log("musteri-sayisi error:", err);
@@ -19071,6 +19128,71 @@ app.post("/make-server-4da0b637/migration/ref-data", async (c) => {
     } else {
       log.push(`frame_records: 0 kayıt`);
     }
+
+    // ── 10. STOK HAREKETLERİ (stok_gunluk → stock_movements) ──
+    let stockCount = 0;
+    for (const stok of tumStoklar) {
+      const stkMekanId = stok.mekanId || "";
+      const stkTarih = stok.tarih || "";
+      if (!stkMekanId || !stkTarih) continue;
+
+      const movements: any[] = [];
+
+      // Açılış
+      if (stok.acilisYapildi) {
+        movements.push({
+          company_id: targetCompany,
+          venue_id: stkMekanId,
+          date: stkTarih,
+          type: "opening",
+          stock_data: stok.acilis || null,
+          printer_data: stok.acilisYazicilar || null,
+          anomaly_data: stok.acilisAnomali || null,
+          customer_count: stok.musteriSayisi || null,
+          performed_by_id: stok.acilisYapanId || null,
+          performed_by_name: stok.acilisYapanAd || null,
+          notes: stok.acilisNot || null,
+          timestamp: stok.acilisZamani || null,
+        });
+      }
+
+      // Kapanış
+      if (stok.kapanisYapildi) {
+        movements.push({
+          company_id: targetCompany,
+          venue_id: stkMekanId,
+          date: stkTarih,
+          type: "closing",
+          stock_data: stok.kapanish || null,
+          printer_data: stok.printerData || null,
+          shift_total: stok.vardiyaToplam || null,
+          anomaly_data: stok.kapanisAnomali || null,
+          customer_count: stok.musteriSayisi || null,
+          performed_by_id: stok.kapanisYapanId || null,
+          performed_by_name: stok.kapanisYapanAd || null,
+          notes: stok.kapanisNot || null,
+          timestamp: stok.kapanisZamani || null,
+        });
+      }
+
+      if (movements.length > 0) {
+        for (const mov of movements) {
+          // Unique check: company + venue + date + type
+          const { data: existing } = await db.from("stock_movements")
+            .select("id")
+            .eq("company_id", mov.company_id)
+            .eq("venue_id", mov.venue_id)
+            .eq("date", mov.date)
+            .eq("type", mov.type)
+            .limit(1);
+          if (existing && existing.length > 0) continue; // zaten var
+          const { error } = await db.from("stock_movements").insert(mov);
+          if (error) { log.push(`stock_movements HATA: ${error.message}`); }
+          else stockCount++;
+        }
+      }
+    }
+    log.push(`stock_movements: ${stockCount} kayıt`);
 
     console.log(`[Migration] Ref-data ${targetCompany}: ${log.join(" | ")}`);
     allResults[targetCompany] = log;
