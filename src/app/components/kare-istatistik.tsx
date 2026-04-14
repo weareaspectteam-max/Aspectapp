@@ -28,11 +28,15 @@ interface GunPerf {
   mekanAd: string;
   mekanEmoji: string;
   musteriSayisi: number;
+  kisiBasiMusteri: number;
   kota: number;
   kisiBasiKota: number;
   cektigiKare: number;
   cekimYuzde: number;
   baskiDonusumYuzde: number;
+  satisAdet: number;
+  satisDonusumYuzde: number;
+  baskiSatisOraniYuzde: number;
 }
 
 interface PersonelPerf {
@@ -40,9 +44,12 @@ interface PersonelPerf {
   ad: string;
   toplamKare: number;
   toplamSorumluMusteri: number;
+  toplamSatisAdet: number;
   gunSayisi: number;
   ortCekimYuzde: number;
   ortBaskiDonusumYuzde: number;
+  ortSatisDonusumYuzde: number;
+  ortBaskiSatisOraniYuzde: number;
   gunler: GunPerf[];
 }
 
@@ -100,6 +107,12 @@ function baskiRenk(yuzde: number): string {
   if (yuzde >= 50) return '#fbbf24';
   return '#f87171';
 }
+function satisRenk(yuzde: number): string {
+  if (yuzde >= 100) return '#22c55e';
+  if (yuzde >= 60) return '#4ade80';
+  if (yuzde >= 30) return '#fbbf24';
+  return '#f87171';
+}
 
 const RANK_COLORS = ['#fbbf24', '#c0c0c0', '#cd7f32', '#60a5fa', '#a855f7', '#34d399'];
 
@@ -110,6 +123,8 @@ export function KareIstatistik({ userName, userRole, onNavigate }: KareIstatisti
   const [personeller, setPersoneller] = useState<PersonelPerf[]>([]);
   const [genelOrtCekim, setGenelOrtCekim] = useState(0);
   const [genelOrtBaski, setGenelOrtBaski] = useState(0);
+  const [genelOrtSatisDonusum, setGenelOrtSatisDonusum] = useState(0);
+  const [genelOrtBaskiSatis, setGenelOrtBaskiSatis] = useState(0);
   const [mekanlar, setMekanlar] = useState<MekanOption[]>([]);
 
   // Filtreler
@@ -142,6 +157,8 @@ export function KareIstatistik({ userName, userRole, onNavigate }: KareIstatisti
       setPersoneller(data.personeller || []);
       setGenelOrtCekim(data.genelOrtCekimYuzde || 0);
       setGenelOrtBaski(data.genelOrtBaskiDonusumYuzde || 0);
+      setGenelOrtSatisDonusum(data.genelOrtSatisDonusumYuzde || 0);
+      setGenelOrtBaskiSatis(data.genelOrtBaskiSatisOraniYuzde || 0);
 
       // Mekanları ayrıca çek (ilk sefer)
       if (mekanlar.length === 0) {
@@ -312,10 +329,11 @@ export function KareIstatistik({ userName, userRole, onNavigate }: KareIstatisti
         {/* ── Özet kartları ── */}
         {!loading && personeller.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-            className="grid grid-cols-3 gap-3">
+            className="grid grid-cols-4 gap-2">
             {[
               { label: 'Çekim Perf.', val: `%${genelOrtCekim}`, color: cekimRenk(genelOrtCekim), bg: `${cekimRenk(genelOrtCekim)}15`, border: `${cekimRenk(genelOrtCekim)}35`, icon: '📸' },
               { label: 'Baskı Dön.', val: `%${genelOrtBaski}`, color: baskiRenk(genelOrtBaski), bg: `${baskiRenk(genelOrtBaski)}15`, border: `${baskiRenk(genelOrtBaski)}35`, icon: '🖨️' },
+              { label: 'Satış Dön.', val: `%${genelOrtSatisDonusum}`, color: satisRenk(genelOrtSatisDonusum), bg: `${satisRenk(genelOrtSatisDonusum)}15`, border: `${satisRenk(genelOrtSatisDonusum)}35`, icon: '💰' },
               { label: 'Personel', val: filtrelenmis.length.toString(), color: '#a855f7', bg: 'rgba(168,85,247,0.1)', border: 'rgba(168,85,247,0.25)', icon: '👥' },
             ].map(c => (
               <div key={c.label} style={{ ...glass, padding: '12px 10px', background: c.bg, border: `1px solid ${c.border}`, borderRadius: 16, textAlign: 'center' }}>
@@ -422,6 +440,14 @@ export function KareIstatistik({ userName, userRole, onNavigate }: KareIstatisti
                         }}>
                           🖨️ %{p.ortBaskiDonusumYuzde}
                         </div>
+                        <div style={{
+                          padding: '2px 8px', borderRadius: 7, fontSize: 10, fontWeight: 800,
+                          color: satisRenk(p.ortSatisDonusumYuzde),
+                          background: `${satisRenk(p.ortSatisDonusumYuzde)}15`,
+                          border: `1px solid ${satisRenk(p.ortSatisDonusumYuzde)}35`,
+                        }}>
+                          💰 %{p.ortSatisDonusumYuzde}
+                        </div>
                       </div>
 
                       <div style={{ color: 'rgba(255,255,255,0.25)' }}>
@@ -447,6 +473,8 @@ export function KareIstatistik({ userName, userRole, onNavigate }: KareIstatisti
                             {[
                               { label: 'Çekim Perf.', val: `%${p.ortCekimYuzde}`, color: cekimRenk(p.ortCekimYuzde) },
                               { label: 'Baskı Dön.', val: `%${p.ortBaskiDonusumYuzde}`, color: baskiRenk(p.ortBaskiDonusumYuzde) },
+                              { label: 'Satış Dön.', val: `%${p.ortSatisDonusumYuzde}`, color: satisRenk(p.ortSatisDonusumYuzde) },
+                              { label: 'Satış', val: (p.toplamSatisAdet || 0).toLocaleString('tr-TR'), color: '#c084fc' },
                               { label: 'Müşteri', val: p.toplamSorumluMusteri.toLocaleString('tr-TR'), color: '#ffd4a3' },
                               { label: 'Kare', val: p.toplamKare.toLocaleString('tr-TR'), color: '#60a5fa' },
                             ].map(s => (
@@ -500,6 +528,16 @@ export function KareIstatistik({ userName, userRole, onNavigate }: KareIstatisti
                                 }}>
                                   🖨️%{g.baskiDonusumYuzde}
                                 </div>
+                                {g.satisAdet > 0 && (
+                                  <div style={{
+                                    padding: '1px 5px', borderRadius: 5, fontSize: 9, fontWeight: 800,
+                                    color: satisRenk(g.satisDonusumYuzde),
+                                    background: `${satisRenk(g.satisDonusumYuzde)}12`,
+                                    border: `1px solid ${satisRenk(g.satisDonusumYuzde)}30`,
+                                  }}>
+                                    💰{g.satisAdet}/%{g.satisDonusumYuzde}
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>

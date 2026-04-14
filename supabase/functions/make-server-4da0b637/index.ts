@@ -8522,7 +8522,7 @@ app.get("/make-server-4da0b637/kare/performans", async (c) => {
         const kota = musteriSayisi * kareCharpani;
 
         const kareKayitlari: any[] = stok.kareKayitlari || [];
-        if (kareKayitlari.length === 0) continue;
+        const satislar: any[] = (stok.satislar || []).filter((s: any) => !s.iptal);
 
         // Fotoğrafçı bazlı kare toplamı
         const fotografciKare: Record<string, { ad: string; toplam: number }> = {};
@@ -8534,34 +8534,65 @@ app.get("/make-server-4da0b637/kare/performans", async (c) => {
           fotografciKare[k.photographerId].toplam += k.frameCount || 0;
         }
 
-        const fotografciSayisi = Object.keys(fotografciKare).length;
-        if (fotografciSayisi === 0) continue;
+        // Satışçı bazlı satış toplamı
+        const satisciSatis: Record<string, { ad: string; toplam: number }> = {};
+        for (const s of satislar) {
+          const sid = s.kaydedenId || s.kaydeden;
+          if (!sid) continue;
+          if (!satisciSatis[sid]) {
+            satisciSatis[sid] = { ad: s.kaydeden || "", toplam: 0 };
+          }
+          satisciSatis[sid].toplam++;
+        }
 
-        const kisiBasiKota = Math.round(kota / fotografciSayisi);
-        const kisiBasiMusteri = Math.round(musteriSayisi / fotografciSayisi);
+        const fotografciSayisi = Object.keys(fotografciKare).length;
+        const satisciSayisi = Object.keys(satisciSatis).length;
+
+        // En az biri olmalı
+        if (fotografciSayisi === 0 && satisciSayisi === 0) continue;
+
+        const kisiBasiKota = fotografciSayisi > 0 ? Math.round(kota / fotografciSayisi) : 0;
+        const kisiBasiMusteri = fotografciSayisi > 0 ? Math.round(musteriSayisi / fotografciSayisi) : 0;
+        const kisiBasiMusteriSatis = satisciSayisi > 0 ? Math.round(musteriSayisi / satisciSayisi) : 0;
         const toplamCekilen = Object.values(fotografciKare).reduce((s, f) => s + f.toplam, 0);
 
         // Baskı dönüşüm: kapanış verisi
         const toplamBasilan = stok.vardiyaToplam?.toplamCikisAdedi || 0;
         const baskiDonusumYuzde = toplamCekilen > 0 ? Math.round((toplamBasilan / toplamCekilen) * 100) : 0;
+        const kisiBasiBasilan = satisciSayisi > 0 ? Math.round(toplamBasilan / satisciSayisi) : 0;
 
-        // Her fotoğrafçıya performans yaz
-        for (const [pid, data] of Object.entries(fotografciKare)) {
+        // Tüm personeli (fotoğrafçı + satışçı) birleştir
+        const tumPersonelIds = new Set([...Object.keys(fotografciKare), ...Object.keys(satisciSatis)]);
+
+        for (const pid of tumPersonelIds) {
+          const fotoData = fotografciKare[pid];
+          const satisData = satisciSatis[pid];
+          const ad = fotoData?.ad || satisData?.ad || "";
+          const cektigiKare = fotoData?.toplam || 0;
+          const satisAdet = satisData?.toplam || 0;
+
           if (!personelPerf[pid]) {
-            personelPerf[pid] = { id: pid, ad: data.ad, gunler: [], toplamKare: 0, toplamSorumluMusteri: 0 };
+            personelPerf[pid] = { id: pid, ad, gunler: [], toplamKare: 0, toplamSorumluMusteri: 0, toplamSatisAdet: 0 };
           }
-          const cekimYuzde = kisiBasiKota > 0 ? Math.round((data.toplam / kisiBasiKota) * 100) : 0;
+          const cekimYuzde = kisiBasiKota > 0 ? Math.round((cektigiKare / kisiBasiKota) * 100) : 0;
+          const satisDonusumYuzde = kisiBasiMusteriSatis > 0 ? Math.round((satisAdet / kisiBasiMusteriSatis) * 100) : 0;
+          const baskiSatisOraniYuzde = kisiBasiBasilan > 0 ? Math.round((satisAdet / kisiBasiBasilan) * 100) : 0;
+
           personelPerf[pid].gunler.push({
             tarih, mekanId,
             mekanAd: mekan?.name || mekanId,
             mekanEmoji: mekan?.emoji || "📍",
-            musteriSayisi, kisiBasiMusteri, kota, kisiBasiKota,
-            cektigiKare: data.toplam,
+            musteriSayisi, kisiBasiMusteri, kisiBasiMusteriSatis, kota, kisiBasiKota,
+            cektigiKare,
             cekimYuzde,
             baskiDonusumYuzde,
+            satisAdet,
+            satisDonusumYuzde,
+            baskiSatisOraniYuzde,
           });
-          personelPerf[pid].toplamKare += data.toplam;
-          personelPerf[pid].toplamSorumluMusteri += kisiBasiMusteri;
+          personelPerf[pid].toplamKare += cektigiKare;
+          personelPerf[pid].toplamSorumluMusteri += kisiBasiMusteri || kisiBasiMusteriSatis;
+          (personelPerf[pid] as any).toplamSatisAdet = ((personelPerf[pid] as any).toplamSatisAdet || 0) + satisAdet;
         }
       }
     }
@@ -8571,23 +8602,31 @@ app.get("/make-server-4da0b637/kare/performans", async (c) => {
       const gunSayisi = p.gunler.length;
       const ortCekimYuzde = gunSayisi > 0 ? Math.round(p.gunler.reduce((s, g) => s + g.cekimYuzde, 0) / gunSayisi) : 0;
       const ortBaskiDonusumYuzde = gunSayisi > 0 ? Math.round(p.gunler.reduce((s, g) => s + g.baskiDonusumYuzde, 0) / gunSayisi) : 0;
+      const ortSatisDonusumYuzde = gunSayisi > 0 ? Math.round(p.gunler.reduce((s, g) => s + (g.satisDonusumYuzde || 0), 0) / gunSayisi) : 0;
+      const ortBaskiSatisOraniYuzde = gunSayisi > 0 ? Math.round(p.gunler.reduce((s, g) => s + (g.baskiSatisOraniYuzde || 0), 0) / gunSayisi) : 0;
       return {
         ...p,
         gunSayisi,
         ortCekimYuzde,
         ortBaskiDonusumYuzde,
+        ortSatisDonusumYuzde,
+        ortBaskiSatisOraniYuzde,
       };
     }).sort((a, b) => b.ortCekimYuzde - a.ortCekimYuzde);
 
     const toplamPersonel = personeller.length;
     const genelOrtCekim = toplamPersonel > 0 ? Math.round(personeller.reduce((s, p) => s + p.ortCekimYuzde, 0) / toplamPersonel) : 0;
     const genelOrtBaski = toplamPersonel > 0 ? Math.round(personeller.reduce((s, p) => s + p.ortBaskiDonusumYuzde, 0) / toplamPersonel) : 0;
+    const genelOrtSatisDonusum = toplamPersonel > 0 ? Math.round(personeller.reduce((s, p) => s + p.ortSatisDonusumYuzde, 0) / toplamPersonel) : 0;
+    const genelOrtBaskiSatis = toplamPersonel > 0 ? Math.round(personeller.reduce((s, p) => s + p.ortBaskiSatisOraniYuzde, 0) / toplamPersonel) : 0;
 
     return c.json({
       baslangic, bitis,
       toplamPersonel,
       genelOrtCekimYuzde: genelOrtCekim,
       genelOrtBaskiDonusumYuzde: genelOrtBaski,
+      genelOrtSatisDonusumYuzde: genelOrtSatisDonusum,
+      genelOrtBaskiSatisOraniYuzde: genelOrtBaskiSatis,
       personeller,
     });
   } catch (err) {
