@@ -1909,6 +1909,14 @@ app.post("/make-server-4da0b637/mekanlar", async (c) => {
     };
 
     await ckv.set(`mekan_${id}`, mekan);
+    pgWrite("venues", "insert", {
+      id, company_id: cId, name, emoji: emoji || "📍", color: color || "#9dd9ea",
+      photo_price: Number(photoPrice) || 0, price_currency: body.priceCurrency || "TRY",
+      yearly_rent: Number(yearlyRent) || 0, profit_target: Number(profitTarget) || 0,
+      print_type: printType || "yarim", zorluk_katsayisi: Number(zorlukKatsayisi) || 1.0,
+      kare_charpani: Number(body.kareCharpani) || 5, working_hours: workingHours || null,
+      kota_kademeleri: body.kotaKademeleri || null, extra_data: body,
+    });
     console.log(`[${cId}] Mekan oluşturuldu: ${name} by ${user.id}`);
     return c.json({ mekan }, 201);
   } catch (err) {
@@ -1966,6 +1974,14 @@ app.put("/make-server-4da0b637/mekanlar/:id", async (c) => {
     };
 
     await ckv.set(`mekan_${id}`, updated);
+    pgWrite("venues", "upsert", {
+      id, company_id: cId, name: updated.name, emoji: updated.emoji, color: updated.color,
+      photo_price: Number(updated.photoPrice) || 0, price_currency: updated.priceCurrency || "TRY",
+      yearly_rent: Number(updated.yearlyRent) || 0, profit_target: Number(updated.profitTarget) || 0,
+      print_type: updated.printType || "yarim", zorluk_katsayisi: Number(updated.zorlukKatsayisi) || 1.0,
+      kare_charpani: Number(updated.kareCharpani) || 5, working_hours: updated.workingHours || null,
+      kota_kademeleri: updated.kotaKademeleri || null, extra_data: updated,
+    });
     console.log(`[${cId}] Mekan güncellendi: ${id} by ${user.id}`);
     return c.json({ mekan: updated });
   } catch (err) {
@@ -2913,6 +2929,12 @@ app.post("/make-server-4da0b637/rotasyon/gorevler", async (c) => {
     const task = { ...body, created_by: user.id };
     const ckv = companyKvFor(getCompanyId(user));
     await ckv.set(`rotation_task_${body.id}`, task);
+    pgWrite("rotation_tasks", "upsert", {
+      id: body.id, company_id: getCompanyId(user), date: task.date, location: task.location,
+      location_icon: task.locationIcon || "📍", start_time: task.startTime, end_time: task.endTime,
+      task_type: task.taskType || "regular", status: task.status || "draft",
+      personnel: task.personnel || [], notes: task.notes || null, created_by: user.id,
+    });
     console.log(`Görev oluşturuldu: ${body.id} by ${user.id}`);
 
     // Personellere bildirim gönder (sadece sent/revised durumundaki görevler)
@@ -2960,6 +2982,12 @@ app.put("/make-server-4da0b637/rotasyon/gorevler/:id", async (c) => {
     const body = await c.req.json();
     const task = { ...existing, ...body };
     await ckv.set(`rotation_task_${id}`, task);
+    pgWrite("rotation_tasks", "upsert", {
+      id, company_id: getCompanyId(user), date: task.date, location: task.location,
+      location_icon: task.locationIcon || "📍", start_time: task.startTime, end_time: task.endTime,
+      task_type: task.taskType || "regular", status: task.status || "draft",
+      personnel: task.personnel || [], notes: task.notes || null,
+    });
     console.log(`Görev güncellendi: ${id} by ${user.id}`);
 
     // Personel değişiklik bildirimleri
@@ -3086,6 +3114,12 @@ app.post("/make-server-4da0b637/rotasyon/izinler", async (c) => {
     const ckv = companyKvFor(getCompanyId(user));
     const leave = { ...body, created_by: user.id };
     await ckv.set(`rotation_leave_${body.id}`, leave);
+    pgWrite("leave_requests", "upsert", {
+      id: body.id, company_id: getCompanyId(user), personnel_id: body.personnelId || "",
+      personnel_name: body.personnelName || "", personnel_avatar: body.personnelAvatar || "",
+      personnel_role: body.personnelRole || "", start_date: body.startDate, end_date: body.endDate,
+      days: Number(body.days) || 1, type: body.type || "annual", notes: body.notes || null, status: body.status || "pending",
+    });
     console.log(`İzin talebi oluşturuldu: ${body.id} by ${user.id}`);
 
     // Yöneticilere bildirim gönder
@@ -3127,6 +3161,11 @@ app.put("/make-server-4da0b637/rotasyon/izinler/:id", async (c) => {
     const body = await c.req.json();
     const leave = { ...existing, ...body };
     await ckv.set(`rotation_leave_${id}`, leave);
+    pgWrite("leave_requests", "upsert", {
+      id, company_id: getCompanyId(user), personnel_id: leave.personnelId || "",
+      personnel_name: leave.personnelName || "", start_date: leave.startDate, end_date: leave.endDate,
+      days: Number(leave.days) || 1, type: leave.type || "annual", notes: leave.notes || null, status: leave.status || "pending",
+    });
     console.log(`İzin güncellendi: ${id} by ${user.id}`);
 
     // Durum değişikliği bildirimi → personele
@@ -5691,6 +5730,10 @@ app.post("/make-server-4da0b637/announcements", async (c) => {
 
     const ckv = companyKvFor(getCompanyId(user));
     await ckv.set(`announcement_${id}`, announcement);
+    pgWrite("announcements", "insert", {
+      id, company_id: getCompanyId(user), title: announcement.title, message: announcement.message,
+      type: announcement.type, priority: announcement.priority, extra_data: announcement,
+    });
     console.log(`Announcement created: ${id} by ${user.id}`);
     return c.json({ announcement });
   } catch (err) {
@@ -9542,6 +9585,12 @@ app.post("/make-server-4da0b637/malzeme/ekle", async (c) => {
     };
     const ckv = companyKvFor(getCompanyId(user));
     await ckv.set(id, ekipman);
+    pgWrite("equipment", "insert", {
+      id, company_id: getCompanyId(user), venue_id: body.locationId || null,
+      name: `${brand} ${model}`.trim(), type: category || "other",
+      ribon_mevcut: Number(body.ribonMevcut) || 0, ribon_kapasitesi: Number(body.ribonKapasitesi) || 0,
+      extra_data: ekipman,
+    });
 
     console.log(`Malzeme eklendi: ${brand} ${model} — ${user.user_metadata?.full_name}`);
     return c.json({ basarili: true, ekipman });
@@ -16989,6 +17038,11 @@ app.post("/make-server-4da0b637/kasa/sirket/islem", async (c) => {
       created_by: user.user_metadata?.full_name || user.email || "",
     };
     await ckv.set(`kasa_islem_${id}`, islem);
+    pgWrite("cash_transactions", "insert", {
+      id, company_id: getCompanyId(user), type: islem.type || null, amount: Number(islem.amount) || 0,
+      description: islem.description || null, date: islem.date || null,
+      created_by: user.user_metadata?.full_name || user.email, extra_data: islem,
+    });
     return c.json({ islem });
   } catch (err) {
     console.log("Kasa islem POST error:", err);
