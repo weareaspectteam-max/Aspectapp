@@ -17,6 +17,20 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '5.5.0',
+    date: '2026-04-15',
+    title: 'PostgreSQL Altyapi Gecisi & Performans Iyilestirmeleri',
+    changes: [
+      { type: 'new', text: 'PostgreSQL veritabani altyapisi — 22 tablo, 59 index, 3 view olusturuldu' },
+      { type: 'new', text: 'Tum satis, kare, stok, gider, gelir, rotasyon, izin verileri PostgreSQL ile senkron' },
+      { type: 'new', text: 'Satis performansi metrikleri — satis donusumu %, baski satis orani %' },
+      { type: 'improve', text: 'Rotasyon, gider, gelir, izin, duyuru, mekan listeleri artik PostgreSQL den okunuyor' },
+      { type: 'improve', text: 'Supabase Pro Plan gecisi — kaynak limiti sorunu cozuldu' },
+      { type: 'fix', text: 'Performans sayfasi varsayilan tarih Bu Ay yerine Bugun olarak degistirildi' },
+      { type: 'fix', text: 'Performans musteri sayisi — kota yerine kisi basi musteri gosteriliyor' },
+    ],
+  },
+  {
     version: '5.4.0',
     date: '2026-04-14',
     title: 'Personel Performans Sistemi, Vardiya Düzeltmeleri & UX İyileştirmeleri',
