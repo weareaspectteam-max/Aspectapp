@@ -2456,17 +2456,7 @@ app.get("/make-server-4da0b637/isletme/giderler", async (c) => {
     const reqCIdGider = c.req.query("company_id");
     const companyId = (isSAGider && reqCIdGider) ? reqCIdGider : getCompanyId(user);
 
-    // SQL read (KV fallback)
-    try {
-      const db = getAdminClient();
-      const { data, error } = await db.from("operating_expenses").select("*").eq("company_id", companyId).order("date", { ascending: false });
-      if (!error && data && data.length > 0) {
-        const giderler = data.map((g: any) => ({ ...g.extra_data, id: g.id }));
-        return c.json({ giderler, source: "sql" });
-      }
-    } catch {}
-
-    // KV fallback
+    // Şimdilik KV'den oku — SQL format dönüşümü tamamlanınca geçilecek
     const ckv = companyKvFor(companyId);
     const tumGiderler: any[] = await ckv.getByPrefix("isletme_gider_") || [];
     const tedCarilerIGD = await ckv.getByPrefix("cost_cari_").catch(() => []) || [];
@@ -2481,7 +2471,7 @@ app.get("/make-server-4da0b637/isletme/giderler", async (c) => {
     const sirali = tumGiderler.sort((a: any, b: any) =>
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
-    return c.json({ giderler: sirali, source: "kv" });
+    return c.json({ giderler: sirali });
   } catch (err) {
     console.log("Get isletme giderler error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -2596,23 +2586,13 @@ app.get("/make-server-4da0b637/isletme/gelirler", async (c) => {
     const reqCId = c.req.query("company_id");
     const companyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
 
-    // SQL read (KV fallback)
-    try {
-      const db = getAdminClient();
-      const { data, error } = await db.from("operating_income").select("*").eq("company_id", companyId).order("date", { ascending: false });
-      if (!error && data && data.length > 0) {
-        const gelirler = data.map((g: any) => ({ ...g.extra_data, id: g.id }));
-        return c.json({ gelirler, source: "sql" });
-      }
-    } catch {}
-
-    // KV fallback
+    // Şimdilik KV'den oku
     const ckv = companyKvFor(companyId);
     const tumGelirler: any[] = await ckv.getByPrefix("isletme_gelir_") || [];
     const sirali = tumGelirler.sort((a: any, b: any) =>
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
-    return c.json({ gelirler: sirali, source: "kv" });
+    return c.json({ gelirler: sirali });
   } catch (err) {
     console.log("Get isletme gelirler error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -2934,25 +2914,10 @@ app.get("/make-server-4da0b637/rotasyon/gorevler", async (c) => {
     const reqCIdGorev = c.req.query("company_id");
     const companyId = (isSAGorev && reqCIdGorev) ? reqCIdGorev : getCompanyId(user);
 
-    // SQL read (KV fallback)
-    try {
-      const db = getAdminClient();
-      const { data, error } = await db.from("rotation_tasks").select("*").eq("company_id", companyId);
-      if (!error && data) {
-        // SQL → KV formatına dönüştür
-        const tasks = data.map((t: any) => ({
-          id: t.id, date: t.date, location: t.location, locationIcon: t.location_icon,
-          startTime: t.start_time, endTime: t.end_time, taskType: t.task_type,
-          status: t.status, personnel: t.personnel || [], notes: t.notes,
-          created_by: t.created_by, created_at: t.created_at,
-        }));
-        return c.json({ tasks, source: "sql" });
-      }
-    } catch {}
-    // KV fallback
+    // Şimdilik KV'den oku — SQL format dönüşümü tamamlanınca geçilecek
     const ckv = companyKvFor(companyId);
     const tasks = await ckv.getByPrefix("rotation_task_");
-    return c.json({ tasks: tasks || [], source: "kv" });
+    return c.json({ tasks: tasks || [] });
   } catch (err) {
     console.log("Get gorevler error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -3139,25 +3104,10 @@ app.get("/make-server-4da0b637/rotasyon/izinler", async (c) => {
     const reqCIdIzin = c.req.query("company_id");
     const companyId = (isSAIzin && reqCIdIzin) ? reqCIdIzin : getCompanyId(user);
 
-    // SQL read (KV fallback)
-    try {
-      const db = getAdminClient();
-      const { data, error } = await db.from("leave_requests").select("*").eq("company_id", companyId);
-      if (!error && data) {
-        const leaveRequests = data.map((l: any) => ({
-          id: l.id, personnelId: l.personnel_id, personnelName: l.personnel_name,
-          personnelAvatar: l.personnel_avatar, personnelRole: l.personnel_role,
-          startDate: l.start_date, endDate: l.end_date, days: l.days,
-          type: l.type, notes: l.notes, status: l.status, createdAt: l.created_at,
-        }));
-        return c.json({ leaveRequests, source: "sql" });
-      }
-    } catch {}
-
-    // KV fallback
+    // Şimdilik KV'den oku
     const ckv = companyKvFor(companyId);
     const leaveRequests = await ckv.getByPrefix("rotation_leave_");
-    return c.json({ leaveRequests: leaveRequests || [], source: "kv" });
+    return c.json({ leaveRequests: leaveRequests || [] });
   } catch (err) {
     console.log("Get izinler error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -5737,25 +5687,13 @@ app.get("/make-server-4da0b637/announcements", async (c) => {
     const reqCIdDuyuru = c.req.query("company_id");
     const companyId = (isSADuyuru && reqCIdDuyuru) ? reqCIdDuyuru : getCompanyId(user);
 
-    // SQL read (KV fallback)
-    try {
-      const db = getAdminClient();
-      const { data, error } = await db.from("announcements").select("*").eq("company_id", companyId).order("created_at", { ascending: false });
-      if (!error && data && data.length > 0) {
-        const now = new Date();
-        const announcements = data.map((a: any) => ({ ...a.extra_data, id: a.id }))
-          .filter((a: any) => { if (a.type === "temporary" && a.endDate) return new Date(a.endDate) >= now; return true; });
-        return c.json({ announcements, source: "sql" });
-      }
-    } catch {}
-
-    // KV fallback
+    // Şimdilik KV'den oku
     const ckv = companyKvFor(companyId);
     const all = await ckv.getByPrefix("announcement_");
     const now = new Date();
     const active = (all || []).filter((a: any) => { if (a.type === "temporary" && a.endDate) return new Date(a.endDate) >= now; return true; });
     active.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    return c.json({ announcements: active, source: "kv" });
+    return c.json({ announcements: active });
   } catch (err) {
     console.log("Get announcements error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
