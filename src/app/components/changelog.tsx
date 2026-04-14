@@ -17,6 +17,28 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '5.4.0',
+    date: '2026-04-14',
+    title: 'Personel Performans Sistemi, Vardiya Düzeltmeleri & UX İyileştirmeleri',
+    changes: [
+      { type: 'new', text: 'Personel Performans İstatistikleri sayfası — çekim performansı %, baskı dönüşüm %, satış dönüşümü % metrikleri' },
+      { type: 'new', text: 'Mekan kare çarpanı — müşteri × çarpan = kare kotası, mekan yönetiminden ayarlanabilir' },
+      { type: 'new', text: 'Müşteri sayısı girişi — kare giriş ekranında, mekan başına günlük, tek sefer kilitlenir' },
+      { type: 'new', text: 'Vardiya raporları personel detayına performans kutuları (çekim %, baskı dön %, müşteri, kota)' },
+      { type: 'new', text: 'Operasyon dashboard vardiya baslat karti eklendi' },
+      { type: 'new', text: 'Rotasyon personel seçiminde arama kutusu, A-Z sıralama, chip-bar ve otomatik temizleme' },
+      { type: 'new', text: 'Döviz kurları artı/eksi butonları ve mobil UX iyileştirmesi' },
+      { type: 'fix', text: 'Vardiya başlat — aynı gün ikinci görev check-in hatası düzeltildi (farklı taskId algılama)' },
+      { type: 'fix', text: 'Müdür AI sayfası crash — DailyBriefingTopCard toplamSatisAdet ve MessageBubble roleConfig tanımsızlığı' },
+      { type: 'fix', text: 'Kare kaydi yetki hatasi — checkRotasyonYetkisi companyId eksikligi duzeltildi' },
+      { type: 'fix', text: 'Frontend-backend tarih kırılım uyumsuzluğu (< 5 → < 7) düzeltildi' },
+      { type: 'fix', text: 'Döviz widget manuel kur desteği — isAuto=false ise canlı API yerine manuel kurlar gösteriliyor' },
+      { type: 'fix', text: 'Liderlik tablosu — podium satış adedi sadece yönetici/üst-müdür/müdür görüyor, idari çıkarıldı' },
+      { type: 'improve', text: 'Vardiya başlat/bitir/devam et butonlarına kullanıcıya görünür hata mesajı eklendi' },
+      { type: 'improve', text: 'Performans endpointleri ghost mod destegi (superadmin company_id query param)' },
+    ],
+  },
+  {
     version: '5.3.1',
     date: '2026-04-10',
     title: 'Dijital Satış, İskonto Satış Fiyatı Modu & Personel Kısıtlamaları',
