@@ -2456,7 +2456,15 @@ app.get("/make-server-4da0b637/isletme/giderler", async (c) => {
     const reqCIdGider = c.req.query("company_id");
     const companyId = (isSAGider && reqCIdGider) ? reqCIdGider : getCompanyId(user);
 
-    // Şimdilik KV'den oku — SQL format dönüşümü tamamlanınca geçilecek
+    // SQL read (extra_data yaklaşımı — KV fallback)
+    try {
+      const db = getAdminClient();
+      const { data, error } = await db.from("operating_expenses").select("id, extra_data").eq("company_id", companyId).order("date", { ascending: false });
+      if (!error && data && data.length > 0) {
+        const giderler = data.map((g: any) => g.extra_data ? { ...g.extra_data, id: g.id } : g);
+        return c.json({ giderler });
+      }
+    } catch {}
     const ckv = companyKvFor(companyId);
     const tumGiderler: any[] = await ckv.getByPrefix("isletme_gider_") || [];
     const tedCarilerIGD = await ckv.getByPrefix("cost_cari_").catch(() => []) || [];
@@ -2586,7 +2594,15 @@ app.get("/make-server-4da0b637/isletme/gelirler", async (c) => {
     const reqCId = c.req.query("company_id");
     const companyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
 
-    // Şimdilik KV'den oku
+    // SQL read (extra_data yaklaşımı — KV fallback)
+    try {
+      const db = getAdminClient();
+      const { data, error } = await db.from("operating_income").select("id, extra_data").eq("company_id", companyId).order("date", { ascending: false });
+      if (!error && data && data.length > 0) {
+        const gelirler = data.map((g: any) => g.extra_data ? { ...g.extra_data, id: g.id } : g);
+        return c.json({ gelirler });
+      }
+    } catch {}
     const ckv = companyKvFor(companyId);
     const tumGelirler: any[] = await ckv.getByPrefix("isletme_gelir_") || [];
     const sirali = tumGelirler.sort((a: any, b: any) =>
@@ -2914,7 +2930,15 @@ app.get("/make-server-4da0b637/rotasyon/gorevler", async (c) => {
     const reqCIdGorev = c.req.query("company_id");
     const companyId = (isSAGorev && reqCIdGorev) ? reqCIdGorev : getCompanyId(user);
 
-    // Şimdilik KV'den oku — SQL format dönüşümü tamamlanınca geçilecek
+    // SQL read (extra_data yaklaşımı — KV fallback)
+    try {
+      const db = getAdminClient();
+      const { data, error } = await db.from("rotation_tasks").select("id, extra_data").eq("company_id", companyId);
+      if (!error && data && data.length > 0) {
+        const tasks = data.map((t: any) => t.extra_data ? { ...t.extra_data, id: t.id } : t);
+        return c.json({ tasks });
+      }
+    } catch {}
     const ckv = companyKvFor(companyId);
     const tasks = await ckv.getByPrefix("rotation_task_");
     return c.json({ tasks: tasks || [] });
@@ -2941,7 +2965,7 @@ app.post("/make-server-4da0b637/rotasyon/gorevler", async (c) => {
       id: body.id, company_id: getCompanyId(user), date: task.date, location: task.location,
       location_icon: task.locationIcon || "📍", start_time: task.startTime, end_time: task.endTime,
       task_type: task.taskType || "regular", status: task.status || "draft",
-      personnel: task.personnel || [], notes: task.notes || null, created_by: user.id,
+      personnel: task.personnel || [], notes: task.notes || null, created_by: user.id, extra_data: task,
     });
     console.log(`Görev oluşturuldu: ${body.id} by ${user.id}`);
 
@@ -2994,7 +3018,7 @@ app.put("/make-server-4da0b637/rotasyon/gorevler/:id", async (c) => {
       id, company_id: getCompanyId(user), date: task.date, location: task.location,
       location_icon: task.locationIcon || "📍", start_time: task.startTime, end_time: task.endTime,
       task_type: task.taskType || "regular", status: task.status || "draft",
-      personnel: task.personnel || [], notes: task.notes || null,
+      personnel: task.personnel || [], notes: task.notes || null, extra_data: task,
     });
     console.log(`Görev güncellendi: ${id} by ${user.id}`);
 
@@ -3104,7 +3128,15 @@ app.get("/make-server-4da0b637/rotasyon/izinler", async (c) => {
     const reqCIdIzin = c.req.query("company_id");
     const companyId = (isSAIzin && reqCIdIzin) ? reqCIdIzin : getCompanyId(user);
 
-    // Şimdilik KV'den oku
+    // SQL read (extra_data yaklaşımı — KV fallback)
+    try {
+      const db = getAdminClient();
+      const { data, error } = await db.from("leave_requests").select("id, extra_data").eq("company_id", companyId);
+      if (!error && data && data.length > 0) {
+        const leaveRequests = data.map((l: any) => l.extra_data ? { ...l.extra_data, id: l.id } : l);
+        return c.json({ leaveRequests });
+      }
+    } catch {}
     const ckv = companyKvFor(companyId);
     const leaveRequests = await ckv.getByPrefix("rotation_leave_");
     return c.json({ leaveRequests: leaveRequests || [] });
@@ -3129,7 +3161,7 @@ app.post("/make-server-4da0b637/rotasyon/izinler", async (c) => {
       id: body.id, company_id: getCompanyId(user), personnel_id: body.personnelId || "",
       personnel_name: body.personnelName || "", personnel_avatar: body.personnelAvatar || "",
       personnel_role: body.personnelRole || "", start_date: body.startDate, end_date: body.endDate,
-      days: Number(body.days) || 1, type: body.type || "annual", notes: body.notes || null, status: body.status || "pending",
+      days: Number(body.days) || 1, type: body.type || "annual", notes: body.notes || null, status: body.status || "pending", extra_data: leave,
     });
     console.log(`İzin talebi oluşturuldu: ${body.id} by ${user.id}`);
 
@@ -3175,7 +3207,7 @@ app.put("/make-server-4da0b637/rotasyon/izinler/:id", async (c) => {
     pgWrite("leave_requests", "upsert", {
       id, company_id: getCompanyId(user), personnel_id: leave.personnelId || "",
       personnel_name: leave.personnelName || "", start_date: leave.startDate, end_date: leave.endDate,
-      days: Number(leave.days) || 1, type: leave.type || "annual", notes: leave.notes || null, status: leave.status || "pending",
+      days: Number(leave.days) || 1, type: leave.type || "annual", notes: leave.notes || null, status: leave.status || "pending", extra_data: leave,
     });
     console.log(`İzin güncellendi: ${id} by ${user.id}`);
 
@@ -5687,7 +5719,17 @@ app.get("/make-server-4da0b637/announcements", async (c) => {
     const reqCIdDuyuru = c.req.query("company_id");
     const companyId = (isSADuyuru && reqCIdDuyuru) ? reqCIdDuyuru : getCompanyId(user);
 
-    // Şimdilik KV'den oku
+    // SQL read (extra_data yaklaşımı — KV fallback)
+    try {
+      const db = getAdminClient();
+      const { data, error } = await db.from("announcements").select("id, extra_data").eq("company_id", companyId).order("created_at", { ascending: false });
+      if (!error && data && data.length > 0) {
+        const now = new Date();
+        const announcements = data.map((a: any) => a.extra_data ? { ...a.extra_data, id: a.id } : a)
+          .filter((a: any) => { if (a.type === "temporary" && a.endDate) return new Date(a.endDate) >= now; return true; });
+        return c.json({ announcements });
+      }
+    } catch {}
     const ckv = companyKvFor(companyId);
     const all = await ckv.getByPrefix("announcement_");
     const now = new Date();
@@ -19066,6 +19108,7 @@ app.post("/make-server-4da0b637/migration/ref-data", async (c) => {
         personnel: t.personnel || [],
         notes: t.notes || null,
         created_by: t.created_by || null,
+        extra_data: t,
       }));
       const { error } = await db.from("rotation_tasks").upsert(rotRows, { onConflict: "id" });
       log.push(error ? `rotation_tasks HATA: ${error.message}` : `rotation_tasks: ${rotRows.length} kayıt`);
@@ -19087,6 +19130,7 @@ app.post("/make-server-4da0b637/migration/ref-data", async (c) => {
         type: l.type || "annual",
         notes: l.notes || null,
         status: l.status || "pending",
+        extra_data: l,
       }));
       const { error } = await db.from("leave_requests").upsert(leaveRows, { onConflict: "id" });
       log.push(error ? `leave_requests HATA: ${error.message}` : `leave_requests: ${leaveRows.length} kayıt`);
