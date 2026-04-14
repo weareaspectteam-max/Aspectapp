@@ -74,6 +74,32 @@ const getAdminClient = () =>
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
+// Helper: PostgreSQL dual-write (fire-and-forget, hata loglanır)
+const pgWrite = async (table: string, action: "upsert" | "insert" | "update" | "delete", data: any, match?: Record<string, any>) => {
+  try {
+    const db = getAdminClient();
+    if (action === "insert") {
+      const { error } = await db.from(table).insert(data);
+      if (error) console.log(`[pg] ${table} insert HATA: ${error.message}`);
+    } else if (action === "upsert") {
+      const { error } = await db.from(table).upsert(data, { onConflict: "id" });
+      if (error) console.log(`[pg] ${table} upsert HATA: ${error.message}`);
+    } else if (action === "update" && match) {
+      let q = db.from(table).update(data);
+      for (const [k, v] of Object.entries(match)) q = q.eq(k, v);
+      const { error } = await q;
+      if (error) console.log(`[pg] ${table} update HATA: ${error.message}`);
+    } else if (action === "delete" && match) {
+      let q = db.from(table).delete();
+      for (const [k, v] of Object.entries(match)) q = q.eq(k, v);
+      const { error } = await q;
+      if (error) console.log(`[pg] ${table} delete HATA: ${error.message}`);
+    }
+  } catch (err) {
+    console.log(`[pg] ${table} ${action} exception: ${err}`);
+  }
+};
+
 // ── Supabase Storage: ekipman fotoğrafları bucket ──────────────────────────
 const EQUIPMENT_BUCKET = "make-4da0b637-equipment-photos";
 let bucketReady = false;
@@ -222,7 +248,7 @@ const createNotification = async (
     const rand = Math.random().toString(36).slice(2, 7);
     const key  = `notif_${userId}_${ts}_${rand}`;
     const ckv  = companyKvFor(companyId);
-    await ckv.set(key, {
+    const notifData = {
       id: key,
       userId,
       type,
@@ -231,6 +257,11 @@ const createNotification = async (
       read: false,
       created_at: new Date().toISOString(),
       meta: meta || {},
+    };
+    await ckv.set(key, notifData);
+    pgWrite("notifications", "insert", {
+      id: key, company_id: companyId, user_id: userId, type, title,
+      message: body, data: meta || {}, read: false,
     });
   } catch (e) {
     console.log("createNotification error:", e);
@@ -2445,8 +2476,15 @@ app.post("/make-server-4da0b637/isletme/giderler", async (c) => {
       created_at: new Date().toISOString(),
       created_by: user.user_metadata?.full_name || user.email,
     };
-    const ckv = companyKvFor(getCompanyId(user));
+    const companyId = getCompanyId(user);
+    const ckv = companyKvFor(companyId);
     await ckv.set(`isletme_gider_${id}`, gider);
+    pgWrite("operating_expenses", "insert", {
+      id, company_id: companyId, category: body.category || null, description: body.description || body.personelAdi || null,
+      amount: Number(body.amount) || 0, currency: body.currency || "TRY", date: body.date || null,
+      venue_id: body.mekanId || null, recurring_id: body.recurringId || null,
+      payment_status: body.paymentStatus || "pending", created_by: gider.created_by, extra_data: body,
+    });
     return c.json({ gider }, 201);
   } catch (err) {
     console.log("Create isletme gider error:", err);
@@ -2469,6 +2507,11 @@ app.put("/make-server-4da0b637/isletme/giderler/:id", async (c) => {
     const body = await c.req.json();
     const gider = { ...existing, ...body, id };
     await ckv.set(`isletme_gider_${id}`, gider);
+    pgWrite("operating_expenses", "upsert", {
+      id, company_id: getCompanyId(user), category: gider.category || null, description: gider.description || gider.personelAdi || null,
+      amount: Number(gider.amount) || 0, currency: gider.currency || "TRY", date: gider.date || null,
+      venue_id: gider.mekanId || null, payment_status: gider.paymentStatus || "pending", extra_data: gider,
+    });
 
     // Kasa senkronu: tutar değiştiyse kasa_odeme kaydını da güncelle
     if (body.amount !== undefined && Number(body.amount) !== Number(existing.amount)) {
@@ -2502,6 +2545,7 @@ app.delete("/make-server-4da0b637/isletme/giderler/:id", async (c) => {
     const { id } = c.req.param();
     const ckv = companyKvFor(getCompanyId(user));
     await ckv.del(`isletme_gider_${id}`);
+    pgWrite("operating_expenses", "delete", null, { id });
     return c.json({ message: "Gider silindi." });
   } catch (err) {
     console.log("Delete isletme gider error:", err);
@@ -2550,8 +2594,14 @@ app.post("/make-server-4da0b637/isletme/gelirler", async (c) => {
       created_at: new Date().toISOString(),
       created_by: user.user_metadata?.full_name || user.email,
     };
-    const ckv = companyKvFor(getCompanyId(user));
+    const companyId = getCompanyId(user);
+    const ckv = companyKvFor(companyId);
     await ckv.set(`isletme_gelir_${id}`, gelir);
+    pgWrite("operating_income", "insert", {
+      id, company_id: companyId, description: body.description || null,
+      amount: Number(body.amount) || 0, currency: body.currency || "TRY",
+      date: body.date || null, source: body.source || null, created_by: gelir.created_by, extra_data: body,
+    });
     return c.json({ gelir }, 201);
   } catch (err) {
     console.log("Create isletme gelir error:", err);
@@ -2574,6 +2624,11 @@ app.put("/make-server-4da0b637/isletme/gelirler/:id", async (c) => {
     const body = await c.req.json();
     const gelir = { ...existing, ...body, id };
     await ckv.set(`isletme_gelir_${id}`, gelir);
+    pgWrite("operating_income", "upsert", {
+      id, company_id: getCompanyId(user), description: gelir.description || null,
+      amount: Number(gelir.amount) || 0, currency: gelir.currency || "TRY",
+      date: gelir.date || null, source: gelir.source || null, extra_data: gelir,
+    });
     return c.json({ gelir });
   } catch (err) {
     console.log("Update isletme gelir error:", err);
@@ -2592,6 +2647,7 @@ app.delete("/make-server-4da0b637/isletme/gelirler/:id", async (c) => {
     const { id } = c.req.param();
     const ckv = companyKvFor(getCompanyId(user));
     await ckv.del(`isletme_gelir_${id}`);
+    pgWrite("operating_income", "delete", null, { id });
     return c.json({ message: "Gelir silindi." });
   } catch (err) {
     console.log("Delete isletme gelir error:", err);
@@ -9870,6 +9926,7 @@ app.post("/make-server-4da0b637/mesajlar/ozel-kanal", async (c) => {
     };
     const ckv = companyKvFor(getCompanyId(user));
     await ckv.set(`chat_channel_${id}`, channel);
+    pgWrite("chat_channels", "insert", { id, company_id: getCompanyId(user), name: name.trim(), type: "custom", extra_data: channel });
     console.log(`Yeni özel kanal: ${name} by ${user.id}`);
     return c.json({ channel }, 201);
   } catch (err) {
@@ -9942,6 +9999,7 @@ app.post("/make-server-4da0b637/mesajlar/kanallar/:channelId", async (c) => {
     const data: any = await ckv.get(`chat_msgs_${channelId}`) || { messages: [] };
     const messages = [...(data.messages || []), msg].slice(-MAX_MSGS);
     await ckv.set(`chat_msgs_${channelId}`, { messages, lastUpdated: new Date().toISOString() });
+    pgWrite("chat_messages", "insert", { channel_id: channelId, sender_id: user.id, sender_name: msg.senderName, content: msg.content, timestamp: msg.timestamp });
     console.log(`Mesaj: ${user.user_metadata?.full_name} → #${channelId}`);
     return c.json({ message: msg }, 201);
   } catch (err) {
