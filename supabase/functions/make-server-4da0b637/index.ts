@@ -8029,9 +8029,38 @@ app.post("/make-server-4da0b637/stok/satis", async (c) => {
       iptalZamani: null,
     };
     if (gerekce?.trim()) satis.gerekce = gerekce.trim();
+
+    // ── PostgreSQL dual-write (source of truth) ──
+    const db = getAdminClient();
+    const { error: sqlErr } = await db.from("sales").insert({
+      id: satisId,
+      company_id: companyId,
+      venue_id: mekanId,
+      date: tarih,
+      items: items,
+      total_price: totalPrice,
+      discount: discount || 0,
+      final_price: totalPrice - (discount || 0),
+      payment_method: paymentMethod,
+      currency: currency || "TRY",
+      currency_price: currencyPrice || null,
+      recorded_by_id: user.id,
+      recorded_by_name: user.user_metadata?.full_name || user.email || "",
+      is_cancelled: false,
+      gerekce: gerekce?.trim() || null,
+      idempotency_key: satisId,
+      timestamp: satis.timestamp,
+    });
+    if (sqlErr) {
+      console.log(`[dual-write] SQL satış HATA: ${sqlErr.message} | ${satisId}`);
+      // SQL başarısızsa işlem başarısız — KV'ye yazma
+      return c.json({ error: `Satış kaydedilemedi: ${sqlErr.message}` }, 500);
+    }
+
+    // SQL başarılı → KV'ye de yaz (cache)
     satislar.unshift(satis);
     await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, satislar });
-    console.log(`Satış kaydedildi: ${satisId} | ${mekanId} | ${tarih} | ${satis.finalPrice} TRY`);
+    console.log(`Satış kaydedildi (dual): ${satisId} | ${mekanId} | ${tarih} | ${satis.finalPrice} TRY`);
     return c.json({ satis });
   } catch (err) {
     console.log("Post stok satis error:", err);
@@ -8066,8 +8095,21 @@ app.delete("/make-server-4da0b637/stok/satis/:mekanId/:tarih/:satisId", async (c
         ? { ...s, iptal: true, iptalNeden: neden, iptalZamani, iptalEden }
         : s
     );
+
+    // ── PostgreSQL dual-write (iptal) ──
+    try {
+      const db = getAdminClient();
+      await db.from("sales").update({
+        is_cancelled: true,
+        cancel_reason: neden,
+        cancel_time: iptalZamani,
+      }).eq("id", satisId);
+    } catch (sqlErr) {
+      console.log(`[dual-write] SQL iptal HATA: ${sqlErr} | ${satisId}`);
+    }
+
     await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, satislar });
-    console.log(`Satış iptal: ${satisId} | neden: ${neden} | skipTelegram: ${skipTelegram}`);
+    console.log(`Satış iptal (dual): ${satisId} | neden: ${neden} | skipTelegram: ${skipTelegram}`);
 
     // ── Telegram bildirimi — onay akışından geliyorsa atla (karar endpoint zaten gönderdi) ──
     if (iptalEdilecek && !skipTelegram) {
@@ -8427,9 +8469,28 @@ app.post("/make-server-4da0b637/stok/kare", async (c) => {
       kaydeden: user.user_metadata?.full_name || user.email || "",
       kaydedenId: user.id,
     };
+    // ── PostgreSQL dual-write (kare) ──
+    try {
+      const db = getAdminClient();
+      await db.from("frame_records").insert({
+        id: entryId,
+        company_id: companyId,
+        venue_id: mekanId,
+        date: tarih,
+        photographer_id: photographerId,
+        photographer_name: photographerName,
+        frame_count: count,
+        recorded_by_id: user.id,
+        recorded_by_name: user.user_metadata?.full_name || user.email || "",
+        timestamp: entry.timestamp,
+      });
+    } catch (sqlErr) {
+      console.log(`[dual-write] SQL kare HATA: ${sqlErr} | ${entryId}`);
+    }
+
     kareKayitlari.push(entry);
     await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, kareKayitlari });
-    console.log(`Kare kaydedildi: ${entryId} | ${photographerName} | ${count} kare | ${mekanId}/${tarih}`);
+    console.log(`Kare kaydedildi (dual): ${entryId} | ${photographerName} | ${count} kare | ${mekanId}/${tarih}`);
     return c.json({ entry });
   } catch (err) {
     console.log("Post stok kare error:", err);
@@ -8479,7 +8540,7 @@ app.post("/make-server-4da0b637/stok/musteri-sayisi", async (c) => {
 });
 
 // GET /kare/performans — Personel performans hesaplama (çekim % + baskı dönüşüm %)
-// Query: baslangic, bitis, mekanId? (opsiyonel)
+// Query: baslangic, bitis, mekanId? (opsiyonel), source=sql|kv (default: sql)
 app.get("/make-server-4da0b637/kare/performans", async (c) => {
   try {
     const user = await verifyToken(c);
@@ -8494,6 +8555,171 @@ app.get("/make-server-4da0b637/kare/performans", async (c) => {
     const baslangic = c.req.query("baslangic") || bizDateTR();
     const bitis = c.req.query("bitis") || bizDateTR();
     const filterMekanId = c.req.query("mekanId") || "";
+    const source = c.req.query("source") || "sql"; // sql veya kv
+
+    // ══ SQL READ MODE ══
+    if (source === "sql") {
+      try {
+        const db = getAdminClient();
+
+        // SQL'den kare kayıtları
+        let frameQuery = db.from("frame_records")
+          .select("venue_id, date, photographer_id, photographer_name, frame_count")
+          .eq("company_id", companyId)
+          .gte("date", baslangic)
+          .lte("date", bitis);
+        if (filterMekanId) frameQuery = frameQuery.eq("venue_id", filterMekanId);
+        const { data: sqlFrames, error: frameErr } = await frameQuery;
+        if (frameErr) throw new Error(`SQL frame error: ${frameErr.message}`);
+
+        // SQL'den satışlar
+        let salesQuery = db.from("sales")
+          .select("venue_id, date, recorded_by_id, recorded_by_name, final_price")
+          .eq("company_id", companyId)
+          .eq("is_cancelled", false)
+          .gte("date", baslangic)
+          .lte("date", bitis);
+        if (filterMekanId) salesQuery = salesQuery.eq("venue_id", filterMekanId);
+        const { data: sqlSales, error: salesErr } = await salesQuery;
+        if (salesErr) throw new Error(`SQL sales error: ${salesErr.message}`);
+
+        // Mekan bilgileri (venues tablosu)
+        const { data: sqlVenues } = await db.from("venues")
+          .select("id, name, emoji, kare_charpani")
+          .eq("company_id", companyId);
+        const mekanMap: Record<string, any> = {};
+        for (const v of (sqlVenues || [])) mekanMap[v.id] = v;
+
+        // Müşteri sayıları hâlâ KV'den (stock_movements henüz boş)
+        const musteriMap: Record<string, number> = {};
+        const baskiMap: Record<string, number> = {};
+        const mekanIds = filterMekanId ? [filterMekanId] : Object.keys(mekanMap);
+        // Tarih aralığındaki günler
+        const gunlerArr: string[] = [];
+        const startD = new Date(baslangic);
+        const endD = new Date(bitis);
+        for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+          gunlerArr.push(d.toISOString().split("T")[0]);
+        }
+        for (const t of gunlerArr) {
+          for (const mid of mekanIds) {
+            const stok: any = await ckv.get(`stok_gunluk_${mid}_${t}`);
+            if (stok?.musteriSayisi) musteriMap[`${mid}_${t}`] = stok.musteriSayisi;
+            if (stok?.vardiyaToplam?.toplamCikisAdedi) baskiMap[`${mid}_${t}`] = stok.vardiyaToplam.toplamCikisAdedi;
+          }
+        }
+
+        // Verileri gün-mekan bazlı grupla
+        const personelPerf: Record<string, any> = {};
+
+        // Frame verisini gün-mekan-fotograf bazlı grupla
+        const framByDayVenue: Record<string, Record<string, { ad: string; toplam: number }>> = {};
+        for (const f of (sqlFrames || [])) {
+          const key = `${f.venue_id}_${f.date}`;
+          if (!framByDayVenue[key]) framByDayVenue[key] = {};
+          if (!framByDayVenue[key][f.photographer_id]) framByDayVenue[key][f.photographer_id] = { ad: f.photographer_name || "", toplam: 0 };
+          framByDayVenue[key][f.photographer_id].toplam += f.frame_count || 0;
+        }
+
+        // Sales verisini gün-mekan-satıcı bazlı grupla
+        const salesByDayVenue: Record<string, Record<string, { ad: string; toplam: number }>> = {};
+        for (const s of (sqlSales || [])) {
+          const key = `${s.venue_id}_${s.date}`;
+          if (!salesByDayVenue[key]) salesByDayVenue[key] = {};
+          const sid = s.recorded_by_id || "unknown";
+          if (!salesByDayVenue[key][sid]) salesByDayVenue[key][sid] = { ad: s.recorded_by_name || "", toplam: 0 };
+          salesByDayVenue[key][sid].toplam++;
+        }
+
+        // Her gün-mekan için performans hesapla
+        for (const dayVenueKey of new Set([...Object.keys(framByDayVenue), ...Object.keys(salesByDayVenue)])) {
+          const [venueId, date] = [dayVenueKey.split("_").slice(0, -1).join("_"), dayVenueKey.split("_").pop()!];
+          // venue_id'de underscore olabilir, doğru parse:
+          const parts = dayVenueKey.match(/^(.+)_(\d{4}-\d{2}-\d{2})$/);
+          if (!parts) continue;
+          const vId = parts[1];
+          const vDate = parts[2];
+
+          const musteriSayisi = musteriMap[dayVenueKey] || 0;
+          if (!musteriSayisi) continue;
+
+          const mekan = mekanMap[vId];
+          const kareCharpani = mekan?.kare_charpani || mekan?.kareCharpani || 5;
+          const kota = musteriSayisi * kareCharpani;
+
+          const fotografciKare = framByDayVenue[dayVenueKey] || {};
+          const satisciSatis = salesByDayVenue[dayVenueKey] || {};
+          const fotografciSayisi = Object.keys(fotografciKare).length;
+          const satisciSayisi = Object.keys(satisciSatis).length;
+          if (fotografciSayisi === 0 && satisciSayisi === 0) continue;
+
+          const kisiBasiKota = fotografciSayisi > 0 ? Math.round(kota / fotografciSayisi) : 0;
+          const kisiBasiMusteri = fotografciSayisi > 0 ? Math.round(musteriSayisi / fotografciSayisi) : 0;
+          const kisiBasiMusteriSatis = satisciSayisi > 0 ? Math.round(musteriSayisi / satisciSayisi) : 0;
+          const toplamCekilen = Object.values(fotografciKare).reduce((s, f) => s + f.toplam, 0);
+          const toplamBasilan = baskiMap[dayVenueKey] || 0;
+          const baskiDonusumYuzde = toplamCekilen > 0 ? Math.round((toplamBasilan / toplamCekilen) * 100) : 0;
+          const kisiBasiBasilan = satisciSayisi > 0 ? Math.round(toplamBasilan / satisciSayisi) : 0;
+
+          const tumPersonelIds = new Set([...Object.keys(fotografciKare), ...Object.keys(satisciSatis)]);
+          for (const pid of tumPersonelIds) {
+            const fotoData = fotografciKare[pid];
+            const satisData = satisciSatis[pid];
+            const ad = fotoData?.ad || satisData?.ad || "";
+            const cektigiKare = fotoData?.toplam || 0;
+            const satisAdet = satisData?.toplam || 0;
+
+            if (!personelPerf[pid]) {
+              personelPerf[pid] = { id: pid, ad, gunler: [], toplamKare: 0, toplamSorumluMusteri: 0, toplamSatisAdet: 0 };
+            }
+            const cekimYuzde = kisiBasiKota > 0 ? Math.round((cektigiKare / kisiBasiKota) * 100) : 0;
+            const satisDonusumYuzde = kisiBasiMusteriSatis > 0 ? Math.round((satisAdet / kisiBasiMusteriSatis) * 100) : 0;
+            const baskiSatisOraniYuzde = kisiBasiBasilan > 0 ? Math.round((satisAdet / kisiBasiBasilan) * 100) : 0;
+
+            personelPerf[pid].gunler.push({
+              tarih: vDate, mekanId: vId,
+              mekanAd: mekan?.name || vId,
+              mekanEmoji: mekan?.emoji || "📍",
+              musteriSayisi, kisiBasiMusteri, kisiBasiMusteriSatis, kota, kisiBasiKota,
+              cektigiKare, cekimYuzde, baskiDonusumYuzde,
+              satisAdet, satisDonusumYuzde, baskiSatisOraniYuzde,
+            });
+            personelPerf[pid].toplamKare += cektigiKare;
+            personelPerf[pid].toplamSorumluMusteri += kisiBasiMusteri || kisiBasiMusteriSatis;
+            personelPerf[pid].toplamSatisAdet += satisAdet;
+          }
+        }
+
+        // Ortalama + sırala
+        const personeller = Object.values(personelPerf).map((p: any) => {
+          const gunSayisi = p.gunler.length;
+          return {
+            ...p,
+            gunSayisi,
+            ortCekimYuzde: gunSayisi > 0 ? Math.round(p.gunler.reduce((s: number, g: any) => s + g.cekimYuzde, 0) / gunSayisi) : 0,
+            ortBaskiDonusumYuzde: gunSayisi > 0 ? Math.round(p.gunler.reduce((s: number, g: any) => s + g.baskiDonusumYuzde, 0) / gunSayisi) : 0,
+            ortSatisDonusumYuzde: gunSayisi > 0 ? Math.round(p.gunler.reduce((s: number, g: any) => s + (g.satisDonusumYuzde || 0), 0) / gunSayisi) : 0,
+            ortBaskiSatisOraniYuzde: gunSayisi > 0 ? Math.round(p.gunler.reduce((s: number, g: any) => s + (g.baskiSatisOraniYuzde || 0), 0) / gunSayisi) : 0,
+          };
+        }).sort((a: any, b: any) => b.ortCekimYuzde - a.ortCekimYuzde);
+
+        const toplamPersonel = personeller.length;
+        return c.json({
+          baslangic, bitis, source: "sql",
+          toplamPersonel,
+          genelOrtCekimYuzde: toplamPersonel > 0 ? Math.round(personeller.reduce((s: number, p: any) => s + p.ortCekimYuzde, 0) / toplamPersonel) : 0,
+          genelOrtBaskiDonusumYuzde: toplamPersonel > 0 ? Math.round(personeller.reduce((s: number, p: any) => s + p.ortBaskiDonusumYuzde, 0) / toplamPersonel) : 0,
+          genelOrtSatisDonusumYuzde: toplamPersonel > 0 ? Math.round(personeller.reduce((s: number, p: any) => s + p.ortSatisDonusumYuzde, 0) / toplamPersonel) : 0,
+          genelOrtBaskiSatisOraniYuzde: toplamPersonel > 0 ? Math.round(personeller.reduce((s: number, p: any) => s + p.ortBaskiSatisOraniYuzde, 0) / toplamPersonel) : 0,
+          personeller,
+        });
+      } catch (sqlReadErr) {
+        console.log(`[sql-read] kare/performans SQL hatası, KV fallback: ${sqlReadErr}`);
+        // SQL hata verirse KV'ye düş — aşağıdaki mevcut KV kodu çalışır
+      }
+    }
+
+    // ══ KV READ MODE (fallback veya source=kv) ══
 
     // Tüm mekanları al
     const mekanlar: any[] = await ckv.getByPrefix("mekan_") || [];
@@ -12430,6 +12656,7 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
       odemeler: !isMultiDay ? odemeListesi : undefined,
       anomaliler: !isMultiDay ? anomaliler : undefined,
     });
+
   } catch (err) {
     console.log("Gün raporu error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -18473,6 +18700,387 @@ app.put("/make-server-4da0b637/tedarikci/fiyat/:cariId", async (c) => {
     await ckv.set(`tedarikci_fiyat_${cariId}`, fiyat);
     return c.json({ ok: true, fiyat });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// ══════════════════════════════════════════
+// SHADOW COMPARE: KV vs PostgreSQL (Aşama 4)
+// GET /make-server-4da0b637/migration/shadow-compare
+// Tarih aralığındaki KV ve SQL satış/kare verilerini karşılaştırır
+// ══════════════════════════════════════════
+app.get("/make-server-4da0b637/migration/shadow-compare", async (c) => {
+  try {
+    const migKey = c.req.header("X-Migration-Key");
+    if (migKey !== "aspect-pg-migration-2026") {
+      const user = await verifyToken(c);
+      if (!user || (user.user_metadata?.originalRole !== "superadmin" && user.user_metadata?.role !== "yonetici")) {
+        return c.json({ error: "Yetkisiz." }, 403);
+      }
+    }
+
+    const targetCompany = c.req.query("company_id") || "aspect";
+    const tarih = c.req.query("tarih") || bizDateTR();
+    const ckv = companyKvFor(targetCompany);
+    const db = getAdminClient();
+
+    const diffs: any[] = [];
+
+    // Tüm mekanları al
+    const mekanlar: any[] = await ckv.getByPrefix("mekan_") || [];
+
+    for (const mekan of mekanlar) {
+      const stok: any = await ckv.get(`stok_gunluk_${mekan.id}_${tarih}`);
+      if (!stok) continue;
+
+      // KV satış sayısı
+      const kvSatislar = (stok.satislar || []).filter((s: any) => !s.iptal);
+      const kvSatisCount = kvSatislar.length;
+      const kvCiro = kvSatislar.reduce((s: number, sale: any) => s + (Number(sale.finalPrice) || 0), 0);
+
+      // SQL satış sayısı
+      const { data: sqlSales, error: sqlErr } = await db.from("sales")
+        .select("id, final_price")
+        .eq("company_id", targetCompany)
+        .eq("venue_id", mekan.id)
+        .eq("date", tarih)
+        .eq("is_cancelled", false);
+
+      const sqlSatisCount = sqlSales?.length || 0;
+      const sqlCiro = (sqlSales || []).reduce((s: number, sale: any) => s + (Number(sale.final_price) || 0), 0);
+
+      // KV kare
+      const kvKareler = stok.kareKayitlari || [];
+      const kvKareCount = kvKareler.length;
+      const kvKareTotal = kvKareler.reduce((s: number, k: any) => s + (Number(k.frameCount) || 0), 0);
+
+      // SQL kare
+      const { data: sqlFrames } = await db.from("frame_records")
+        .select("id, frame_count")
+        .eq("company_id", targetCompany)
+        .eq("venue_id", mekan.id)
+        .eq("date", tarih);
+
+      const sqlKareCount = sqlFrames?.length || 0;
+      const sqlKareTotal = (sqlFrames || []).reduce((s: number, f: any) => s + (Number(f.frame_count) || 0), 0);
+
+      // Fark var mı?
+      const satisMatch = kvSatisCount === sqlSatisCount && Math.round(kvCiro) === Math.round(sqlCiro);
+      const kareMatch = kvKareCount === sqlKareCount && kvKareTotal === sqlKareTotal;
+
+      if (!satisMatch || !kareMatch) {
+        diffs.push({
+          mekan: mekan.name,
+          mekanId: mekan.id,
+          satis: { kv: kvSatisCount, sql: sqlSatisCount, kvCiro: Math.round(kvCiro), sqlCiro: Math.round(sqlCiro), match: satisMatch },
+          kare: { kv: kvKareCount, sql: sqlKareCount, kvTotal: kvKareTotal, sqlTotal: sqlKareTotal, match: kareMatch },
+        });
+      }
+    }
+
+    const result = {
+      company: targetCompany,
+      tarih,
+      mekanSayisi: mekanlar.length,
+      farkSayisi: diffs.length,
+      status: diffs.length === 0 ? "MATCH" : "DIFF",
+      diffs,
+    };
+
+    if (diffs.length > 0) {
+      console.log(`[shadow-compare] FARK BULUNDU: ${targetCompany}/${tarih} — ${diffs.length} mekanda uyuşmazlık`);
+    } else {
+      console.log(`[shadow-compare] OK: ${targetCompany}/${tarih} — ${mekanlar.length} mekan eşleşti`);
+    }
+
+    return c.json(result);
+  } catch (err) {
+    console.log("shadow-compare error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
+// MIGRATION: KV → PostgreSQL (Aşama 2 — Referans Veriler)
+// POST /make-server-4da0b637/migration/ref-data
+// Sadece superadmin çalıştırabilir. Tek seferlik.
+// ══════════════════════════════════════════
+app.post("/make-server-4da0b637/migration/ref-data", async (c) => {
+  try {
+    // Auth: ya superadmin token ya da X-Migration-Key header
+    const migKey = c.req.header("X-Migration-Key");
+    if (migKey !== "aspect-pg-migration-2026") {
+      const user = await verifyToken(c);
+      if (!user) return c.json({ error: "Yetkisiz." }, 401);
+      if (user.user_metadata?.originalRole !== "superadmin" && user.user_metadata?.role !== "yonetici") {
+        return c.json({ error: "Sadece superadmin/yönetici çalıştırabilir." }, 403);
+      }
+    }
+
+    const db = getAdminClient();
+    const singleCompany = c.req.query("company_id");
+
+    // Tek şirket belirtilmişse onu yap, yoksa tüm şirketleri bul
+    let companyIds: string[] = [];
+    if (singleCompany) {
+      companyIds = [singleCompany];
+    } else {
+      const allCompanies: any[] = await kv.getByPrefix("company_profile_") || [];
+      companyIds = allCompanies.map((cp: any) => cp.id || "").filter(Boolean);
+      if (!companyIds.includes("aspect")) companyIds.unshift("aspect");
+    }
+
+    const allResults: Record<string, string[]> = {};
+
+    for (const targetCompany of companyIds) {
+    const ckv = companyKvFor(targetCompany);
+    const log: string[] = [];
+
+    // ── 1. MEKANLAR ──
+    const mekanlar: any[] = await ckv.getByPrefix("mekan_") || [];
+    if (mekanlar.length > 0) {
+      const venueRows = mekanlar.map((m: any) => ({
+        id: m.id,
+        company_id: targetCompany,
+        name: m.name || "",
+        emoji: m.emoji || "📍",
+        color: m.color || "#9dd9ea",
+        photo_price: Number(m.photoPrice) || 0,
+        price_currency: m.priceCurrency || "TRY",
+        yearly_rent: Number(m.yearlyRent) || 0,
+        profit_target: Number(m.profitTarget) || 0,
+        print_type: m.printType || "yarim",
+        zorluk_katsayisi: Number(m.zorlukKatsayisi) || 1.0,
+        kare_charpani: Number(m.kareCharpani) || 5,
+        working_hours: m.workingHours || null,
+        kota_kademeleri: m.kotaKademeleri || null,
+        extra_data: { yearlyRents: m.yearlyRents, profitTargets: m.profitTargets, dailyCostPercentage: m.dailyCostPercentage, profitPercentage: m.profitPercentage },
+      }));
+      const { error } = await db.from("venues").upsert(venueRows, { onConflict: "id" });
+      log.push(error ? `venues HATA: ${error.message}` : `venues: ${venueRows.length} kayıt`);
+    }
+
+    // ── 2. EKİPMAN ──
+    const ekipmanlar: any[] = await ckv.getByPrefix("ekipman_") || [];
+    if (ekipmanlar.length > 0) {
+      const eqRows = ekipmanlar.map((e: any) => ({
+        id: e.id,
+        company_id: targetCompany,
+        venue_id: e.locationId || e.mekanId || null,
+        name: e.model ? `${e.brand || ''} ${e.model}`.trim() : (e.name || ""),
+        type: e.category || e.type || "other",
+        ribon_mevcut: Number(e.ribonMevcut) || 0,
+        ribon_kapasitesi: Number(e.ribonKapasitesi) || 0,
+        extra_data: { category: e.category, brand: e.brand, model: e.model, serialNumber: e.serialNumber, serialNo: e.serialNo, status: e.status, location: e.location, locationType: e.locationType, carpan: e.carpan, kagitTipiId: e.kagitTipiId, kagitTipiAdi: e.kagitTipiAdi, notes: e.notes, assignedTo: e.assignedTo, assignedToId: e.assignedToId, flashId: e.flashId, imagePath: e.imagePath, gecmis: e.gecmis },
+      }));
+      const { error } = await db.from("equipment").upsert(eqRows, { onConflict: "id" });
+      log.push(error ? `equipment HATA: ${error.message}` : `equipment: ${eqRows.length} kayıt`);
+    }
+
+    // ── 3. ROTASYON GÖREVLERİ ──
+    const rotasyonlar: any[] = await ckv.getByPrefix("rotation_task_") || [];
+    if (rotasyonlar.length > 0) {
+      const rotRows = rotasyonlar.map((t: any) => ({
+        id: t.id,
+        company_id: targetCompany,
+        date: t.date || null,
+        location: t.location || "",
+        location_icon: t.locationIcon || "📍",
+        start_time: t.startTime || null,
+        end_time: t.endTime || null,
+        task_type: t.taskType || "regular",
+        status: t.status || "draft",
+        personnel: t.personnel || [],
+        notes: t.notes || null,
+        created_by: t.created_by || null,
+      }));
+      const { error } = await db.from("rotation_tasks").upsert(rotRows, { onConflict: "id" });
+      log.push(error ? `rotation_tasks HATA: ${error.message}` : `rotation_tasks: ${rotRows.length} kayıt`);
+    }
+
+    // ── 4. İZİN TALEPLERİ ──
+    const izinler: any[] = await ckv.getByPrefix("rotation_leave_") || [];
+    if (izinler.length > 0) {
+      const leaveRows = izinler.map((l: any) => ({
+        id: l.id,
+        company_id: targetCompany,
+        personnel_id: l.personnelId || "",
+        personnel_name: l.personnelName || "",
+        personnel_avatar: l.personnelAvatar || "",
+        personnel_role: l.personnelRole || "",
+        start_date: l.startDate || null,
+        end_date: l.endDate || null,
+        days: Number(l.days) || 1,
+        type: l.type || "annual",
+        notes: l.notes || null,
+        status: l.status || "pending",
+      }));
+      const { error } = await db.from("leave_requests").upsert(leaveRows, { onConflict: "id" });
+      log.push(error ? `leave_requests HATA: ${error.message}` : `leave_requests: ${leaveRows.length} kayıt`);
+    }
+
+    // ── 5. DUYURULAR ──
+    const duyurular: any[] = await ckv.getByPrefix("announcement_") || [];
+    if (duyurular.length > 0) {
+      const annRows = duyurular.map((a: any) => ({
+        id: a.id,
+        company_id: targetCompany,
+        title: a.title || "",
+        message: a.message || "",
+        type: a.type || "info",
+        priority: a.priority || "medium",
+      }));
+      const { error } = await db.from("announcements").upsert(annRows, { onConflict: "id" });
+      log.push(error ? `announcements HATA: ${error.message}` : `announcements: ${annRows.length} kayıt`);
+    }
+
+    // ── 6. ŞİRKET AYARLARI ──
+    const settingsKeys = [
+      { kvKey: "cost_exchange_rates", settingKey: "exchange_rates" },
+      { kvKey: "cost_albums", settingKey: "album_costs" },
+      { kvKey: "leaderboard_config_v1", settingKey: "leaderboard_config" },
+      { kvKey: "ai_role_config_v1", settingKey: "ai_role_config" },
+      { kvKey: "company_telegram_config", settingKey: "telegram_config" },
+      { kvKey: "kasa_sirket_settings", settingKey: "kasa_settings" },
+      { kvKey: "kidem_carpanlari", settingKey: "kidem_carpanlari" },
+    ];
+    let settingsCount = 0;
+    for (const sk of settingsKeys) {
+      const val = await ckv.get(sk.kvKey);
+      if (val) {
+        const { error } = await db.from("company_settings").upsert(
+          { company_id: targetCompany, key: sk.settingKey, value: val },
+          { onConflict: "company_id,key" }
+        );
+        if (error) log.push(`settings/${sk.settingKey} HATA: ${error.message}`);
+        else settingsCount++;
+      }
+    }
+    log.push(`company_settings: ${settingsCount} ayar`);
+
+    // ── 7. TEDARİKÇİ/CARİ ──
+    const cariler: any[] = await ckv.getByPrefix("cost_cari_") || [];
+    if (cariler.length > 0) {
+      const vendorRows = cariler.map((v: any) => ({
+        id: v.id,
+        company_id: targetCompany,
+        name: v.name || "",
+        type: v.type || "supplier",
+        balance: Number(v.balance) || 0,
+        extra_data: v,
+      }));
+      const { error } = await db.from("vendor_accounts").upsert(vendorRows, { onConflict: "id" });
+      log.push(error ? `vendor_accounts HATA: ${error.message}` : `vendor_accounts: ${vendorRows.length} kayıt`);
+    }
+
+    // ── 8. MAAŞLAR ──
+    const maaslar: any[] = await ckv.getByPrefix("cost_salary_") || [];
+    if (maaslar.length > 0) {
+      const salaryRows = maaslar.map((m: any) => ({
+        id: m.id || `sal-${m.userId}-${Date.now()}`,
+        company_id: targetCompany,
+        user_id: m.userId || "",
+        monthly_amount: Number(m.monthlyAmount || m.amount) || 0,
+        extra_data: m,
+      }));
+      // salaries PK is UUID, use insert instead of upsert
+      for (const row of salaryRows) {
+        const { error } = await db.from("salaries").insert(row).select();
+        if (error && !error.message.includes("duplicate")) log.push(`salaries HATA: ${error.message}`);
+      }
+      log.push(`salaries: ${salaryRows.length} kayıt`);
+    }
+
+    // ── 9. SATIŞLAR (stok_gunluk → sales tablosu) ──
+    const tumStoklar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+    let satisCount = 0;
+    let kareCount = 0;
+    const satisRows: any[] = [];
+    const kareRows: any[] = [];
+
+    for (const stok of tumStoklar) {
+      const stkMekanId = stok.mekanId || "";
+      const stkTarih = stok.tarih || "";
+      if (!stkMekanId || !stkTarih) continue;
+
+      // Satışlar
+      const satislar: any[] = (stok.satislar || []);
+      for (const s of satislar) {
+        if (!s.id) continue;
+        satisRows.push({
+          id: s.id,
+          company_id: targetCompany,
+          venue_id: stkMekanId,
+          date: stkTarih,
+          items: s.items || [],
+          total_price: Number(s.totalPrice) || 0,
+          discount: Number(s.discount) || 0,
+          final_price: Number(s.finalPrice) || 0,
+          payment_method: s.paymentMethod || "cash",
+          currency: s.currency || "TRY",
+          currency_price: s.currencyPrice || null,
+          recorded_by_id: s.kaydedenId || null,
+          recorded_by_name: s.kaydeden || null,
+          is_cancelled: !!s.iptal,
+          cancel_reason: s.iptalNeden || null,
+          cancel_time: s.iptalZamani || null,
+          gerekce: s.gerekce || null,
+          idempotency_key: s.id,
+          timestamp: s.timestamp || null,
+        });
+      }
+
+      // Kare kayıtları
+      const kareler: any[] = (stok.kareKayitlari || []);
+      for (const k of kareler) {
+        if (!k.id) continue;
+        kareRows.push({
+          id: k.id,
+          company_id: targetCompany,
+          venue_id: stkMekanId,
+          date: stkTarih,
+          photographer_id: k.photographerId || "",
+          photographer_name: k.photographerName || "",
+          frame_count: Number(k.frameCount) || 0,
+          recorded_by_id: k.kaydedenId || null,
+          recorded_by_name: k.kaydeden || null,
+          timestamp: k.timestamp || null,
+        });
+      }
+    }
+
+    // Batch upsert — 500'er parça halinde
+    if (satisRows.length > 0) {
+      for (let i = 0; i < satisRows.length; i += 500) {
+        const batch = satisRows.slice(i, i + 500);
+        const { error } = await db.from("sales").upsert(batch, { onConflict: "id" });
+        if (error) { log.push(`sales batch ${i} HATA: ${error.message}`); break; }
+      }
+      satisCount = satisRows.length;
+      log.push(`sales: ${satisCount} kayıt`);
+    } else {
+      log.push(`sales: 0 kayıt`);
+    }
+
+    if (kareRows.length > 0) {
+      for (let i = 0; i < kareRows.length; i += 500) {
+        const batch = kareRows.slice(i, i + 500);
+        const { error } = await db.from("frame_records").upsert(batch, { onConflict: "id" });
+        if (error) { log.push(`frame_records batch ${i} HATA: ${error.message}`); break; }
+      }
+      kareCount = kareRows.length;
+      log.push(`frame_records: ${kareCount} kayıt`);
+    } else {
+      log.push(`frame_records: 0 kayıt`);
+    }
+
+    console.log(`[Migration] Ref-data ${targetCompany}: ${log.join(" | ")}`);
+    allResults[targetCompany] = log;
+    } // for companyIds loop end
+
+    return c.json({ success: true, companies: Object.keys(allResults), results: allResults });
+  } catch (err) {
+    console.log("migration/ref-data error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
 });
 
 // ══════════════════════════════════════════
