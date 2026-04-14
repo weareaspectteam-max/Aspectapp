@@ -2031,6 +2031,15 @@ app.get("/make-server-4da0b637/doviz/canli", async (c) => {
       ckvCompany = companyKvFor(qcid);
     }
 
+    // Manuel mod kontrolü: isAuto=false ise canlı API'ye gitme, direkt manuel kurları dön
+    const manualRates = await ckvCompany!.get("cost_exchange_rates");
+    if (manualRates && !manualRates.isAuto) {
+      return c.json({
+        rates: { USD: Number(manualRates.USD), EUR: Number(manualRates.EUR), GBP: Number(manualRates.GBP), BGN: Number(manualRates.BGN) || 0, RUB: Number(manualRates.RUB) || 0, SAR: Number(manualRates.SAR) || 0 },
+        trend: null, source: "manual", fetchedAt: Date.now(),
+      });
+    }
+
     // Önce KV cache'e bak (10 dk TTL) — global, tüm şirketler için aynı
     const cached = await kv.get("live_rates_cache");
     if (cached && cached.fetchedAt && (Date.now() - cached.fetchedAt) < 10 * 60 * 1000) {
