@@ -43,15 +43,6 @@ async function retryOp<T>(
 }
 
 const getMekanlarFor = async (companyId: string): Promise<any[]> => {
-  // SQL read (KV fallback)
-  try {
-    const db = getAdminClient();
-    const { data, error } = await db.from("venues").select("id, extra_data").eq("company_id", companyId);
-    if (!error && data && data.length > 0) {
-      return data.map((v: any) => v.extra_data ? { ...v.extra_data, id: v.id } : v).filter((m: any) => m && m.name && m.emoji);
-    }
-  } catch {}
-  // KV fallback
   const ckv = companyKvFor(companyId);
   const all: any[] = await retryOp(() => ckv.getByPrefix("mekan_"), 3, 300) || [];
   return all.filter((m: any) => m && m.name && m.emoji);
@@ -2465,15 +2456,7 @@ app.get("/make-server-4da0b637/isletme/giderler", async (c) => {
     const reqCIdGider = c.req.query("company_id");
     const companyId = (isSAGider && reqCIdGider) ? reqCIdGider : getCompanyId(user);
 
-    // SQL read (extra_data yaklaşımı — KV fallback)
-    try {
-      const db = getAdminClient();
-      const { data, error } = await db.from("operating_expenses").select("id, extra_data").eq("company_id", companyId).order("date", { ascending: false });
-      if (!error && data && data.length > 0) {
-        const giderler = data.map((g: any) => g.extra_data ? { ...g.extra_data, id: g.id } : g);
-        return c.json({ giderler });
-      }
-    } catch {}
+    // SQL read geçici devre dışı — KV'den oku
     const ckv = companyKvFor(companyId);
     const tumGiderler: any[] = await ckv.getByPrefix("isletme_gider_") || [];
     const tedCarilerIGD = await ckv.getByPrefix("cost_cari_").catch(() => []) || [];
@@ -2603,15 +2586,7 @@ app.get("/make-server-4da0b637/isletme/gelirler", async (c) => {
     const reqCId = c.req.query("company_id");
     const companyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
 
-    // SQL read (extra_data yaklaşımı — KV fallback)
-    try {
-      const db = getAdminClient();
-      const { data, error } = await db.from("operating_income").select("id, extra_data").eq("company_id", companyId).order("date", { ascending: false });
-      if (!error && data && data.length > 0) {
-        const gelirler = data.map((g: any) => g.extra_data ? { ...g.extra_data, id: g.id } : g);
-        return c.json({ gelirler });
-      }
-    } catch {}
+    // SQL read geçici devre dışı — KV'den oku
     const ckv = companyKvFor(companyId);
     const tumGelirler: any[] = await ckv.getByPrefix("isletme_gelir_") || [];
     const sirali = tumGelirler.sort((a: any, b: any) =>
@@ -2939,15 +2914,7 @@ app.get("/make-server-4da0b637/rotasyon/gorevler", async (c) => {
     const reqCIdGorev = c.req.query("company_id");
     const companyId = (isSAGorev && reqCIdGorev) ? reqCIdGorev : getCompanyId(user);
 
-    // SQL read (extra_data yaklaşımı — KV fallback)
-    try {
-      const db = getAdminClient();
-      const { data, error } = await db.from("rotation_tasks").select("id, extra_data").eq("company_id", companyId);
-      if (!error && data && data.length > 0) {
-        const tasks = data.map((t: any) => t.extra_data ? { ...t.extra_data, id: t.id } : t);
-        return c.json({ tasks });
-      }
-    } catch {}
+    // SQL read geçici devre dışı — KV'den oku
     const ckv = companyKvFor(companyId);
     const tasks = await ckv.getByPrefix("rotation_task_");
     return c.json({ tasks: tasks || [] });
@@ -3137,15 +3104,7 @@ app.get("/make-server-4da0b637/rotasyon/izinler", async (c) => {
     const reqCIdIzin = c.req.query("company_id");
     const companyId = (isSAIzin && reqCIdIzin) ? reqCIdIzin : getCompanyId(user);
 
-    // SQL read (extra_data yaklaşımı — KV fallback)
-    try {
-      const db = getAdminClient();
-      const { data, error } = await db.from("leave_requests").select("id, extra_data").eq("company_id", companyId);
-      if (!error && data && data.length > 0) {
-        const leaveRequests = data.map((l: any) => l.extra_data ? { ...l.extra_data, id: l.id } : l);
-        return c.json({ leaveRequests });
-      }
-    } catch {}
+    // SQL read geçici devre dışı — KV'den oku
     const ckv = companyKvFor(companyId);
     const leaveRequests = await ckv.getByPrefix("rotation_leave_");
     return c.json({ leaveRequests: leaveRequests || [] });
@@ -5728,17 +5687,7 @@ app.get("/make-server-4da0b637/announcements", async (c) => {
     const reqCIdDuyuru = c.req.query("company_id");
     const companyId = (isSADuyuru && reqCIdDuyuru) ? reqCIdDuyuru : getCompanyId(user);
 
-    // SQL read (extra_data yaklaşımı — KV fallback)
-    try {
-      const db = getAdminClient();
-      const { data, error } = await db.from("announcements").select("id, extra_data").eq("company_id", companyId).order("created_at", { ascending: false });
-      if (!error && data && data.length > 0) {
-        const now = new Date();
-        const announcements = data.map((a: any) => a.extra_data ? { ...a.extra_data, id: a.id } : a)
-          .filter((a: any) => { if (a.type === "temporary" && a.endDate) return new Date(a.endDate) >= now; return true; });
-        return c.json({ announcements });
-      }
-    } catch {}
+    // SQL read geçici devre dışı — KV'den oku
     const ckv = companyKvFor(companyId);
     const all = await ckv.getByPrefix("announcement_");
     const now = new Date();
