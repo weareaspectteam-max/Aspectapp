@@ -762,6 +762,30 @@ const ensureOtomatikGiderler = async (companyId: string): Promise<void> => {
 // POST /make-server-4da0b637/admin/migrate-legacy
 
 
+
+
+// ── Sipariş Silme ──────────────────────────────────────────────────
+app.delete("/make-server-4da0b637/tedarikci/siparisler/:id", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur"])) return c.json({ error: "Yetki yok." }, 403);
+    const companyId = getCompanyId(callerUser);
+    const ckv = companyKvFor(companyId);
+    const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
+    const siparis = await getOrder(companyId, ckv, siparisId);
+    if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
+    if (!["iptal", "taslak"].includes(siparis.status)) return c.json({ error: "Sadece iptal veya taslak siparişler silinebilir." }, 400);
+    await deleteOrder(companyId, ckv, siparisId);
+    // İlişkili teslimat ve ödeme kayıtlarını da sil
+    const db = getAdminClient();
+    await db.from("deliveries").delete().eq("company_id", companyId).eq("order_id", siparisId);
+    await db.from("supplier_payments").delete().eq("company_id", companyId).eq("order_id", siparisId);
+    return c.json({ ok: true });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+
 // ── Tedarikçi KV→SQL Migration ──────────────────────────────────────
 app.post("/make-server-4da0b637/migration/tedarikci-sql", async (c) => {
   try {

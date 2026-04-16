@@ -516,6 +516,18 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
               <button onClick={() => { cancelOrder(s.id); setSelectedSiparis(null); }}
                 className="w-full py-2 rounded-xl text-xs text-red-400/60 bg-red-500/5 border border-red-500/10">İptal Et</button>
             )}
+
+            {['iptal', 'taslak'].includes(s.status) && (
+              <button onClick={async () => {
+                if (!confirm('Bu siparişi kalıcı olarak silmek istiyor musunuz?')) return;
+                setActionLoading(s.id);
+                try {
+                  await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${s.id}`), { method: 'DELETE', headers: getHeaders() });
+                  setSelectedSiparis(null); fetchData();
+                } finally { setActionLoading(''); }
+              }} disabled={actionLoading === s.id}
+                className="w-full py-2 rounded-xl text-xs text-red-500 bg-red-500/10 border border-red-500/20 font-bold">Kalıcı Sil</button>
+            )}
           </div>
         </div>
       );
