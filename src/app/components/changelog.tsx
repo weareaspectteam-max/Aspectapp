@@ -17,6 +17,28 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '5.6.0',
+    date: '2026-04-16',
+    title: 'Tedarikci Sistemi SQL Gecisi, Tek Kart UI & Kasa Duzeltmeleri',
+    changes: [
+      { type: 'new', text: 'Tedarikci siparis/teslimat/odeme sistemi tamamen PostgreSQL e gecti — 18+ endpoint' },
+      { type: 'new', text: 'Siparisler artik tedarikci bazinda gruplu tek kart gorunumunde' },
+      { type: 'new', text: 'Taslak siparis algilama — ayni tedarikciye yeni kalem eklerken mevcut taslaga ekleniyor' },
+      { type: 'new', text: 'Bakiye tabi doneme gore filtreleme (Tumu / Bu Ay / Gecen Ay / Bu Yil)' },
+      { type: 'new', text: 'Teslim edilen kalemler detayi + odeme gecmisi bakiye tabinda' },
+      { type: 'new', text: 'Siparis detayinda kalem bazinda teslim/kalan progress bar' },
+      { type: 'new', text: 'Siparis silme — iptal/taslak siparisler kalici olarak silinebiliyor' },
+      { type: 'new', text: 'Taslaga kalem ekleme endpoint i (PUT /siparisler/:id/kalem-ekle)' },
+      { type: 'improve', text: 'Kasa giderleri artik PostgreSQL den okunuyor (operating_expenses) — 14 okuma noktasi' },
+      { type: 'improve', text: 'IGD den odendi isareti gider → kasadan otomatik dusuyor (backend tarafli)' },
+      { type: 'improve', text: 'Otomatik giderler (maas, duzenli) SQL e de yaziliyor' },
+      { type: 'fix', text: 'Kasa ↔ tedarikci odeme senkronizasyonu — silme artik tedarikci portalina da yansıyor' },
+      { type: 'fix', text: 'Tedarikci odemelerinde tek gider bazinda kur farki olusma engellendi' },
+      { type: 'fix', text: 'pgWrite upsert sessiz fail sorunu — delete+insert ile degistirildi' },
+      { type: 'fix', text: 'Kasa bakiye hesaplamasi gider/odeme SQL uyumsuzlugu giderildi' },
+    ],
+  },
+  {
     version: '5.5.0',
     date: '2026-04-15',
     title: 'PostgreSQL Altyapi Gecisi & Performans Iyilestirmeleri',
