@@ -91,6 +91,7 @@ const categoryLabels = {
   ulasim: '🚗 Ulaşım',
   diger: '📋 Diğer',
   kira: '🏠 Mekan Kiraları',
+  tedarikci: '📦 Tedarikçiler',
 } as Record<string, string>;
 
 const categoryColors = {
@@ -418,6 +419,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
         date: formData.date,
         mekanId: formData.mekanId || null,
         mekanAdi: formData.mekanAdi || null,
+        odpiendi: formData.odpiendi || false,
       };
       if (formData.category === 'personel') {
         payload.personelId = formData.personelId || null;
@@ -682,12 +684,20 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   };
 
   const filteredExpenses = getFilteredExpenses();
+  // Döviz → TL çevirme
+  const toTL = (amount: number, currency?: string) => {
+    if (!currency || currency === 'TRY') return amount;
+    if (currency === 'EUR') return amount * (exchangeRates.EUR || 35.50);
+    if (currency === 'USD') return amount * (exchangeRates.USD || 32.80);
+    if (currency === 'GBP') return amount * (exchangeRates.GBP || 41.20);
+    return amount;
+  };
   // Sabit giderler: otomatik kayıtlar + elle eklenen maaşlar + operasyonel giderler
   const isSabitGider = (e: any) => e.otomatik || (e.category === 'personel' && e.odemeTipi === 'maas') || e.category === 'operasyonel';
   const sabitGiderler = filteredExpenses.filter(isSabitGider);
   const manuelGiderler = filteredExpenses.filter((e: any) => !isSabitGider(e));
-  const manualGiderToplam = manuelGiderler.reduce((s, e) => s + e.amount, 0);
-  const otomatikGiderToplam = sabitGiderler.reduce((s, e) => s + e.amount, 0);
+  const manualGiderToplam = manuelGiderler.reduce((s, e) => s + toTL(e.amount, e.currency), 0);
+  const otomatikGiderToplam = sabitGiderler.reduce((s, e) => s + toTL(e.amount, e.currency), 0);
   const { days: filterDays } = getDateRangeForFilter();
   const kiraGiderToplam = dateFilter !== 'all' ? computeAutoGider(filterDays) : 0;
   const autoGiderToplam = kiraGiderToplam + otomatikGiderToplam;
@@ -724,7 +734,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
     .filter(cat => cat !== 'kira') // kira ayrı hesaplanıyor
     .map(cat => {
       const items = filteredExpenses.filter(e => e.category === cat);
-      const total = items.reduce((s, e) => s + e.amount, 0);
+      const total = items.reduce((s, e) => s + toTL(e.amount, e.currency), 0);
       return { category: cat, total, count: items.length, percentage: 0 };
     }).filter(i => i.total > 0);
   // Kira ekle — İGD'deki kira düzeltmelerini de dahil et
@@ -738,7 +748,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   for (const cat of allCats) {
     if (standardCats.includes(cat) || cat === 'kira' || cat === 'duzeltme') continue;
     const items = filteredExpenses.filter(e => e.category === cat);
-    const total = items.reduce((s, e) => s + e.amount, 0);
+    const total = items.reduce((s, e) => s + toTL(e.amount, e.currency), 0);
     if (total > 0) categorySummaryBase.push({ category: cat, total, count: items.length, percentage: 0 });
   }
   // Yüzdeleri hesapla ve sırala
@@ -1529,7 +1539,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                           const key = e.personelAdi || e.name || e.description || '-';
                           if (!grupMap[key]) grupMap[key] = { label: key, toplam: 0, count: 0 };
                           // Kira: yearlyRent'ten dönem bazlı hesapla, diğerleri: amount
-                          const tutar = e.yearlyRent ? (e.yearlyRent / 365) * fDays : (e.amount || 0);
+                          const tutar = e.yearlyRent ? (e.yearlyRent / 365) * fDays : toTL(e.amount || 0, e.currency);
                           grupMap[key].toplam += tutar;
                           grupMap[key].count++;
                         }

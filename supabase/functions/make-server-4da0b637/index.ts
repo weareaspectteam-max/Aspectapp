@@ -82,8 +82,10 @@ const pgWrite = async (table: string, action: "upsert" | "insert" | "update" | "
       const { error } = await db.from(table).insert(data);
       if (error) console.log(`[pg] ${table} insert HATA: ${error.message}`);
     } else if (action === "upsert") {
-      const { error } = await db.from(table).upsert(data, { onConflict: "id" });
-      if (error) console.log(`[pg] ${table} upsert HATA: ${error.message}`);
+      // delete+insert (upsert sessizce fail ediyor kasa_records'da)
+      if (data.id) await db.from(table).delete().eq("id", data.id);
+      const { error } = await db.from(table).insert(data);
+      if (error) console.log(`[pg] ${table} upsert(d+i) HATA: ${error.message}`);
     } else if (action === "update" && match) {
       let q = db.from(table).update(data);
       for (const [k, v] of Object.entries(match)) q = q.eq(k, v);
@@ -141,6 +143,17 @@ const setKasaRecord = (companyId: string, kvKey: string, type: string, data: any
 };
 const delKasaRecord = (companyId: string, kvKey: string) => {
   pgWrite("kasa_records", "delete", null, { id: kvKey, company_id: companyId });
+};
+
+const getAllGiderler = async (companyId: string, ckv: any): Promise<any[]> => {
+  try {
+    const db = getAdminClient();
+    const { data, error } = await db.from("operating_expenses").select("extra_data").eq("company_id", companyId);
+    if (error || !data || data.length === 0) throw new Error("kv-fallback");
+    return data.map((r: any) => r.extra_data);
+  } catch {
+    return await ckv.getByPrefix("isletme_gider_") || [];
+  }
 };
 
 const getAllGelirler = async (companyId: string, ckv: any): Promise<any[]> => {
@@ -649,7 +662,7 @@ const ensureOtomatikGiderler = async (companyId: string): Promise<void> => {
     const [maaslar, duzenliler, tumGiderler] = await Promise.all([
       ckv.getByPrefix("cost_salary_").catch(() => []),
       ckv.getByPrefix("cost_recurring_").catch(() => []),
-      ckv.getByPrefix("isletme_gider_").catch(() => []),
+      getAllGiderler(companyId, ckv),
     ]);
 
     if ((!maaslar || maaslar.length === 0) && (!duzenliler || duzenliler.length === 0)) {
@@ -703,21 +716,14 @@ const ensureOtomatikGiderler = async (companyId: string): Promise<void> => {
         if (gunluk <= 0) continue;
 
         const giderId = `oto_maas_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        await ckv.set(`isletme_gider_${giderId}`, {
-          id: giderId,
-          category: "personel",
-          odemeTipi: "maas",
-          amount: gunluk,
-          currency: "TRY",
-          description: `🔄 Otomatik Maaş — ${m.name || "Personel"} (${gun})`,
-          date: gun,
-          personelAdi: m.name || "",
-          personelId: m.userId || "",
-          otomatik: true,
-          otomatikKey,
-          created_at: new Date().toISOString(),
-          created_by: "sistem",
-        });
+        const _maasGider = {
+          id: giderId, category: "personel", odemeTipi: "maas", amount: gunluk, currency: "TRY",
+          description: `🔄 Otomatik Maaş — ${m.name || "Personel"} (${gun})`, date: gun,
+          personelAdi: m.name || "", personelId: m.userId || "", otomatik: true, otomatikKey,
+          created_at: new Date().toISOString(), created_by: "sistem",
+        };
+        await ckv.set(`isletme_gider_${giderId}`, _maasGider);
+        pgWrite("operating_expenses", "upsert", { id: giderId, company_id: companyId, category: "personel", description: _maasGider.description, amount: gunluk, currency: "TRY", date: gun, extra_data: _maasGider, created_at: _maasGider.created_at });
         eklenen++;
       }
 
@@ -732,19 +738,14 @@ const ensureOtomatikGiderler = async (companyId: string): Promise<void> => {
         if (gunluk <= 0) continue;
 
         const giderId = `oto_duzenli_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        await ckv.set(`isletme_gider_${giderId}`, {
-          id: giderId,
-          category: "operasyonel",
-          amount: gunluk,
-          currency: "TRY",
-          description: `🔄 Otomatik Gider — ${r.name || "Düzenli Gider"} (${gun})`,
-          date: gun,
-          personelAdi: r.name || "Düzenli Gider",
-          otomatik: true,
-          otomatikKey,
-          created_at: new Date().toISOString(),
-          created_by: "sistem",
-        });
+        const _duzGider = {
+          id: giderId, category: "operasyonel", amount: gunluk, currency: "TRY",
+          description: `🔄 Otomatik Gider — ${r.name || "Düzenli Gider"} (${gun})`, date: gun,
+          personelAdi: r.name || "Düzenli Gider", otomatik: true, otomatikKey,
+          created_at: new Date().toISOString(), created_by: "sistem",
+        };
+        await ckv.set(`isletme_gider_${giderId}`, _duzGider);
+        pgWrite("operating_expenses", "upsert", { id: giderId, company_id: companyId, category: "operasyonel", description: _duzGider.description, amount: gunluk, currency: "TRY", date: gun, extra_data: _duzGider, created_at: _duzGider.created_at });
         eklenen++;
       }
     }
@@ -760,6 +761,7 @@ const ensureOtomatikGiderler = async (companyId: string): Promise<void> => {
 // ──────────────────────────────────────────
 // MIGRATION: Legacy aspect verisi → aspect: prefix'i altına kopyala
 // POST /make-server-4da0b637/admin/migrate-legacy
+
 
 
 
@@ -2804,7 +2806,7 @@ app.get("/make-server-4da0b637/isletme/giderler", async (c) => {
 
     // SQL read geçici devre dışı — KV'den oku
     const ckv = companyKvFor(companyId);
-    const tumGiderler: any[] = await ckv.getByPrefix("isletme_gider_") || [];
+    const tumGiderler: any[] = await getAllGiderler(companyId, ckv);
     const tedCarilerIGD = await ckv.getByPrefix("cost_cari_").catch(() => []) || [];
     const tedIsimSetIGD = new Set(tedCarilerIGD.map((c: any) => (c.name || "").trim().toLowerCase()).filter(Boolean));
     for (const g of tumGiderler) {
@@ -2843,13 +2845,37 @@ app.post("/make-server-4da0b637/isletme/giderler", async (c) => {
     const companyId = getCompanyId(user);
     const ckv = companyKvFor(companyId);
     await ckv.set(`isletme_gider_${id}`, gider);
-    pgWrite("operating_expenses", "insert", {
+    await pgWrite("operating_expenses", "insert", {
       id, company_id: companyId, category: body.category || null, description: body.description || body.personelAdi || null,
       amount: Number(body.amount) || 0, currency: body.currency || "TRY", date: body.date || null,
       venue_id: body.mekanId || null, recurring_id: body.recurringId || null,
-      payment_status: body.paymentStatus || "pending", created_by: gider.created_by, extra_data: body,
+      payment_status: body.paymentStatus || "pending", created_by: gider.created_by, extra_data: gider,
     });
-    return c.json({ gider }, 201);
+    // Ödendi işaretliyse kasaya ödeme kaydını da backend'de oluştur
+    let _kasaSqlStatus = "skip";
+    if (body.odpiendi) {
+      const odemeKey = `kasa_odeme_${id}`;
+      const odemeData = {
+        giderId: id, odpiendi: true, odpienenTutar: Number(body.amount) || 0,
+        odemeler: [{ tutar: Number(body.amount) || 0, tarih: body.date || new Date().toISOString().split("T")[0], aciklama: "İGD'den ödendi olarak eklendi", created_at: new Date().toISOString(), created_by: gider.created_by }],
+      };
+      await ckv.set(odemeKey, odemeData);
+      try {
+        const _giderDb = getAdminClient();
+        await _giderDb.from("kasa_records").delete().eq("id", odemeKey).eq("company_id", companyId);
+        const { error: _gOdeErr } = await _giderDb.from("kasa_records").insert({
+          id: odemeKey, company_id: companyId, type: "odeme",
+          extra_data: odemeData, updated_at: new Date().toISOString(),
+        });
+        _kasaSqlStatus = _gOdeErr ? `HATA: ${_gOdeErr.message}` : "OK";
+        if (_gOdeErr) console.log(`[IGD→Kasa] kasa_records HATA: ${_gOdeErr.message}`, _gOdeErr);
+        else console.log(`[IGD→Kasa] kasa_records OK: ${odemeKey}`);
+      } catch (e) {
+        _kasaSqlStatus = `EXCEPTION: ${e}`;
+        console.log(`[IGD→Kasa] EXCEPTION:`, e);
+      }
+    }
+    return c.json({ gider, _kasaSqlStatus }, 201);
   } catch (err) {
     console.log("Create isletme gider error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -2871,7 +2897,7 @@ app.put("/make-server-4da0b637/isletme/giderler/:id", async (c) => {
     const body = await c.req.json();
     const gider = { ...existing, ...body, id };
     await ckv.set(`isletme_gider_${id}`, gider);
-    pgWrite("operating_expenses", "upsert", {
+    await pgWrite("operating_expenses", "upsert", {
       id, company_id: getCompanyId(user), category: gider.category || null, description: gider.description || gider.personelAdi || null,
       amount: Number(gider.amount) || 0, currency: gider.currency || "TRY", date: gider.date || null,
       venue_id: gider.mekanId || null, payment_status: gider.paymentStatus || "pending", extra_data: gider,
@@ -2909,7 +2935,7 @@ app.delete("/make-server-4da0b637/isletme/giderler/:id", async (c) => {
     const { id } = c.req.param();
     const ckv = companyKvFor(getCompanyId(user));
     await ckv.del(`isletme_gider_${id}`);
-    pgWrite("operating_expenses", "delete", null, { id });
+    await pgWrite("operating_expenses", "delete", null, { id });
     return c.json({ message: "Gider silindi." });
   } catch (err) {
     console.log("Delete isletme gider error:", err);
@@ -5155,7 +5181,7 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
     // ── Bekleyen hakedişleri İGD'ye gider olarak yaz (idempotent) ──
     // Bu, kasada personele borç olarak görünmesini sağlar
     const mevcutGiderKeys = new Set<string>();
-    const tumGiderlerPrim = await ckv.getByPrefix("isletme_gider_").catch(() => []) || [];
+    const tumGiderlerPrim = await getAllGiderler(_hakCompanyId, ckv);
     for (const g of tumGiderlerPrim) { if (g.primOdemeKey) mevcutGiderKeys.add(g.primOdemeKey); }
 
     let primGiderEklenen = 0;
@@ -5591,7 +5617,7 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
     const ckv = companyKvFor(getCompanyId(user));
     let tumGiderler: any[] = [];
     if (!odendiMi) {
-      tumGiderler = await ckv.getByPrefix("isletme_gider_").catch(() => []) || [];
+      tumGiderler = await getAllGiderler(_hakCompanyId, ckv);
     }
 
     for (const key of odemeKeys) {
@@ -5611,7 +5637,7 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
       if (odendiMi && detay) {
         // Ödeme → bekleyen İGD giderini bul ve kasada ödendi işaretle
         // Eğer bekleyen yoksa yeni İGD gider oluştur (geriye uyumluluk)
-        if (!tumGiderler.length) tumGiderler = await ckv.getByPrefix("isletme_gider_").catch(() => []) || [];
+        if (!tumGiderler.length) tumGiderler = await getAllGiderler(_hakCompanyId, ckv);
         const bekleyenGider = tumGiderler.find((g: any) => g.primOdemeKey === key);
 
         if (bekleyenGider) {
@@ -11117,7 +11143,7 @@ app.get("/make-server-4da0b637/hedef-takip", async (c) => {
       getAllDailyStock(effCId, ckv),
       ckv.get("cost_albums").catch(() => null),
       ckv.get("cost_exchange_rates").catch(() => null),
-      ckv.getByPrefix("isletme_gider_").catch(() => []),
+      getAllGiderler(effCId, ckv),
       getAllGelirler(effCId, ckv),
     ]);
     const tumKayitlar = tumKayitlarRaw || [];
@@ -11933,7 +11959,7 @@ app.get("/make-server-4da0b637/vardiya/ay-raporu", async (c) => {
       ckv.get("cost_albums").catch(() => null),
       ckv.get("cost_exchange_rates").catch(() => null),
       ckv.getByPrefix("cost_salary_").catch(() => []),
-      ckv.getByPrefix("isletme_gider_").catch(() => []),
+      getAllGiderler(effCId, ckv),
       getAllGelirler(effCId, ckv),
       ckv.getByPrefix("rotation_task_").catch(() => []),
       ckv.getByPrefix("ekipman_").catch(() => []),
@@ -12622,7 +12648,7 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
       ckv.getByPrefix("kidem_personel_").catch(() => []),
       ckv.get("kidem_carpanlari").catch(() => null),
       ckv.get(HAKEDIS_DAHIL_KEY).catch(() => []),
-      ckv.getByPrefix("isletme_gider_").catch(() => []),
+      getAllGiderler(effCId, ckv),
     ]);
 
     // Hakediş giderleri: tarih_mekanAdi → toplam hakediş tutarı
@@ -13900,7 +13926,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── İşletme Gider Kayıtları (son 30 gün) ──
       let isletmeGiderStr = "  Veri yok.";
       try {
-        const tumGiderlerAI: any[] = await ckv.getByPrefix("isletme_gider_") || [];
+        const tumGiderlerAI: any[] = await getAllGiderler(companyId, ckv);
         if (tumGiderlerAI.length > 0) {
           const son30gAI = new Date(); son30gAI.setDate(son30gAI.getDate() - 30);
           const son30StrAI = son30gAI.toISOString().split("T")[0];
@@ -16807,7 +16833,7 @@ app.get("/make-server-4da0b637/kasa/sirket", async (c) => {
     // Paralel KV okuma
     const [devirler, tumGiderler, tumOdemeler, mekanlar, tumGelirler, tumKasaIslemler, tumBorclar] = await Promise.all([
       getKasaByPrefix(companyId, ckv, "kasa_devir_"),
-      ckv.getByPrefix("isletme_gider_"),       // İGD giderleri
+      getAllGiderler(companyId, ckv),            // İGD giderleri (SQL)
       getKasaByPrefix(companyId, ckv, "kasa_odeme_"),
       getMekanlarFor(companyId),
       getAllGelirler(companyId, ckv),              // Para Girişleri
@@ -17204,7 +17230,17 @@ app.post("/make-server-4da0b637/kasa/sirket/ode", async (c) => {
     }
 
     await ckv.set(odemeKey, existing);
-    setKasaRecord(_odeCompanyId, odemeKey, "odeme", existing);
+    // SQL'e delete+insert (upsert silent fail sorunu nedeniyle)
+    try {
+      const _odeDb = getAdminClient();
+      await _odeDb.from("kasa_records").delete().eq("id", odemeKey).eq("company_id", _odeCompanyId);
+      const { error: _odeSqlErr } = await _odeDb.from("kasa_records").insert({
+        id: odemeKey, company_id: _odeCompanyId, type: "odeme",
+        extra_data: JSON.parse(JSON.stringify(existing)),
+        updated_at: new Date().toISOString(),
+      });
+      if (_odeSqlErr) console.log(`[Kasa→SQL] kasa_records HATA: ${_odeSqlErr.message}`);
+    } catch (e) { console.log(`[Kasa→SQL] EXCEPTION:`, e); }
 
     // Kur farkı: borç kapandığında toplam ödenen vs borç tutarı karşılaştır
     // Tedarikçi ödemelerinde tek gider bazında kur farkı oluşturma — sadece tüm borç kapandığında hesaplanmalı
@@ -17317,7 +17353,7 @@ app.post("/make-server-4da0b637/kasa/sirket/ode", async (c) => {
     }
 
     console.log(`[Kasa] Ödeme: ${giderId} tutar=${tutar} by ${user.id}`);
-    return c.json({ odeme: existing });
+    return c.json({ odeme: existing, _sqlStatus: _odeSqlErr ? `HATA: ${_odeSqlErr.message}` : "OK" });
   } catch (err) {
     console.log("Kasa ode POST error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -17493,7 +17529,7 @@ app.post("/make-server-4da0b637/kasa/sirket/kismi-sil", async (c) => {
     existing.silmeler = [...(existing.silmeler || []), yeniSilme];
     existing.silinenTutar = (existing.silmeler || []).reduce((s: number, sl: any) => s + (sl.tutar || 0), 0);
     await ckv.set(odemeKey, existing);
-    setKasaRecord(_kismiSilCompanyId, odemeKey, "odeme", existing);
+    try { const _db = getAdminClient(); await _db.from("kasa_records").delete().eq("id", odemeKey).eq("company_id", _kismiSilCompanyId); await _db.from("kasa_records").insert({ id: odemeKey, company_id: _kismiSilCompanyId, type: "odeme", extra_data: JSON.parse(JSON.stringify(existing)), updated_at: new Date().toISOString() }); } catch {}
 
     // 2. İGD'ye negatif düzeltme kaydı ekle
     const duzeltmeId = `duzeltme_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -17840,7 +17876,7 @@ app.post("/make-server-4da0b637/kasa/sirket/ay-kapat", async (c) => {
     // Bu ayın verilerini hesapla
     const [devirler, tumGiderlerKapat, tumOdemelerKapat, mekanlarKapat] = await Promise.all([
       getKasaByPrefix(_ayKapatCompanyId, ckv, "kasa_devir_"),
-      ckv.getByPrefix("isletme_gider_"),
+      getAllGiderler(_ayKapatCompanyId, ckv),
       getKasaByPrefix(_ayKapatCompanyId, ckv, "kasa_odeme_"),
       getMekanlarFor(_ayKapatCompanyId),
     ]);
@@ -18073,7 +18109,7 @@ app.get("/make-server-4da0b637/kasa/cariler", async (c) => {
 
     // Paralel KV okuma
     const [tumGiderler, tumOdemeler, mekanlar] = await Promise.all([
-      ckv.getByPrefix("isletme_gider_"),
+      getAllGiderler(companyId, ckv),
       getKasaByPrefix(companyId, ckv, "kasa_odeme_"),
       getMekanlarFor(companyId),
     ]);
