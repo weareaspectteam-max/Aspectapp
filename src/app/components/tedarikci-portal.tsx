@@ -67,6 +67,8 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
   const [offerItems, setOfferItems] = useState<Array<{ productName: string; quantity: number; unitPrice: number }>>([]);
   const [offerNotes, setOfferNotes] = useState('');
   const [showKarsiTeklif, setShowKarsiTeklif] = useState(false);
+  const [showArsiv, setShowArsiv] = useState(false);
+  const [bakiyeDonem, setBakiyeDonem] = useState<'tumu' | 'bu_ay' | 'gecen_ay' | 'bu_yil'>('tumu');
   const [fiyatDuzenle, setFiyatDuzenle] = useState(false);
   const [fiyatItems, setFiyatItems] = useState<Array<{ productName: string; eskiFiyat: number; yeniFiyat: number }>>([]);
   const [karsiItems, setKarsiItems] = useState<Array<{ productName: string; quantity: number; unitPrice: number }>>([]);
@@ -221,6 +223,30 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
           <div className="flex-1" />
           <span className="px-3 py-1 rounded-full text-xs font-medium" style={{ background: sc.bg, color: sc.color }}>{sc.label}</span>
         </div>
+
+        {/* Bakiye Özet */}
+        {(() => {
+          const ozet = portalData?.ozet || {};
+          const toplamSiparis = ozet.toplamSiparisTutar || 0;
+          const toplamOdenen = ozet.toplamOdenen || 0;
+          const kalan = ozet.kalanBorc || (toplamSiparis - toplamOdenen);
+          return (
+            <div className="p-3 rounded-2xl flex items-center justify-between" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+              <div className="text-center flex-1">
+                <p className="text-white/40 text-[9px]">Toplam</p>
+                <p className="text-white font-bold text-sm">₺{toplamSiparis.toLocaleString('tr-TR')}</p>
+              </div>
+              <div className="text-center flex-1">
+                <p className="text-emerald-400/60 text-[9px]">Ödenen</p>
+                <p className="text-emerald-400 font-bold text-sm">₺{toplamOdenen.toLocaleString('tr-TR')}</p>
+              </div>
+              <div className="text-center flex-1">
+                <p className="text-amber-400/60 text-[9px]">Kalan</p>
+                <p className={`font-bold text-sm ${kalan > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>₺{kalan.toLocaleString('tr-TR')}</p>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Kalemler Tablosu */}
         <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
@@ -663,9 +689,11 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                   const oncelik = (s: PurchaseOrder) => isTeklif(s) ? 0 : isAktif(s) ? 1 : isGecmis(s) ? 3 : isIptal(s) ? 4 : 2;
                   return oncelik(a) - oncelik(b) || (b.createdAt || '').localeCompare(a.createdAt || '');
                 });
-                return sirali.length === 0 ? (
-                  <div className="p-8 text-center text-white/30 text-sm">Henüz sipariş yok</div>
-                ) : sirali.map(s => {
+                if (sirali.length === 0) return <div className="p-8 text-center text-white/30 text-sm">Henüz sipariş yok</div>;
+                const aktifSiparisler = sirali.filter(s => !isGecmis(s) && !isIptal(s));
+                const arsivSiparisler = sirali.filter(s => isGecmis(s) || isIptal(s));
+
+                const renderSiparisKart = (s: PurchaseOrder) => {
                   const sc = STATUS_CONFIG[s.status] || STATUS_CONFIG.taslak;
                   const kr = kartRenk(s);
                   return (
@@ -703,7 +731,20 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                       <ChevronRight className="w-4 h-4 text-white/20 flex-shrink-0" />
                     </motion.button>
                   );
-                });
+                };
+
+                return (<>
+                  {aktifSiparisler.map(renderSiparisKart)}
+                  {arsivSiparisler.length > 0 && (
+                    <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+                      <button onClick={() => setShowArsiv(!showArsiv)} className="w-full px-4 py-2.5 flex items-center justify-between">
+                        <span className="text-white/40 text-xs font-semibold">Arşiv ({arsivSiparisler.length})</span>
+                        {showArsiv ? <ChevronUp className="w-3.5 h-3.5 text-white/20" /> : <ChevronDown className="w-3.5 h-3.5 text-white/20" />}
+                      </button>
+                      {showArsiv && <div className="space-y-1 p-2">{arsivSiparisler.map(renderSiparisKart)}</div>}
+                    </div>
+                  )}
+                </>);
               })()}
             </div>
           )}
@@ -808,30 +849,131 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
           {/* ═══ BAKİYE TAB'I ═══ */}
           {activePortalTab === 'bakiye' && (
             <div className="space-y-3">
-              <div className="p-6 rounded-2xl text-center" style={{ background: (ozet.kalanBorc || 0) > 0 ? 'rgba(251,191,36,0.08)' : 'rgba(52,211,153,0.08)', border: `1px solid ${(ozet.kalanBorc || 0) > 0 ? 'rgba(251,191,36,0.20)' : 'rgba(52,211,153,0.20)'}` }}>
-                <p className="text-white/40 text-xs mb-1">Bakiye</p>
-                <p className={`text-3xl font-bold ${(ozet.kalanBorc || 0) > 0 ? 'text-amber-400' : 'text-green-400'}`}>
-                  ₺{Math.abs(ozet.kalanBorc || 0).toLocaleString('tr-TR')}
-                </p>
-                <p className="text-white/30 text-xs mt-1">{(ozet.kalanBorc || 0) > 0 ? 'Alacak' : 'Bakiye temiz'}</p>
+              {/* Dönem filtresi */}
+              <div className="flex gap-1.5 overflow-x-auto pb-1">
+                {([
+                  { key: 'tumu', label: 'Tümü' },
+                  { key: 'bu_ay', label: 'Bu Ay' },
+                  { key: 'gecen_ay', label: 'Geçen Ay' },
+                  { key: 'bu_yil', label: 'Bu Yıl' },
+                ] as const).map(f => {
+                  const active = bakiyeDonem === f.key;
+                  return (
+                    <button key={f.key} onClick={() => setBakiyeDonem(f.key)}
+                      className="px-3 py-1.5 rounded-xl text-[10px] font-bold whitespace-nowrap transition-all"
+                      style={{ background: active ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.03)', border: `1px solid ${active ? 'rgba(96,165,250,0.40)' : 'rgba(255,255,255,0.08)'}`, color: active ? '#60a5fa' : 'rgba(255,255,255,0.4)' }}>
+                      {f.label}
+                    </button>
+                  );
+                })}
               </div>
-              <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
-                <div className="px-4 py-2 border-b" style={{ borderColor: glassBorder }}>
-                  <p className="text-white font-semibold text-sm">Özet</p>
-                </div>
-                <div className="px-4 py-2 flex justify-between border-b" style={{ borderColor: glassBorder }}>
-                  <span className="text-white/50 text-xs">Toplam Sipariş Tutarı</span>
-                  <span className="text-white font-bold text-xs">₺{(ozet.toplamSiparisTutar || 0).toLocaleString('tr-TR')}</span>
-                </div>
-                <div className="px-4 py-2 flex justify-between border-b" style={{ borderColor: glassBorder }}>
-                  <span className="text-white/50 text-xs">Ödenen</span>
-                  <span className="text-green-400 font-bold text-xs">₺{(ozet.toplamOdenen || 0).toLocaleString('tr-TR')}</span>
-                </div>
-                <div className="px-4 py-2 flex justify-between">
-                  <span className="text-white/50 text-xs">Kalan</span>
-                  <span className="text-amber-400 font-bold text-xs">₺{(ozet.kalanBorc || 0).toLocaleString('tr-TR')}</span>
-                </div>
-              </div>
+
+              {(() => {
+                const now = new Date();
+                const buAyBaslangic = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+                const gecenAyBaslangic = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10);
+                const gecenAyBitis = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
+                const buYilBaslangic = `${now.getFullYear()}-01-01`;
+
+                const donemFiltre = (tarih: string) => {
+                  if (!tarih) return bakiyeDonem === 'tumu';
+                  const t = tarih.slice(0, 10);
+                  if (bakiyeDonem === 'tumu') return true;
+                  if (bakiyeDonem === 'bu_ay') return t >= buAyBaslangic;
+                  if (bakiyeDonem === 'gecen_ay') return t >= gecenAyBaslangic && t <= gecenAyBitis;
+                  if (bakiyeDonem === 'bu_yil') return t >= buYilBaslangic;
+                  return true;
+                };
+
+                const filtreliTeslimatlar = (portalData?.teslimatlar || []).filter((t: any) => t.status === 'onaylandi' && donemFiltre(t.deliveryDate || t.createdAt));
+                const filtreliOdemeler = (portalData?.odemeler || []).filter((o: any) => o.status !== 'reddedildi' && o.status !== 'iptal' && donemFiltre(o.paymentDate || o.createdAt));
+
+                // Teslim edilen toplam kalem
+                const teslimKalemler: Record<string, number> = {};
+                for (const t of filtreliTeslimatlar) {
+                  for (const line of (t.lines || [])) {
+                    teslimKalemler[line.productName] = (teslimKalemler[line.productName] || 0) + (line.quantity || 0);
+                  }
+                }
+                const toplamTeslimAdet = Object.values(teslimKalemler).reduce((a: number, v: number) => a + v, 0);
+                const toplamOdenen = filtreliOdemeler.reduce((a: number, o: any) => a + (o.amount || 0), 0);
+
+                return (<>
+                  {/* Bakiye kartı */}
+                  <div className="p-5 rounded-2xl text-center" style={{ background: (ozet.kalanBorc || 0) > 0 ? 'rgba(251,191,36,0.08)' : 'rgba(52,211,153,0.08)', border: `1px solid ${(ozet.kalanBorc || 0) > 0 ? 'rgba(251,191,36,0.20)' : 'rgba(52,211,153,0.20)'}` }}>
+                    <p className="text-white/40 text-xs mb-1">Kalan Borç</p>
+                    <p className={`text-3xl font-bold ${(ozet.kalanBorc || 0) > 0 ? 'text-amber-400' : 'text-green-400'}`}>
+                      ₺{Math.abs(ozet.kalanBorc || 0).toLocaleString('tr-TR')}
+                    </p>
+                  </div>
+
+                  {/* Dönem özet kartları */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="p-3 rounded-2xl text-center" style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.15)' }}>
+                      <p className="text-emerald-400/50 text-[9px]">Ödenen</p>
+                      <p className="text-emerald-400 font-bold text-lg">₺{toplamOdenen.toLocaleString('tr-TR')}</p>
+                      <p className="text-white/20 text-[9px]">{filtreliOdemeler.length} ödeme</p>
+                    </div>
+                    <div className="p-3 rounded-2xl text-center" style={{ background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.15)' }}>
+                      <p className="text-blue-400/50 text-[9px]">Teslim Edilen</p>
+                      <p className="text-blue-400 font-bold text-lg">{toplamTeslimAdet.toLocaleString('tr-TR')}</p>
+                      <p className="text-white/20 text-[9px]">{filtreliTeslimatlar.length} teslimat</p>
+                    </div>
+                  </div>
+
+                  {/* Teslim edilen kalemler detayı */}
+                  {Object.keys(teslimKalemler).length > 0 && (
+                    <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+                      <div className="px-4 py-2 border-b" style={{ borderColor: glassBorder }}>
+                        <p className="text-white font-semibold text-sm">Teslim Edilen Kalemler</p>
+                      </div>
+                      {Object.entries(teslimKalemler).map(([name, qty]) => (
+                        <div key={name} className="px-4 py-2 flex justify-between border-b" style={{ borderColor: glassBorder }}>
+                          <span className="text-white/60 text-xs">{name}</span>
+                          <span className="text-blue-400 font-bold text-xs">{qty} adet</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Ödeme geçmişi */}
+                  {filtreliOdemeler.length > 0 && (
+                    <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+                      <div className="px-4 py-2 border-b" style={{ borderColor: glassBorder }}>
+                        <p className="text-white font-semibold text-sm">Ödeme Geçmişi</p>
+                      </div>
+                      {filtreliOdemeler.map((o: any, i: number) => (
+                        <div key={i} className="px-4 py-2 flex justify-between border-b" style={{ borderColor: glassBorder }}>
+                          <div>
+                            <span className="text-white/60 text-xs">{new Date(o.paymentDate || o.createdAt).toLocaleDateString('tr-TR')}</span>
+                            {o.tip === 'on_odeme' && <span className="text-orange-400 text-[9px] ml-1">ön ödeme</span>}
+                          </div>
+                          <span className="text-emerald-400 font-bold text-xs">₺{(o.amount || 0).toLocaleString('tr-TR')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Genel özet */}
+                  <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+                    <div className="px-4 py-2 border-b" style={{ borderColor: glassBorder }}>
+                      <p className="text-white font-semibold text-sm">Genel Hesap</p>
+                    </div>
+                    <div className="px-4 py-2 flex justify-between border-b" style={{ borderColor: glassBorder }}>
+                      <span className="text-white/50 text-xs">Toplam Sipariş</span>
+                      <span className="text-white font-bold text-xs">₺{(ozet.toplamSiparisTutar || 0).toLocaleString('tr-TR')}</span>
+                    </div>
+                    <div className="px-4 py-2 flex justify-between border-b" style={{ borderColor: glassBorder }}>
+                      <span className="text-white/50 text-xs">Toplam Ödenen</span>
+                      <span className="text-green-400 font-bold text-xs">₺{(ozet.toplamOdenen || 0).toLocaleString('tr-TR')}</span>
+                    </div>
+                    <div className="px-4 py-2 flex justify-between">
+                      <span className="text-white/50 text-xs">Kalan</span>
+                      <span className="text-amber-400 font-bold text-xs">₺{(ozet.kalanBorc || 0).toLocaleString('tr-TR')}</span>
+                    </div>
+                  </div>
+                </>);
+              })()}
             </div>
           )}
         </div>

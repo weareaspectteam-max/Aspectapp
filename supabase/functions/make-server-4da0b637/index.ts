@@ -100,6 +100,219 @@ const pgWrite = async (table: string, action: "upsert" | "insert" | "update" | "
   }
 };
 
+// ── SQL daily_stock read helper (KV fallback) ────────────────────────────
+const getAllDailyStock = async (companyId: string, ckv: any, venueId?: string): Promise<any[]> => {
+  try {
+    const db = getAdminClient();
+    let q = db.from("daily_stock").select("extra_data").eq("company_id", companyId);
+    if (venueId) q = q.eq("venue_id", venueId);
+    const { data, error } = await q;
+    if (error || !data) throw new Error(error?.message || "no-data");
+    return data.map((r: any) => r.extra_data);
+  } catch (e) {
+    console.log(`[getAllDailyStock] SQL fail (${e}), KV fallback`);
+    return await ckv.getByPrefix(venueId ? `stok_gunluk_${venueId}_` : "stok_gunluk_") || [];
+  }
+};
+
+// ── SQL kasa_records read helpers (KV fallback) ─────────────────────────
+const getKasaRecord = async (companyId: string, ckv: any, kvKey: string): Promise<any> => {
+  try {
+    const db = getAdminClient();
+    const { data, error } = await db.from("kasa_records").select("extra_data").eq("company_id", companyId).eq("id", kvKey).maybeSingle();
+    if (error || !data || !data.extra_data) throw new Error(error?.message || "no-data");
+    return data.extra_data;
+  } catch {
+    return await ckv.get(kvKey);
+  }
+};
+const getKasaByPrefix = async (companyId: string, ckv: any, prefix: string): Promise<any[]> => {
+  try {
+    const db = getAdminClient();
+    const { data, error } = await db.from("kasa_records").select("extra_data").eq("company_id", companyId).like("id", `${prefix}%`);
+    if (error || !data || data.length === 0) throw new Error(error?.message || "no-data");
+    return data.map((r: any) => r.extra_data);
+  } catch {
+    return await ckv.getByPrefix(prefix) || [];
+  }
+};
+const setKasaRecord = (companyId: string, kvKey: string, type: string, data: any) => {
+  pgWrite("kasa_records", "upsert", { id: kvKey, company_id: companyId, type, extra_data: data, updated_at: new Date().toISOString() });
+};
+const delKasaRecord = (companyId: string, kvKey: string) => {
+  pgWrite("kasa_records", "delete", null, { id: kvKey, company_id: companyId });
+};
+
+const getAllGelirler = async (companyId: string, ckv: any): Promise<any[]> => {
+  try {
+    const db = getAdminClient();
+    const { data, error } = await db.from("operating_income").select("extra_data").eq("company_id", companyId);
+    if (error || !data || data.length === 0) throw new Error("kv-fallback");
+    return data.map((r: any) => r.extra_data);
+  } catch {
+    return await ckv.getByPrefix("isletme_gelir_") || [];
+  }
+};
+
+const getAllDuyurular = async (companyId: string, ckv: any): Promise<any[]> => {
+  try {
+    const db = getAdminClient();
+    const { data, error } = await db.from("announcements").select("extra_data").eq("company_id", companyId);
+    if (error || !data || data.length === 0) throw new Error("kv-fallback");
+    return data.map((r: any) => r.extra_data);
+  } catch {
+    return await ckv.getByPrefix("announcement_") || [];
+  }
+};
+
+// ── SQL kv_cache helpers (chat, academy vb.) ─────────────────────────────
+const getKvCache = async (companyId: string, ckv: any, kvKey: string): Promise<any> => {
+  try {
+    const db = getAdminClient();
+    const { data, error } = await db.from("kv_cache").select("extra_data").eq("company_id", companyId).eq("id", kvKey).maybeSingle();
+    if (error || !data || !data.extra_data) throw new Error("kv-fallback");
+    return data.extra_data;
+  } catch {
+    return await ckv.get(kvKey);
+  }
+};
+const getKvCacheByPrefix = async (companyId: string, ckv: any, prefix: string): Promise<any[]> => {
+  try {
+    const db = getAdminClient();
+    const { data, error } = await db.from("kv_cache").select("extra_data").eq("company_id", companyId).like("id", `${prefix}%`);
+    if (error || !data || data.length === 0) throw new Error("kv-fallback");
+    return data.map((r: any) => r.extra_data);
+  } catch {
+    return await ckv.getByPrefix(prefix) || [];
+  }
+};
+const setKvCache = (companyId: string, kvKey: string, type: string, data: any) => {
+  pgWrite("kv_cache", "upsert", { id: kvKey, company_id: companyId, type, extra_data: data, updated_at: new Date().toISOString() });
+};
+const delKvCache = (companyId: string, kvKey: string) => {
+  pgWrite("kv_cache", "delete", null, { id: kvKey, company_id: companyId });
+};
+
+// ── SQL tedarikçi helpers (KV fallback) ──────────────────────────────────
+const getOrders = async (companyId: string, ckv: any, filters?: { vendorId?: string; status?: string }): Promise<any[]> => {
+  try {
+    const db = getAdminClient();
+    let q = db.from("purchase_orders").select("extra_data").eq("company_id", companyId);
+    if (filters?.vendorId) q = q.eq("vendor_id", filters.vendorId);
+    if (filters?.status) q = q.eq("status", filters.status);
+    const { data, error } = await q.order("created_at", { ascending: false });
+    if (error || !data) throw new Error(error?.message || "no-data");
+    return data.map((r: any) => r.extra_data);
+  } catch (e) {
+    console.log(`[getOrders] SQL fail (${e}), KV fallback`);
+    let all = await ckv.getByPrefix("siparis_") || [];
+    if (filters?.vendorId) all = all.filter((s: any) => s.cariId === filters.vendorId);
+    if (filters?.status) all = all.filter((s: any) => s.status === filters.status);
+    return all;
+  }
+};
+const getOrder = async (companyId: string, ckv: any, orderId: string): Promise<any> => {
+  try {
+    const db = getAdminClient();
+    const { data, error } = await db.from("purchase_orders").select("extra_data").eq("company_id", companyId).eq("id", orderId).maybeSingle();
+    if (error || !data?.extra_data) throw new Error(error?.message || "no-data");
+    return data.extra_data;
+  } catch {
+    return await ckv.get(`siparis_${orderId}`);
+  }
+};
+const saveOrder = async (companyId: string, ckv: any, order: any) => {
+  const orderId = (order.id || "").replace("siparis_", "");
+  // SQL first
+  pgWrite("purchase_orders", "upsert", {
+    id: orderId, company_id: companyId, vendor_id: order.cariId || null, vendor_name: order.cariName || null,
+    items: order.items || [], status: order.status || "taslak", total_amount: order.teklifFiyat || order.totalAmount || 0,
+    currency: order.currency || "TRY", notes: order.notes || null, created_by: order.createdBy || null,
+    sent_at: order.sentAt || null, confirmed_at: order.confirmedAt || null, completed_at: order.completedAt || null,
+    updated_at: order.updatedAt || new Date().toISOString(), extra_data: order, created_at: order.createdAt || new Date().toISOString(),
+  });
+  // KV fallback
+  await ckv.set(order.id.startsWith("siparis_") ? order.id : `siparis_${order.id}`, order);
+};
+const deleteOrder = async (companyId: string, ckv: any, orderId: string) => {
+  pgWrite("purchase_orders", "delete", null, { id: orderId, company_id: companyId });
+  await ckv.del(`siparis_${orderId}`);
+};
+
+const getDeliveries = async (companyId: string, ckv: any, filters?: { orderId?: string; vendorId?: string; status?: string }): Promise<any[]> => {
+  try {
+    const db = getAdminClient();
+    let q = db.from("deliveries").select("extra_data").eq("company_id", companyId);
+    if (filters?.orderId) q = q.eq("order_id", filters.orderId);
+    if (filters?.vendorId) q = q.eq("vendor_id", filters.vendorId);
+    if (filters?.status) q = q.eq("status", filters.status);
+    const { data, error } = await q.order("created_at", { ascending: false });
+    if (error || !data) throw new Error(error?.message || "no-data");
+    return data.map((r: any) => r.extra_data);
+  } catch (e) {
+    console.log(`[getDeliveries] SQL fail (${e}), KV fallback`);
+    let all = await ckv.getByPrefix("teslimat_") || [];
+    if (filters?.orderId) all = all.filter((t: any) => t.siparisId === filters.orderId);
+    if (filters?.vendorId) all = all.filter((t: any) => t.cariId === filters.vendorId);
+    if (filters?.status) all = all.filter((t: any) => t.status === filters.status);
+    return all;
+  }
+};
+const getDelivery = async (companyId: string, ckv: any, deliveryId: string): Promise<any> => {
+  try {
+    const db = getAdminClient();
+    const { data, error } = await db.from("deliveries").select("extra_data").eq("company_id", companyId).eq("id", deliveryId).maybeSingle();
+    if (error || !data?.extra_data) throw new Error(error?.message || "no-data");
+    return data.extra_data;
+  } catch {
+    return await ckv.get(`teslimat_${deliveryId}`);
+  }
+};
+const saveDelivery = async (companyId: string, ckv: any, delivery: any) => {
+  pgWrite("deliveries", "upsert", {
+    id: delivery.id, company_id: companyId, order_id: delivery.siparisId || null, vendor_id: delivery.cariId || null,
+    status: delivery.status || "beklemede", lines: delivery.lines || [], delivery_date: delivery.deliveryDate || null,
+    delivery_note: delivery.deliveryNote || null, reviewed_by: delivery.reviewedBy || null, reviewed_at: delivery.reviewedAt || null,
+    rejection_reason: delivery.rejectionReason || null, created_by: delivery.createdBy || delivery.createdByUserId || null,
+    extra_data: delivery, created_at: delivery.createdAt || new Date().toISOString(),
+  });
+  await ckv.set(delivery.id, delivery);
+};
+
+const getSupplierPayments = async (companyId: string, ckv: any, filters?: { orderId?: string; vendorId?: string }): Promise<any[]> => {
+  try {
+    const db = getAdminClient();
+    let q = db.from("supplier_payments").select("extra_data").eq("company_id", companyId);
+    if (filters?.orderId) q = q.eq("order_id", filters.orderId);
+    if (filters?.vendorId) q = q.eq("vendor_id", filters.vendorId);
+    const { data, error } = await q.order("created_at", { ascending: false });
+    if (error || !data) throw new Error(error?.message || "no-data");
+    return data.map((r: any) => r.extra_data);
+  } catch (e) {
+    console.log(`[getSupplierPayments] SQL fail (${e}), KV fallback`);
+    let all = await ckv.getByPrefix("tedarikci_odeme_") || [];
+    if (filters?.orderId) all = all.filter((o: any) => o.siparisId === filters.orderId);
+    if (filters?.vendorId) all = all.filter((o: any) => o.cariId === filters.vendorId);
+    return all;
+  }
+};
+const saveSupplierPayment = async (companyId: string, ckv: any, payment: any) => {
+  pgWrite("supplier_payments", "upsert", {
+    id: payment.id, company_id: companyId, order_id: payment.siparisId || null, vendor_id: payment.cariId || null,
+    amount: payment.amount || 0, currency: payment.currency || "TRY", payment_method: payment.paymentMethod || null,
+    payment_date: payment.paymentDate || null, status: payment.status || "beklemede",
+    supplier_confirmed: payment.supplierConfirmed || false, supplier_confirmed_at: payment.supplierConfirmedAt || null,
+    tip: payment.tip || null, source_gider_id: payment.sourceGiderId || null,
+    created_by: payment.createdBy || payment.createdByUserId || null,
+    extra_data: payment, created_at: payment.createdAt || new Date().toISOString(),
+  });
+  await ckv.set(payment.id, payment);
+};
+const deleteSupplierPayment = async (companyId: string, ckv: any, paymentId: string) => {
+  pgWrite("supplier_payments", "delete", null, { id: paymentId, company_id: companyId });
+  await ckv.del(paymentId);
+};
+
 // ── Supabase Storage: ekipman fotoğrafları bucket ──────────────────────────
 const EQUIPMENT_BUCKET = "make-4da0b637-equipment-photos";
 let bucketReady = false;
@@ -547,6 +760,115 @@ const ensureOtomatikGiderler = async (companyId: string): Promise<void> => {
 // ──────────────────────────────────────────
 // MIGRATION: Legacy aspect verisi → aspect: prefix'i altına kopyala
 // POST /make-server-4da0b637/admin/migrate-legacy
+
+
+// ── Tedarikçi KV→SQL Migration ──────────────────────────────────────
+app.post("/make-server-4da0b637/migration/tedarikci-sql", async (c) => {
+  try {
+    const migKey = c.req.header("X-Migration-Key");
+    if (migKey !== "aspect-pg-migration-2026") return c.json({ error: "Yetkisiz" }, 403);
+    const db = getAdminClient();
+    const companies = ["aspect", "verayapim", "framemedya", "fatihkayhan"];
+    const log: string[] = [];
+
+    for (const companyId of companies) {
+      const ckv = companyKvFor(companyId);
+
+      // 1. Siparişler → purchase_orders
+      const allSiparis = await ckv.getByPrefix("siparis_") || [];
+      if (allSiparis.length > 0) {
+        const rows = allSiparis.map((s: any) => ({
+          id: s.id?.replace("siparis_", "") || s.id,
+          company_id: companyId,
+          vendor_id: s.cariId || null,
+          vendor_name: s.cariName || null,
+          items: s.items || [],
+          status: s.status === "taslak" ? "draft" : s.status,
+          total_amount: s.totalAmount || s.teklifFiyat || 0,
+          currency: s.currency || "TRY",
+          notes: s.notes || null,
+          created_by: s.createdBy || s.createdByUserId || null,
+          sent_at: s.sentAt || null,
+          confirmed_at: s.confirmedAt || null,
+          completed_at: s.completedAt || null,
+          updated_at: s.updatedAt || new Date().toISOString(),
+          extra_data: s,
+          created_at: s.createdAt || new Date().toISOString(),
+        }));
+        const { error } = await db.from("purchase_orders").upsert(rows, { onConflict: "id" });
+        log.push(error ? `${companyId} purchase_orders HATA: ${error.message}` : `${companyId} purchase_orders: ${rows.length} kayıt`);
+      }
+
+      // 2. Teslimatlar → deliveries
+      const allTeslimat = await ckv.getByPrefix("teslimat_") || [];
+      if (allTeslimat.length > 0) {
+        const rows = allTeslimat.map((t: any) => ({
+          id: t.id,
+          company_id: companyId,
+          order_id: t.siparisId || null,
+          vendor_id: t.cariId || null,
+          status: t.status || "beklemede",
+          lines: t.lines || [],
+          delivery_date: t.deliveryDate || null,
+          delivery_note: t.deliveryNote || null,
+          reviewed_by: t.reviewedBy || null,
+          reviewed_at: t.reviewedAt || null,
+          rejection_reason: t.rejectionReason || null,
+          created_by: t.createdBy || t.createdByUserId || null,
+          extra_data: t,
+          created_at: t.createdAt || new Date().toISOString(),
+        }));
+        const { error } = await db.from("deliveries").upsert(rows, { onConflict: "id" });
+        log.push(error ? `${companyId} deliveries HATA: ${error.message}` : `${companyId} deliveries: ${rows.length} kayıt`);
+      }
+
+      // 3. Ödemeler → supplier_payments
+      const allOdeme = await ckv.getByPrefix("tedarikci_odeme_") || [];
+      if (allOdeme.length > 0) {
+        const rows = allOdeme.map((o: any) => ({
+          id: o.id,
+          company_id: companyId,
+          order_id: o.siparisId || null,
+          vendor_id: o.cariId || null,
+          amount: o.amount || 0,
+          currency: o.currency || "TRY",
+          payment_method: o.paymentMethod || null,
+          payment_date: o.paymentDate || null,
+          status: o.status || "beklemede",
+          supplier_confirmed: o.supplierConfirmed || false,
+          supplier_confirmed_at: o.supplierConfirmedAt || null,
+          tip: o.tip || null,
+          source_gider_id: o.sourceGiderId || null,
+          created_by: o.createdBy || o.createdByUserId || null,
+          extra_data: o,
+          created_at: o.createdAt || new Date().toISOString(),
+        }));
+        const { error } = await db.from("supplier_payments").upsert(rows, { onConflict: "id" });
+        log.push(error ? `${companyId} supplier_payments HATA: ${error.message}` : `${companyId} supplier_payments: ${rows.length} kayıt`);
+      }
+
+      // 4. Vendor accounts → vendor_accounts
+      const allCari = await ckv.getByPrefix("cost_cari_") || [];
+      if (allCari.length > 0) {
+        const rows = allCari.map((c2: any) => ({
+          id: c2.id,
+          company_id: companyId,
+          name: c2.name || "",
+          type: c2.type || "supplier",
+          extra_data: c2,
+          created_at: c2.createdAt || new Date().toISOString(),
+        }));
+        const { error } = await db.from("vendor_accounts").upsert(rows, { onConflict: "id" });
+        log.push(error ? `${companyId} vendor_accounts HATA: ${error.message}` : `${companyId} vendor_accounts: ${rows.length} kayıt`);
+      }
+    }
+
+    return c.json({ ok: true, log });
+  } catch (err) {
+    return c.json({ error: `${err}` }, 500);
+  }
+});
+
 // Sadece yönetici çağırabilir. İdempotent (iki kez çalıştırılabilir).
 // ──────────────────────────────────────────
 app.post("/make-server-4da0b637/admin/migrate-legacy", async (c) => {
@@ -2586,9 +2908,8 @@ app.get("/make-server-4da0b637/isletme/gelirler", async (c) => {
     const reqCId = c.req.query("company_id");
     const companyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
 
-    // SQL read geçici devre dışı — KV'den oku
     const ckv = companyKvFor(companyId);
-    const tumGelirler: any[] = await ckv.getByPrefix("isletme_gelir_") || [];
+    const tumGelirler: any[] = await getAllGelirler(companyId, ckv);
     const sirali = tumGelirler.sort((a: any, b: any) =>
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
@@ -2621,7 +2942,7 @@ app.post("/make-server-4da0b637/isletme/gelirler", async (c) => {
     pgWrite("operating_income", "insert", {
       id, company_id: companyId, description: body.description || null,
       amount: Number(body.amount) || 0, currency: body.currency || "TRY",
-      date: body.date || null, source: body.source || null, created_by: gelir.created_by, extra_data: body,
+      date: body.date || null, source: body.source || null, created_by: gelir.created_by, extra_data: gelir,
     });
     return c.json({ gelir }, 201);
   } catch (err) {
@@ -3293,7 +3614,27 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
     const ckv = companyKvFor(getCompanyId(user));
 
     const { mekanId, tarih } = c.req.param();
-    const bugunRaw = await ckv.get(`stok_gunluk_${mekanId}_${tarih}`);
+    const dunTarih = new Date(tarih);
+    dunTarih.setDate(dunTarih.getDate() - 1);
+    const dunStr = dunTarih.toISOString().split("T")[0];
+
+    // ── SQL read (bugün + dün) — KV fallback ──
+    let bugunRaw: any = null;
+    let dunRaw: any = null;
+    try {
+      const db = getAdminClient();
+      const [bugunRes, dunRes] = await Promise.all([
+        db.from("daily_stock").select("extra_data").eq("id", `${mekanId}_${tarih}`).maybeSingle(),
+        db.from("daily_stock").select("extra_data").eq("id", `${mekanId}_${dunStr}`).maybeSingle(),
+      ]);
+      if (bugunRes.data) bugunRaw = bugunRes.data.extra_data;
+      if (dunRes.data) dunRaw = dunRes.data.extra_data;
+    } catch (sqlE) {
+      console.log(`[stok/gunluk] SQL read fail: ${sqlE}, KV fallback`);
+    }
+    // SQL'den veri gelmediyse KV fallback
+    if (!bugunRaw) bugunRaw = await ckv.get(`stok_gunluk_${mekanId}_${tarih}`);
+    if (!dunRaw) dunRaw = await ckv.get(`stok_gunluk_${mekanId}_${dunStr}`);
 
     // ── Baskı maliyeti kur düzeltmesi ��─
     // Eski kayıtlarda toplamMaliyet yabancı para birimi cinsinden TL gibi kaydedilmiş olabilir.
@@ -3325,21 +3666,27 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
       }
     }
 
-    const dunTarih = new Date(tarih);
-    dunTarih.setDate(dunTarih.getDate() - 1);
-    const dunStr = dunTarih.toISOString().split("T")[0];
+    const dun = dunRaw;
 
-    // ── Bağımsız KV okumalarını paralel çalıştır (timeout riskini azaltır) ─
-    const [dun, tumEklemelerRaw, tumAktarimlarRaw, tumEkipmanlarRaw] = await Promise.all([
-      ckv.get(`stok_gunluk_${mekanId}_${dunStr}`).catch(() => null),
+    // ── Ekipman SQL read (KV fallback) ──
+    let tumEkipmanlar: any[] = [];
+    try {
+      const db2 = getAdminClient();
+      const { data: eqRows, error: eqErr } = await db2.from("equipment").select("id, extra_data").eq("company_id", effCompanyId);
+      if (eqErr || !eqRows || eqRows.length === 0) throw new Error("no-eq");
+      tumEkipmanlar = eqRows.map((r: any) => ({ ...r.extra_data, id: r.id }));
+    } catch {
+      tumEkipmanlar = await ckv.getByPrefix(`ekipman_`).catch(() => []) || [];
+    }
+
+    // ── Stok ekleme/aktarım (KV — SQL tablosu yok) ──
+    const [tumEklemelerRaw, tumAktarimlarRaw] = await Promise.all([
       ckv.getByPrefix(`stok_ekleme_`).catch(() => []),
       ckv.getByPrefix(`stok_aktarim_`).catch(() => []),
-      ckv.getByPrefix(`ekipman_`).catch(() => []),
     ]);
 
     const tumEklemeler: any[] = tumEklemelerRaw || [];
     const tumAktarimlar: any[] = tumAktarimlarRaw || [];
-    const tumEkipmanlar: any[] = tumEkipmanlarRaw || [];
 
     const eklemeler = tumEklemeler.filter(
       (e: any) => e.mekanId === mekanId && e.tarih === tarih
@@ -3376,9 +3723,17 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
           d.setDate(d.getDate() - (i + 1));
           return d.toISOString().split('T')[0];
         });
-        const gunKayitlar = await Promise.all(
-          gunStrler.map(gStr => ckv.get(`stok_gunluk_${mekanId}_${gStr}`).catch(() => null))
-        );
+        let gunKayitlar: any[] = [];
+        try {
+          const db3 = getAdminClient();
+          const ids7 = gunStrler.map(g => `${mekanId}_${g}`);
+          const { data: rows7 } = await db3.from("daily_stock").select("extra_data").in("id", ids7);
+          gunKayitlar = (rows7 || []).map((r: any) => r.extra_data);
+        } catch {
+          gunKayitlar = await Promise.all(
+            gunStrler.map(gStr => ckv.get(`stok_gunluk_${mekanId}_${gStr}`).catch(() => null))
+          );
+        }
         for (const gunKayit of gunKayitlar) {
           if (eksikler.every((y: any) => y.ribonMevcut !== null)) break;
           if (!gunKayit?.printerData || !Array.isArray(gunKayit.printerData)) continue;
@@ -3532,6 +3887,7 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
     };
 
     await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
+    pgWrite("daily_stock", "upsert", { id: `${mekanId}_${tarih}`, company_id: companyId, venue_id: mekanId, date: tarih, extra_data: kayit, updated_at: new Date().toISOString() });
 
     // ── PostgreSQL dual-write (açılış) ──
     try {
@@ -3879,6 +4235,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     };
 
     await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
+    pgWrite("daily_stock", "upsert", { id: `${mekanId}_${tarih}`, company_id: companyId, venue_id: mekanId, date: tarih, extra_data: kayit, updated_at: new Date().toISOString() });
 
     // ── PostgreSQL dual-write (kapanış) ──
     try {
@@ -4249,11 +4606,22 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
 
     // Sadece bugünkü stok kayıtlarını çek (bizDateTR gece 03:00 → dün olarak yazar, zaten doğru)
     const ckv = companyKvFor(effectiveCompanyIdFeed);
-    const tumKayitlar = await ckv.getByPrefix("stok_gunluk_");
-    const bugunKayitlar = (tumKayitlar || []).filter(
-      (k: any) => k.tarih === today
-    );
-    console.log(`[canli-satis] stok_gunluk_ toplam=${tumKayitlar?.length ?? 0}, bugün=${bugunKayitlar.length}`);
+    let bugunKayitlar: any[] = [];
+    try {
+      const db = getAdminClient();
+      const { data: dsRows, error: dsErr } = await db.from("daily_stock")
+        .select("extra_data")
+        .eq("company_id", effectiveCompanyIdFeed)
+        .eq("date", today);
+      if (dsErr || !dsRows) throw new Error(dsErr?.message || "no-data");
+      bugunKayitlar = dsRows.map((r: any) => r.extra_data);
+      console.log(`[canli-satis] SQL read → ${bugunKayitlar.length} kayıt`);
+    } catch (sqlE) {
+      console.log(`[canli-satis] SQL fail (${sqlE}), KV fallback`);
+      const tumKayitlar = await ckv.getByPrefix("stok_gunluk_");
+      bugunKayitlar = (tumKayitlar || []).filter((k: any) => k.tarih === today);
+    }
+    console.log(`[canli-satis] bugün=${bugunKayitlar.length}`);
     if (bugunKayitlar.length > 0) {
       console.log(`[canli-satis] kayıtlar: ${bugunKayitlar.map((k: any) => `${k.mekanId}→${k.tarih}(${(k.satislar||[]).length}satış)`).join(", ")}`);
     }
@@ -4361,7 +4729,7 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
 
     // Bugünkü stok kayıtları — efektif şirkete göre
     const ckv = companyKvFor(effectiveCompanyId);
-    const tumKayitlar = await ckv.getByPrefix("stok_gunluk_");
+    const tumKayitlar = await getAllDailyStock(effectiveCompanyId, ckv);
     const bugunKayitlar = (tumKayitlar || []).filter((k: any) => k.tarih === today);
 
     let toplamCiro = 0;
@@ -4593,7 +4961,7 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
 
     // O aya ait tüm stok kayıtlarını çek
     const ckv = companyKvFor(effCIdPrim);
-    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+    const tumKayitlar: any[] = await getAllDailyStock(effCIdPrim, ckv);
     const ayKayitlari = tumKayitlar.filter((k: any) => {
       if (!k.tarih) return false;
       const [ky, ka] = k.tarih.split("-").map(Number);
@@ -4818,10 +5186,11 @@ app.get("/make-server-4da0b637/primler/kendi-rapor", async (c) => {
     const [yil, ayNo] = ay.split("-").map(Number);
 
     // Paralel veri çekimi (kıdem + hakediş hariç dahil)
-    const ckv = companyKvFor(getCompanyId(user));
+    const _kpCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(_kpCompanyId);
     const [mekanlarList, tumKayitlar, tumOdemeler, tumRotasyonlar, tumSilindiKendi, tumKidemlerKendi, kidemCarpanlariKendi, hakedisDahilRawKR] = await Promise.all([
       getMekanlar().catch(() => []),
-      ckv.getByPrefix("stok_gunluk_").catch(() => []),
+      getAllDailyStock(_kpCompanyId, ckv),
       ckv.getByPrefix("prim_odendi_").catch(() => []),
       ckv.getByPrefix("rotation_task_").catch(() => []),
       ckv.getByPrefix("prim_silindi_").catch(() => []),
@@ -5259,13 +5628,15 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
           };
           await ckv.set(`isletme_gider_${giderId}`, gider);
           // Kasada da ödendi
-          await ckv.set(`kasa_odeme_${giderId}`, {
+          const _kasaOdemeData = {
             giderId: giderId,
             odemeler: [{ tutar: detay.primMiktar || 0, tarih: todayStr, aciklama: `Hakediş ödendi — ${detay.personelAdi}`, created_at: now }],
             odpiendi: true,
             odpienenTutar: detay.primMiktar || 0,
             silinenTutar: 0,
-          });
+          };
+          await ckv.set(`kasa_odeme_${giderId}`, _kasaOdemeData);
+          setKasaRecord(getCompanyId(user), `kasa_odeme_${giderId}`, "odeme", _kasaOdemeData);
         }
         giderSayisi++;
       } else if (!odendiMi) {
@@ -5274,6 +5645,7 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
         for (const g of eslesen) {
           await ckv.del(`isletme_gider_${g.id}`);
           await ckv.del(`kasa_odeme_${g.id}`).catch(() => {});
+          delKasaRecord(getCompanyId(user), `kasa_odeme_${g.id}`);
           giderSilinen++;
         }
       }
@@ -5553,8 +5925,9 @@ app.get("/make-server-4da0b637/stok/anomali/:mekanId", async (c) => {
     }
 
     const { mekanId } = c.req.param();
-    const ckv = companyKvFor(getCompanyId(user));
-    const tumKayitlar = await ckv.getByPrefix(`stok_gunluk_${mekanId}_`);
+    const _anCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(_anCompanyId);
+    const tumKayitlar = await getAllDailyStock(_anCompanyId, ckv, mekanId);
     const anomaliler = tumKayitlar
       .filter((k: any) => {
         const acilisVar = k.acilisAnomali && Object.keys(k.acilisAnomali).length > 0;
@@ -5586,8 +5959,9 @@ app.get("/make-server-4da0b637/stok/anomali-raporu", async (c) => {
     const baslangic = c.req.query("baslangic") || "";
     const bitis = c.req.query("bitis") || "";
 
-    const ckv = companyKvFor(getCompanyId(user));
-    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+    const _sdCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(_sdCompanyId);
+    const tumKayitlar: any[] = await getAllDailyStock(_sdCompanyId, ckv);
     const mekanlarList: any[] = await getMekanlar();
     const mekanMap: Record<string, any> = {};
     for (const m of mekanlarList) mekanMap[m.id] = m;
@@ -5687,9 +6061,8 @@ app.get("/make-server-4da0b637/announcements", async (c) => {
     const reqCIdDuyuru = c.req.query("company_id");
     const companyId = (isSADuyuru && reqCIdDuyuru) ? reqCIdDuyuru : getCompanyId(user);
 
-    // SQL read geçici devre dışı — KV'den oku
     const ckv = companyKvFor(companyId);
-    const all = await ckv.getByPrefix("announcement_");
+    const all = await getAllDuyurular(companyId, ckv);
     const now = new Date();
     const active = (all || []).filter((a: any) => { if (a.type === "temporary" && a.endDate) return new Date(a.endDate) >= now; return true; });
     active.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -5778,6 +6151,10 @@ app.put("/make-server-4da0b637/announcements/:id", async (c) => {
     };
 
     await ckv.set(`announcement_${id}`, updated);
+    pgWrite("announcements", "upsert", {
+      id, company_id: getCompanyId(user), title: updated.title, message: updated.message,
+      type: updated.type, priority: updated.priority, extra_data: updated,
+    });
     return c.json({ announcement: updated });
   } catch (err) {
     console.log("Put announcement error:", err);
@@ -5798,6 +6175,7 @@ app.delete("/make-server-4da0b637/announcements/:id", async (c) => {
     const id = c.req.param("id");
     const ckv = companyKvFor(getCompanyId(user));
     await ckv.del(`announcement_${id}`);
+    pgWrite("announcements", "delete", null, { id });
     console.log(`Announcement deleted: ${id} by ${user.id}`);
     return c.json({ success: true });
   } catch (err) {
@@ -5825,7 +6203,7 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
     const effCIdGenel = (isSAGenel && reqCIdGenel) ? reqCIdGenel : getCompanyId(user);
     const mekanlarList: any[] = await getMekanlarFor(effCIdGenel);
     const ckv = companyKvFor(effCIdGenel);
-    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+    const tumKayitlar: any[] = await getAllDailyStock(effCIdGenel, ckv);
     const bugunKayitlar = tumKayitlar.filter((k: any) => k.tarih === today);
 
     const kayitMap: Record<string, any> = {};
@@ -6233,7 +6611,8 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
     stokObj.ribon = ribonlarToplam > 0 ? ribonlarToplam : (Number(ribonTakim) || 0);
     const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const _sgCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(_sgCompanyId);
     if (mekanId === "depo") {
       const depoStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
       // albumSayilari depo formatında olabilir (album3_tam, album3_yarim) veya eski formatta
@@ -6270,7 +6649,7 @@ app.post("/make-server-4da0b637/stok/mekan/guncelle", async (c) => {
       aktifField = kayit.kapanisYapildi ? "kapanish" : "acilis";
     } else {
       // Bugün kayıt yok → en son kapanış kaydını bul
-      const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+      const tumKayitlar: any[] = await getAllDailyStock(_sgCompanyId, ckv);
       const mekanKayitlari = tumKayitlar
         .filter((k: any) => k.mekanId === mekanId && k.kapanisYapildi && k.kapanish)
         .sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
@@ -6344,7 +6723,7 @@ app.post("/make-server-4da0b637/stok/mekan/sifirla", async (c) => {
     if (sKayit) {
       sAktifField = sKayit.kapanisYapildi ? "kapanish" : "acilis";
     } else {
-      const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+      const tumKayitlar: any[] = await getAllDailyStock(_sgCompanyId, ckv);
       const mekanKayitlari = tumKayitlar
         .filter((k: any) => k.mekanId === mekanId && k.kapanisYapildi && k.kapanish)
         .sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
@@ -6419,7 +6798,7 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
         const aktif = migrateMekanStok({ ...(kayit[aktifField] || {}) });
         return { kayit, kvKey: todayKey, aktif, alan_deger: Number(aktif[mekanAlan]) || 0, aktifField };
       }
-      const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+      const tumKayitlar: any[] = await getAllDailyStock(_sgCompanyId, ckv);
       const mekanKayitlari = tumKayitlar
         .filter((k: any) => k.mekanId === mekanId && k.kapanisYapildi && k.kapanish)
         .sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
@@ -7017,6 +7396,15 @@ app.post("/make-server-4da0b637/ekstra-is/kapalis", async (c) => {
             lastEndRibonMevcut: yaziciKapanisData.ribonMevcut !== undefined ? Number(yaziciKapanisData.ribonMevcut) : (ekipman.lastEndRibonMevcut || null),
           };
           await ckv.set(yaziciKapanisData.ekipmanId, guncelEkipman);
+          pgWrite("equipment", "upsert", {
+            id: yaziciKapanisData.ekipmanId,
+            company_id: getCompanyId(user),
+            venue_id: guncelEkipman.locationId || null,
+            name: `${guncelEkipman.brand || ""} ${guncelEkipman.model || ""}`.trim(),
+            type: guncelEkipman.category || "other",
+            ribon_mevcut: Number(guncelEkipman.lastEndRibonMevcut) || 0,
+            extra_data: guncelEkipman,
+          });
           console.log(`Yazıcı endCounter güncellendi: ${yaziciKapanisData.ekipmanId} → ${yaziciKapanisData.endCounter}`);
         }
       } catch (e) {
@@ -7169,8 +7557,9 @@ app.get("/make-server-4da0b637/ai/ozet", async (c) => {
     for (const m of mekanlarList) mekanMap[m.id] = m;
 
     // Bugünkü tüm stok kayıtları
-    const ckv = companyKvFor(getCompanyId(user));
-    const tumKayitlar = await ckv.getByPrefix("stok_gunluk_") || [];
+    const _dbCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(_dbCompanyId);
+    const tumKayitlar = await getAllDailyStock(_dbCompanyId, ckv);
     const bugunKayitlar = tumKayitlar.filter((k: any) => k.tarih === today);
 
     // Satış aggregation
@@ -7441,8 +7830,9 @@ app.get("/make-server-4da0b637/isletme/ciro", async (c) => {
 
     const isSACiro = user.user_metadata?.originalRole === "superadmin";
     const reqCIdCiro = c.req.query("company_id");
-    const ckv = companyKvFor((isSACiro && reqCIdCiro) ? reqCIdCiro : getCompanyId(user));
-    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+    const _ciroCompanyId = (isSACiro && reqCIdCiro) ? reqCIdCiro : getCompanyId(user);
+    const ckv = companyKvFor(_ciroCompanyId);
+    const tumKayitlar: any[] = await getAllDailyStock(_ciroCompanyId, ckv);
 
     const filtrelenmis = tumKayitlar.filter((k: any) => {
       if (!k.tarih) return false;
@@ -7526,7 +7916,7 @@ app.get("/make-server-4da0b637/isletme/satis-raporu", async (c) => {
     const reqCIdSatis = c.req.query("company_id");
     const effCIdSatis = (isSASatis && reqCIdSatis) ? reqCIdSatis : getCompanyId(user);
     const ckv = companyKvFor(effCIdSatis);
-    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+    const tumKayitlar: any[] = await getAllDailyStock(effCIdSatis, ckv);
     const mekanlarList: any[] = await getMekanlarFor(effCIdSatis);
     const mekanMap: Record<string, any> = {};
     for (const m of mekanlarList) mekanMap[m.id] = m;
@@ -7674,7 +8064,7 @@ app.get("/make-server-4da0b637/personel/indirim-istatistik", async (c) => {
 
     // Tüm günlük kayıtları çek, isteğe bağlı mekan filtresi
     const ckv = companyKvFor(effCIdIndirim);
-    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+    const tumKayitlar: any[] = await getAllDailyStock(effCIdIndirim, ckv);
     let filtrelenmis = mekanIdQ
       ? tumKayitlar.filter((k: any) => k.mekanId === mekanIdQ)
       : tumKayitlar;
@@ -7832,7 +8222,7 @@ app.get("/make-server-4da0b637/personel/anomali-puanlar", async (c) => {
     }
 
     // ── 3. Stok kayıtları — anomali olanları filtrele ──
-    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+    const tumKayitlar: any[] = await getAllDailyStock(effCIdAnomali, ckv);
     const anomaliKayitlar = tumKayitlar.filter((k: any) => {
       if (!k.tarih) return false;
       if (baslangic && k.tarih < baslangic) return false;
@@ -7981,8 +8371,9 @@ app.post("/make-server-4da0b637/personel/anomali-sifirla", async (c) => {
     const baslangic: string = body.baslangic || "";
     const bitis:     string = body.bitis     || "";
 
-    const ckv = companyKvFor(getCompanyId(user));
-    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+    const _apCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(_apCompanyId);
+    const tumKayitlar: any[] = await getAllDailyStock(_apCompanyId, ckv);
 
     const ANOMALI_ALANLARI = [
       "acilisAnomali",
@@ -8208,7 +8599,9 @@ app.post("/make-server-4da0b637/stok/satis", async (c) => {
 
     // SQL başarılı → KV'ye de yaz (cache)
     satislar.unshift(satis);
-    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, satislar });
+    const satisGunluk = { ...existing, satislar };
+    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, satisGunluk);
+    pgWrite("daily_stock", "upsert", { id: `${mekanId}_${tarih}`, company_id: companyId, venue_id: mekanId, date: tarih, extra_data: satisGunluk, updated_at: new Date().toISOString() });
     console.log(`Satış kaydedildi (dual): ${satisId} | ${mekanId} | ${tarih} | ${satis.finalPrice} TRY`);
     return c.json({ satis });
   } catch (err) {
@@ -8257,7 +8650,9 @@ app.delete("/make-server-4da0b637/stok/satis/:mekanId/:tarih/:satisId", async (c
       console.log(`[dual-write] SQL iptal HATA: ${sqlErr} | ${satisId}`);
     }
 
-    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, satislar });
+    const iptalGunluk = { ...existing, satislar };
+    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, iptalGunluk);
+    pgWrite("daily_stock", "upsert", { id: `${mekanId}_${tarih}`, company_id: getCompanyId(user), venue_id: mekanId, date: tarih, extra_data: iptalGunluk, updated_at: new Date().toISOString() });
     console.log(`Satış iptal (dual): ${satisId} | neden: ${neden} | skipTelegram: ${skipTelegram}`);
 
     // ── Telegram bildirimi — onay akışından geliyorsa atla (karar endpoint zaten gönderdi) ──
@@ -8638,7 +9033,9 @@ app.post("/make-server-4da0b637/stok/kare", async (c) => {
     }
 
     kareKayitlari.push(entry);
-    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...existing, kareKayitlari });
+    const kareGunluk = { ...existing, kareKayitlari };
+    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, kareGunluk);
+    pgWrite("daily_stock", "upsert", { id: `${mekanId}_${tarih}`, company_id: companyId, venue_id: mekanId, date: tarih, extra_data: kareGunluk, updated_at: new Date().toISOString() });
     console.log(`Kare kaydedildi (dual): ${entryId} | ${photographerName} | ${count} kare | ${mekanId}/${tarih}`);
     return c.json({ entry });
   } catch (err) {
@@ -8679,6 +9076,7 @@ app.post("/make-server-4da0b637/stok/musteri-sayisi", async (c) => {
     existing.musteriSayisiGirenId = user.id;
     existing.musteriSayisiZamani = new Date().toISOString();
     await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, existing);
+    pgWrite("daily_stock", "upsert", { id: `${mekanId}_${tarih}`, company_id: companyId, venue_id: mekanId, date: tarih, extra_data: existing, updated_at: new Date().toISOString() });
 
     // ── PostgreSQL dual-write (müşteri sayısı → stock_movements customer_count) ──
     try {
@@ -9064,7 +9462,9 @@ app.delete("/make-server-4da0b637/stok/kare/:mekanId/:tarih/:id", async (c) => {
     }
 
     const guncellendi = onceki.filter((k: any) => k.id !== id);
-    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, { ...kayit, kareKayitlari: guncellendi });
+    const kareSilGunluk = { ...kayit, kareKayitlari: guncellendi };
+    await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, kareSilGunluk);
+    pgWrite("daily_stock", "upsert", { id: `${mekanId}_${tarih}`, company_id: getCompanyId(user), venue_id: mekanId, date: tarih, extra_data: kareSilGunluk, updated_at: new Date().toISOString() });
 
     const silenAd = user.user_metadata?.full_name || user.email || "Bilinmiyor";
     const silenRole = user.user_metadata?.role || role;
@@ -9321,7 +9721,7 @@ app.get("/make-server-4da0b637/kare/istatistik", async (c) => {
     const mekanIdFilter = c.req.query("mekanId") || "";
 
     // Tüm günlük stok kayıtlarını çek
-    const tumKayitlar = await ckv.getByPrefix("stok_gunluk_");
+    const tumKayitlar = await getAllDailyStock(effCId, ckv);
     const mekanlarList = await getMekanlarFor(effCId);
     const mekanMap: Record<string, any> = {};
     for (const m of (mekanlarList || [])) mekanMap[m.id] = m;
@@ -9523,16 +9923,32 @@ app.get("/make-server-4da0b637/malzeme/liste", async (c) => {
     const reqCIdMalzeme = c.req.query("company_id");
     const effCIdMalzeme = (isSAMalzeme && reqCIdMalzeme) ? reqCIdMalzeme : getCompanyId(user);
 
-    const ckv = companyKvFor(effCIdMalzeme);
-    const tumEkipmanlar: any[] = await ckv.getByPrefix("ekipman_") || [];
-    const sirali = tumEkipmanlar.sort((a: any, b: any) =>
-      new Date(a.olusturulmaTarihi || 0).getTime() - new Date(b.olusturulmaTarihi || 0).getTime()
-    );
+    // ── SQL read (KV fallback) ──
+    let tumEkipmanlar: any[] = [];
+    let source = "kv";
+    try {
+      const db = getAdminClient();
+      const { data: sqlRows, error: sqlErr } = await db
+        .from("equipment")
+        .select("id, extra_data")
+        .eq("company_id", effCIdMalzeme)
+        .order("created_at", { ascending: true });
+      if (sqlErr || !sqlRows || sqlRows.length === 0) throw new Error(sqlErr?.message || "no-data");
+      tumEkipmanlar = sqlRows.map((r: any) => ({ ...r.extra_data, id: r.id }));
+      source = "sql";
+    } catch (sqlE) {
+      console.log(`[malzeme/liste] SQL read fail (${sqlE}), KV fallback`);
+      const ckv = companyKvFor(effCIdMalzeme);
+      tumEkipmanlar = await ckv.getByPrefix("ekipman_") || [];
+      tumEkipmanlar.sort((a: any, b: any) =>
+        new Date(a.olusturulmaTarihi || 0).getTime() - new Date(b.olusturulmaTarihi || 0).getTime()
+      );
+    }
 
     // imagePath olan ekipmanlar için imzalı URL üret (1 saat geçerli)
     const sb = getAdminClient();
     const ekipmanlarWithUrls = await Promise.all(
-      sirali.map(async (eq: any) => {
+      tumEkipmanlar.map(async (eq: any) => {
         if (!eq.imagePath) return eq;
         try {
           const { data } = await sb.storage
@@ -9545,6 +9961,7 @@ app.get("/make-server-4da0b637/malzeme/liste", async (c) => {
       })
     );
 
+    console.log(`[malzeme/liste] source=${source}, count=${ekipmanlarWithUrls.length}`);
     return c.json({ ekipmanlar: ekipmanlarWithUrls });
   } catch (err) {
     console.log("Malzeme liste error:", err);
@@ -9933,17 +10350,17 @@ app.get("/make-server-4da0b637/mesajlar/kanallar", async (c) => {
 
     // Özel kanallar — tüm aktif roller görebilir
     const ckv = companyKvFor(companyId);
-    const customs: any[] = await ckv.getByPrefix("chat_channel_") || [];
+    const customs: any[] = await getKvCacheByPrefix(companyId, ckv, "chat_channel_") || [];
     const customChannels = customs.map((ch: any) => ({
       id: ch.id, name: ch.name, type: "channel", emoji: ch.emoji || "💬",
       isAdminOnly: false, deletable: true, createdBy: ch.createdBy,
     }));
 
     const allChannels = [...STATIC_CHANNELS, ...mekanChannels, ...customChannels];
-    const readMap: Record<string, string> = await ckv.get(`chat_read_${user.id}`) || {};
+    const readMap: Record<string, string> = await getKvCache(companyId, ckv, `chat_read_${user.id}`) || {};
 
     const channelsWithMeta = await Promise.all(allChannels.map(async (ch) => {
-      const data: any = await ckv.get(`chat_msgs_${ch.id}`) || { messages: [] };
+      const data: any = await getKvCache(companyId, ckv, `chat_msgs_${ch.id}`) || { messages: [] };
       const msgs: any[] = data.messages || [];
       const lastMsg = msgs[msgs.length - 1];
       const lastReadTime = readMap[ch.id] ? new Date(readMap[ch.id]).getTime() : 0;
@@ -9979,9 +10396,11 @@ app.post("/make-server-4da0b637/mesajlar/ozel-kanal", async (c) => {
       createdById: user.id,
       createdAt: new Date().toISOString(),
     };
-    const ckv = companyKvFor(getCompanyId(user));
+    const ckvChanCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(ckvChanCompanyId);
     await ckv.set(`chat_channel_${id}`, channel);
-    pgWrite("chat_channels", "insert", { id, company_id: getCompanyId(user), name: name.trim(), type: "custom", extra_data: channel });
+    setKvCache(ckvChanCompanyId, `chat_channel_${id}`, "chat_channel", channel);
+    pgWrite("chat_channels", "insert", { id, company_id: ckvChanCompanyId, name: name.trim(), type: "custom", extra_data: channel });
     console.log(`Yeni özel kanal: ${name} by ${user.id}`);
     return c.json({ channel }, 201);
   } catch (err) {
@@ -10000,9 +10419,12 @@ app.delete("/make-server-4da0b637/mesajlar/ozel-kanal/:channelId", async (c) => 
       return c.json({ error: "Kanal silme yetkisi yalnızca Yönetici ve Üst Müdür rolüne aittir." }, 403);
     }
     const { channelId } = c.req.param();
-    const ckv = companyKvFor(getCompanyId(user));
+    const ckvDelCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(ckvDelCompanyId);
     await ckv.del(`chat_channel_${channelId}`);
+    delKvCache(ckvDelCompanyId, `chat_channel_${channelId}`);
     await ckv.del(`chat_msgs_${channelId}`);
+    delKvCache(ckvDelCompanyId, `chat_msgs_${channelId}`);
     console.log(`Özel kanal silindi: ${channelId} by ${user.id}`);
     return c.json({ success: true });
   } catch (err) {
@@ -10017,11 +10439,13 @@ app.get("/make-server-4da0b637/mesajlar/kanallar/:channelId", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const { channelId } = c.req.param();
-    const ckv = companyKvFor(getCompanyId(user));
-    const data: any = await ckv.get(`chat_msgs_${channelId}`) || { messages: [] };
-    const readMap: Record<string, string> = await ckv.get(`chat_read_${user.id}`) || {};
+    const ckvMsgCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(ckvMsgCompanyId);
+    const data: any = await getKvCache(ckvMsgCompanyId, ckv, `chat_msgs_${channelId}`) || { messages: [] };
+    const readMap: Record<string, string> = await getKvCache(ckvMsgCompanyId, ckv, `chat_read_${user.id}`) || {};
     readMap[channelId] = new Date().toISOString();
     await ckv.set(`chat_read_${user.id}`, readMap);
+    setKvCache(ckvMsgCompanyId, `chat_read_${user.id}`, "chat_read", readMap);
     return c.json({ messages: data.messages || [] });
   } catch (err) {
     console.log("GET mesajlar/kanallar/:id error:", err);
@@ -10050,10 +10474,13 @@ app.post("/make-server-4da0b637/mesajlar/kanallar/:channelId", async (c) => {
       channelId,
     };
 
-    const ckv = companyKvFor(getCompanyId(user));
-    const data: any = await ckv.get(`chat_msgs_${channelId}`) || { messages: [] };
+    const ckvSendCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(ckvSendCompanyId);
+    const data: any = await getKvCache(ckvSendCompanyId, ckv, `chat_msgs_${channelId}`) || { messages: [] };
     const messages = [...(data.messages || []), msg].slice(-MAX_MSGS);
-    await ckv.set(`chat_msgs_${channelId}`, { messages, lastUpdated: new Date().toISOString() });
+    const chatMsgPayload = { messages, lastUpdated: new Date().toISOString() };
+    await ckv.set(`chat_msgs_${channelId}`, chatMsgPayload);
+    setKvCache(ckvSendCompanyId, `chat_msgs_${channelId}`, "chat_msgs", chatMsgPayload);
     pgWrite("chat_messages", "insert", { channel_id: channelId, sender_id: user.id, sender_name: msg.senderName, content: msg.content, timestamp: msg.timestamp });
     console.log(`Mesaj: ${user.user_metadata?.full_name} → #${channelId}`);
     return c.json({ message: msg }, 201);
@@ -10095,22 +10522,23 @@ app.get("/make-server-4da0b637/mesajlar/dm-list", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const ckvDmListCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(ckvDmListCompanyId);
     const dmListKey = `chat_dm_list_${user.id}`;
-    const dmList: string[] = await ckv.get(dmListKey) || [];
+    const dmList: string[] = await getKvCache(ckvDmListCompanyId, ckv, dmListKey) || [];
 
     const supabase = getAdminClient();
     const { data: { users } } = await supabase.auth.admin.listUsers({ perPage: 500 });
     const userMap: Record<string, any> = {};
     for (const u of (users || [])) userMap[u.id] = u;
 
-    const readMap: Record<string, string> = await ckv.get(`chat_read_${user.id}`) || {};
+    const readMap: Record<string, string> = await getKvCache(ckvDmListCompanyId, ckv, `chat_read_${user.id}`) || {};
 
     const conversations = await Promise.all(dmList.map(async (otherUserId: string) => {
       const other = userMap[otherUserId];
       if (!other) return null;
       const dmKey = sortedDmKey(user.id, otherUserId);
-      const data: any = await ckv.get(dmKey) || { messages: [] };
+      const data: any = await getKvCache(ckvDmListCompanyId, ckv, dmKey) || { messages: [] };
       const msgs: any[] = data.messages || [];
       const lastMsg = msgs[msgs.length - 1];
       const lastReadTime = readMap[`dm_${otherUserId}`]
@@ -10142,12 +10570,14 @@ app.get("/make-server-4da0b637/mesajlar/dm/:otherUserId", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const { otherUserId } = c.req.param();
-    const ckv = companyKvFor(getCompanyId(user));
+    const ckvDmGetCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(ckvDmGetCompanyId);
     const dmKey = sortedDmKey(user.id, otherUserId);
-    const data: any = await ckv.get(dmKey) || { messages: [] };
-    const readMap: Record<string, string> = await ckv.get(`chat_read_${user.id}`) || {};
+    const data: any = await getKvCache(ckvDmGetCompanyId, ckv, dmKey) || { messages: [] };
+    const readMap: Record<string, string> = await getKvCache(ckvDmGetCompanyId, ckv, `chat_read_${user.id}`) || {};
     readMap[`dm_${otherUserId}`] = new Date().toISOString();
     await ckv.set(`chat_read_${user.id}`, readMap);
+    setKvCache(ckvDmGetCompanyId, `chat_read_${user.id}`, "chat_read", readMap);
     return c.json({ messages: data.messages || [] });
   } catch (err) {
     console.log("GET mesajlar/dm/:id error:", err);
@@ -10164,7 +10594,8 @@ app.post("/make-server-4da0b637/mesajlar/dm/:otherUserId", async (c) => {
     const { content } = await c.req.json();
     if (!content?.trim()) return c.json({ error: "Mesaj boş olamaz." }, 400);
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const ckvDmSendCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(ckvDmSendCompanyId);
     const dmKey = sortedDmKey(user.id, otherUserId);
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const msg = {
@@ -10176,15 +10607,21 @@ app.post("/make-server-4da0b637/mesajlar/dm/:otherUserId", async (c) => {
       timestamp: new Date().toISOString(),
     };
 
-    const data: any = await ckv.get(dmKey) || { messages: [] };
+    const data: any = await getKvCache(ckvDmSendCompanyId, ckv, dmKey) || { messages: [] };
     const messages = [...(data.messages || []), msg].slice(-MAX_MSGS);
-    await ckv.set(dmKey, { messages, lastUpdated: new Date().toISOString() });
+    const dmPayload = { messages, lastUpdated: new Date().toISOString() };
+    await ckv.set(dmKey, dmPayload);
+    setKvCache(ckvDmSendCompanyId, dmKey, "chat_dm", dmPayload);
 
     // Her iki kullanıcının DM listesine ekle
     for (const [meId, themId] of [[user.id, otherUserId], [otherUserId, user.id]]) {
       const listKey = `chat_dm_list_${meId}`;
-      const list: string[] = await ckv.get(listKey) || [];
-      if (!list.includes(themId)) await ckv.set(listKey, [...list, themId]);
+      const list: string[] = await getKvCache(ckvDmSendCompanyId, ckv, listKey) || [];
+      if (!list.includes(themId)) {
+        const newList = [...list, themId];
+        await ckv.set(listKey, newList);
+        setKvCache(ckvDmSendCompanyId, listKey, "chat_dm_list", newList);
+      }
     }
 
     console.log(`DM: ${user.user_metadata?.full_name} → ${otherUserId}`);
@@ -10220,7 +10657,7 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
 
     // ── 2. Stok kayıtları filtrele ──
     const ckv = companyKvFor(effCIdLeader);
-    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+    const tumKayitlar: any[] = await getAllDailyStock(effCIdLeader, ckv);
     const filtrelenmis = tumKayitlar.filter((k: any) => {
       if (!k.tarih) return false;
       if (baslangic && k.tarih < baslangic) return false;
@@ -10653,11 +11090,11 @@ app.get("/make-server-4da0b637/hedef-takip", async (c) => {
     // Paralel veri çekimi
     const [mekanlarList, tumKayitlarRaw, costAlbumsRaw, exRatesRaw, tumGiderlerRaw, tumGelirlerRaw] = await Promise.all([
       getMekanlarFor(effCId),
-      ckv.getByPrefix("stok_gunluk_").catch(() => []),
+      getAllDailyStock(effCId, ckv),
       ckv.get("cost_albums").catch(() => null),
       ckv.get("cost_exchange_rates").catch(() => null),
       ckv.getByPrefix("isletme_gider_").catch(() => []),
-      ckv.getByPrefix("isletme_gelir_").catch(() => []),
+      getAllGelirler(effCId, ckv),
     ]);
     const tumKayitlar = tumKayitlarRaw || [];
 
@@ -10993,7 +11430,7 @@ app.get("/make-server-4da0b637/vardiya/raporlar", async (c) => {
 
     const ckv = companyKvFor(effCIdVardiya);
     const [tumKayitlarRaw, mekanlarList, costAlbumsRaw, exRatesRaw, maaslarRaw, tumRotasyonlarVR, hakedisDahilRawVR, tumCheckinsVR, kidemPersonelRawVR, kidemCarpanlarRawVR] = await Promise.all([
-      ckv.getByPrefix("stok_gunluk_"),
+      getAllDailyStock(effCIdVardiya, ckv),
       getMekanlarFor(effCIdVardiya),
       ckv.get("cost_albums"),
       ckv.get("cost_exchange_rates"),
@@ -11467,13 +11904,13 @@ app.get("/make-server-4da0b637/vardiya/ay-raporu", async (c) => {
     const yil = c.req.query("yil") || today.slice(0, 4);
 
     const [tumKayitlar, mekanlarList, costAlbumsRaw, exRatesRaw, maaslarRaw, tumGiderlerRaw, tumGelirlerRaw, tumRotasyonlar, tumEkipmanlar, hakedisDahilRawAR, kidemPersonelRawAR, kidemCarpanlarRawAR, tumIzinlerAR] = await Promise.all([
-      ckv.getByPrefix("stok_gunluk_").catch(() => []),
+      getAllDailyStock(effCId, ckv),
       getMekanlarFor(effCId),
       ckv.get("cost_albums").catch(() => null),
       ckv.get("cost_exchange_rates").catch(() => null),
       ckv.getByPrefix("cost_salary_").catch(() => []),
       ckv.getByPrefix("isletme_gider_").catch(() => []),
-      ckv.getByPrefix("isletme_gelir_").catch(() => []),
+      getAllGelirler(effCId, ckv),
       ckv.getByPrefix("rotation_task_").catch(() => []),
       ckv.getByPrefix("ekipman_").catch(() => []),
       ckv.get(HAKEDIS_DAHIL_KEY).catch(() => []),
@@ -12152,7 +12589,7 @@ app.get("/make-server-4da0b637/vardiya/gun-raporu", async (c) => {
 
     const ckv = companyKvFor(effCId);
     const [tumKayitlar, mekanlarList, costAlbumsRaw, exRatesRaw, maaslarRaw, tumRotasyonlar, kidemPersonelRaw, kidemCarpanlarRaw, hakedisDahilRaw, tumGiderlerGR] = await Promise.all([
-      ckv.getByPrefix("stok_gunluk_"),
+      getAllDailyStock(effCId, ckv),
       getMekanlarFor(effCId),
       ckv.get("cost_albums"),
       ckv.get("cost_exchange_rates"),
@@ -13289,7 +13726,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
         let bugunBaskiMaliyetStr = "  Henüz kapanış yapılmadı veya veri yok.";
         try {
           const bugunStr = new Date().toISOString().split("T")[0];
-          const tumBugunKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+          const tumBugunKayitlar: any[] = await getAllDailyStock(userCompanyId, ckv);
           const bugunKayitlar = tumBugunKayitlar.filter((k: any) => k.tarih === bugunStr && k.vardiyaToplam);
           if (bugunKayitlar.length > 0) {
             const mekanlarBugun: any[] = await getMekanlarFor(userCompanyId);
@@ -13391,7 +13828,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       let mekanAnlikStokStr = "  Veri yok.";
       const tumStokByKey: Record<string, number> = {};
       try {
-        const tumGunlukAI: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+        const tumGunlukAI: any[] = await getAllDailyStock(userCompanyId, ckv);
         const mekanlarAI: any[] = await getMekanlarFor(userCompanyId);
         // Her mekan için en son kapanış stoğunu (yoksa açılış stoğunu) bul
         const mekanSonStok: Record<string, { tarih: string; stok: Record<string, number>; tip: string }> = {};
@@ -13531,7 +13968,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Aktif Duyurular ──
       let duyuruStr = "  Aktif duyuru yok.";
       try {
-        const tumDuyurularAI: any[] = await ckv.getByPrefix("announcement_") || [];
+        const tumDuyurularAI: any[] = await getAllDuyurular(userCompanyId, ckv);
         if (tumDuyurularAI.length > 0) {
           const bugunDuyuru = new Date().toISOString().split("T")[0];
           const aktifDuyurular = tumDuyurularAI
@@ -13553,7 +13990,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
       // ── Mekan Bazlı Günlük Operasyon Geçmişi (son 30 gün, bugün hariç) ──
       let mekanGunlukGecmisStr = "";
       try {
-        const tumGunlukKayitlarGecmis: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+        const tumGunlukKayitlarGecmis: any[] = await getAllDailyStock(userCompanyId, ckv);
         const mekanlarGecmis: any[] = await getMekanlarFor(userCompanyId);
         const mekanMapGecmis: Record<string, any> = {};
         for (const m of mekanlarGecmis) mekanMapGecmis[m.id] = m;
@@ -13956,7 +14393,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
         // Geçmiş anomaliler (son 30 gün)
         let gecmisAnomaliStr = "";
         try {
-          const tumKayitlarAnomali: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+          const tumKayitlarAnomali: any[] = await getAllDailyStock(userCompanyId, ckv);
           const mekanlarAnomali: any[] = await getMekanlar();
           const mekanMapAnomali: Record<string, any> = {};
           for (const m of mekanlarAnomali) mekanMapAnomali[m.id] = m;
@@ -14019,7 +14456,7 @@ app.post("/make-server-4da0b637/ai/chat", async (c) => {
         // Son 7 günlük satış özeti (bugün hariç)
         let sonYediGunStr = "";
         try {
-          const tumKayitlarHafta: any[] = await ckv.getByPrefix("stok_gunluk_") || [];
+          const tumKayitlarHafta: any[] = await getAllDailyStock(userCompanyId, ckv);
           const yediGunOnce = new Date();
           yediGunOnce.setDate(yediGunOnce.getDate() - 7);
           const yediGunStr = yediGunOnce.toISOString().split("T")[0];
@@ -14239,7 +14676,7 @@ ${izinGecmisiStr}
         // stok_gunluk_ kayıtlarından bu kullanıcının prim verilerini bulmak için
         // personelPrimTakip endpoint'indeki mantığı kullanalım
         const mekanlarList: any[] = await getMekanlar().catch(() => []);
-        const stokKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_").catch(() => []);
+        const stokKayitlar: any[] = await getAllDailyStock(userCompanyId, ckv);
         const odemeMap: Record<string, any> = {};
         for (const o of allPrimler) {
           if (o.key) odemeMap[o.key] = o;
@@ -15655,13 +16092,13 @@ app.get("/make-server-4da0b637/academy", async (c) => {
     const companyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
 
     const [categories, allContent, progress, announcement, globalCats, globalContent, hiddenList] = await Promise.all([
-      ckv.get("academy_categories"),
-      ckv.getByPrefix("academy_content_"),
-      ckv.get(`academy_progress_${user.id}`),
-      ckv.get("academy_announcement"),
+      getKvCache(companyId, ckv, "academy_categories"),
+      getKvCacheByPrefix(companyId, ckv, "academy_content_"),
+      getKvCache(companyId, ckv, `academy_progress_${user.id}`),
+      getKvCache(companyId, ckv, "academy_announcement"),
       kv.get("academy_global_categories"),
       kv.getByPrefix("academy_global_content_"),
-      ckv.get("academy_hidden"),
+      getKvCache(companyId, ckv, "academy_hidden"),
     ]);
 
     const hidden = new Set(hiddenList || []);
@@ -15701,8 +16138,9 @@ app.post("/make-server-4da0b637/academy/category", async (c) => {
     const { id, name, emoji, order } = body;
     if (!name?.trim()) return c.json({ error: "Kategori adı zorunlu." }, 400);
 
-    const ckv = companyKvFor(getCompanyId(user));
-    const cats = (await ckv.get("academy_categories")) || [];
+    const acCatCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(acCatCompanyId);
+    const cats = (await getKvCache(acCatCompanyId, ckv, "academy_categories")) || [];
     const catId = id || `cat_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     const existing = cats.findIndex((c: any) => c.id === catId);
@@ -15711,6 +16149,7 @@ app.post("/make-server-4da0b637/academy/category", async (c) => {
     else cats.push(cat);
 
     await ckv.set("academy_categories", cats);
+    setKvCache(acCatCompanyId, "academy_categories", "academy_categories", cats);
     return c.json({ category: cat });
   } catch (err) {
     console.log("Academy category POST error:", err);
@@ -15727,16 +16166,19 @@ app.delete("/make-server-4da0b637/academy/category/:id", async (c) => {
     if (!["yonetici", "ust-mudur"].includes(role)) return c.json({ error: "Yetkiniz yok." }, 403);
 
     const catId = c.req.param("id");
-    const ckv = companyKvFor(getCompanyId(user));
-    const cats = (await ckv.get("academy_categories")) || [];
+    const acCatDelCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(acCatDelCompanyId);
+    const cats = (await getKvCache(acCatDelCompanyId, ckv, "academy_categories")) || [];
     const filtered = cats.filter((cat: any) => cat.id !== catId);
     await ckv.set("academy_categories", filtered);
+    setKvCache(acCatDelCompanyId, "academy_categories", "academy_categories", filtered);
 
     // İlgili içerikleri de sil
-    const allContent = (await ckv.getByPrefix("academy_content_")) || [];
+    const allContent = (await getKvCacheByPrefix(acCatDelCompanyId, ckv, "academy_content_")) || [];
     const toDelete = allContent.filter((ct: any) => ct.categoryId === catId);
     for (const ct of toDelete) {
       await ckv.del(`academy_content_${ct.id}`);
+      delKvCache(acCatDelCompanyId, `academy_content_${ct.id}`);
     }
 
     return c.json({ ok: true });
@@ -15764,7 +16206,8 @@ app.post("/make-server-4da0b637/academy/content", async (c) => {
     const validTypes = ["video", "text", "pdf", "gallery", "quiz", "link"];
     if (!validTypes.includes(type)) return c.json({ error: `Geçersiz tip: ${type}` }, 400);
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const acCntCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(acCntCompanyId);
     const contentId = id || `cnt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     const content = {
@@ -15782,12 +16225,13 @@ app.post("/make-server-4da0b637/academy/content", async (c) => {
 
     // Eğer güncelleme ise createdAt'i koru
     if (id) {
-      const existing = await ckv.get(`academy_content_${id}`);
+      const existing = await getKvCache(acCntCompanyId, ckv, `academy_content_${id}`);
       if (existing) content.createdAt = existing.createdAt;
     }
     if (!content.createdAt) content.createdAt = new Date().toISOString();
 
     await ckv.set(`academy_content_${contentId}`, content);
+    setKvCache(acCntCompanyId, `academy_content_${contentId}`, "academy_content", content);
     return c.json({ content });
   } catch (err) {
     console.log("Academy content POST error:", err);
@@ -15804,8 +16248,10 @@ app.delete("/make-server-4da0b637/academy/content/:id", async (c) => {
     if (!["yonetici", "ust-mudur"].includes(role)) return c.json({ error: "Yetkiniz yok." }, 403);
 
     const contentId = c.req.param("id");
-    const ckv = companyKvFor(getCompanyId(user));
+    const acCntDelCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(acCntDelCompanyId);
     await ckv.del(`academy_content_${contentId}`);
+    delKvCache(acCntDelCompanyId, `academy_content_${contentId}`);
     return c.json({ ok: true });
   } catch (err) {
     console.log("Academy content DELETE error:", err);
@@ -15822,9 +16268,10 @@ app.post("/make-server-4da0b637/academy/progress", async (c) => {
     const { contentId, watched } = await c.req.json();
     if (!contentId) return c.json({ error: "contentId zorunlu." }, 400);
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const acProgCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(acProgCompanyId);
     const key = `academy_progress_${user.id}`;
-    const progress = (await ckv.get(key)) || {};
+    const progress = (await getKvCache(acProgCompanyId, ckv, key)) || {};
 
     if (watched === false) {
       delete progress[contentId];
@@ -15833,6 +16280,7 @@ app.post("/make-server-4da0b637/academy/progress", async (c) => {
     }
 
     await ckv.set(key, progress);
+    setKvCache(acProgCompanyId, key, "academy_progress", progress);
     return c.json({ progress });
   } catch (err) {
     console.log("Academy progress POST error:", err);
@@ -15961,15 +16409,17 @@ app.post("/make-server-4da0b637/academy/hide", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     if ((user.user_metadata?.role || "personel") !== "yonetici") return c.json({ error: "Sadece yönetici." }, 403);
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const acHideCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(acHideCompanyId);
     const { itemId, hide } = await c.req.json();
     if (!itemId) return c.json({ error: "itemId zorunlu." }, 400);
 
-    const hidden: string[] = (await ckv.get("academy_hidden")) || [];
+    const hidden: string[] = (await getKvCache(acHideCompanyId, ckv, "academy_hidden")) || [];
     if (hide && !hidden.includes(itemId)) hidden.push(itemId);
     else if (!hide) { const idx = hidden.indexOf(itemId); if (idx >= 0) hidden.splice(idx, 1); }
 
     await ckv.set("academy_hidden", hidden);
+    setKvCache(acHideCompanyId, "academy_hidden", "academy_hidden", hidden);
     return c.json({ hidden });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -15988,7 +16438,7 @@ app.post("/make-server-4da0b637/academy/toggle-global", async (c) => {
     if (type === 'category') {
       if (toGlobal) {
         // Şirketten → Global
-        const localCats = (await ckv.get("academy_categories")) || [];
+        const localCats = (await getKvCache(companyId, ckv, "academy_categories")) || [];
         const cat = localCats.find((c: any) => c.id === id);
         if (!cat) return c.json({ error: "Kategori bulunamadı." }, 404);
 
@@ -15998,16 +16448,19 @@ app.post("/make-server-4da0b637/academy/toggle-global", async (c) => {
         await kv.set("academy_global_categories", globalCats);
 
         // İçerikleri de taşı
-        const localContents = (await ckv.getByPrefix("academy_content_")) || [];
+        const localContents = (await getKvCacheByPrefix(companyId, ckv, "academy_content_")) || [];
         for (const ct of localContents) {
           if (ct.categoryId === id) {
             await kv.set(`academy_global_content_${ct.id}`, { ...ct, global: true, createdByCompany: companyId });
             await ckv.del(`academy_content_${ct.id}`);
+            delKvCache(companyId, `academy_content_${ct.id}`);
           }
         }
 
         // Şirketten kaldır
-        await ckv.set("academy_categories", localCats.filter((c: any) => c.id !== id));
+        const filteredLocalCats = localCats.filter((c: any) => c.id !== id);
+        await ckv.set("academy_categories", filteredLocalCats);
+        setKvCache(companyId, "academy_categories", "academy_categories", filteredLocalCats);
         return c.json({ ok: true, direction: 'toGlobal' });
 
       } else {
@@ -16020,15 +16473,17 @@ app.post("/make-server-4da0b637/academy/toggle-global", async (c) => {
         }
 
         // Şirkete ekle
-        const localCats = (await ckv.get("academy_categories")) || [];
+        const localCats = (await getKvCache(companyId, ckv, "academy_categories")) || [];
         localCats.push({ ...cat, global: false });
         await ckv.set("academy_categories", localCats);
+        setKvCache(companyId, "academy_categories", "academy_categories", localCats);
 
         // İçerikleri de taşı
         const globalContents = (await kv.getByPrefix("academy_global_content_")) || [];
         for (const ct of globalContents) {
           if (ct.categoryId === id) {
             await ckv.set(`academy_content_${ct.id}`, { ...ct, global: false });
+            setKvCache(companyId, `academy_content_${ct.id}`, "academy_content", { ...ct, global: false });
             await kv.del(`academy_global_content_${ct.id}`);
           }
         }
@@ -16249,13 +16704,15 @@ app.post("/make-server-4da0b637/academy/announcement", async (c) => {
     const { message } = await c.req.json();
     if (!message?.trim()) return c.json({ error: "Mesaj zorunlu." }, 400);
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const acAnnCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(acAnnCompanyId);
     const announcement = {
       message: message.trim(),
       updatedAt: new Date().toISOString(),
       updatedBy: user.user_metadata?.full_name || user.email || "",
     };
     await ckv.set("academy_announcement", announcement);
+    setKvCache(acAnnCompanyId, "academy_announcement", "academy_announcement", announcement);
     return c.json({ announcement });
   } catch (err) {
     console.log("Academy announcement POST error:", err);
@@ -16271,8 +16728,10 @@ app.delete("/make-server-4da0b637/academy/announcement", async (c) => {
     const role = user.user_metadata?.role || "personel";
     if (!["yonetici", "ust-mudur"].includes(role)) return c.json({ error: "Yetkiniz yok." }, 403);
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const acAnnDelCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(acAnnDelCompanyId);
     await ckv.del("academy_announcement");
+    delKvCache(acAnnDelCompanyId, "academy_announcement");
     return c.json({ ok: true });
   } catch (err) {
     console.log("Academy announcement DELETE error:", err);
@@ -16310,7 +16769,7 @@ app.get("/make-server-4da0b637/kasa/sirket", async (c) => {
     const ckv = companyKvFor(companyId);
 
     // Görünürlük kontrolü — rol bazlı
-    const settings = await ckv.get("kasa_sirket_settings") || {};
+    const settings = await getKasaRecord(companyId, ckv, "kasa_sirket_settings") || {};
     const visibleUstMudur = settings.visibleUstMudur ?? false;
     const visibleIdari = settings.visibleIdari ?? false;
     if (!["yonetici"].includes(role) && !isSA) {
@@ -16323,13 +16782,13 @@ app.get("/make-server-4da0b637/kasa/sirket", async (c) => {
 
     // Paralel KV okuma
     const [devirler, tumGiderler, tumOdemeler, mekanlar, tumGelirler, tumKasaIslemler, tumBorclar] = await Promise.all([
-      ckv.getByPrefix("kasa_devir_"),
+      getKasaByPrefix(companyId, ckv, "kasa_devir_"),
       ckv.getByPrefix("isletme_gider_"),       // İGD giderleri
-      ckv.getByPrefix("kasa_odeme_"),           // Ödeme kayıtları
+      getKasaByPrefix(companyId, ckv, "kasa_odeme_"),
       getMekanlarFor(companyId),
-      ckv.getByPrefix("isletme_gelir_"),        // Para Girişleri
-      ckv.getByPrefix("kasa_islem_"),           // Manuel kasa işlemleri (para girişi/çıkışı)
-      ckv.getByPrefix("kasa_borc_"),            // Borçlar (alacak/verecek)
+      getAllGelirler(companyId, ckv),              // Para Girişleri
+      getKasaByPrefix(companyId, ckv, "kasa_islem_"),
+      getKasaByPrefix(companyId, ckv, "kasa_borc_"),
     ]);
 
     // Ay filtresi — devirler
@@ -16449,10 +16908,10 @@ app.get("/make-server-4da0b637/kasa/sirket", async (c) => {
       const oncekiAy = ayNum === 1
         ? `${yil - 1}-12`
         : `${yil}-${String(ayNum - 1).padStart(2, "0")}`;
-      const oncekiKapatis = await ckv.get(`kasa_ay_kapatis_${oncekiAy}`);
+      const oncekiKapatis = await getKasaRecord(companyId, ckv, `kasa_ay_kapatis_${oncekiAy}`);
       devirBakiye = oncekiKapatis?.bakiye ?? 0;
 
-      const buAyKapatis = await ckv.get(`kasa_ay_kapatis_${ay}`);
+      const buAyKapatis = await getKasaRecord(companyId, ckv, `kasa_ay_kapatis_${ay}`);
       ayKapatildi = !!buAyKapatis;
       ayDevretsiz = buAyKapatis?.devretsiz || false;
 
@@ -16486,7 +16945,7 @@ app.get("/make-server-4da0b637/kasa/sirket", async (c) => {
 
     // Bakiye = önceki aydan devir + cirolar + para girişleri + kasa işlem gelirleri - ödenen giderler - kasa işlem giderleri
     // Açılış bakiyesi
-    const acilisBakiye = ay ? await ckv.get(`kasa_acilis_${ay}`) : null;
+    const acilisBakiye = ay ? await getKasaRecord(companyId, ckv, `kasa_acilis_${ay}`) : null;
     const acilisTutar = acilisBakiye?.tutar || 0;
 
     // Borçlar: alacak (borç verdik → kasadan çıkış), verecek (borç aldık → kasaya giriş)
@@ -16600,8 +17059,8 @@ app.get("/make-server-4da0b637/kasa/sirket/bekleyen", async (c) => {
     const ckv = companyKvFor(companyId);
 
     const [tumStok, tumDevirler, mekanlar] = await Promise.all([
-      ckv.getByPrefix("stok_gunluk_"),
-      ckv.getByPrefix("kasa_devir_"),
+      getAllDailyStock(companyId, ckv),
+      getKasaByPrefix(companyId, ckv, "kasa_devir_"),
       getMekanlarFor(companyId),
     ]);
 
@@ -16642,13 +17101,14 @@ app.post("/make-server-4da0b637/kasa/sirket/devret", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role || "personel";
     if (!["yonetici", "ust-mudur"].includes(role)) return c.json({ error: "Yetkiniz yok." }, 403);
-    const ckv = companyKvFor(getCompanyId(user));
+    const _devCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(_devCompanyId);
 
     const { mekanId, tarih } = await c.req.json();
     if (!mekanId || !tarih) return c.json({ error: "mekanId ve tarih zorunlu." }, 400);
 
     // Zaten devredilmiş mi?
-    const existing = await ckv.get(`kasa_devir_${mekanId}_${tarih}`);
+    const existing = await getKasaRecord(_devCompanyId, ckv, `kasa_devir_${mekanId}_${tarih}`);
     if (existing) return c.json({ error: "Bu vardiya zaten devredilmiş." }, 400);
 
     // Stok verisi oku
@@ -16672,6 +17132,7 @@ app.post("/make-server-4da0b637/kasa/sirket/devret", async (c) => {
       devredildiAt: new Date().toISOString(),
     };
     await ckv.set(`kasa_devir_${mekanId}_${tarih}`, devir);
+    setKasaRecord(_devCompanyId, `kasa_devir_${mekanId}_${tarih}`, "devir", devir);
 
     console.log(`[Kasa] Devir: ${mekanId}/${tarih} ciro=${ciro.toplam} by ${user.id}`);
     return c.json({ devir });
@@ -16690,13 +17151,14 @@ app.post("/make-server-4da0b637/kasa/sirket/ode", async (c) => {
     if (!["yonetici", "ust-mudur"].includes(role)) return c.json({ error: "Yetkiniz yok." }, 403);
     const isSA = user.user_metadata?.originalRole === "superadmin";
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _odeCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_odeCompanyId);
 
     const { giderId, tutar, aciklama, ay, borcTutar, personelAdi, category } = await c.req.json();
     if (!giderId || !tutar || tutar <= 0) return c.json({ error: "giderId ve tutar zorunlu." }, 400);
 
     const odemeKey = `kasa_odeme_${giderId}`;
-    const existing = await ckv.get(odemeKey) || { giderId, odemeler: [], odpiendi: false, odpienenTutar: 0 };
+    const existing = await getKasaRecord(_odeCompanyId, ckv, odemeKey) || { giderId, odemeler: [], odpiendi: false, odpienenTutar: 0 };
 
     const yeniOdeme = {
       tutar: Number(tutar),
@@ -16718,40 +17180,48 @@ app.post("/make-server-4da0b637/kasa/sirket/ode", async (c) => {
     }
 
     await ckv.set(odemeKey, existing);
+    setKasaRecord(_odeCompanyId, odemeKey, "odeme", existing);
 
     // Kur farkı: borç kapandığında toplam ödenen vs borç tutarı karşılaştır
+    // Tedarikçi ödemelerinde tek gider bazında kur farkı oluşturma — sadece tüm borç kapandığında hesaplanmalı
+    const _odeCategory = category || existing.category || "";
     if (borcTutar && Number(borcTutar) > 0 && existing.odpienenTutar >= Number(borcTutar)) {
       existing.odpiendi = true;
-      const fark = existing.odpienenTutar - Number(borcTutar);
-      if (Math.abs(fark) >= 1) { // ₺1'den büyük fark varsa
-        const kurFarkId = `kurfark_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        const kisim = personelAdi || category || "Gider";
-        if (fark > 0) {
-          // Fazla ödendi → kur farkı gideri
-          await ckv.set(`isletme_gider_${kurFarkId}`, {
-            id: kurFarkId,
-            category: "kur_farki",
-            amount: fark,
-            currency: "TRY",
-            description: `📈 Kur farkı gideri — ${kisim}`,
-            date: new Date().toISOString().split("T")[0],
-            personelAdi: personelAdi || "",
-            otomatik: false,
-            created_at: new Date().toISOString(),
-            created_by: user.user_metadata?.full_name || "",
-          });
-          console.log(`[Kasa] Kur farkı gideri: +${fark} for ${giderId}`);
-        } else {
-          // Az ödendi → kur farkı geliri
-          await ckv.set(`isletme_gelir_${kurFarkId}`, {
-            id: kurFarkId,
-            amount: Math.abs(fark),
-            description: `📉 Kur farkı geliri — ${kisim}`,
-            date: new Date().toISOString().split("T")[0],
-            created_at: new Date().toISOString(),
-            created_by: user.user_metadata?.full_name || "",
-          });
-          console.log(`[Kasa] Kur farkı geliri: ${fark} for ${giderId}`);
+      // Tedarikçi giderlerinde tek gider bazında kur farkı oluşturma — atla
+      if (_odeCategory !== "tedarikci") {
+        const fark = existing.odpienenTutar - Number(borcTutar);
+        if (Math.abs(fark) >= 1) { // ₺1'den büyük fark varsa
+          const kurFarkId = `kurfark_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+          const kisim = personelAdi || category || "Gider";
+          if (fark > 0) {
+            // Fazla ödendi → kur farkı gideri
+            await ckv.set(`isletme_gider_${kurFarkId}`, {
+              id: kurFarkId,
+              category: "kur_farki",
+              amount: fark,
+              currency: "TRY",
+              description: `📈 Kur farkı gideri — ${kisim}`,
+              date: new Date().toISOString().split("T")[0],
+              personelAdi: personelAdi || "",
+              otomatik: false,
+              created_at: new Date().toISOString(),
+              created_by: user.user_metadata?.full_name || "",
+              sourceGiderId: giderId,
+            });
+            console.log(`[Kasa] Kur farkı gideri: +${fark} for ${giderId}`);
+          } else {
+            // Az ödendi → kur farkı geliri
+            await ckv.set(`isletme_gelir_${kurFarkId}`, {
+              id: kurFarkId,
+              amount: Math.abs(fark),
+              description: `📉 Kur farkı geliri — ${kisim}`,
+              date: new Date().toISOString().split("T")[0],
+              created_at: new Date().toISOString(),
+              created_by: user.user_metadata?.full_name || "",
+              sourceGiderId: giderId,
+            });
+            console.log(`[Kasa] Kur farkı geliri: ${fark} for ${giderId}`);
+          }
         }
       }
     }
@@ -16797,7 +17267,7 @@ app.post("/make-server-4da0b637/kasa/sirket/ode", async (c) => {
       }
       if (finalCariId) {
         const sipId = giderKaydiFull.siparisId ? (giderKaydiFull.siparisId || "").replace("siparis_", "") : null;
-        await ckv.set(tedOdemeId, { id: tedOdemeId, siparisId: sipId, cariId: finalCariId, cariName: cariNameResolved, amount: Number(tutar), currency: "TRY", paymentMethod: "kasa", paymentDate: new Date().toISOString().split("T")[0], status: "onaylandi", supplierConfirmed: false, createdAt: new Date().toISOString(), createdBy: user.user_metadata?.full_name || "", tip: "kasa_odeme" });
+        await ckv.set(tedOdemeId, { id: tedOdemeId, siparisId: sipId, cariId: finalCariId, cariName: cariNameResolved, amount: Number(tutar), currency: "TRY", paymentMethod: "kasa", paymentDate: new Date().toISOString().split("T")[0], status: "onaylandi", supplierConfirmed: false, createdAt: new Date().toISOString(), createdBy: user.user_metadata?.full_name || "", tip: "kasa_odeme", sourceGiderId: giderId });
         console.log(`[Kasa→Tedarikci] tedarikci_odeme oluşturuldu: ${tedOdemeId}, cariId=${finalCariId}, tutar=${tutar}`);
         // Sipariş loguna ödeme kaydı ekle
         if (sipId) {
@@ -16876,11 +17346,38 @@ app.delete("/make-server-4da0b637/kasa/sirket/odeme/:giderId", async (c) => {
     if (role !== "yonetici" && user.user_metadata?.originalRole !== "superadmin") return c.json({ error: "Yetkiniz yok." }, 403);
     const isSA = user.user_metadata?.originalRole === "superadmin";
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _delOdCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_delOdCompanyId);
 
     const giderId = c.req.param("giderId");
     await ckv.del(`kasa_odeme_${giderId}`);
+    delKasaRecord(_delOdCompanyId, `kasa_odeme_${giderId}`);
     await ckv.del(`isletme_gider_${giderId}`);
+
+    // Tedarikçi portalı senkron: ilişkili tedarikci_odeme kaydını da sil
+    const allTedOdeme = await ckv.getByPrefix("tedarikci_odeme_");
+    for (const tod of (allTedOdeme || [])) {
+      if (tod.sourceGiderId === giderId) {
+        await ckv.del(tod.id);
+        console.log(`[Kasa] tedarikci_odeme silindi: ${tod.id} (sourceGiderId=${giderId})`);
+      }
+    }
+    // Kur farkı temizliği: bu giderId'ye bağlı kur farkı kayıtlarını sil
+    const allGiderler = await ckv.getByPrefix("isletme_gider_kurfark_");
+    for (const g of (allGiderler || [])) {
+      if (g.sourceGiderId === giderId) {
+        await ckv.del(`isletme_gider_${g.id}`);
+        console.log(`[Kasa] kur farkı gideri silindi: ${g.id} (sourceGiderId=${giderId})`);
+      }
+    }
+    const allGelirler = await ckv.getByPrefix("isletme_gelir_kurfark_");
+    for (const g of (allGelirler || [])) {
+      if (g.sourceGiderId === giderId) {
+        await ckv.del(`isletme_gelir_${g.id}`);
+        console.log(`[Kasa] kur farkı geliri silindi: ${g.id} (sourceGiderId=${giderId})`);
+      }
+    }
+
     console.log(`[Kasa] Ödeme + gider silindi: ${giderId} by ${user.id}`);
     return c.json({ ok: true });
   } catch (err) {
@@ -16906,6 +17403,7 @@ app.delete("/make-server-4da0b637/kasa/sirket/odeme/:giderId/kismi/:index", asyn
     const existing = await ckv.get(odemeKey);
     if (!existing) return c.json({ error: "Ödeme bulunamadı." }, 404);
 
+    const silinenOdeme = (existing.odemeler || [])[index];
     existing.odemeler = (existing.odemeler || []).filter((_: any, i: number) => i !== index);
     existing.odpienenTutar = existing.odemeler.reduce((s: number, o: any) => s + (o.tutar || 0), 0);
     existing.odpiendi = false;
@@ -16915,6 +17413,18 @@ app.delete("/make-server-4da0b637/kasa/sirket/odeme/:giderId/kismi/:index", asyn
       await ckv.del(`isletme_gider_${giderId}`);
     } else {
       await ckv.set(odemeKey, existing);
+    }
+
+    // Tedarikçi portalı senkron: silinen ödeme tutarıyla eşleşen tedarikci_odeme kaydını sil/güncelle
+    if (silinenOdeme) {
+      const allTedOdeme = await ckv.getByPrefix("tedarikci_odeme_");
+      for (const tod of (allTedOdeme || [])) {
+        if (tod.sourceGiderId === giderId && tod.amount === (silinenOdeme.tutar || 0)) {
+          await ckv.del(tod.id);
+          console.log(`[Kasa] tedarikci_odeme silindi (kısmi): ${tod.id}`);
+          break; // sadece bir eşleşme sil
+        }
+      }
     }
 
     console.log(`[Kasa] Kısmi ödeme silindi: ${giderId} index=${index} by ${user.id}`);
@@ -16934,18 +17444,19 @@ app.post("/make-server-4da0b637/kasa/sirket/kismi-sil", async (c) => {
     if (!["yonetici", "ust-mudur"].includes(role)) return c.json({ error: "Yetkiniz yok." }, 403);
     const isSA = user.user_metadata?.originalRole === "superadmin";
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _kismiSilCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_kismiSilCompanyId);
 
     const { giderId, tutar, aciklama, personelAdi, category, ay } = await c.req.json();
     if (!giderId || !tutar || tutar <= 0) return c.json({ error: "giderId ve tutar zorunlu." }, 400);
 
     // Zaten komple silinmiş mi?
-    const mevcutOdeme = await ckv.get(`kasa_odeme_${giderId}`);
+    const mevcutOdeme = await getKasaRecord(_kismiSilCompanyId, ckv, `kasa_odeme_${giderId}`);
     if (mevcutOdeme?.komplesilindi) return c.json({ error: "Bu gider zaten silinmiş." }, 400);
 
     // 1. Kasadaki ödeme kaydına "silinen" olarak ekle
     const odemeKey = `kasa_odeme_${giderId}`;
-    const existing = await ckv.get(odemeKey) || { giderId, odemeler: [], silmeler: [], odpiendi: false, odpienenTutar: 0, silinenTutar: 0 };
+    const existing = await getKasaRecord(_kismiSilCompanyId, ckv, odemeKey) || { giderId, odemeler: [], silmeler: [], odpiendi: false, odpienenTutar: 0, silinenTutar: 0 };
 
     const yeniSilme = {
       tutar: Number(tutar),
@@ -16958,6 +17469,7 @@ app.post("/make-server-4da0b637/kasa/sirket/kismi-sil", async (c) => {
     existing.silmeler = [...(existing.silmeler || []), yeniSilme];
     existing.silinenTutar = (existing.silmeler || []).reduce((s: number, sl: any) => s + (sl.tutar || 0), 0);
     await ckv.set(odemeKey, existing);
+    setKasaRecord(_kismiSilCompanyId, odemeKey, "odeme", existing);
 
     // 2. İGD'ye negatif düzeltme kaydı ekle
     const duzeltmeId = `duzeltme_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -16998,20 +17510,32 @@ app.post("/make-server-4da0b637/kasa/sirket/komple-sil", async (c) => {
     if (!["yonetici", "ust-mudur"].includes(role)) return c.json({ error: "Yetkiniz yok." }, 403);
     const isSA = user.user_metadata?.originalRole === "superadmin";
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _kompleSilCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_kompleSilCompanyId);
 
     const { giderIds, tutar, aciklama, personelAdi, category, ay } = await c.req.json();
     // giderIds: bir grup giderin ID listesi (aynı kişinin tüm günlük kayıtları)
     if (!giderIds || !Array.isArray(giderIds) || !tutar || tutar <= 0) return c.json({ error: "giderIds ve tutar zorunlu." }, 400);
 
     // Zaten komple silinmiş mi kontrol et
-    const ilkOdeme = await ckv.get(`kasa_odeme_${giderIds[0]}`);
+    const ilkOdeme = await getKasaRecord(_kompleSilCompanyId, ckv, `kasa_odeme_${giderIds[0]}`);
     if (ilkOdeme?.komplesilindi) return c.json({ error: "Bu gider zaten silinmiş." }, 400);
 
     // Her gider için kasadaki ödeme kaydını VE İGD giderini sil
     for (const gId of giderIds) {
       await ckv.del(`kasa_odeme_${gId}`);
+      delKasaRecord(_kompleSilCompanyId, `kasa_odeme_${gId}`);
       await ckv.del(`isletme_gider_${gId}`);
+    }
+
+    // Tedarikçi portalı senkron: silinen giderlerle ilişkili tedarikci_odeme kayıtlarını da sil
+    const allTedOdeme = await ckv.getByPrefix("tedarikci_odeme_");
+    const giderIdSet = new Set(giderIds);
+    for (const tod of (allTedOdeme || [])) {
+      if (tod.sourceGiderId && giderIdSet.has(tod.sourceGiderId)) {
+        await ckv.del(tod.id);
+        console.log(`[Kasa] tedarikci_odeme silindi (komple): ${tod.id}`);
+      }
     }
 
     console.log(`[Kasa] Komple sil: ${giderIds.length} gider silindi by ${user.id}`);
@@ -17044,6 +17568,7 @@ app.post("/make-server-4da0b637/kasa/sirket/islem", async (c) => {
       created_by: user.user_metadata?.full_name || user.email || "",
     };
     await ckv.set(`kasa_islem_${id}`, islem);
+    setKasaRecord(getCompanyId(user), `kasa_islem_${id}`, "islem", islem);
     pgWrite("cash_transactions", "insert", {
       id, company_id: getCompanyId(user), type: islem.type || null, amount: Number(islem.amount) || 0,
       description: islem.description || null, date: islem.date || null,
@@ -17069,6 +17594,7 @@ app.delete("/make-server-4da0b637/kasa/sirket/islem/:id", async (c) => {
     // kasa_islem_ kaydı mı kontrol et
     if (rawId.startsWith("kasa_islem_")) {
       await ckv.del(rawId);
+      delKasaRecord(getCompanyId(user), rawId);
       return c.json({ ok: true });
     }
 
@@ -17082,13 +17608,14 @@ app.delete("/make-server-4da0b637/kasa/sirket/islem/:id", async (c) => {
       const idx = parseInt(rest.slice(lastUnderscore + 1) || "0");
       const giderId = rest.slice(0, lastUnderscore);
       const odemeKey = `kasa_odeme_${giderId}`;
-      const odeme = await ckv.get(odemeKey);
+      const odeme = await getKasaRecord(getCompanyId(user), ckv, odemeKey);
       if (odeme?.odemeler?.length > idx) {
         const silinenOdeme = odeme.odemeler[idx];
         odeme.odemeler.splice(idx, 1);
         odeme.odpienenTutar = (odeme.odemeler || []).reduce((s: number, o: any) => s + (o.tutar || 0), 0);
         if (odeme.odemeler.length === 0) odeme.odpiendi = false;
         await ckv.set(odemeKey, odeme);
+        setKasaRecord(getCompanyId(user), odemeKey, "odeme", odeme);
         return c.json({ ok: true, silinen: silinenOdeme });
       }
       return c.json({ error: "Ödeme kaydı bulunamadı." }, 404);
@@ -17096,6 +17623,7 @@ app.delete("/make-server-4da0b637/kasa/sirket/islem/:id", async (c) => {
 
     // Fallback: eski format
     await ckv.del(`kasa_islem_${rawId}`);
+    delKasaRecord(getCompanyId(user), `kasa_islem_${rawId}`);
     return c.json({ ok: true });
   } catch (err) {
     console.log("Kasa islem DELETE error:", err);
@@ -17109,9 +17637,10 @@ app.put("/make-server-4da0b637/kasa/sirket/ayarlar", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     if ((user.user_metadata?.role || "personel") !== "yonetici") return c.json({ error: "Yetkiniz yok." }, 403);
-    const ckv = companyKvFor(getCompanyId(user));
+    const _ayarlarCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(_ayarlarCompanyId);
     const { visibleUstMudur, visibleIdari } = await c.req.json();
-    const existing = await ckv.get("kasa_sirket_settings") || {};
+    const existing = await getKasaRecord(_ayarlarCompanyId, ckv, "kasa_sirket_settings") || {};
     const updated = {
       ...existing,
       visibleUstMudur: visibleUstMudur !== undefined ? !!visibleUstMudur : (existing.visibleUstMudur ?? false),
@@ -17122,6 +17651,7 @@ app.put("/make-server-4da0b637/kasa/sirket/ayarlar", async (c) => {
       updated_by: user.user_metadata?.full_name || "",
     };
     await ckv.set("kasa_sirket_settings", updated);
+    setKasaRecord(_ayarlarCompanyId, "kasa_sirket_settings", "settings", updated);
     return c.json({ visibleUstMudur: updated.visibleUstMudur, visibleIdari: updated.visibleIdari });
   } catch (err) {
     console.log("Kasa ayarlar PUT error:", err);
@@ -17138,12 +17668,13 @@ app.get("/make-server-4da0b637/kasa/eksik-analiz", async (c) => {
     const isSA = user.user_metadata?.originalRole === "superadmin";
     if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _eksikCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_eksikCompanyId);
     const ay = c.req.query("ay") || "2026-04";
 
     const [devirler, gelirler] = await Promise.all([
-      ckv.getByPrefix("kasa_devir_"),
-      ckv.getByPrefix("isletme_gelir_"),
+      getKasaByPrefix(_eksikCompanyId, ckv, "kasa_devir_"),
+      getAllGelirler(_eksikCompanyId, ckv),
     ]);
 
     const ayDevirleri = (devirler || []).filter((d: any) => d.tarih?.startsWith(ay));
@@ -17189,8 +17720,9 @@ app.get("/make-server-4da0b637/ortaklar", async (c) => {
     const isSA = user.user_metadata?.originalRole === "superadmin";
     if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
-    const ortaklar = await ckv.get("pay_ortaklar") || [];
+    const _ortakCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_ortakCompanyId);
+    const ortaklar = await getKasaRecord(_ortakCompanyId, ckv, "pay_ortaklar") || [];
     return c.json({ ortaklar });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -17204,12 +17736,14 @@ app.post("/make-server-4da0b637/ortaklar", async (c) => {
     const isSA = user.user_metadata?.originalRole === "superadmin";
     if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _ortakPostCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_ortakPostCompanyId);
     const { ortaklar } = await c.req.json();
     if (!Array.isArray(ortaklar) || ortaklar.length === 0) return c.json({ error: "En az bir ortak gerekli." }, 400);
     const toplam = ortaklar.reduce((s: number, o: any) => s + (o.yuzde || 0), 0);
     if (Math.abs(toplam - 100) > 0.01) return c.json({ error: `Yüzdelerin toplamı 100 olmalı (şu an: ${toplam}).` }, 400);
     await ckv.set("pay_ortaklar", ortaklar);
+    setKasaRecord(_ortakPostCompanyId, "pay_ortaklar", "ortaklar", ortaklar);
     return c.json({ ortaklar });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -17223,13 +17757,15 @@ app.post("/make-server-4da0b637/dagitim", async (c) => {
     const isSA = user.user_metadata?.originalRole === "superadmin";
     if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _dagitimCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_dagitimCompanyId);
     const { toplamTutar, ortaklar } = await c.req.json();
     if (!toplamTutar || toplamTutar <= 0) return c.json({ error: "Toplam tutar zorunlu." }, 400);
     if (!Array.isArray(ortaklar) || ortaklar.length === 0) return c.json({ error: "Ortak bilgisi zorunlu." }, 400);
     const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const dagitim = { id, toplamTutar, ortaklar, tarih: new Date().toISOString().split("T")[0], created_at: new Date().toISOString(), created_by: user.user_metadata?.full_name || user.email || "" };
     await ckv.set(`pay_dagitim_${id}`, dagitim);
+    setKasaRecord(_dagitimCompanyId, `pay_dagitim_${id}`, "dagitim", dagitim);
     return c.json({ dagitim });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -17243,8 +17779,9 @@ app.get("/make-server-4da0b637/dagitimlar", async (c) => {
     const isSA = user.user_metadata?.originalRole === "superadmin";
     if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
-    const all = (await ckv.getByPrefix("pay_dagitim_")) || [];
+    const _dagitimlarCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_dagitimlarCompanyId);
+    const all = (await getKasaByPrefix(_dagitimlarCompanyId, ckv, "pay_dagitim_")) || [];
     all.sort((a: any, b: any) => (b.created_at || "").localeCompare(a.created_at || ""));
     return c.json({ dagitimlar: all });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
@@ -17258,13 +17795,14 @@ app.post("/make-server-4da0b637/kasa/sirket/ay-kapat", async (c) => {
     if ((user.user_metadata?.role || "personel") !== "yonetici") return c.json({ error: "Yetkiniz yok." }, 403);
     const isSA = user.user_metadata?.originalRole === "superadmin";
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _ayKapatCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_ayKapatCompanyId);
 
     const { ay, devretsiz } = await c.req.json(); // "2026-03" formatı, devretsiz: true ise bakiye 0 devredilir
     if (!ay || !/^\d{4}-\d{2}$/.test(ay)) return c.json({ error: "ay formatı YYYY-MM olmalı." }, 400);
 
     // Zaten kapatılmış mı?
-    const existing = await ckv.get(`kasa_ay_kapatis_${ay}`);
+    const existing = await getKasaRecord(_ayKapatCompanyId, ckv, `kasa_ay_kapatis_${ay}`);
     if (existing) return c.json({ error: "Bu ay zaten kapatılmış." }, 400);
 
     // Önceki ayın devir bakiyesini bul
@@ -17272,15 +17810,15 @@ app.post("/make-server-4da0b637/kasa/sirket/ay-kapat", async (c) => {
     const oncekiAy = ayNum === 1
       ? `${yil - 1}-12`
       : `${yil}-${String(ayNum - 1).padStart(2, "0")}`;
-    const oncekiKapatis = await ckv.get(`kasa_ay_kapatis_${oncekiAy}`);
+    const oncekiKapatis = await getKasaRecord(_ayKapatCompanyId, ckv, `kasa_ay_kapatis_${oncekiAy}`);
     const devirBakiye = oncekiKapatis?.bakiye ?? 0;
 
     // Bu ayın verilerini hesapla
     const [devirler, tumGiderlerKapat, tumOdemelerKapat, mekanlarKapat] = await Promise.all([
-      ckv.getByPrefix("kasa_devir_"),
+      getKasaByPrefix(_ayKapatCompanyId, ckv, "kasa_devir_"),
       ckv.getByPrefix("isletme_gider_"),
-      ckv.getByPrefix("kasa_odeme_"),
-      getMekanlarFor((isSA && reqCId) ? reqCId : getCompanyId(user)),
+      getKasaByPrefix(_ayKapatCompanyId, ckv, "kasa_odeme_"),
+      getMekanlarFor(_ayKapatCompanyId),
     ]);
 
     const ayDevirler = (devirler || []).filter((d: any) => d.tarih?.startsWith(ay));
@@ -17346,6 +17884,7 @@ app.post("/make-server-4da0b637/kasa/sirket/ay-kapat", async (c) => {
     };
 
     await ckv.set(`kasa_ay_kapatis_${ay}`, kapatis);
+    setKasaRecord(_ayKapatCompanyId, `kasa_ay_kapatis_${ay}`, "ay_kapatis", kapatis);
     console.log(`[Kasa] Ay kapatıldı: ${ay} bakiye=${ayBakiye} by ${user.id}`);
     return c.json({ kapatis });
   } catch (err) {
@@ -17364,17 +17903,20 @@ app.post("/make-server-4da0b637/kasa/sirket/acilis-bakiye", async (c) => {
     if (!["yonetici", "ust-mudur"].includes(user.user_metadata?.role || "personel")) return c.json({ error: "Yetkiniz yok." }, 403);
     const isSA = user.user_metadata?.originalRole === "superadmin";
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _acilisCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_acilisCompanyId);
 
     const { tutar, aciklama, ay } = await c.req.json();
     if (!tutar || !ay) return c.json({ error: "tutar ve ay zorunlu." }, 400);
 
-    await ckv.set(`kasa_acilis_${ay}`, {
+    const _acilisData = {
       tutar: Number(tutar),
       aciklama: aciklama?.trim() || "Açılış bakiyesi",
       tarih: new Date().toISOString(),
       ekleyen: user.user_metadata?.full_name || user.email || "",
-    });
+    };
+    await ckv.set(`kasa_acilis_${ay}`, _acilisData);
+    setKasaRecord(_acilisCompanyId, `kasa_acilis_${ay}`, "acilis", _acilisData);
 
     console.log(`[Kasa] Açılış bakiye: ${ay} ₺${tutar} by ${user.id}`);
     return c.json({ ok: true });
@@ -17392,7 +17934,8 @@ app.post("/make-server-4da0b637/kasa/sirket/acilis-borc", async (c) => {
     if (!["yonetici", "ust-mudur"].includes(user.user_metadata?.role || "personel")) return c.json({ error: "Yetkiniz yok." }, 403);
     const isSA = user.user_metadata?.originalRole === "superadmin";
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _acilisBorcCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_acilisBorcCompanyId);
 
     const { kisi, tutar, aciklama, emoji } = await c.req.json();
     if (!kisi?.trim() || !tutar || tutar <= 0) return c.json({ error: "kisi ve tutar zorunlu." }, 400);
@@ -17413,6 +17956,7 @@ app.post("/make-server-4da0b637/kasa/sirket/acilis-borc", async (c) => {
     };
 
     await ckv.set(`kasa_acilis_borc_${id}`, borc);
+    setKasaRecord(_acilisBorcCompanyId, `kasa_acilis_borc_${id}`, "acilis_borc", borc);
     console.log(`[Kasa] Açılış borç: ${kisi} ₺${tutar} by ${user.id}`);
     return c.json({ borc });
   } catch (err) {
@@ -17429,19 +17973,21 @@ app.post("/make-server-4da0b637/kasa/sirket/acilis-borc/:id/odeme", async (c) =>
     if (!["yonetici", "ust-mudur"].includes(user.user_metadata?.role || "personel")) return c.json({ error: "Yetkiniz yok." }, 403);
     const isSA = user.user_metadata?.originalRole === "superadmin";
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _abOdemeCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_abOdemeCompanyId);
 
     const borcId = c.req.param("id");
     const { tutar, aciklama } = await c.req.json();
     if (!tutar || tutar <= 0) return c.json({ error: "Ödeme tutarı zorunlu." }, 400);
 
-    const borc = await ckv.get(`kasa_acilis_borc_${borcId}`);
+    const borc = await getKasaRecord(_abOdemeCompanyId, ckv, `kasa_acilis_borc_${borcId}`);
     if (!borc) return c.json({ error: "Borç bulunamadı." }, 404);
 
     const odemeTarih = new Date().toISOString().split("T")[0];
     borc.odemeler = [...(borc.odemeler || []), { tutar: Number(tutar), tarih: odemeTarih, aciklama: aciklama?.trim() || "", created_at: new Date().toISOString() }];
     borc.kalanTutar = Math.max(0, (borc.kalanTutar || borc.tutar) - Number(tutar));
     await ckv.set(`kasa_acilis_borc_${borcId}`, borc);
+    setKasaRecord(_abOdemeCompanyId, `kasa_acilis_borc_${borcId}`, "acilis_borc", borc);
 
     // İGD'ye gider yaz + kasada ödendi işaretle → bakiyeden düşsün
     const giderId = `acilis_borc_odeme_${borcId}_${Date.now()}`;
@@ -17453,10 +17999,12 @@ app.post("/make-server-4da0b637/kasa/sirket/acilis-borc/:id/odeme", async (c) =>
       created_by: user.user_metadata?.full_name || user.email || "",
       odemeTipi: "normal", kasaDuzeltme: false,
     });
-    await ckv.set(`kasa_odeme_${giderId}`, {
+    const _abOdemeKasaData = {
       giderId, odpiendi: true, odpienenTutar: Number(tutar),
       odemeler: [{ tutar: Number(tutar), tarih: odemeTarih, aciklama: aciklama?.trim() || "Açılış borcu ödemesi" }],
-    });
+    };
+    await ckv.set(`kasa_odeme_${giderId}`, _abOdemeKasaData);
+    setKasaRecord(_abOdemeCompanyId, `kasa_odeme_${giderId}`, "odeme", _abOdemeKasaData);
 
     return c.json({ borc });
   } catch (err) {
@@ -17471,8 +18019,10 @@ app.delete("/make-server-4da0b637/kasa/sirket/acilis-borc/:id", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     if ((user.user_metadata?.role || "personel") !== "yonetici") return c.json({ error: "Yetkiniz yok." }, 403);
-    const ckv = companyKvFor(getCompanyId(user));
+    const _abDelCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(_abDelCompanyId);
     await ckv.del(`kasa_acilis_borc_${c.req.param("id")}`);
+    delKasaRecord(_abDelCompanyId, `kasa_acilis_borc_${c.req.param("id")}`);
     return c.json({ ok: true });
   } catch (err) {
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -17500,7 +18050,7 @@ app.get("/make-server-4da0b637/kasa/cariler", async (c) => {
     // Paralel KV okuma
     const [tumGiderler, tumOdemeler, mekanlar] = await Promise.all([
       ckv.getByPrefix("isletme_gider_"),
-      ckv.getByPrefix("kasa_odeme_"),
+      getKasaByPrefix(companyId, ckv, "kasa_odeme_"),
       getMekanlarFor(companyId),
     ]);
 
@@ -17633,7 +18183,7 @@ app.get("/make-server-4da0b637/kasa/cariler", async (c) => {
 
     // Kalan hesapla ve listeye çevir
     // Açılış borçlarını da cariler'e ekle
-    const acilisBorclar = await ckv.getByPrefix("kasa_acilis_borc_").catch(() => []) || [];
+    const acilisBorclar = await getKasaByPrefix(companyId, ckv, "kasa_acilis_borc_").catch(() => []) || [];
     for (const ab of acilisBorclar) {
       const kisi = ab.kisi || "Bilinmeyen";
       if (!cariMap[kisi]) {
@@ -17671,11 +18221,12 @@ app.get("/make-server-4da0b637/kasa/kisisel", async (c) => {
     const isSA = user.user_metadata?.originalRole === "superadmin";
     if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _kisiselCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_kisiselCompanyId);
 
     const ay = c.req.query("ay");
     // Kişisel kasa userId ile prefix'li — kendi verisini okur
-    const all = (await ckv.getByPrefix(`kasa_kisisel_`)) || [];
+    const all = (await getKasaByPrefix(_kisiselCompanyId, ckv, `kasa_kisisel_`)) || [];
     // Yöneticinin kendi kayıtlarını filtrele (prefix'ten userId alınamaz, tüm kisisel kayıtlar gelir)
     // Bu şekilde superadmin ghost modda hedef şirketin yöneticisinin kasasını görebilir
     const filtered = ay ? all.filter((i: any) => i.date?.startsWith(ay)) : all;
@@ -17704,7 +18255,8 @@ app.post("/make-server-4da0b637/kasa/kisisel/islem", async (c) => {
     const isSA = user.user_metadata?.originalRole === "superadmin";
     if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _kisiselIslemCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_kisiselIslemCompanyId);
 
     const { type, category, amount, description, date } = await c.req.json();
     if (!type || !amount || amount <= 0) return c.json({ error: "type ve amount zorunlu." }, 400);
@@ -17717,6 +18269,7 @@ app.post("/make-server-4da0b637/kasa/kisisel/islem", async (c) => {
       created_at: new Date().toISOString(),
     };
     await ckv.set(`kasa_kisisel_${user.id}_tx_${id}`, islem);
+    setKasaRecord(_kisiselIslemCompanyId, `kasa_kisisel_${user.id}_tx_${id}`, "kisisel", islem);
     return c.json({ islem });
   } catch (err) {
     console.log("Kasa kisisel islem POST error:", err);
@@ -17733,8 +18286,10 @@ app.delete("/make-server-4da0b637/kasa/kisisel/islem/:id", async (c) => {
     const isSAD = user.user_metadata?.originalRole === "superadmin";
     if (roleD !== "yonetici" && !isSAD) return c.json({ error: "Yetkiniz yok." }, 403);
     const reqCIdD = c.req.query("company_id");
-    const ckv = companyKvFor((isSAD && reqCIdD) ? reqCIdD : getCompanyId(user));
+    const _kisiselDelCompanyId = (isSAD && reqCIdD) ? reqCIdD : getCompanyId(user);
+    const ckv = companyKvFor(_kisiselDelCompanyId);
     await ckv.del(`kasa_kisisel_${user.id}_tx_${c.req.param("id")}`);
+    delKasaRecord(_kisiselDelCompanyId, `kasa_kisisel_${user.id}_tx_${c.req.param("id")}`);
     return c.json({ ok: true });
   } catch (err) {
     console.log("Kasa kisisel islem DELETE error:", err);
@@ -17753,9 +18308,10 @@ app.get("/make-server-4da0b637/kasa/kisisel/borclar", async (c) => {
     const isSA = user.user_metadata?.originalRole === "superadmin";
     if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _kbGetCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_kbGetCompanyId);
 
-    const all = (await ckv.getByPrefix(`kasa_kisisel_borc_`)) || [];
+    const all = (await getKasaByPrefix(_kbGetCompanyId, ckv, `kasa_kisisel_borc_`)) || [];
     const alacaklar = all.filter((b: any) => b.yon === "alacak").sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
     const verecekler = all.filter((b: any) => b.yon === "verecek").sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
     return c.json({
@@ -17778,7 +18334,8 @@ app.post("/make-server-4da0b637/kasa/kisisel/borclar", async (c) => {
     const isSA = user.user_metadata?.originalRole === "superadmin";
     if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _kbPostCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_kbPostCompanyId);
 
     const { yon, kisi, tutar, aciklama, tarih } = await c.req.json();
     if (!yon || !kisi?.trim() || !tutar || tutar <= 0) return c.json({ error: "yon, kisi ve tutar zorunlu." }, 400);
@@ -17792,6 +18349,7 @@ app.post("/make-server-4da0b637/kasa/kisisel/borclar", async (c) => {
       created_at: new Date().toISOString(),
     };
     await ckv.set(`kasa_kisisel_borc_${id}`, borc);
+    setKasaRecord(_kbPostCompanyId, `kasa_kisisel_borc_${id}`, "kisisel_borc", borc);
     return c.json({ borc });
   } catch (err) {
     console.log("Kasa kisisel borc POST error:", err);
@@ -17808,18 +18366,20 @@ app.post("/make-server-4da0b637/kasa/kisisel/borclar/:id/odeme", async (c) => {
     const isSA = user.user_metadata?.originalRole === "superadmin";
     if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _kbOdemeCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_kbOdemeCompanyId);
 
     const borcId = c.req.param("id");
     const { tutar, aciklama } = await c.req.json();
     if (!tutar || tutar <= 0) return c.json({ error: "Ödeme tutarı zorunlu." }, 400);
 
-    const borc = await ckv.get(`kasa_kisisel_borc_${borcId}`);
+    const borc = await getKasaRecord(_kbOdemeCompanyId, ckv, `kasa_kisisel_borc_${borcId}`);
     if (!borc) return c.json({ error: "Borç bulunamadı." }, 404);
 
     borc.odemeler = [...(borc.odemeler || []), { tutar: Number(tutar), tarih: new Date().toISOString().split("T")[0], aciklama: aciklama?.trim() || "", created_at: new Date().toISOString() }];
     borc.kalanTutar = Math.max(0, Number(borc.kalanTutar || borc.tutar) - Number(tutar));
     await ckv.set(`kasa_kisisel_borc_${borcId}`, borc);
+    setKasaRecord(_kbOdemeCompanyId, `kasa_kisisel_borc_${borcId}`, "kisisel_borc", borc);
     return c.json({ borc });
   } catch (err) {
     console.log("Kasa kisisel borc odeme POST error:", err);
@@ -17836,8 +18396,10 @@ app.delete("/make-server-4da0b637/kasa/kisisel/borclar/:id", async (c) => {
     const isSA = user.user_metadata?.originalRole === "superadmin";
     if (role !== "yonetici" && !isSA) return c.json({ error: "Yetkiniz yok." }, 403);
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _kbDelCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_kbDelCompanyId);
     await ckv.del(`kasa_kisisel_borc_${c.req.param("id")}`);
+    delKasaRecord(_kbDelCompanyId, `kasa_kisisel_borc_${c.req.param("id")}`);
     return c.json({ ok: true });
   } catch (err) {
     console.log("Kasa kisisel borc DELETE error:", err);
@@ -17858,9 +18420,10 @@ app.get("/make-server-4da0b637/kasa/borclar", async (c) => {
     }
     const isSA = user.user_metadata?.originalRole === "superadmin";
     const reqCId = c.req.query("company_id");
-    const ckv = companyKvFor((isSA && reqCId) ? reqCId : getCompanyId(user));
+    const _borcGetCompanyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
+    const ckv = companyKvFor(_borcGetCompanyId);
 
-    const all = (await ckv.getByPrefix("kasa_borc_")) || [];
+    const all = (await getKasaByPrefix(_borcGetCompanyId, ckv, "kasa_borc_")) || [];
     const alacaklar = all.filter((b: any) => b.yon === "alacak").sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
     const verecekler = all.filter((b: any) => b.yon === "verecek").sort((a: any, b: any) => (b.tarih || "").localeCompare(a.tarih || ""));
 
@@ -17900,6 +18463,7 @@ app.post("/make-server-4da0b637/kasa/borclar", async (c) => {
       created_by: user.user_metadata?.full_name || user.email || "",
     };
     await ckv.set(`kasa_borc_${id}`, borc);
+    setKasaRecord(getCompanyId(user), `kasa_borc_${id}`, "borc", borc);
     return c.json({ borc });
   } catch (err) {
     console.log("Kasa borc POST error:", err);
@@ -17920,7 +18484,7 @@ app.post("/make-server-4da0b637/kasa/borclar/:id/odeme", async (c) => {
     const { tutar, aciklama } = await c.req.json();
     if (!tutar || tutar <= 0) return c.json({ error: "Ödeme tutarı zorunlu." }, 400);
 
-    const borc = await ckv.get(`kasa_borc_${borcId}`);
+    const borc = await getKasaRecord(getCompanyId(user), ckv, `kasa_borc_${borcId}`);
     if (!borc) return c.json({ error: "Borç bulunamadı." }, 404);
 
     const odeme = {
@@ -17933,6 +18497,7 @@ app.post("/make-server-4da0b637/kasa/borclar/:id/odeme", async (c) => {
     borc.kalanTutar = Math.max(0, Number(borc.kalanTutar || borc.tutar) - Number(tutar));
 
     await ckv.set(`kasa_borc_${borcId}`, borc);
+    setKasaRecord(getCompanyId(user), `kasa_borc_${borcId}`, "borc", borc);
     return c.json({ borc });
   } catch (err) {
     console.log("Kasa borc odeme POST error:", err);
@@ -17948,8 +18513,10 @@ app.delete("/make-server-4da0b637/kasa/borclar/:id", async (c) => {
     if ((user.user_metadata?.role || "personel") !== "yonetici" && user.user_metadata?.originalRole !== "superadmin") {
       return c.json({ error: "Yetkiniz yok." }, 403);
     }
-    const ckv = companyKvFor(getCompanyId(user));
+    const _borcDelCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(_borcDelCompanyId);
     await ckv.del(`kasa_borc_${c.req.param("id")}`);
+    delKasaRecord(_borcDelCompanyId, `kasa_borc_${c.req.param("id")}`);
     return c.json({ ok: true });
   } catch (err) {
     console.log("Kasa borc DELETE error:", err);
@@ -18160,14 +18727,14 @@ app.get("/make-server-4da0b637/tedarikci/portal", async (c) => {
     if (callerUser.user_metadata?.role !== "tedarikci") return c.json({ error: "Bu endpoint tedarikçiler içindir." }, 403);
     const resolved = await resolveSupplierCompany(c, callerUser);
     if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
-    const { cariId, ckv: sckv } = resolved;
-    const [allSiparis, allTeslimat, allOdeme, albumler, fiyatListesi] = await Promise.all([
-      sckv.getByPrefix("siparis_"), sckv.getByPrefix("teslimat_"), sckv.getByPrefix("tedarikci_odeme_"),
+    const { companyId: sCompanyId, cariId, ckv: sckv } = resolved;
+    const [mySiparis_raw, myTeslimat, myOdeme, albumler, fiyatListesi] = await Promise.all([
+      getOrders(sCompanyId, sckv, { vendorId: cariId }),
+      getDeliveries(sCompanyId, sckv, { vendorId: cariId }),
+      getSupplierPayments(sCompanyId, sckv, { vendorId: cariId }),
       sckv.get("cost_albums"), sckv.get(`tedarikci_fiyat_${cariId}`),
     ]);
-    const mySiparis = (allSiparis || []).filter((s) => s.cariId === cariId && s.status !== "iptal");
-    const myTeslimat = (allTeslimat || []).filter((t) => t.cariId === cariId);
-    const myOdeme = (allOdeme || []).filter((o) => o.cariId === cariId);
+    const mySiparis = (mySiparis_raw || []).filter((s) => s.status !== "iptal");
     const cari = await sckv.get(`cost_cari_${cariId}`);
     const aktivSiparis = mySiparis.filter((s) => !["tamamlandi","iptal","taslak"].includes(s.status)).length;
     const bekleyenTeslimat = myTeslimat.filter((t) => t.status === "beklemede").length;
@@ -18192,8 +18759,8 @@ app.get("/make-server-4da0b637/tedarikci/ozet", async (c) => {
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
     const [cariler, siparisler, teslimatlar, odemeler, albumler, depoStok, papers, tumStoklar, fiyatListeleri] = await Promise.all([
-      ckv.getByPrefix("cost_cari_"), ckv.getByPrefix("siparis_"), ckv.getByPrefix("teslimat_"), ckv.getByPrefix("tedarikci_odeme_"),
-      ckv.get("cost_albums"), ckv.get("depo_stok"), ckv.getByPrefix("cost_paper_"), ckv.getByPrefix("stok_gunluk_"), ckv.getByPrefix("tedarikci_fiyat_"),
+      ckv.getByPrefix("cost_cari_"), getOrders(companyId, ckv), getDeliveries(companyId, ckv), getSupplierPayments(companyId, ckv),
+      ckv.get("cost_albums"), ckv.get("depo_stok"), ckv.getByPrefix("cost_paper_"), getAllDailyStock(companyId, ckv), ckv.getByPrefix("tedarikci_fiyat_"),
     ]);
     // Genel stok: depo + tüm mekanların en son stok sayımı (boyut bazında toplam)
     const ds: any = migrateDepoStok(depoStok || {});
@@ -18242,11 +18809,12 @@ app.get("/make-server-4da0b637/tedarikci/siparisler", async (c) => {
     if (role === "tedarikci") {
       const resolved = await resolveSupplierCompany(c, callerUser);
       if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
-      const all = await resolved.ckv.getByPrefix("siparis_");
-      siparisler = (all || []).filter((s) => s.cariId === resolved.cariId && s.status !== "taslak");
+      const all = await getOrders(resolved.companyId, resolved.ckv, { vendorId: resolved.cariId });
+      siparisler = (all || []).filter((s) => s.status !== "taslak");
     } else if (hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) {
-      const ckv = companyKvFor(getCompanyId(callerUser));
-      siparisler = await ckv.getByPrefix("siparis_");
+      const companyId = getCompanyId(callerUser);
+      const ckv = companyKvFor(companyId);
+      siparisler = await getOrders(companyId, ckv);
     } else { return c.json({ error: "Yetki yok." }, 403); }
     return c.json({ ok: true, siparisler: (siparisler || []).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")) });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
@@ -18259,20 +18827,20 @@ app.get("/make-server-4da0b637/tedarikci/siparisler/:id", async (c) => {
     const role = callerUser.user_metadata?.role;
     const callerRole = getEffectiveRole(callerUser);
     const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
-    let sckv, cariId = null;
+    let sckv, sCompanyId, cariId = null;
     if (role === "tedarikci") {
       const resolved = await resolveSupplierCompany(c, callerUser);
       if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
-      sckv = resolved.ckv; cariId = resolved.cariId;
+      sckv = resolved.ckv; cariId = resolved.cariId; sCompanyId = resolved.companyId;
     } else if (hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) {
-      sckv = companyKvFor(getCompanyId(callerUser));
+      sCompanyId = getCompanyId(callerUser);
+      sckv = companyKvFor(sCompanyId);
     } else { return c.json({ error: "Yetki yok." }, 403); }
-    const siparis = await sckv.get(`siparis_${siparisId}`);
+    const siparis = await getOrder(sCompanyId, sckv, siparisId);
     if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
     if (cariId && siparis.cariId !== cariId) return c.json({ error: "Yetki yok." }, 403);
-    const [allT, allO] = await Promise.all([sckv.getByPrefix("teslimat_"), sckv.getByPrefix("tedarikci_odeme_")]);
-    return c.json({ ok: true, siparis, teslimatlar: (allT || []).filter((t) => t.siparisId === siparisId).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
-      odemeler: (allO || []).filter((o) => o.siparisId === siparisId).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")) });
+    const [allT, allO] = await Promise.all([getDeliveries(sCompanyId, sckv, { orderId: siparisId }), getSupplierPayments(sCompanyId, sckv, { orderId: siparisId })]);
+    return c.json({ ok: true, siparis, teslimatlar: allT || [], odemeler: allO || [] });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
@@ -18297,7 +18865,33 @@ app.post("/make-server-4da0b637/tedarikci/siparisler", async (c) => {
       teklifDurum: teklifFiyat ? "teklif_verildi" : null,
       loglar: [{ tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: teklifFiyat ? `Sipariş oluşturuldu, ₺${Number(teklifFiyat).toLocaleString("tr-TR")} teklif edildi` : `Sipariş oluşturuldu (₺${totalAmount.toLocaleString("tr-TR")})` }],
     };
-    await ckv.set(id, siparis);
+    await saveOrder(companyId, ckv, siparis);
+    return c.json({ ok: true, siparis });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// PUT /tedarikci/siparisler/:id/kalem-ekle — Mevcut taslak siparişe kalem ekle
+app.put("/make-server-4da0b637/tedarikci/siparisler/:id/kalem-ekle", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
+    const companyId = getCompanyId(callerUser);
+    const ckv = companyKvFor(companyId);
+    const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
+    const siparis = await getOrder(companyId, ckv, siparisId);
+    if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
+    if (siparis.status !== "taslak") return c.json({ error: "Sadece taslak siparişlere kalem eklenebilir." }, 400);
+    const { items, teklifFiyat } = await c.req.json();
+    if (!items?.length) return c.json({ error: "En az 1 kalem zorunlu." }, 400);
+    const now = new Date().toISOString();
+    const newItems = items.map((it: any, idx: number) => ({ id: `item_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`, productName: it.productName || "", quantity: it.quantity || 0, unitPrice: it.unitPrice || 0, currency: it.currency || siparis.currency || "TRY", deliveredQuantity: 0, notes: it.notes || "" }));
+    siparis.items = [...(siparis.items || []), ...newItems];
+    siparis.totalAmount = siparis.items.reduce((a: number, it: any) => a + ((it.productName || "").toLowerCase().includes("paspartu") ? (it.unitPrice || 0) : (it.quantity * it.unitPrice)), 0);
+    if (teklifFiyat) siparis.teklifFiyat = Number(teklifFiyat);
+    siparis.updatedAt = now;
+    siparis.loglar = [...(siparis.loglar || []), { tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: `${newItems.length} kalem eklendi` }];
+    await saveOrder(companyId, ckv, siparis);
     return c.json({ ok: true, siparis });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -18310,12 +18904,12 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/gonder", async (c) => {
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
     const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
-    const siparis = await ckv.get(`siparis_${siparisId}`);
+    const siparis = await getOrder(companyId, ckv, siparisId);
     if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
     if (siparis.status !== "taslak") return c.json({ error: "Sadece taslak siparişler gönderilebilir." }, 400);
     siparis.status = "gonderildi"; siparis.sentAt = new Date().toISOString(); siparis.updatedAt = new Date().toISOString();
     siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: "Sipariş tedarikçiye gönderildi" }];
-    await ckv.set(`siparis_${siparisId}`, siparis);
+    await saveOrder(companyId, ckv, siparis);
     const cari = await ckv.get(`cost_cari_${siparis.cariId}`);
     if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "siparis_yeni", "Yeni Sipariş", `${siparis.items.length} kalem, toplam ${siparis.totalAmount} ${siparis.currency}`, { siparisId }, companyId);
     return c.json({ ok: true, siparis });
@@ -18330,12 +18924,12 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/onayla", async (c) => {
     const resolved = await resolveSupplierCompany(c, callerUser);
     if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
     const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
-    const siparis = await resolved.ckv.get(`siparis_${siparisId}`);
+    const siparis = await getOrder(resolved.companyId, resolved.ckv, siparisId);
     if (!siparis || siparis.cariId !== resolved.cariId) return c.json({ error: "Sipariş bulunamadı." }, 404);
     if (siparis.status !== "gonderildi") return c.json({ error: "Bu sipariş onaylanamaz." }, 400);
     siparis.status = "onaylandi"; siparis.confirmedAt = new Date().toISOString(); siparis.updatedAt = new Date().toISOString();
     siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "tedarikci", mesaj: "Sipariş onaylandı" }];
-    await resolved.ckv.set(`siparis_${siparisId}`, siparis);
+    await saveOrder(resolved.companyId, resolved.ckv, siparis);
     // Kasada borç kaydı oluştur
     const borcTutar = siparis.teklifFiyat ? siparis.teklifFiyat : siparis.totalAmount || 0;
     if (borcTutar > 0) {
@@ -18354,13 +18948,14 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/iptal", async (c) => {
     if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
     const ckv = companyKvFor(getCompanyId(callerUser));
     const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
-    const siparis = await ckv.get(`siparis_${siparisId}`);
+    const _iptalCompanyId = getCompanyId(callerUser);
+    const siparis = await getOrder(_iptalCompanyId, ckv, siparisId);
     if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
     if (siparis.status === "tamamlandi") return c.json({ error: "Tamamlanmış sipariş iptal edilemez." }, 400);
     const { reason } = await c.req.json();
     siparis.status = "iptal"; siparis.cancelledAt = new Date().toISOString(); siparis.cancelReason = reason || ""; siparis.updatedAt = new Date().toISOString();
     siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: `Sipariş iptal edildi${reason ? ": " + reason : ""}` }];
-    await ckv.set(`siparis_${siparisId}`, siparis);
+    await saveOrder(_iptalCompanyId, ckv, siparis);
     const cari = await ckv.get(`cost_cari_${siparis.cariId}`);
     if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "siparis_iptal", "Sipariş İptal", reason || "Sipariş iptal edildi.", { siparisId }, getCompanyId(callerUser));
     return c.json({ ok: true, siparis });
@@ -18377,7 +18972,7 @@ app.post("/make-server-4da0b637/tedarikci/teslimat", async (c) => {
     const { siparisId: rawSipId, lines, deliveryNote, deliveryDate } = await c.req.json();
     if (!rawSipId || !lines?.length) return c.json({ error: "SiparisId ve en az 1 kalem zorunlu." }, 400);
     const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
-    const siparis = await resolved.ckv.get(`siparis_${siparisId}`);
+    const siparis = await getOrder(resolved.companyId, resolved.ckv, siparisId);
     if (!siparis || siparis.cariId !== resolved.cariId) return c.json({ error: "Sipariş bulunamadı." }, 404);
     if (!["onaylandi","kismen_teslim"].includes(siparis.status)) return c.json({ error: "Bu sipariş için teslimat bildirilemez." }, 400);
     const now = new Date().toISOString();
@@ -18385,10 +18980,10 @@ app.post("/make-server-4da0b637/tedarikci/teslimat", async (c) => {
     const teslimat = { id, siparisId, cariId: resolved.cariId, cariName: siparis.cariName || "", status: "beklemede",
       lines: lines.map((l) => ({ itemId: l.itemId, productName: l.productName || siparis.items?.find((i) => i.id === l.itemId)?.productName || "", quantity: l.quantity || 0 })),
       deliveryDate: deliveryDate || now.slice(0, 10), deliveryNote: deliveryNote || "", createdAt: now, createdBy: callerUser.user_metadata?.full_name || "", createdByUserId: callerUser.id };
-    await resolved.ckv.set(id, teslimat);
+    await saveDelivery(resolved.companyId, resolved.ckv, teslimat);
     // Siparişe log ekle
-    const sip = await resolved.ckv.get(`siparis_${siparisId}`);
-    if (sip) { sip.loglar = [...(sip.loglar || []), { tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "tedarikci", mesaj: `Teslimat bildirildi: ${teslimat.lines.map(l => l.productName + " ×" + l.quantity).join(", ")}` }]; await resolved.ckv.set(`siparis_${siparisId}`, sip); }
+    siparis.loglar = [...(siparis.loglar || []), { tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "tedarikci", mesaj: `Teslimat bildirildi: ${teslimat.lines.map(l => l.productName + " ×" + l.quantity).join(", ")}` }];
+    await saveOrder(resolved.companyId, resolved.ckv, siparis);
     return c.json({ ok: true, teslimat });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -18398,11 +18993,11 @@ app.get("/make-server-4da0b637/tedarikci/teslimatlar", async (c) => {
     const callerUser = await verifyToken(c);
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
     if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
-    const ckv = companyKvFor(getCompanyId(callerUser));
-    const all = await ckv.getByPrefix("teslimat_");
+    const _tesCompanyId = getCompanyId(callerUser);
+    const ckv = companyKvFor(_tesCompanyId);
     const status = c.req.query("status");
-    const filtered = status ? (all || []).filter((t) => t.status === status) : (all || []);
-    return c.json({ ok: true, teslimatlar: filtered.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")) });
+    const filtered = await getDeliveries(_tesCompanyId, ckv, status ? { status } : undefined);
+    return c.json({ ok: true, teslimatlar: filtered || [] });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
@@ -18415,12 +19010,12 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
     const ckv = companyKvFor(companyId);
     const rawId = c.req.param("id");
     const teslimatId = rawId.startsWith("teslimat_") ? rawId.replace("teslimat_", "") : rawId;
-    const teslimat = await ckv.get(`teslimat_${teslimatId}`);
+    const teslimat = await getDelivery(companyId, ckv, teslimatId);
     if (!teslimat) return c.json({ error: "Teslimat bulunamadı." }, 404);
     if (teslimat.status !== "beklemede") return c.json({ error: "Bu teslimat zaten işlenmiş." }, 400);
     teslimat.status = "onaylandi"; teslimat.reviewedAt = new Date().toISOString(); teslimat.reviewedBy = callerUser.user_metadata?.full_name || "";
-    await ckv.set(`teslimat_${teslimatId}`, teslimat);
-    const siparis = await ckv.get(`siparis_${teslimat.siparisId}`);
+    await saveDelivery(companyId, ckv, teslimat);
+    const siparis = await getOrder(companyId, ckv, teslimat.siparisId);
     if (siparis) {
       for (const line of teslimat.lines) { const item = siparis.items?.find((i) => i.id === line.itemId); if (item) item.deliveredQuantity = (item.deliveredQuantity || 0) + (line.quantity || 0); }
       const allDelivered = siparis.items.every((i) => (i.deliveredQuantity || 0) >= i.quantity);
@@ -18428,7 +19023,7 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
       if (allDelivered) siparis.status = "teslim_edildi"; else if (anyDelivered) siparis.status = "kismen_teslim";
       siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: `Teslimat onaylandı${allDelivered ? " — tümü teslim edildi" : ""}` }];
       siparis.updatedAt = new Date().toISOString();
-      await ckv.set(`siparis_${teslimat.siparisId}`, siparis);
+      await saveOrder(companyId, ckv, siparis);
     }
     // Depo stok girişi — teslimat kalemlerini depoya ekle (tam/yarım ayrımıyla)
     const depoStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
@@ -18463,11 +19058,12 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/reddet", async (c) => {
     const ckv = companyKvFor(getCompanyId(callerUser));
     const rawId = c.req.param("id");
     const teslimatId = rawId.startsWith("teslimat_") ? rawId.replace("teslimat_", "") : rawId;
-    const teslimat = await ckv.get(`teslimat_${teslimatId}`);
+    const _redCompanyId = getCompanyId(callerUser);
+    const teslimat = await getDelivery(_redCompanyId, ckv, teslimatId);
     if (!teslimat || teslimat.status !== "beklemede") return c.json({ error: "Teslimat bulunamadı veya zaten işlenmiş." }, 400);
     const { reason } = await c.req.json();
     teslimat.status = "reddedildi"; teslimat.reviewedAt = new Date().toISOString(); teslimat.reviewedBy = callerUser.user_metadata?.full_name || ""; teslimat.rejectionReason = reason || "";
-    await ckv.set(`teslimat_${teslimatId}`, teslimat);
+    await saveDelivery(_redCompanyId, ckv, teslimat);
     const cari = await ckv.get(`cost_cari_${teslimat.cariId}`);
     if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "teslimat_reddedildi", "Teslimat Reddedildi", reason || "Teslimatınız reddedildi.", { siparisId: teslimat.siparisId, teslimatId }, getCompanyId(callerUser));
     return c.json({ ok: true, teslimat });
@@ -18493,24 +19089,28 @@ app.post("/make-server-4da0b637/tedarikci/odemeler", async (c) => {
       const cari = await ckv.get(`cost_cari_${directCariId}`);
       const cariName = cari?.name || directCariId;
       const odeme = { id: odemeId, siparisId: null, cariId: directCariId, cariName, amount, currency: currency || "TRY", paymentMethod: paymentMethod || "havale", paymentDate: payDate, status: "beklemede", supplierConfirmed: false, createdAt: now, createdBy: callerUser.user_metadata?.full_name || "", tip: "on_odeme" };
-      await ckv.set(odemeId, odeme);
+      await saveSupplierPayment(companyId, ckv, odeme);
       const giderId = `isletme_gider_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       await ckv.set(giderId, { id: giderId.replace("isletme_gider_", ""), personelAdi: cariName, category: "tedarikci", amount, currency: currency || "TRY", date: payDate, description: aciklama || `Ön ödeme: ${cariName}`, created_at: now, created_by: callerUser.user_metadata?.full_name || "", odemeTipi: "on_odeme", cariId: directCariId });
-      await ckv.set(`kasa_odeme_${giderId.replace("isletme_gider_", "")}`, { giderId: giderId.replace("isletme_gider_", ""), odpiendi: true, odpienenTutar: amount, odemeler: [{ tutar: amount, tarih: payDate, aciklama: aciklama || `Ön ödeme: ${cariName}` }] });
+      const _onOdemeKasaData = { giderId: giderId.replace("isletme_gider_", ""), odpiendi: true, odpienenTutar: amount, odemeler: [{ tutar: amount, tarih: payDate, aciklama: aciklama || `Ön ödeme: ${cariName}` }] };
+      await ckv.set(`kasa_odeme_${giderId.replace("isletme_gider_", "")}`, _onOdemeKasaData);
+      setKasaRecord(companyId, `kasa_odeme_${giderId.replace("isletme_gider_", "")}`, "odeme", _onOdemeKasaData);
       if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "odeme_bildirimi", "Ödeme Kaydedildi", `₺${amount.toLocaleString("tr-TR")} ön ödeme kaydedildi`, { cariId: directCariId }, companyId);
       return c.json({ ok: true, odeme });
     }
     // Normal sipariş ödemesi
     const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
-    const siparis = await ckv.get(`siparis_${siparisId}`);
+    const siparis = await getOrder(companyId, ckv, siparisId);
     if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
     const odeme = { id: odemeId, siparisId, cariId: siparis.cariId, cariName: siparis.cariName, amount, currency: currency || siparis.currency || "TRY", paymentMethod: paymentMethod || "havale", paymentDate: payDate, status: "beklemede", supplierConfirmed: false, createdAt: now, createdBy: callerUser.user_metadata?.full_name || "" };
-    await ckv.set(odemeId, odeme);
+    await saveSupplierPayment(companyId, ckv, odeme);
     const giderId = `isletme_gider_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     await ckv.set(giderId, { id: giderId.replace("isletme_gider_", ""), personelAdi: siparis.cariName, category: "tedarikci", amount, currency: currency || siparis.currency || "TRY", date: payDate, description: aciklama || `Sipariş ödemesi: ${siparis.cariName}`, created_at: now, created_by: callerUser.user_metadata?.full_name || "", odemeTipi: "normal", cariId: siparis.cariId, siparisId });
-    await ckv.set(`kasa_odeme_${giderId.replace("isletme_gider_", "")}`, { giderId: giderId.replace("isletme_gider_", ""), odpiendi: true, odpienenTutar: amount, odemeler: [{ tutar: amount, tarih: payDate, aciklama: `Tedarikçi ödemesi: ${siparis.cariName}` }] });
-    const allOdeme = await ckv.getByPrefix("tedarikci_odeme_");
-    const toplamOdenen = (allOdeme || []).filter((o) => o.siparisId === siparisId && o.status !== "reddedildi").reduce((a, o) => a + (o.amount || 0), 0);
+    const _sipOdemeKasaData = { giderId: giderId.replace("isletme_gider_", ""), odpiendi: true, odpienenTutar: amount, odemeler: [{ tutar: amount, tarih: payDate, aciklama: `Tedarikçi ödemesi: ${siparis.cariName}` }] };
+    await ckv.set(`kasa_odeme_${giderId.replace("isletme_gider_", "")}`, _sipOdemeKasaData);
+    setKasaRecord(companyId, `kasa_odeme_${giderId.replace("isletme_gider_", "")}`, "odeme", _sipOdemeKasaData);
+    const allOdeme = await getSupplierPayments(companyId, ckv, { orderId: siparisId });
+    const toplamOdenen = (allOdeme || []).filter((o) => o.status !== "reddedildi").reduce((a, o) => a + (o.amount || 0), 0);
     siparis.loglar = [...(siparis.loglar || []), { tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: `₺${amount.toLocaleString("tr-TR")} ödeme kaydedildi` }];
     const expectedAmount = siparis.teklifFiyat ? siparis.teklifFiyat : siparis.totalAmount || 0;
     if (toplamOdenen >= expectedAmount && siparis.status === "teslim_edildi") {
@@ -18518,7 +19118,7 @@ app.post("/make-server-4da0b637/tedarikci/odemeler", async (c) => {
       siparis.loglar = [...(siparis.loglar || []), { tarih: now, kisi: "Sistem", taraf: "sistem", mesaj: "Sipariş tamamlandı — ödeme tam" }];
     }
     siparis.updatedAt = now;
-    await ckv.set(`siparis_${siparisId}`, siparis);
+    await saveOrder(companyId, ckv, siparis);
     const cari = await ckv.get(`cost_cari_${siparis.cariId}`);
     if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "odeme_yapildi", "Ödeme Kaydedildi", `${amount} ${currency || "TRY"} ödeme kaydedildi.`, { siparisId, odemeId }, companyId);
     return c.json({ ok: true, odeme });
@@ -18533,13 +19133,14 @@ app.get("/make-server-4da0b637/tedarikci/odemeler", async (c) => {
     if (role === "tedarikci") {
       const resolved = await resolveSupplierCompany(c, callerUser);
       if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
-      const all = await resolved.ckv.getByPrefix("tedarikci_odeme_");
-      return c.json({ ok: true, odemeler: (all || []).filter((o) => o.cariId === resolved.cariId).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")) });
+      const all = await getSupplierPayments(resolved.companyId, resolved.ckv, { vendorId: resolved.cariId });
+      return c.json({ ok: true, odemeler: all || [] });
     }
     if (hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) {
-      const ckv = companyKvFor(getCompanyId(callerUser));
-      const all = await ckv.getByPrefix("tedarikci_odeme_");
-      return c.json({ ok: true, odemeler: (all || []).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")) });
+      const _odemeCompanyId = getCompanyId(callerUser);
+      const ckv = companyKvFor(_odemeCompanyId);
+      const all = await getSupplierPayments(_odemeCompanyId, ckv);
+      return c.json({ ok: true, odemeler: all || [] });
     }
     return c.json({ error: "Yetki yok." }, 403);
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
@@ -18553,10 +19154,11 @@ app.post("/make-server-4da0b637/tedarikci/odemeler/:id/onayla", async (c) => {
     const resolved = await resolveSupplierCompany(c, callerUser);
     if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
     const odemeId = c.req.param("id");
-    const odeme = await resolved.ckv.get(`tedarikci_odeme_${odemeId}`);
+    const fullOdemeId = odemeId.startsWith("tedarikci_odeme_") ? odemeId : `tedarikci_odeme_${odemeId}`;
+    const odeme = await (async () => { try { const db = getAdminClient(); const { data } = await db.from("supplier_payments").select("extra_data").eq("id", fullOdemeId).maybeSingle(); return data?.extra_data; } catch { return await resolved.ckv.get(fullOdemeId); } })();
     if (!odeme || odeme.cariId !== resolved.cariId) return c.json({ error: "Ödeme bulunamadı." }, 404);
     odeme.supplierConfirmed = true; odeme.supplierConfirmedAt = new Date().toISOString(); odeme.status = "onaylandi";
-    await resolved.ckv.set(`tedarikci_odeme_${odemeId}`, odeme);
+    await saveSupplierPayment(resolved.companyId, resolved.ckv, odeme);
     return c.json({ ok: true, odeme });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -18584,7 +19186,7 @@ app.post("/make-server-4da0b637/tedarikci/teklif", async (c) => {
       teklifDurum: "tedarikci_teklifi", kaynakTedarikci: true,
       loglar: [{ tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "tedarikci", mesaj: `Teklif oluşturuldu: ₺${(teklifFiyat || totalAmount).toLocaleString("tr-TR")}` }],
     };
-    await resolved.ckv.set(id, siparis);
+    await saveOrder(resolved.companyId, resolved.ckv, siparis);
     // Admin'lere bildirim
     const supabase = getAdminClient();
     const { data: { users } } = await supabase.auth.admin.listUsers();
@@ -18707,14 +19309,14 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/durum", async (c) => {
     const resolved = await resolveSupplierCompany(c, callerUser);
     if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
     const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
-    const siparis = await resolved.ckv.get(`siparis_${siparisId}`);
+    const siparis = await getOrder(resolved.companyId, resolved.ckv, siparisId);
     if (!siparis || siparis.cariId !== resolved.cariId) return c.json({ error: "Sipariş bulunamadı." }, 404);
     const { durum, not } = await c.req.json();
     const durumLabel = durum === "uretimde" ? "Üretimde" : durum === "hazir" ? "Hazır — Teslimat Bekliyor" : durum === "kismi_hazir" ? "Kısmi Hazır" : durum;
     siparis.uretimDurum = durum;
     siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "tedarikci", mesaj: `Üretim durumu: ${durumLabel}${not ? " — " + not : ""}` }];
     siparis.updatedAt = new Date().toISOString();
-    await resolved.ckv.set(`siparis_${siparisId}`, siparis);
+    await saveOrder(resolved.companyId, resolved.ckv, siparis);
     // Admin bildirim
     const supabase = getAdminClient();
     const { data: { users } } = await supabase.auth.admin.listUsers();
@@ -18741,7 +19343,8 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
     } else { return c.json({ error: "Yetki yok." }, 403); }
     const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
     const { fiyat, aksiyon, items } = await c.req.json(); // aksiyon: "teklif" | "kabul" | "red"
-    const siparis = await ckv.get(`siparis_${siparisId}`);
+    const _teklifCompanyId = role === "tedarikci" ? (await resolveSupplierCompany(c, callerUser))?.companyId || getCompanyId(callerUser) : getCompanyId(callerUser);
+    const siparis = await getOrder(_teklifCompanyId, ckv, siparisId);
     if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
     const taraf = role === "tedarikci" ? "tedarikci" : "admin";
     const now = new Date().toISOString();
@@ -18783,7 +19386,7 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
     const logMesaj = aksiyon === "kabul" ? "Teklif kabul edildi" : aksiyon === "red" ? "Teklif reddedildi" : `₺${Number(fiyat).toLocaleString("tr-TR")} ${taraf === "admin" ? "teklif edildi" : "karşı teklif yapıldı"}`;
     siparis.loglar = [...(siparis.loglar || []), { tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf, mesaj: logMesaj }];
     siparis.updatedAt = now;
-    await ckv.set(`siparis_${siparisId}`, siparis);
+    await saveOrder(_teklifCompanyId, ckv, siparis);
     // Bildirim
     if (taraf === "tedarikci") {
       const supabase = getAdminClient();
@@ -18809,8 +19412,8 @@ app.post("/make-server-4da0b637/tedarikci/migrasyon/borc-olustur", async (c) => 
     }
     const cid = companyId || "aspect";
     const ckv = companyKvFor(cid);
-    const allSiparis = await ckv.getByPrefix("siparis_");
-    const allTedOdeme = await ckv.getByPrefix("tedarikci_odeme_");
+    const allSiparis = await getOrders(cid, ckv);
+    const allTedOdeme = await getSupplierPayments(cid, ckv);
     const debug = { companyId: cid, toplamSiparis: (allSiparis || []).length, tedOdemeleri: (allTedOdeme || []).map((o: any) => ({ id: o.id, cariId: o.cariId, cariName: o.cariName, amount: o.amount, siparisId: o.siparisId, tip: o.tip, status: o.status })), statuslar: (allSiparis || []).map((s: any) => ({ id: s.id, status: s.status, cari: s.cariName, teklif: s.teklifFiyat, total: s.totalAmount })) };
     const olusturulan: string[] = [];
     for (const siparis of (allSiparis || [])) {
@@ -19044,7 +19647,7 @@ app.post("/make-server-4da0b637/migration/ref-data", async (c) => {
         type: e.category || e.type || "other",
         ribon_mevcut: Number(e.ribonMevcut) || 0,
         ribon_kapasitesi: Number(e.ribonKapasitesi) || 0,
-        extra_data: { category: e.category, brand: e.brand, model: e.model, serialNumber: e.serialNumber, serialNo: e.serialNo, status: e.status, location: e.location, locationType: e.locationType, carpan: e.carpan, kagitTipiId: e.kagitTipiId, kagitTipiAdi: e.kagitTipiAdi, notes: e.notes, assignedTo: e.assignedTo, assignedToId: e.assignedToId, flashId: e.flashId, imagePath: e.imagePath, gecmis: e.gecmis },
+        extra_data: e,
       }));
       const { error } = await db.from("equipment").upsert(eqRows, { onConflict: "id" });
       log.push(error ? `equipment HATA: ${error.message}` : `equipment: ${eqRows.length} kayıt`);
@@ -19104,6 +19707,7 @@ app.post("/make-server-4da0b637/migration/ref-data", async (c) => {
         message: a.message || "",
         type: a.type || "info",
         priority: a.priority || "medium",
+        extra_data: a,
       }));
       const { error } = await db.from("announcements").upsert(annRows, { onConflict: "id" });
       log.push(error ? `announcements HATA: ${error.message}` : `announcements: ${annRows.length} kayıt`);
@@ -19313,6 +19917,118 @@ app.post("/make-server-4da0b637/migration/ref-data", async (c) => {
       }
     }
     log.push(`stock_movements: ${stockCount} kayıt`);
+
+    // ── 11. DAILY_STOCK (stok_gunluk blob → daily_stock extra_data) ──
+    let dailyStockCount = 0;
+    const dailyRows = tumStoklar.filter((s: any) => s.mekanId && s.tarih).map((s: any) => ({
+      id: `${s.mekanId}_${s.tarih}`,
+      company_id: targetCompany,
+      venue_id: s.mekanId,
+      date: s.tarih,
+      extra_data: s,
+      updated_at: new Date().toISOString(),
+    }));
+    for (let i = 0; i < dailyRows.length; i += 500) {
+      const batch = dailyRows.slice(i, i + 500);
+      const { error } = await db.from("daily_stock").upsert(batch, { onConflict: "id" });
+      if (error) { log.push(`daily_stock batch ${i} HATA: ${error.message}`); break; }
+    }
+    dailyStockCount = dailyRows.length;
+    log.push(`daily_stock: ${dailyStockCount} kayıt`);
+
+    // ── 12. KASA RECORDS (tüm kasa KV → kasa_records extra_data) ──
+    let kasaCount = 0;
+    const kasaPrefixes = ["kasa_devir_", "kasa_odeme_", "kasa_islem_", "kasa_borc_", "kasa_acilis_borc_", "kasa_kisisel_", "kasa_kisisel_borc_", "pay_dagitim_"];
+    const kasaSingles = ["kasa_sirket_settings", "pay_ortaklar"];
+    const kasaRows: any[] = [];
+    // Prefix scans — her tip için doğru KV key oluştur
+    for (const prefix of kasaPrefixes) {
+      const items: any[] = await ckv.getByPrefix(prefix).catch(() => []) || [];
+      const type = prefix.replace("kasa_", "").replace(/_$/, "").replace("pay_", "");
+      for (const item of items) {
+        let kvKey = "";
+        if (prefix === "kasa_devir_") {
+          kvKey = `kasa_devir_${item.mekanId}_${item.tarih}`;
+        } else if (prefix === "kasa_odeme_") {
+          kvKey = `kasa_odeme_${item.giderId || item.id || "unknown"}`;
+        } else {
+          kvKey = item.id ? `${prefix}${item.id}` : `${prefix}${Date.now()}_${Math.random().toString(36).slice(2,5)}`;
+        }
+        kasaRows.push({ id: kvKey, company_id: targetCompany, type, extra_data: item, updated_at: new Date().toISOString() });
+      }
+    }
+    // Ay kapanış + açılış (ay bazlı)
+    for (let m = 1; m <= 12; m++) {
+      for (const y of [2025, 2026]) {
+        const ayStr = `${y}-${String(m).padStart(2, "0")}`;
+        const kapatis = await ckv.get(`kasa_ay_kapatis_${ayStr}`).catch(() => null);
+        if (kapatis) kasaRows.push({ id: `kasa_ay_kapatis_${ayStr}`, company_id: targetCompany, type: "ay_kapatis", extra_data: kapatis, updated_at: new Date().toISOString() });
+        const acilis = await ckv.get(`kasa_acilis_${ayStr}`).catch(() => null);
+        if (acilis) kasaRows.push({ id: `kasa_acilis_${ayStr}`, company_id: targetCompany, type: "acilis", extra_data: acilis, updated_at: new Date().toISOString() });
+      }
+    }
+    // Tekil key'ler
+    for (const key of kasaSingles) {
+      const val = await ckv.get(key).catch(() => null);
+      if (val) kasaRows.push({ id: key, company_id: targetCompany, type: key.replace("kasa_", "").replace("pay_", ""), extra_data: val, updated_at: new Date().toISOString() });
+    }
+    // Deduplicate by id (kasa_kisisel_ prefix catches kasa_kisisel_borc_ too)
+    const kasaDedup = new Map<string, any>();
+    for (const row of kasaRows) kasaDedup.set(row.id, row);
+    const kasaUnique = Array.from(kasaDedup.values());
+    // Batch upsert
+    for (let i = 0; i < kasaUnique.length; i += 500) {
+      const batch = kasaUnique.slice(i, i + 500);
+      const { error } = await db.from("kasa_records").upsert(batch, { onConflict: "company_id,id" });
+      if (error) { log.push(`kasa_records batch ${i} HATA: ${error.message}`); break; }
+    }
+    kasaCount = kasaUnique.length;
+    log.push(`kasa_records: ${kasaCount} kayıt`);
+
+    // ── 13. GELIRLER (isletme_gelir_ → operating_income extra_data) ──
+    const tumGelirlerMig: any[] = await ckv.getByPrefix("isletme_gelir_").catch(() => []) || [];
+    if (tumGelirlerMig.length > 0) {
+      const gelirRows = tumGelirlerMig.map((g: any) => ({
+        id: g.id, company_id: targetCompany, description: g.description || null,
+        amount: Number(g.amount) || 0, currency: g.currency || "TRY",
+        date: g.date || null, source: g.source || null, created_by: g.created_by || null, extra_data: g,
+      }));
+      for (let i = 0; i < gelirRows.length; i += 500) {
+        const batch = gelirRows.slice(i, i + 500);
+        const { error } = await db.from("operating_income").upsert(batch, { onConflict: "id" });
+        if (error) { log.push(`operating_income HATA: ${error.message}`); break; }
+      }
+      log.push(`operating_income: ${gelirRows.length} kayıt`);
+    } else {
+      log.push(`operating_income: 0 kayıt`);
+    }
+
+    // ── 14. CHAT + ACADEMY → kv_cache ──
+    const chatAcademyPrefixes = ["chat_channel_", "chat_msgs_", "chat_read_", "chat_dm_", "chat_dm_list_", "academy_content_"];
+    const chatAcademySingles = ["academy_categories", "academy_announcement", "academy_hidden"];
+    const kvCacheRows: any[] = [];
+    for (const prefix of chatAcademyPrefixes) {
+      const items: any[] = await ckv.getByPrefix(prefix).catch(() => []) || [];
+      for (const item of items) {
+        const kvKey = item.id ? `${prefix}${item.id}` : `${prefix}${Date.now()}_${Math.random().toString(36).slice(2,5)}`;
+        kvCacheRows.push({ id: kvKey, company_id: targetCompany, type: prefix.replace(/_$/, ""), extra_data: item, updated_at: new Date().toISOString() });
+      }
+    }
+    for (const key of chatAcademySingles) {
+      const val = await ckv.get(key).catch(() => null);
+      if (val) kvCacheRows.push({ id: key, company_id: targetCompany, type: key, extra_data: val, updated_at: new Date().toISOString() });
+    }
+    // academy_progress per user — skip (user-specific, populated on use)
+    // DM keys — complex format, skip for now
+    const kvDedup = new Map<string, any>();
+    for (const row of kvCacheRows) kvDedup.set(row.id, row);
+    const kvUnique = Array.from(kvDedup.values());
+    for (let i = 0; i < kvUnique.length; i += 500) {
+      const batch = kvUnique.slice(i, i + 500);
+      const { error } = await db.from("kv_cache").upsert(batch, { onConflict: "company_id,id" });
+      if (error) { log.push(`kv_cache batch ${i} HATA: ${error.message}`); break; }
+    }
+    log.push(`kv_cache: ${kvUnique.length} kayıt`);
 
     console.log(`[Migration] Ref-data ${targetCompany}: ${log.join(" | ")}`);
     allResults[targetCompany] = log;

@@ -69,6 +69,9 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
   const [onOdemeAciklama, setOnOdemeAciklama] = useState('');
   const [priceListItems, setPriceListItems] = useState<Array<{ productName: string; fiyat: number; currency: string }>>([]);
   const [actionLoading, setActionLoading] = useState('');
+  const [expandedSuppliers, setExpandedSuppliers] = useState<Set<string>>(new Set());
+  const [showArchive, setShowArchive] = useState<Record<string, boolean>>({});
+  const [adminBakiyeDonem, setAdminBakiyeDonem] = useState<'tumu' | 'bu_ay' | 'gecen_ay' | 'bu_yil'>('tumu');
 
   // Invite form
   const [invEmail, setInvEmail] = useState('');
@@ -148,15 +151,29 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
     setActionLoading('order');
     try {
       const items = orderItems.filter(i => i.productName && i.quantity > 0);
-      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler`), {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ cariId: orderCariId, items, currency: orderCurrency, notes: orderNotes, teklifFiyat: orderTeklifFiyat ? parseFloat(orderTeklifFiyat) : null }),
-      });
-      const d = await res.json();
-      if (!res.ok) { setError(d.error); return; }
-      if (send && d.siparis?.id) {
-        await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${d.siparis.id}/gonder`), { method: 'POST', headers: getHeaders() });
+      // Mevcut taslak varsa kalem ekle, yoksa yeni oluştur
+      const mevcutTaslak = siparisler.find((s: any) => s.cariId === orderCariId && s.status === 'taslak');
+      let siparisId: string;
+      if (mevcutTaslak) {
+        // Taslağa kalem ekle
+        const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${mevcutTaslak.id}/kalem-ekle`), {
+          method: 'PUT', headers: getHeaders(),
+          body: JSON.stringify({ items, teklifFiyat: orderTeklifFiyat ? parseFloat(orderTeklifFiyat) : null }),
+        });
+        const d = await res.json();
+        if (!res.ok) { setError(d.error); return; }
+        siparisId = mevcutTaslak.id;
+      } else {
+        const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler`), {
+          method: 'POST', headers: getHeaders(),
+          body: JSON.stringify({ cariId: orderCariId, items, currency: orderCurrency, notes: orderNotes, teklifFiyat: orderTeklifFiyat ? parseFloat(orderTeklifFiyat) : null }),
+        });
+        const d = await res.json();
+        if (!res.ok) { setError(d.error); return; }
+        siparisId = d.siparis?.id;
+      }
+      if (send && siparisId) {
+        await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${siparisId}/gonder`), { method: 'POST', headers: getHeaders() });
       }
       setShowNewOrder(false);
       setOrderCariId(''); setOrderNotes(''); setOrderItems([]); setOrderTeklifFiyat('');
@@ -281,20 +298,56 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
               </div>
             </div>
             {s.notes && <p className="text-white/30 text-xs italic">{s.notes}</p>}
+            {/* Bakiye */}
+            {(() => {
+              const sipTutar = s.teklifFiyat || s.totalAmount || 0;
+              const sipOdemeler = odemeler.filter((o: any) => o.siparisId === (s.id || '').replace('siparis_', '') && o.status !== 'reddedildi' && o.status !== 'iptal');
+              const odpipienenToplam = sipOdemeler.reduce((a: number, o: any) => a + (o.amount || 0), 0);
+              const kalanBorc = sipTutar - odpipienenToplam;
+              return (
+                <div className="flex items-center gap-3 mt-2 pt-2 border-t" style={{ borderColor: glassBorder }}>
+                  <span className="text-white/50 text-[10px]">Toplam: <span className="text-white font-bold">₺{sipTutar.toLocaleString('tr-TR')}</span></span>
+                  <span className="text-emerald-400 text-[10px]">Ödenen: <span className="font-bold">₺{odpipienenToplam.toLocaleString('tr-TR')}</span></span>
+                  {kalanBorc > 0 && <span className="text-amber-400 text-[10px]">Kalan: <span className="font-bold">₺{kalanBorc.toLocaleString('tr-TR')}</span></span>}
+                  {kalanBorc <= 0 && <span className="text-emerald-400 text-[10px] font-bold">Tamam</span>}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Kalemler */}
           <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
             <div className="px-4 py-2 border-b" style={{ borderColor: glassBorder }}><p className="text-white font-semibold text-sm">Kalemler</p></div>
-            {(s.items || []).map((item: any) => (
-              <div key={item.id} className="px-4 py-2 border-b flex justify-between" style={{ borderColor: glassBorder }}>
-                <span className="text-white text-xs">{item.productName}</span>
-                <div className="text-right">
-                  <span className="text-white/60 text-xs">{item.quantity} adet</span>
-                  <span className="text-white/30 text-xs ml-2">₺{item.unitPrice}</span>
+            {(s.items || []).map((item: any) => {
+              const delivered = item.deliveredQuantity || 0;
+              const kalan = item.quantity - delivered;
+              const hasTeslim = delivered > 0;
+              const pct = item.quantity > 0 ? Math.min(100, (delivered / item.quantity) * 100) : 0;
+              return (
+                <div key={item.id} className="px-4 py-2 border-b" style={{ borderColor: glassBorder }}>
+                  <div className="flex justify-between items-center">
+                    <span className="text-white text-xs">{item.productName}</span>
+                    <div className="text-right flex items-center gap-2">
+                      {hasTeslim ? (
+                        <span className="text-emerald-400 text-xs font-medium">{delivered}/{item.quantity}</span>
+                      ) : (
+                        <span className="text-white/60 text-xs">{item.quantity} adet</span>
+                      )}
+                      <span className="text-white/30 text-xs">₺{item.unitPrice}</span>
+                    </div>
+                  </div>
+                  {hasTeslim && (
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="flex-1 h-1 rounded-full bg-white/10 overflow-hidden">
+                        <div className="h-full rounded-full bg-gradient-to-r from-green-500 to-emerald-400" style={{ width: `${pct}%` }} />
+                      </div>
+                      {kalan > 0 && <span className="text-amber-400 text-[9px] font-bold shrink-0">{kalan} kalan</span>}
+                      {kalan === 0 && <span className="text-emerald-400 text-[9px] font-bold shrink-0">Tamam</span>}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
             <div className="px-4 py-2 flex justify-between">
               <span className="text-white/50 text-xs">Toplam:</span>
               <span className="text-white font-bold text-sm">₺{(s.totalAmount || 0).toLocaleString('tr-TR')}</span>
@@ -553,48 +606,114 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
         })}
       </div>
 
-      {sirali.map((s: any) => {
-        const sc = STATUS_CONFIG[s.status] || STATUS_CONFIG.taslak;
-        const kr = kartRenk(s);
-        return (
-          <motion.button key={s.id} whileTap={{ scale: 0.98 }} onClick={() => { setSelectedSiparis(s); setKarsiTeklifItems([]); setKarsiTeklifFiyat(''); }}
-            className="w-full p-4 rounded-2xl space-y-2 text-left transition-all" style={{ background: kr.bg, border: `1px solid ${kr.border}`, opacity: kr.opacity }}>
-            <div className="flex items-center justify-between">
-              <div className="flex-1 min-w-0">
-                <p className="text-white font-semibold text-sm truncate">{s.cariName}</p>
-                <p className="text-white/40 text-xs">{new Date(s.createdAt).toLocaleDateString('tr-TR')}</p>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {s.kaynakTedarikci && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30">🏭</span>}
-                <span className="px-2.5 py-1 rounded-full text-xs font-medium" style={{ background: sc.bg, color: sc.color }}>{sc.label}</span>
-              </div>
+      {/* Tedarikçiye göre gruplu görünüm */}
+      {(() => {
+        // Siparişleri tedarikçiye göre grupla
+        const grouped: Record<string, { cariName: string; cariId: string; orders: any[] }> = {};
+        for (const s of sirali) {
+          const key = s.cariId || 'unknown';
+          if (!grouped[key]) grouped[key] = { cariName: s.cariName || 'Bilinmeyen', cariId: key, orders: [] };
+          grouped[key].orders.push(s);
+        }
+        const groups = Object.values(grouped);
+        if (groups.length === 0) return <p className="text-center text-white/30 py-8 text-sm">Bu filtrede sipariş yok</p>;
+
+        return groups.map((g) => {
+          const aktifCount = g.orders.filter((s: any) => !['tamamlandi', 'iptal'].includes(s.status)).length;
+          const toplamTutar = g.orders.reduce((a: number, s: any) => a + (s.teklifFiyat || s.totalAmount || 0), 0);
+          const isExpanded = expandedSuppliers.has(g.cariId);
+          const aktifOrders = g.orders.filter((s: any) => !['tamamlandi', 'iptal'].includes(s.status));
+          const arsivOrders = g.orders.filter((s: any) => ['tamamlandi', 'iptal'].includes(s.status));
+
+          return (
+            <div key={g.cariId} className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+              {/* Tedarikçi Header — tıklanınca aç/kapa */}
+              <button onClick={() => setExpandedSuppliers(prev => { const next = new Set(prev); if (next.has(g.cariId)) next.delete(g.cariId); else next.add(g.cariId); return next; })}
+                className="w-full p-4 flex items-center justify-between text-left">
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-bold text-sm truncate">{g.cariName}</p>
+                  <p className="text-white/40 text-[10px]">{aktifCount} aktif sipariş · ₺{toplamTutar.toLocaleString('tr-TR')}</p>
+                  {(() => {
+                    const cariOdemeler = odemeler.filter((o: any) => o.cariId === g.cariId && o.status !== 'reddedildi' && o.status !== 'iptal');
+                    const odpipienenToplam = cariOdemeler.reduce((a: number, o: any) => a + (o.amount || 0), 0);
+                    const kalanBorc = toplamTutar - odpipienenToplam;
+                    if (odpipienenToplam > 0 || kalanBorc > 0) return (
+                      <p className="text-[10px] mt-0.5">
+                        <span className="text-emerald-400">₺{odpipienenToplam.toLocaleString('tr-TR')} ödendi</span>
+                        {kalanBorc > 0 && <span className="text-amber-400 ml-2">₺{kalanBorc.toLocaleString('tr-TR')} kalan</span>}
+                      </p>
+                    );
+                    return null;
+                  })()}
+                </div>
+                <div className="flex items-center gap-2">
+                  {aktifCount > 0 && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">{aktifCount}</span>}
+                  {isExpanded ? <ChevronUp className="w-4 h-4 text-white/30" /> : <ChevronDown className="w-4 h-4 text-white/30" />}
+                </div>
+              </button>
+
+              {/* Açık: sipariş listesi */}
+              <AnimatePresence>
+                {isExpanded && (
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                    {/* Aktif Siparişler */}
+                    {aktifOrders.length > 0 && aktifOrders.map((s: any) => {
+                      const sc = STATUS_CONFIG[s.status] || STATUS_CONFIG.taslak;
+                      return (
+                        <button key={s.id} onClick={() => { setSelectedSiparis(s); setKarsiTeklifItems([]); setKarsiTeklifFiyat(''); }}
+                          className="w-full px-4 py-3 flex items-center justify-between text-left border-t" style={{ borderColor: glassBorder }}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-medium" style={{ background: sc.bg, color: sc.color }}>{sc.label}</span>
+                              {s.kaynakTedarikci && <span className="text-[9px] text-orange-300">🏭</span>}
+                              <span className="text-white/30 text-[10px]">{new Date(s.createdAt).toLocaleDateString('tr-TR')}</span>
+                            </div>
+                            <p className="text-white/50 text-[10px] truncate mt-0.5">{s.items?.map((i: any) => `${i.productName} ×${i.quantity}`).join(', ')}</p>
+                          </div>
+                          <div className="text-right shrink-0 ml-2">
+                            <p className="text-white font-bold text-xs">₺{(s.teklifFiyat || s.totalAmount || 0).toLocaleString('tr-TR')}</p>
+                            {(() => {
+                              const totalQty = (s.items || []).reduce((a: number, i: any) => a + (i.quantity || 0), 0);
+                              const deliveredQty = (s.items || []).reduce((a: number, i: any) => a + (i.deliveredQuantity || 0), 0);
+                              if (totalQty > 0 && deliveredQty > 0) return <span className="text-[9px] text-white/30">{deliveredQty}/{totalQty} teslim</span>;
+                              return null;
+                            })()}
+                          </div>
+                          <ChevronRight className="w-3.5 h-3.5 text-white/15 ml-1" />
+                        </button>
+                      );
+                    })}
+
+                    {/* Arşiv Siparişler */}
+                    {arsivOrders.length > 0 && (
+                      <div className="border-t" style={{ borderColor: glassBorder }}>
+                        <button onClick={() => setShowArchive(prev => ({ ...prev, [g.cariId]: !prev[g.cariId] }))}
+                          className="w-full px-4 py-2 flex items-center justify-between text-left">
+                          <span className="text-white/30 text-[10px] font-semibold">Arşiv ({arsivOrders.length})</span>
+                          {showArchive[g.cariId] ? <ChevronUp className="w-3 h-3 text-white/20" /> : <ChevronDown className="w-3 h-3 text-white/20" />}
+                        </button>
+                        {showArchive[g.cariId] && arsivOrders.map((s: any) => {
+                          const sc = STATUS_CONFIG[s.status] || STATUS_CONFIG.taslak;
+                          return (
+                            <button key={s.id} onClick={() => { setSelectedSiparis(s); setKarsiTeklifItems([]); setKarsiTeklifFiyat(''); }}
+                              className="w-full px-4 py-2 flex items-center justify-between text-left opacity-50 border-t" style={{ borderColor: glassBorder }}>
+                              <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-medium" style={{ background: sc.bg, color: sc.color }}>{sc.label}</span>
+                                <span className="text-white/30 text-[10px]">{new Date(s.createdAt).toLocaleDateString('tr-TR')}</span>
+                              </div>
+                              <span className="text-white/40 text-xs">₺{(s.teklifFiyat || s.totalAmount || 0).toLocaleString('tr-TR')}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-            <div className="text-white/50 text-xs truncate">{s.items?.map((i: any) => `${i.productName} ×${i.quantity}`).join(', ')}</div>
-            {(() => {
-              const totalQty = (s.items || []).reduce((a: number, i: any) => a + (i.quantity || 0), 0);
-              const deliveredQty = (s.items || []).reduce((a: number, i: any) => a + (i.deliveredQuantity || 0), 0);
-              if (totalQty > 0 && ['onaylandi', 'kismen_teslim', 'teslim_edildi', 'tamamlandi'].includes(s.status)) {
-                const pct = Math.min(100, (deliveredQty / totalQty) * 100);
-                return (
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-r from-green-500 to-emerald-400 transition-all" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="text-[10px] text-white/40 shrink-0">{deliveredQty}/{totalQty}</span>
-                  </div>
-                );
-              }
-              return null;
-            })()}
-            <div className="flex items-center justify-between">
-              <p className="text-white font-bold text-sm">₺{(s.totalAmount || 0).toLocaleString('tr-TR')}</p>
-              {s.teklifFiyat && <span className="text-amber-400 text-xs font-bold">Teklif: ₺{s.teklifFiyat.toLocaleString('tr-TR')}</span>}
-              <ChevronRight className="w-4 h-4 text-white/20" />
-            </div>
-          </motion.button>
-        );
-      })}
-      {sirali.length === 0 && <p className="text-center text-white/30 py-8 text-sm">Bu filtrede sipariş yok</p>}
+          );
+        });
+      })()}
     </div>
     );
   };
@@ -881,24 +1000,120 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
           {/* Bakiye */}
           {tedarikciTab === 'bakiye' && (
             <div className="space-y-3">
+              {/* Dönem filtresi */}
+              <div className="flex gap-1.5 overflow-x-auto pb-1">
+                {([
+                  { key: 'tumu', label: 'Tümü' },
+                  { key: 'bu_ay', label: 'Bu Ay' },
+                  { key: 'gecen_ay', label: 'Geçen Ay' },
+                  { key: 'bu_yil', label: 'Bu Yıl' },
+                ] as const).map(f => {
+                  const active = adminBakiyeDonem === f.key;
+                  return (
+                    <button key={f.key} onClick={() => setAdminBakiyeDonem(f.key)}
+                      className="px-3 py-1.5 rounded-xl text-[10px] font-bold whitespace-nowrap transition-all"
+                      style={{ background: active ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.03)', border: `1px solid ${active ? 'rgba(96,165,250,0.40)' : 'rgba(255,255,255,0.08)'}`, color: active ? '#60a5fa' : 'rgba(255,255,255,0.4)' }}>
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
               {(() => {
+                const now = new Date();
+                const buAyBaslangic = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+                const gecenAyBaslangic = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10);
+                const gecenAyBitis = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
+                const buYilBaslangic = `${now.getFullYear()}-01-01`;
+                const donemFiltre = (tarih: string) => {
+                  if (!tarih) return adminBakiyeDonem === 'tumu';
+                  const t = tarih.slice(0, 10);
+                  if (adminBakiyeDonem === 'tumu') return true;
+                  if (adminBakiyeDonem === 'bu_ay') return t >= buAyBaslangic;
+                  if (adminBakiyeDonem === 'gecen_ay') return t >= gecenAyBaslangic && t <= gecenAyBitis;
+                  if (adminBakiyeDonem === 'bu_yil') return t >= buYilBaslangic;
+                  return true;
+                };
+
                 const mySip = siparisler.filter((s: any) => s.cariId === selectedTedarikci.id && ['onaylandi', 'kismen_teslim', 'teslim_edildi', 'tamamlandi'].includes(s.status));
                 const toplam = mySip.reduce((a: number, s: any) => a + (s.teklifFiyat || s.totalAmount || 0), 0);
-                const odenen = odemeler.filter((o: any) => o.cariId === selectedTedarikci.id).reduce((a: number, o: any) => a + (o.amount || 0), 0);
+                const tumOdemeler = odemeler.filter((o: any) => o.cariId === selectedTedarikci.id && o.status !== 'reddedildi' && o.status !== 'iptal');
+                const odenen = tumOdemeler.reduce((a: number, o: any) => a + (o.amount || 0), 0);
                 const kalan = toplam - odenen;
+
+                const filtreliOdemeler = tumOdemeler.filter((o: any) => donemFiltre(o.paymentDate || o.createdAt));
+                const filtreliTeslimatlar = teslimatlar.filter((t: any) => t.cariId === selectedTedarikci.id && t.status === 'onaylandi' && donemFiltre(t.deliveryDate || t.createdAt));
+
+                const teslimKalemler: Record<string, number> = {};
+                for (const t of filtreliTeslimatlar) {
+                  for (const line of (t.lines || [])) {
+                    teslimKalemler[line.productName] = (teslimKalemler[line.productName] || 0) + (line.quantity || 0);
+                  }
+                }
+                const toplamTeslimAdet = Object.values(teslimKalemler).reduce((a: number, v: number) => a + v, 0);
+                const donemOdenen = filtreliOdemeler.reduce((a: number, o: any) => a + (o.amount || 0), 0);
+
                 return (
                   <>
-                    <div className="p-6 rounded-2xl text-center" style={{ background: kalan > 0 ? 'rgba(251,191,36,0.08)' : 'rgba(52,211,153,0.08)', border: `1px solid ${kalan > 0 ? 'rgba(251,191,36,0.20)' : 'rgba(52,211,153,0.20)'}` }}>
-                      <p className="text-white/40 text-xs mb-1">Bakiye</p>
+                    {/* Bakiye kartı */}
+                    <div className="p-5 rounded-2xl text-center" style={{ background: kalan > 0 ? 'rgba(251,191,36,0.08)' : 'rgba(52,211,153,0.08)', border: `1px solid ${kalan > 0 ? 'rgba(251,191,36,0.20)' : 'rgba(52,211,153,0.20)'}` }}>
+                      <p className="text-white/40 text-xs mb-1">Kalan Borç</p>
                       <p className={`text-3xl font-bold ${kalan > 0 ? 'text-amber-400' : 'text-green-400'}`}>₺{Math.abs(kalan).toLocaleString('tr-TR')}</p>
-                      <p className="text-white/30 text-xs mt-1">{kalan > 0 ? 'Borç' : 'Temiz'}</p>
                     </div>
+
+                    {/* Dönem özet kartları */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="p-3 rounded-2xl text-center" style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.15)' }}>
+                        <p className="text-emerald-400/50 text-[9px]">Ödenen</p>
+                        <p className="text-emerald-400 font-bold text-lg">₺{donemOdenen.toLocaleString('tr-TR')}</p>
+                        <p className="text-white/20 text-[9px]">{filtreliOdemeler.length} ödeme</p>
+                      </div>
+                      <div className="p-3 rounded-2xl text-center" style={{ background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.15)' }}>
+                        <p className="text-blue-400/50 text-[9px]">Teslim Edilen</p>
+                        <p className="text-blue-400 font-bold text-lg">{toplamTeslimAdet.toLocaleString('tr-TR')}</p>
+                        <p className="text-white/20 text-[9px]">{filtreliTeslimatlar.length} teslimat</p>
+                      </div>
+                    </div>
+
+                    {/* Teslim edilen kalemler */}
+                    {Object.keys(teslimKalemler).length > 0 && (
+                      <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+                        <div className="px-4 py-2 border-b" style={{ borderColor: glassBorder }}>
+                          <p className="text-white font-semibold text-sm">Teslim Edilen Kalemler</p>
+                        </div>
+                        {Object.entries(teslimKalemler).map(([name, qty]) => (
+                          <div key={name} className="px-4 py-2 flex justify-between border-b" style={{ borderColor: glassBorder }}>
+                            <span className="text-white/60 text-xs">{name}</span>
+                            <span className="text-blue-400 font-bold text-xs">{qty} adet</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Ödeme geçmişi */}
+                    {filtreliOdemeler.length > 0 && (
+                      <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+                        <div className="px-4 py-2 border-b" style={{ borderColor: glassBorder }}>
+                          <p className="text-white font-semibold text-sm">Ödeme Geçmişi</p>
+                        </div>
+                        {filtreliOdemeler.map((o: any, i: number) => (
+                          <div key={i} className="px-4 py-2 flex justify-between border-b" style={{ borderColor: glassBorder }}>
+                            <div>
+                              <span className="text-white/60 text-xs">{new Date(o.paymentDate || o.createdAt).toLocaleDateString('tr-TR')}</span>
+                              {o.tip === 'on_odeme' && <span className="text-orange-400 text-[9px] ml-1">ön ödeme</span>}
+                            </div>
+                            <span className="text-emerald-400 font-bold text-xs">₺{(o.amount || 0).toLocaleString('tr-TR')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Genel hesap */}
                     <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
                       <div className="px-4 py-2 flex justify-between border-b" style={{ borderColor: glassBorder }}>
                         <span className="text-white/50 text-xs">Toplam Sipariş</span><span className="text-white font-bold text-xs">₺{toplam.toLocaleString('tr-TR')}</span>
                       </div>
                       <div className="px-4 py-2 flex justify-between border-b" style={{ borderColor: glassBorder }}>
-                        <span className="text-white/50 text-xs">Ödenen</span><span className="text-green-400 font-bold text-xs">₺{odenen.toLocaleString('tr-TR')}</span>
+                        <span className="text-white/50 text-xs">Toplam Ödenen</span><span className="text-green-400 font-bold text-xs">₺{odenen.toLocaleString('tr-TR')}</span>
                       </div>
                       <div className="px-4 py-2 flex justify-between">
                         <span className="text-white/50 text-xs">Kalan</span><span className="text-amber-400 font-bold text-xs">₺{kalan.toLocaleString('tr-TR')}</span>
@@ -1003,9 +1218,14 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
               className="w-full max-w-sm rounded-2xl p-5 space-y-4 max-h-[85vh] overflow-y-auto"
               style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.10)' }}>
               <div className="flex items-center justify-between">
-                <h2 className="text-white font-bold text-lg">Yeni Sipariş</h2>
+                <h2 className="text-white font-bold text-lg">{orderCariId && siparisler.some((s: any) => s.cariId === orderCariId && s.status === 'taslak') ? 'Taslağa Kalem Ekle' : 'Yeni Sipariş'}</h2>
                 <button onClick={() => setShowNewOrder(false)}><X className="w-5 h-5 text-white/40" /></button>
               </div>
+              {orderCariId && siparisler.some((s: any) => s.cariId === orderCariId && s.status === 'taslak') && (
+                <div className="px-3 py-2 rounded-lg text-[11px] text-amber-400" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.15)' }}>
+                  Bu tedarikçinin mevcut taslak siparişi var. Kalemler taslağa eklenecek.
+                </div>
+              )}
               <select value={orderCariId} onChange={e => {
                 setOrderCariId(e.target.value);
                 // Tedarikçi seçilince ürün listesini otomatik oluştur
