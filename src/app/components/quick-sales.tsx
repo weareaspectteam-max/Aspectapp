@@ -2541,7 +2541,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                             const newVal = discountRawInput + '0';
                             setDiscountRawInput(newVal);
                             if (discountMode === 'iskonto') { setDiscountAmount(newVal); }
-                            else { const diff = totalPrice - Number(newVal); setDiscountAmount(diff > 0 ? String(diff) : '0'); }
+                            else { const diff = totalPrice - Number(newVal); setDiscountAmount(String(diff)); }
                           }} className="bg-white/10 text-white text-xl font-bold py-3 rounded-xl transition-all active:scale-95">0</button>
                           <button onClick={() => {
                             const newVal = discountRawInput.slice(0, -1);
