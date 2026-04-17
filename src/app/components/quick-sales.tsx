@@ -4114,20 +4114,29 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                   <span className="text-gray-400 font-medium">Toplam Tutar:</span>
                   <span className="text-3xl font-black text-white">{pSym}{totalPrice}</span>
                 </div>
-                {discountAmount && Number(discountAmount) > 0 && (
-                  <>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-[#ffd4a3] font-bold flex items-center gap-2"><span className="text-xl">🏷️</span>İskonto:</span>
-                      <span className="text-[#ffd4a3] font-black text-xl">-₺{discountAmount}</span>
-                    </div>
-                    <div className="border-t border-white/20 pt-3 mt-3">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-white">Ödenecek:</span>
-                        <span className="text-4xl font-black bg-gradient-to-r from-[#a8e6cf] to-[#8dd9b8] bg-clip-text text-transparent">{pSym}{totalPrice - Number(discountAmount)}</span>
+                {discountAmount && Number(discountAmount) !== 0 && (() => {
+                  const disc = Number(discountAmount);
+                  const isZam = disc < 0;
+                  return (
+                    <>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className={`${isZam ? 'text-white/60' : 'text-[#ffd4a3]'} font-bold flex items-center gap-2`}>
+                          <span className="text-xl">{isZam ? '↑' : '🏷️'}</span>
+                          {isZam ? 'Müşteri fazla ödüyor:' : 'İskonto:'}
+                        </span>
+                        <span className={`${isZam ? 'text-white/60' : 'text-[#ffd4a3]'} font-black text-xl`}>
+                          {isZam ? `+${pSym}${Math.abs(disc)}` : `-${pSym}${disc}`}
+                        </span>
                       </div>
-                    </div>
-                  </>
-                )}
+                      <div className="border-t border-white/20 pt-3 mt-3">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-white">Ödenecek:</span>
+                          <span className="text-4xl font-black bg-gradient-to-r from-[#a8e6cf] to-[#8dd9b8] bg-clip-text text-transparent">{pSym}{totalPrice - disc}</span>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
               <div className="space-y-3">
                 {[
