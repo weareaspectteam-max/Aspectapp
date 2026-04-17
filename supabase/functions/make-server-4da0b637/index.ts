@@ -6488,7 +6488,7 @@ app.post("/make-server-4da0b637/depo/giris", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role;
-    if (!["admin", "yonetici", "ust-mudur", "mudur"].includes(role)) return c.json({ error: "Yalnızca yönetici ve müdür işlem yapabilir." }, 403);
+    if (!["admin", "yonetici", "ust-mudur", "mudur", "operasyon"].includes(role)) return c.json({ error: "Yalnızca yönetici, müdür ve operasyon işlem yapabilir." }, 403);
 
     const { alan, miktar, not: notText, kagitTipiId } = await c.req.json();
     if (!alan || !miktar || miktar <= 0) return c.json({ error: "Alan ve pozitif miktar zorunludur." }, 400);
@@ -6548,7 +6548,7 @@ app.post("/make-server-4da0b637/depo/cikis", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role;
-    if (!["admin", "yonetici", "ust-mudur", "mudur"].includes(role)) return c.json({ error: "Yalnızca yönetici ve müdür işlem yapabilir." }, 403);
+    if (!["admin", "yonetici", "ust-mudur", "mudur", "operasyon"].includes(role)) return c.json({ error: "Yalnızca yönetici, müdür ve operasyon işlem yapabilir." }, 403);
 
     const { alan, miktar, hedefMekan, not: notText, kagitTipiId } = await c.req.json();
     if (!alan || !miktar || miktar <= 0) return c.json({ error: "Alan ve pozitif miktar zorunludur." }, 400);
@@ -6610,7 +6610,7 @@ app.get("/make-server-4da0b637/depo/hareketler", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role;
-    if (!["admin", "yonetici", "ust-mudur", "mudur"].includes(role)) return c.json({ error: "Yetki yok." }, 403);
+    if (!["admin", "yonetici", "ust-mudur", "mudur", "operasyon"].includes(role)) return c.json({ error: "Yetki yok." }, 403);
 
     const isSAHareket = user.user_metadata?.originalRole === "superadmin";
     const reqCIdHareket = c.req.query("company_id");
@@ -6750,7 +6750,8 @@ app.post("/make-server-4da0b637/stok/mekan/sifirla", async (c) => {
     for (const alan of albumAlanlari) sifirStok[alan] = 0;
     sifirStok.ribon = 0;
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const _sgCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(_sgCompanyId);
     if (mekanId === "depo") {
       const depoSifir: Record<string, any> = { ribon: 0, guncellenmeTarihi: new Date().toISOString() };
       for (const s of [3, 5, 7, 9, 11, 13, 15]) {
@@ -6809,7 +6810,7 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role;
-    if (!["yonetici", "ust-mudur", "mudur"].includes(role)) {
+    if (!["yonetici", "ust-mudur", "mudur", "operasyon"].includes(role)) {
       return c.json({ error: "Aktarım için yetkiniz yok." }, 403);
     }
 
@@ -6834,7 +6835,8 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
     const today = bizDateTR(); // İş günü tarihi (05:00 TR kırılımlı)
     const kullaniciAdi = user.user_metadata?.full_name || user.email || "Bilinmeyen";
 
-    const ckv = companyKvFor(getCompanyId(user));
+    const _sgCompanyId = getCompanyId(user);
+    const ckv = companyKvFor(_sgCompanyId);
 
     // Helper: mekan stok oku (bugün veya fallback)
     // ÖNEMLİ: Fallback durumunda fallback kaydının kendi tarihli key'i döndürülür,
@@ -7006,7 +7008,7 @@ app.get("/make-server-4da0b637/stok/transferler", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const role = user.user_metadata?.role;
-    if (!["yonetici", "ust-mudur", "mudur"].includes(role)) {
+    if (!["yonetici", "ust-mudur", "mudur", "operasyon"].includes(role)) {
       return c.json({ error: "Yetki yok." }, 403);
     }
     const isSATransfer = user.user_metadata?.originalRole === "superadmin";

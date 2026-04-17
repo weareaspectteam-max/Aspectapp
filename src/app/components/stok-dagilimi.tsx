@@ -1744,7 +1744,7 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
   const [sifirlaHedef, setSifirlaHedef] = useState<SifirlaHedef>(null);
   const [kagitTipleri, setKagitTipleri] = useState<Array<{ id: string; name: string }>>([]);
 
-  const canManageStok = ['yonetici', 'ust-mudur', 'mudur'].includes(userRole);
+  const canManageStok = ['yonetici', 'ust-mudur', 'mudur', 'operasyon'].includes(userRole);
   const isYonetici = canManageStok;
   const canEditDepo = canManageStok;
   // Sabit referans için string (useCallback bağımlılığı)
