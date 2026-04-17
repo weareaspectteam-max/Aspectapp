@@ -6869,6 +6869,8 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
       yeniKayit[aktifField] = { ...aktif, [mekanAlan]: yeniDeger };
       yeniKayit.stokTransferGuncelleme = new Date().toISOString();
       await ckv.set(kvKey, yeniKayit);
+      const tarihToUse = yeniKayit.tarih || today;
+      pgWrite("daily_stock", "upsert", { id: `${mekanId}_${tarihToUse}`, company_id: _sgCompanyId, venue_id: mekanId, date: tarihToUse, extra_data: yeniKayit, updated_at: new Date().toISOString() });
     };
 
     // Mekan isimlerini al (log için)
@@ -6934,6 +6936,8 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
         yeniKayit[aktifField] = aktif;
         yeniKayit.stokTransferGuncelleme = new Date().toISOString();
         await ckv.set(kvKey, yeniKayit);
+        const tarihToUse = yeniKayit.tarih || today;
+        pgWrite("daily_stock", "upsert", { id: `${kaynakId}_${tarihToUse}`, company_id: _sgCompanyId, venue_id: kaynakId, date: tarihToUse, extra_data: yeniKayit, updated_at: new Date().toISOString() });
       } else {
         await setMekanStok(kaynakId, kvKey, kayit, aktifField, aktif, yeniKaynakDeger);
       }
@@ -6969,6 +6973,8 @@ app.post("/make-server-4da0b637/stok/transfer", async (c) => {
         yeniKayit[aktifField] = aktif;
         yeniKayit.stokTransferGuncelleme = new Date().toISOString();
         await ckv.set(kvKey, yeniKayit);
+        const tarihToUse = yeniKayit.tarih || today;
+        pgWrite("daily_stock", "upsert", { id: `${hedefId}_${tarihToUse}`, company_id: _sgCompanyId, venue_id: hedefId, date: tarihToUse, extra_data: yeniKayit, updated_at: new Date().toISOString() });
       } else {
         await setMekanStok(hedefId, kvKey, kayit, aktifField, aktif, yeniHedefDeger);
       }
@@ -10104,6 +10110,12 @@ app.put("/make-server-4da0b637/malzeme/guncelle", async (c) => {
       guncelleyenAdi: user.user_metadata?.full_name || user.email,
     };
     await ckv.set(id, guncellendi);
+    pgWrite("equipment", "upsert", {
+      id, company_id: getCompanyId(user), venue_id: guncellendi.locationId || null,
+      name: `${guncellendi.brand || ""} ${guncellendi.model || ""}`.trim(), type: guncellendi.category || "other",
+      ribon_mevcut: Number(guncellendi.ribonMevcut) || 0, ribon_kapasitesi: Number(guncellendi.ribonKapasitesi) || 0,
+      extra_data: guncellendi,
+    });
 
     console.log(`Malzeme güncellendi: ${id} — ${user.user_metadata?.full_name}`);
     return c.json({ basarili: true, ekipman: guncellendi });
@@ -10138,6 +10150,12 @@ app.put("/make-server-4da0b637/malzeme/zimmet", async (c) => {
     mevcut.zimmetTarihi = assignedTo ? new Date().toISOString() : undefined;
     mevcut.zimmeti = user.user_metadata?.full_name || user.email;
     await ckv.set(id, mevcut);
+    pgWrite("equipment", "upsert", {
+      id, company_id: getCompanyId(user), venue_id: mevcut.locationId || null,
+      name: `${mevcut.brand || ""} ${mevcut.model || ""}`.trim(), type: mevcut.category || "other",
+      ribon_mevcut: Number(mevcut.ribonMevcut) || 0, ribon_kapasitesi: Number(mevcut.ribonKapasitesi) || 0,
+      extra_data: mevcut,
+    });
 
     console.log(`Zimmet: ${id} → ${assignedTo || "kaldırıldı"} — ${user.user_metadata?.full_name}`);
     return c.json({ basarili: true, ekipman: mevcut });
@@ -10176,6 +10194,7 @@ app.delete("/make-server-4da0b637/malzeme/sil/:id", async (c) => {
     }
 
     await ckv.del(id);
+    pgWrite("equipment", "delete", null, { id, company_id: getCompanyId(user) });
 
     console.log(`Malzeme silindi: ${mevcut.brand} ${mevcut.model} — ${user.user_metadata?.full_name}`);
     return c.json({ basarili: true });
