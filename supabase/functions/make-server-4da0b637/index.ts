@@ -4753,7 +4753,7 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
     const callerRole = user.user_metadata?.role;
     const originalRole = user.user_metadata?.originalRole;
     console.log(`[dashboard-summary] callerRole=${callerRole} originalRole=${originalRole} email=${user.email}`);
-    if (!hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) {
+    if (!hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur", "operasyon"])) {
       return c.json({ error: "Yetki yok.", debug: { callerRole, originalRole } }, 403);
     }
 

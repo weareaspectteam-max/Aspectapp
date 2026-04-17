@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   TrendingUp, TrendingDown, Users, Package,
-  MapPin, ClipboardList, Zap, RotateCcw,
-  BarChart3, AlertCircle, Activity,
+  MapPin, Zap, RotateCcw,
+  BarChart3, AlertCircle, Activity, AlertTriangle, Clock,
 } from 'lucide-react';
 
 import { CurrencyWidget } from './currency-widget';
@@ -123,6 +123,15 @@ interface Task         { id: string; date: string; location: string; status: str
 interface Mekan        { id: string; name: string; emoji: string; }
 interface StokOzet     { vardiyaDurumu: string; veriVar: boolean; name: string; emoji: string; }
 interface LeaveRequest { id: string; status: string; staffName?: string; type?: string; }
+interface DashboardSummary {
+  aktifMekanSayisi?: number;
+  toplamMekanSayisi?: number;
+  aktifPersonelSayisi?: number;
+  toplamPersonelSayisi?: number;
+  aktifPersonelDetay?: Array<{ name: string; mekan?: string; checkinZamani?: string }>;
+  anomaliSayisi?: number;
+  gecGirisSayisi?: number;
+}
 
 interface Props { userName: string; userId?: string; accessToken?: string; onLogout: () => void; onNavigate: (tab: string) => void; }
 
@@ -134,17 +143,20 @@ export function OperationsDashboard({ userName, userId = '', accessToken = '', o
   const [pendingLeaves, setPendingLeaves] = useState<LeaveRequest[]>([]);
   const [rotasyonTasks, setRotasyonTasks] = useState<any[]>([]);
   const [rotasyonLoading, setRotasyonLoading] = useState(true);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [showAktifPersonel, setShowAktifPersonel] = useState(false);
 
   const loadAll = useCallback(async () => {
     try {
       const headers = await authHeaders();
       const today   = todayTR();
-      const [staffRes, tasksRes, mekanRes, stokRes, leaveRes] = await Promise.allSettled([
-        fetch(`${SERVER}/rotasyon/personel${ghostParams()}`,  { headers }),
-        fetch(`${SERVER}/rotasyon/gorevler${ghostParams()}`,  { headers }),
-        fetch(`${SERVER}/mekanlar${ghostParams()}`,           { headers }),
-        fetch(`${SERVER}/stok/genel-durum${ghostParams()}`,   { headers }),
-        fetch(`${SERVER}/rotasyon/izinler${ghostParams()}`,   { headers }),
+      const [staffRes, tasksRes, mekanRes, stokRes, leaveRes, summaryRes] = await Promise.allSettled([
+        fetch(`${SERVER}/rotasyon/personel${ghostParams()}`,        { headers }),
+        fetch(`${SERVER}/rotasyon/gorevler${ghostParams()}`,        { headers }),
+        fetch(`${SERVER}/mekanlar${ghostParams()}`,                 { headers }),
+        fetch(`${SERVER}/stok/genel-durum${ghostParams()}`,         { headers }),
+        fetch(`${SERVER}/rotasyon/izinler${ghostParams()}`,         { headers }),
+        fetch(`${SERVER}/manager/dashboard-summary${ghostParams()}`, { headers }),
       ]);
       if (staffRes.status === 'fulfilled' && staffRes.value.ok) {
         const d = await staffRes.value.json();
@@ -170,6 +182,10 @@ export function OperationsDashboard({ userName, userId = '', accessToken = '', o
       if (leaveRes.status === 'fulfilled' && leaveRes.value.ok) {
         const d = await leaveRes.value.json();
         setPendingLeaves((d.leaveRequests || []).filter((l: any) => l.status === 'pending'));
+      }
+      if (summaryRes.status === 'fulfilled' && summaryRes.value.ok) {
+        const d = await summaryRes.value.json();
+        setSummary(d);
       }
     } catch (e) {
       console.error('[OperationsDashboard] loadAll error:', e);
@@ -207,12 +223,12 @@ export function OperationsDashboard({ userName, userId = '', accessToken = '', o
   useEffect(() => { fetchMyRotasyon(); }, [fetchMyRotasyon]);
 
   /* ── Türetilen değerler ── */
-  const activeStaff   = staffMembers.filter(s => s.status === 'active').length;
-  const totalStaff    = staffMembers.length;
-  const totalMekan    = mekanlar.length;
-  const activeMekan   = stokOzetler.filter(m => m.vardiyaDurumu === 'acik' || m.vardiyaDurumu === 'kapandi').length;
-  const completedTask = todayTasks.filter(t => t.status === 'completed').length;
-  const activeTask    = todayTasks.length;
+  const acikVardiya     = stokOzetler.filter(m => m.vardiyaDurumu === 'acik').length;
+  const kapanmisVardiya = stokOzetler.filter(m => m.vardiyaDurumu === 'kapandi').length;
+  const anomali     = summary?.anomaliSayisi ?? 0;
+  const hasAnomali  = anomali > 0;
+  const gecGiris    = summary?.gecGirisSayisi ?? 0;
+  const hasGecGiris = gecGiris > 0;
 
   /* ── Lokasyon dağılımı ── */
   const lokasyonDagilim = mekanlar.map(m => {
@@ -249,34 +265,65 @@ export function OperationsDashboard({ userName, userId = '', accessToken = '', o
 
       {/* ── 4 Stat Kartı ── */}
       <div className="grid grid-cols-2 gap-3">
-        <StatCard
-          title="Aktif Personel"
-          value={totalStaff > 0 ? `${activeStaff}/${totalStaff}` : '—'}
-          change={activeStaff > 0 ? 8 : undefined}
-          icon={<Users className="w-5 h-5" />}
-          color={COLORS.teal}
-          onClick={() => onNavigate('rotation')}
-        />
-        <StatCard
-          title="Bugünkü Görev"
-          value={activeTask > 0 ? `${completedTask}/${activeTask}` : `${activeTask}`}
-          icon={<ClipboardList className="w-5 h-5" />}
-          color={COLORS.orange}
-          onClick={() => onNavigate('rotation')}
-        />
-        <StatCard
-          title="Aktif Lokasyon"
-          value={totalMekan > 0 ? `${activeMekan}/${totalMekan}` : '—'}
-          icon={<MapPin className="w-5 h-5" />}
-          color={COLORS.emerald}
-          onClick={() => onNavigate('stock-distribution')}
-        />
+        {/* Aktif Mekan + Aktif Personel combo */}
+        <div style={{ ...glass, padding: 0, border: '1px solid rgba(168,230,207,0.25)', boxShadow: '0 4px 24px rgba(168,230,207,0.08)', display: 'flex' }}>
+          <button onClick={() => onNavigate('quick-sales')} className="text-left transition-all active:scale-95" style={{ flex: 1, padding: 12, background: 'transparent', border: 'none', cursor: 'pointer' }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(168,230,207,0.15)', border: '1px solid rgba(168,230,207,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
+              <MapPin className="w-3.5 h-3.5" style={{ color: '#a8e6cf' }} />
+            </div>
+            <p className="text-[9px] font-medium mb-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>Aktif Mekan</p>
+            <p className="text-base font-black text-white leading-none">{summary?.aktifMekanSayisi ?? 0}</p>
+            <p className="text-[8px] mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>/ {summary?.toplamMekanSayisi ?? 0} toplam</p>
+          </button>
+          <div style={{ width: 1, background: 'rgba(168,230,207,0.15)', margin: '10px 0' }} />
+          <button onClick={() => setShowAktifPersonel(!showAktifPersonel)} className="text-left transition-all active:scale-95" style={{ flex: 1, padding: 12, background: 'transparent', border: 'none', cursor: 'pointer' }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(157,217,234,0.15)', border: '1px solid rgba(157,217,234,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
+              <Users className="w-3.5 h-3.5" style={{ color: '#9dd9ea' }} />
+            </div>
+            <p className="text-[9px] font-medium mb-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>Aktif Personel</p>
+            <p className="text-base font-black text-white leading-none">{summary?.aktifPersonelSayisi ?? 0}</p>
+            <p className="text-[8px] mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>/ {summary?.toplamPersonelSayisi ?? 0} toplam</p>
+          </button>
+        </div>
+
+        {/* Anomali + Geç Giriş combo */}
+        <div style={{ ...glass, padding: 0, border: hasAnomali ? '1px solid rgba(248,113,113,0.3)' : hasGecGiris ? '1px solid rgba(255,180,50,0.3)' : '1px solid rgba(255,255,255,0.1)', display: 'flex' }}>
+          <button onClick={() => onNavigate('anomali-panosu')} className="text-left transition-all active:scale-95" style={{ flex: 1, padding: 12, background: 'transparent', border: 'none', cursor: 'pointer' }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: hasAnomali ? 'rgba(248,113,113,0.2)' : 'rgba(255,255,255,0.08)', border: `1px solid ${hasAnomali ? 'rgba(248,113,113,0.4)' : 'rgba(255,255,255,0.15)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
+              <AlertTriangle className="w-3.5 h-3.5" style={{ color: hasAnomali ? '#f87171' : 'rgba(255,255,255,0.3)' }} />
+            </div>
+            <p className="text-[9px] font-medium mb-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>Anomali</p>
+            <p className="text-base font-black leading-none" style={{ color: hasAnomali ? '#f87171' : 'white' }}>{anomali}</p>
+            <p className="text-[8px] mt-0.5" style={{ color: hasAnomali ? 'rgba(248,113,113,0.6)' : 'rgba(255,255,255,0.3)' }}>
+              {hasAnomali ? 'detay →' : 'anomali yok'}
+            </p>
+          </button>
+          <div style={{ width: 1, background: 'rgba(255,255,255,0.08)', margin: '10px 0' }} />
+          <button onClick={() => onNavigate('vardiya-istatistikleri')} className="text-left transition-all active:scale-95" style={{ flex: 1, padding: 12, background: 'transparent', border: 'none', cursor: 'pointer' }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: hasGecGiris ? 'rgba(255,180,50,0.2)' : 'rgba(255,255,255,0.08)', border: `1px solid ${hasGecGiris ? 'rgba(255,180,50,0.4)' : 'rgba(255,255,255,0.15)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
+              <Clock className="w-3.5 h-3.5" style={{ color: hasGecGiris ? '#fbbf24' : 'rgba(255,255,255,0.3)' }} />
+            </div>
+            <p className="text-[9px] font-medium mb-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>Geç Giriş</p>
+            <p className="text-base font-black leading-none" style={{ color: hasGecGiris ? '#fbbf24' : 'white' }}>{gecGiris}</p>
+            <p className="text-[8px] mt-0.5" style={{ color: hasGecGiris ? 'rgba(255,180,50,0.6)' : 'rgba(255,255,255,0.3)' }}>
+              {hasGecGiris ? 'detay →' : 'geç giriş yok'}
+            </p>
+          </button>
+        </div>
+
         <StatCard
           title="Bekleyen İzin"
           value={`${pendingLeaves.length}`}
           icon={<AlertCircle className="w-5 h-5" />}
           color={pendingLeaves.length > 0 ? COLORS.yellow : COLORS.violet}
           onClick={() => onNavigate('rotation')}
+        />
+        <StatCard
+          title="Vardiya"
+          value={`${acikVardiya} açık / ${kapanmisVardiya} kapandı`}
+          icon={<Activity className="w-5 h-5" />}
+          color={COLORS.teal}
+          onClick={() => onNavigate('stock-distribution')}
         />
       </div>
 
@@ -407,6 +454,53 @@ export function OperationsDashboard({ userName, userId = '', accessToken = '', o
           <QuickAction label="Malzeme"     icon={<BarChart3 className="w-4 h-4" />}   color={COLORS.violet}  onClick={() => onNavigate('equipment-page')}    />
         </div>
       </div>
+
+      {/* Aktif Personel Modal */}
+      {showAktifPersonel && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[100] flex items-center justify-center p-4" onClick={() => setShowAktifPersonel(false)}>
+          <div className="w-full max-w-sm bg-[#1a1a2e] rounded-3xl border border-white/10 shadow-2xl max-h-[60vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-white/8 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5" style={{ color: '#9dd9ea' }} />
+                <h3 className="text-base font-bold text-white">Aktif Personel</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: 'rgba(157,217,234,0.15)', color: '#9dd9ea' }}>{summary?.aktifPersonelSayisi ?? 0} / {summary?.toplamPersonelSayisi ?? 0}</span>
+              </div>
+              <button onClick={() => setShowAktifPersonel(false)} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
+                <span className="text-white/50 text-sm">✕</span>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-3">
+              {(summary?.aktifPersonelDetay?.length ?? 0) === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-2xl mb-2">😴</p>
+                  <p className="text-sm text-white/40">Şu an aktif personel yok</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {summary!.aktifPersonelDetay!.map((p, i) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-3 rounded-xl" style={{ background: 'rgba(157,217,234,0.06)', border: '1px solid rgba(157,217,234,0.12)' }}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-[#9dd9ea]/20 flex items-center justify-center flex-shrink-0">
+                          <span className="text-sm">👤</span>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-white truncate">{p.name}</p>
+                          {p.mekan && <p className="text-[10px] text-[#a8e6cf]">📍 {p.mekan}</p>}
+                        </div>
+                      </div>
+                      {p.checkinZamani && (
+                        <span className="text-[10px] text-white/30 flex-shrink-0">
+                          🕐 {new Date(p.checkinZamani).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
