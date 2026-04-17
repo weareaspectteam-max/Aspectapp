@@ -2530,7 +2530,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                               const newVal = discountRawInput + num;
                               setDiscountRawInput(newVal);
                               if (discountMode === 'iskonto') { setDiscountAmount(newVal); }
-                              else { const diff = totalPrice - Number(newVal); setDiscountAmount(diff > 0 ? String(diff) : '0'); }
+                              else { const diff = totalPrice - Number(newVal); setDiscountAmount(String(diff)); }
                             }} className="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xl font-bold py-3 rounded-xl transition-all active:scale-95">{num}</button>
                           ))}
                         </div>
@@ -2547,18 +2547,23 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                             const newVal = discountRawInput.slice(0, -1);
                             setDiscountRawInput(newVal);
                             if (discountMode === 'iskonto') { setDiscountAmount(newVal); }
-                            else { const diff = totalPrice - (Number(newVal) || 0); setDiscountAmount(diff > 0 ? String(diff) : '0'); }
+                            else { const diff = totalPrice - (Number(newVal) || 0); setDiscountAmount(String(diff)); }
                           }} className="bg-[#ffd4a3]/20 text-[#ffd4a3] text-sm font-bold py-3 rounded-xl transition-all active:scale-95">⌫</button>
                         </div>
                         {(() => {
                           const disc = Number(discountAmount) || 0;
                           const odenecek = totalPrice - disc;
-                          if (disc <= 0 || odenecek < 0) return null;
-                          const pct = Math.round((disc / totalPrice) * 100);
+                          if (disc === 0) return null;
+                          const isZam = disc < 0;
+                          const pct = Math.round((Math.abs(disc) / totalPrice) * 100);
                           return (
                           <div className="bg-white/5 rounded-xl p-3 border-2 border-[#a8e6cf]/30 mb-3">
                             <div className="flex items-center justify-between text-sm mb-1"><span className="text-gray-400">Orijinal:</span><span className="font-semibold text-white">{pSym}{totalPrice}</span></div>
-                            <div className="flex items-center justify-between text-sm mb-1"><span className="text-[#ffd4a3] font-semibold">İskonto ({pct}%):</span><span className="font-semibold text-[#ffd4a3]">-₺{disc}</span></div>
+                            {isZam ? (
+                              <div className="text-[11px] text-white/50 italic mb-1">↑ müşteri {pSym}{Math.abs(disc)} fazla ödüyor</div>
+                            ) : (
+                              <div className="flex items-center justify-between text-sm mb-1"><span className="text-[#ffd4a3] font-semibold">İskonto ({pct}%):</span><span className="font-semibold text-[#ffd4a3]">-{pSym}{disc}</span></div>
+                            )}
                             <div className="border-t border-white/20 my-2" />
                             <div className="flex items-center justify-between"><span className="font-bold text-white">Ödenecek:</span><span className="font-bold text-2xl text-[#a8e6cf]">{pSym}{odenecek}</span></div>
                           </div>
@@ -2610,9 +2615,11 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                 </div>
                 {cart.length > 0 ? (
                   <div className="space-y-2">
-                    <div className="bg-white/5 rounded-lg p-3 border border-white/20">
-                      <div className="text-xs text-gray-400 mb-1">{discountAmount && Number(discountAmount) !== 0 ? 'Ödenecek Tutar' : 'Sepet Toplamı'}</div>
-                      <div className="text-2xl font-black text-white">{pSym}{discountAmount && Number(discountAmount) !== 0 ? totalPrice - Number(discountAmount) : totalPrice}</div>
+                    <div style={{ padding: 12, borderRadius: 12, border: '2px solid #a8e6cf88', background: '#a8e6cf22' }}>
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-gray-400">{discountAmount && Number(discountAmount) !== 0 ? 'Ödenecek Tutar' : 'Sepet Toplamı'}</div>
+                        <div style={{ fontSize: 28, fontWeight: 900, color: '#a8e6cf' }}>{pSym}{discountAmount && Number(discountAmount) !== 0 ? totalPrice - Number(discountAmount) : totalPrice}</div>
+                      </div>
                     </div>
                     {selectedCurrency && (() => {
                       const cMap: Record<string, { flag: string; color: string }> = {
