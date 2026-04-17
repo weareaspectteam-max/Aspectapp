@@ -135,6 +135,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [discountAmount, setDiscountAmount] = useState('');
   const [discountMode, setDiscountMode] = useState<'iskonto' | 'fiyat'>('iskonto');
   const [discountRawInput, setDiscountRawInput] = useState('');
+  const [showForeignNet, setShowForeignNet] = useState(false);
+  const [foreignNetMode, setForeignNetMode] = useState<'iskonto' | 'fiyat'>('fiyat');
+  const [foreignNetRawInput, setForeignNetRawInput] = useState('');
   const [showPaymentMethod, setShowPaymentMethod] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'iban' | 'card' | null>(null);
   const [showGerekce, setShowGerekce] = useState(false);
@@ -862,6 +865,40 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     }
   };
 
+  // Currency değişince foreignNet input/discount sıfırla; null/TRY olunca numpad'i de kapat
+  useEffect(() => {
+    setForeignNetRawInput('');
+    setDiscountAmount('');
+    if (!selectedCurrency || (selectedCurrency as any) === 'TRY') {
+      setShowForeignNet(false);
+      setForeignNetMode('fiyat');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCurrency]);
+
+  // Müşterinin döviz net girişini mekan currency cinsinden discountAmount'a çevir
+  const applyForeignNet = (rawInput: string, mode: 'iskonto' | 'fiyat') => {
+    if (!selectedCurrency) return;
+    const foreignVal = Number(rawInput) || 0;
+    const toMekanCurrency = (foreignAmount: number): number => {
+      if (mekanPriceCurrency === 'TRY') {
+        if ((selectedCurrency as any) === 'TRY') return foreignAmount;
+        return foreignAmount * exchangeRates[selectedCurrency];
+      }
+      const tl = (selectedCurrency as any) === 'TRY'
+        ? foreignAmount
+        : foreignAmount * exchangeRates[selectedCurrency];
+      const mekanKur = exchangeRates[mekanPriceCurrency as keyof typeof exchangeRates] || 1;
+      return tl / mekanKur;
+    };
+    if (mode === 'iskonto') {
+      setDiscountAmount(String(Math.round(toMekanCurrency(foreignVal) * 100) / 100));
+    } else {
+      const equivMekan = toMekanCurrency(foreignVal);
+      setDiscountAmount(String(Math.round((totalPrice - equivMekan) * 100) / 100));
+    }
+  };
+
   // Check-in uyarı kontrolü — işlem yapmadan önce çağır
   const checkCheckinWarning = (callback: () => void) => {
     if (hasCheckedIn || checkinWarningDismissed) { callback(); return; }
@@ -891,8 +928,6 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const handleProceed = () => {
     if (!selectedProject) { alert('Lütfen önce proje seçin!'); return; }
     if (cart.length === 0) { alert('Lütfen ürün seçin'); return; }
-    const discount = Number(discountAmount) || 0;
-    if (discount > 0 && totalPrice - discount < 0) { alert('İskonto tutarı toplam fiyattan fazla olamaz!'); return; }
     checkCheckinWarning(() => setShowPaymentMethod(true));
   };
 
@@ -957,7 +992,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       setRecentSales(prev => [pendingSale, ...prev]);
       setAllSalesForKapanis(prev => [pendingSale, ...prev]);
       setSatisSaving(false);
-      setCart([]); setDiscountAmount(''); setDiscountRawInput(''); setDiscountMode('iskonto'); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null); setShowGerekce(false); setGerekceText('');
+      setCart([]); setDiscountAmount(''); setDiscountRawInput(''); setDiscountMode('iskonto'); setShowDiscount(false); setShowForeignNet(false); setForeignNetRawInput(''); setForeignNetMode('fiyat'); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null); setShowGerekce(false); setGerekceText('');
       return;
     }
 
@@ -1032,7 +1067,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     } finally {
       setSatisSaving(false);
     }
-    setCart([]); setDiscountAmount(''); setDiscountRawInput(''); setDiscountMode('iskonto'); setShowDiscount(false); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null); setShowGerekce(false); setGerekceText('');
+    setCart([]); setDiscountAmount(''); setDiscountRawInput(''); setDiscountMode('iskonto'); setShowDiscount(false); setShowForeignNet(false); setForeignNetRawInput(''); setForeignNetMode('fiyat'); setShowPaymentMethod(false); setPaymentMethod(null); setSelectedCurrency(null); setShowGerekce(false); setGerekceText('');
   };
 
   // ── Satış İptal: onay akışı state ──
@@ -2414,7 +2449,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                       <h3 className="font-bold text-white">Sepet</h3>
                       <span className="px-2 py-1 bg-[#9dd9ea] text-[#2d3748] rounded-full text-xs font-bold">{totalItems}</span>
                     </div>
-                    <button onClick={() => setCart([])} className="text-[#ffb3ba] hover:bg-[#ffb3ba]/10 p-2 rounded-lg transition-all">
+                    <button onClick={() => { setCart([]); setShowForeignNet(false); setForeignNetRawInput(''); setDiscountAmount(''); }} className="text-[#ffb3ba] hover:bg-[#ffb3ba]/10 p-2 rounded-lg transition-all">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -2457,16 +2492,16 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     <div className="text-[#2d3748]/70 text-sm mb-1">Toplam Tutar</div>
                     <div className="text-[#2d3748] text-4xl font-bold">{pSym}{totalPrice}</div>
                   </div>
-                  {!showDiscount ? (
+                  {!showDiscount && !showForeignNet ? (
                     <div className="grid grid-cols-2 gap-3">
-                      <button onClick={() => setShowDiscount(true)} className="bg-gradient-to-r from-[#ffd4a3] to-[#ffc78f] text-[#744210] py-4 rounded-2xl font-bold text-base hover:shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg">
+                      <button onClick={() => { setShowDiscount(true); setShowForeignNet(false); setForeignNetRawInput(''); }} className="bg-gradient-to-r from-[#ffd4a3] to-[#ffc78f] text-[#744210] py-4 rounded-2xl font-bold text-base hover:shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg">
                         <Tag className="w-5 h-5" /> İskonto
                       </button>
                       <button onClick={handleProceed} className="bg-gradient-to-r from-[#9dd9ea] via-[#7ec8dd] to-[#9dd9ea] text-[#2d3748] py-4 rounded-2xl font-bold text-base hover:shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg">
                         <Send className="w-5 h-5" /> İlerle
                       </button>
                     </div>
-                  ) : (
+                  ) : !showForeignNet ? (
                     <div className="space-y-3">
                       <div className="bg-gradient-to-br from-[#ffd4a3]/20 to-[#ffc78f]/10 rounded-2xl p-4 border-2 border-[#ffd4a3]/30">
                         {/* Mod toggle */}
@@ -2537,7 +2572,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                         </button>
                       </div>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               )}
 
@@ -2576,8 +2611,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                 {cart.length > 0 ? (
                   <div className="space-y-2">
                     <div className="bg-white/5 rounded-lg p-3 border border-white/20">
-                      <div className="text-xs text-gray-400 mb-1">{discountAmount && Number(discountAmount) > 0 ? 'Ödenecek Tutar' : 'Sepet Toplamı'}</div>
-                      <div className="text-2xl font-black text-white">{pSym}{discountAmount && Number(discountAmount) > 0 ? totalPrice - Number(discountAmount) : totalPrice}</div>
+                      <div className="text-xs text-gray-400 mb-1">{discountAmount && Number(discountAmount) !== 0 ? 'Ödenecek Tutar' : 'Sepet Toplamı'}</div>
+                      <div className="text-2xl font-black text-white">{pSym}{discountAmount && Number(discountAmount) !== 0 ? totalPrice - Number(discountAmount) : totalPrice}</div>
                     </div>
                     {selectedCurrency && (() => {
                       const cMap: Record<string, { flag: string; color: string }> = {
@@ -2585,13 +2620,110 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                         GBP: { flag: '🇬🇧', color: '#ffd4a3' }, BGN: { flag: '🇧🇬', color: '#c4b5fd' }, RUB: { flag: '🇷🇺', color: '#f9a8d4' }, SAR: { flag: '🇸🇦', color: '#86efac' },
                       };
                       const ci = cMap[selectedCurrency] || cMap.TRY;
+                      const isClickable = (selectedCurrency as any) !== 'TRY';
                       return (
-                      <div style={{ padding: 12, borderRadius: 12, border: `2px solid ${ci.color}88`, background: `${ci.color}22` }}>
+                      <>
+                      <button
+                        type="button"
+                        onClick={isClickable ? () => { setShowDiscount(false); setShowForeignNet(true); setForeignNetRawInput(''); setForeignNetMode('fiyat'); setDiscountAmount(''); } : undefined}
+                        disabled={!isClickable}
+                        style={{ width: '100%', padding: 12, borderRadius: 12, border: `2px solid ${ci.color}88`, background: `${ci.color}22`, cursor: isClickable ? 'pointer' : 'default', textAlign: 'left' }}
+                      >
                         <div className="flex items-center justify-between">
-                          <div className="text-xs text-gray-400">{ci.flag} {selectedCurrency}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="text-xs text-gray-400">{ci.flag} {selectedCurrency}</div>
+                            {isClickable && <span className="text-[9px] text-white/40">✏️ tıkla</span>}
+                          </div>
                           <div style={{ fontSize: 28, fontWeight: 900, color: ci.color }}>{selectedCurrency === 'TRY' ? `₺${((totalPrice - (Number(discountAmount) || 0)) * (exchangeRates[mekanPriceCurrency as keyof typeof exchangeRates] || 1)).toFixed(0)}` : calculateForeignCurrency()}</div>
                         </div>
-                      </div>
+                      </button>
+                      {showForeignNet && isClickable && (
+                        <div className="space-y-3 mt-3">
+                          <div className="rounded-2xl p-4 border-2" style={{ background: `${ci.color}10`, borderColor: `${ci.color}40` }}>
+                            {/* Mod toggle */}
+                            <div className="flex rounded-xl overflow-hidden border border-white/15 mb-3">
+                              <button
+                                onClick={() => { setForeignNetMode('iskonto'); setForeignNetRawInput(''); setDiscountAmount(''); }}
+                                style={{ flex: 1, padding: '10px 0', fontSize: 13, fontWeight: 700, transition: 'all 0.2s', background: foreignNetMode === 'iskonto' ? 'rgba(255,212,163,0.25)' : 'transparent', color: foreignNetMode === 'iskonto' ? '#ffd4a3' : 'rgba(255,255,255,0.4)', borderRight: '1px solid rgba(255,255,255,0.1)' }}
+                              >
+                                İskonto Tutarı
+                              </button>
+                              <button
+                                onClick={() => { setForeignNetMode('fiyat'); setForeignNetRawInput(''); setDiscountAmount(''); }}
+                                style={{ flex: 1, padding: '10px 0', fontSize: 13, fontWeight: 700, transition: 'all 0.2s', background: foreignNetMode === 'fiyat' ? 'rgba(168,230,207,0.25)' : 'transparent', color: foreignNetMode === 'fiyat' ? '#a8e6cf' : 'rgba(255,255,255,0.4)' }}
+                              >
+                                Satış Fiyatı
+                              </button>
+                            </div>
+                            {/* Display kutusu */}
+                            <div style={{ borderRadius: 16, padding: 16, marginBottom: 12, textAlign: 'right', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', background: foreignNetMode === 'iskonto' ? 'linear-gradient(135deg, #ffd4a3, #ffc78f)' : 'linear-gradient(135deg, #a8e6cf, #8dd9b8)' }}>
+                              <div style={{ fontSize: 11, color: foreignNetMode === 'iskonto' ? '#744210aa' : '#2d3748aa', marginBottom: 4 }}>{foreignNetMode === 'iskonto' ? `İskonto ${selectedCurrency}` : `Satış Fiyatı ${selectedCurrency}`}</div>
+                              <div style={{ fontSize: 28, fontWeight: 800, color: foreignNetMode === 'iskonto' ? '#744210' : '#2d3748', minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>{foreignNetRawInput || '0'}</div>
+                            </div>
+                            {/* Numpad 1-9 */}
+                            <div className="grid grid-cols-3 gap-2 mb-3">
+                              {['1','2','3','4','5','6','7','8','9'].map(num => (
+                                <button key={num} onClick={() => {
+                                  if (foreignNetRawInput.length >= 6) return;
+                                  const newVal = foreignNetRawInput + num;
+                                  setForeignNetRawInput(newVal);
+                                  applyForeignNet(newVal, foreignNetMode);
+                                }} className="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xl font-bold py-3 rounded-xl transition-all active:scale-95">{num}</button>
+                              ))}
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 mb-3">
+                              <button onClick={() => { setForeignNetRawInput(''); setDiscountAmount(''); }} className="bg-[#ffb3ba]/20 text-[#ffb3ba] text-sm font-bold py-3 rounded-xl transition-all active:scale-95">C</button>
+                              <button onClick={() => {
+                                if (foreignNetRawInput.length >= 6) return;
+                                const newVal = foreignNetRawInput + '0';
+                                setForeignNetRawInput(newVal);
+                                applyForeignNet(newVal, foreignNetMode);
+                              }} className="bg-white/10 text-white text-xl font-bold py-3 rounded-xl transition-all active:scale-95">0</button>
+                              <button onClick={() => {
+                                const newVal = foreignNetRawInput.slice(0, -1);
+                                setForeignNetRawInput(newVal);
+                                applyForeignNet(newVal, foreignNetMode);
+                              }} className="bg-[#ffd4a3]/20 text-[#ffd4a3] text-sm font-bold py-3 rounded-xl transition-all active:scale-95">⌫</button>
+                            </div>
+                            {/* Önizleme */}
+                            {(() => {
+                              const disc = Number(discountAmount) || 0;
+                              const odenecek = totalPrice - disc;
+                              if (disc === 0) return null;
+                              const isZam = disc < 0;
+                              return (
+                                <div className="bg-white/5 rounded-xl p-3 border-2 border-[#a8e6cf]/30">
+                                  <div className="flex items-center justify-between text-sm mb-1">
+                                    <span className="text-gray-400">Sepet:</span>
+                                    <span className="font-semibold text-white">{pSym}{totalPrice}</span>
+                                  </div>
+                                  {!isZam ? (
+                                    <div className="flex items-center justify-between text-sm mb-1">
+                                      <span className="text-[#ffd4a3] font-semibold">İskonto:</span>
+                                      <span className="font-semibold text-[#ffd4a3]">-{pSym}{disc}</span>
+                                    </div>
+                                  ) : (
+                                    <div className="text-[11px] text-white/50 italic mb-1">↑ müşteri {pSym}{Math.abs(disc)} fazla ödüyor</div>
+                                  )}
+                                  <div className="border-t border-white/20 my-2" />
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-white">Ödenecek:</span>
+                                    <span className="font-bold text-2xl text-[#a8e6cf]">{pSym}{odenecek}</span>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                          {/* Alt butonlar */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <button onClick={() => { setShowForeignNet(false); setForeignNetRawInput(''); setDiscountAmount(''); setForeignNetMode('fiyat'); setSelectedCurrency(null); }} className="bg-white/10 text-white py-4 rounded-2xl font-bold text-base transition-all active:scale-[0.98]">İptal</button>
+                            <button onClick={handleProceed} className="bg-gradient-to-r from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] py-4 rounded-2xl font-bold text-base hover:shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg">
+                              <Send className="w-5 h-5" /> İlerle
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      </>
                       );
                     })()}
                   </div>
