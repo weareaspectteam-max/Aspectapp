@@ -2617,7 +2617,13 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                   <div className="space-y-2">
                     <div style={{ padding: 12, borderRadius: 12, border: '2px solid #a8e6cf88', background: '#a8e6cf22' }}>
                       <div className="flex items-center justify-between">
-                        <div className="text-xs text-gray-400">{discountAmount && Number(discountAmount) !== 0 ? 'Ödenecek Tutar' : 'Sepet Toplamı'}</div>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span style={{ fontSize: 18 }}>🛒</span>
+                          <div className="flex flex-col min-w-0">
+                            <div className="text-xs text-gray-300 leading-tight">{discountAmount && Number(discountAmount) !== 0 ? 'Ödenecek Tutar' : 'Sepet Toplamı'}</div>
+                            <div className="text-[10px] text-white/40 leading-tight">{totalItems} ürün</div>
+                          </div>
+                        </div>
                         <div style={{ fontSize: 28, fontWeight: 900, color: '#a8e6cf' }}>{pSym}{discountAmount && Number(discountAmount) !== 0 ? totalPrice - Number(discountAmount) : totalPrice}</div>
                       </div>
                     </div>

@@ -92,8 +92,9 @@ function StatChip({ icon, value, label, color }: { icon: React.ReactNode; value:
 
 function SatisBubble({ item }: { item: FeedItem }) {
   const pay = payLabel(item.paymentMethod);
-  const originalPrice = (item.discount || 0) > 0 ? (item.finalPrice || 0) + (item.discount || 0) : null;
-  const discountPct = originalPrice ? Math.round((item.discount! / originalPrice) * 100) : null;
+  const originalPrice = (item.discount || 0) !== 0 ? (item.finalPrice || 0) + (item.discount || 0) : null;
+  const discountPct = originalPrice ? Math.round((Math.abs(item.discount!) / originalPrice) * 100) : null;
+  const isZam = (item.discount || 0) < 0;
   const mekanColor = item.mekanColor || '#9dd9ea';
 
   return (
@@ -134,8 +135,8 @@ function SatisBubble({ item }: { item: FeedItem }) {
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {discountPct !== null && (
-              <span className="text-[9px] font-bold text-orange-300 bg-orange-500/15 border border-orange-500/30 rounded px-1.5 py-0.5">
-                %{discountPct} iskonto
+              <span className={`text-[9px] font-bold rounded px-1.5 py-0.5 border ${isZam ? 'text-purple-300 bg-purple-500/15 border-purple-500/30' : 'text-orange-300 bg-orange-500/15 border-orange-500/30'}`}>
+                %{discountPct} {isZam ? 'zam' : 'iskonto'}
               </span>
             )}
             {originalPrice !== null && (
