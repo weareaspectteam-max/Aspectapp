@@ -66,7 +66,9 @@ export function PcLayout({ userName, userId, userRole, userAvatar, accessToken, 
   const companyKey = ghostCompanyId || 'self';
   const { data, loading, lastRefresh, refresh } = usePcDashboard(accessToken, companyKey);
   const [centerView, setCenterView] = useState<CenterView>('feed');
-  const [locked, setLocked] = useState(false);
+  const [locked, setLocked] = useState<boolean>(() => {
+    try { return localStorage.getItem('pc-locked') === '1'; } catch { return false; }
+  });
   const [unlockPassword, setUnlockPassword] = useState('');
   const [unlockError, setUnlockError] = useState('');
   const [unlockAttempts, setUnlockAttempts] = useState(0);
@@ -151,6 +153,7 @@ export function PcLayout({ userName, userId, userRole, userAvatar, accessToken, 
         if (nextAttempts >= 3) {
           setUnlockError('');
           setTimeout(async () => {
+            try { localStorage.removeItem('pc-locked'); } catch {}
             await supabase.auth.signOut();
             window.location.href = '/';
           }, 1800);
@@ -160,6 +163,7 @@ export function PcLayout({ userName, userId, userRole, userAvatar, accessToken, 
       } else {
         setJustSucceeded(true);
         setUnlockError('');
+        try { localStorage.removeItem('pc-locked'); } catch {}
         setTimeout(() => {
           setLocked(false);
           setUnlockPassword('');
@@ -176,6 +180,7 @@ export function PcLayout({ userName, userId, userRole, userAvatar, accessToken, 
 
   const handleLock = () => {
     setLocked(true);
+    try { localStorage.setItem('pc-locked', '1'); } catch {}
     setUnlockPassword('');
     setUnlockError('');
     setUnlockAttempts(0);

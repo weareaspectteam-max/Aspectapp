@@ -20,7 +20,7 @@
 /* Mobil klavye açılınca sayfa büyüme/kayma önleme */
 html, body {
   overflow-x: hidden;
-  overscroll-behavior: none;
+  overscroll-behavior-x: none;
   -webkit-text-size-adjust: 100%;
 }
 
