@@ -32,6 +32,7 @@ export const WINDOW_REGISTRY: Record<string, WindowInfo> = {
   'prim-takip':           { key: 'prim-takip',           title: '📈 Hakediş Takip',         defaultWidth: 720, defaultHeight: 600 },
   'vardiya-raporlari':    { key: 'vardiya-raporlari',    title: '📊 Vardiya Raporları',     defaultWidth: 900, defaultHeight: 640 },
   'isletme-genel-durum':  { key: 'isletme-genel-durum',  title: '📊 İşletme Genel Durum',   defaultWidth: 900, defaultHeight: 640 },
+  'isletme-istatistikleri':{ key: 'isletme-istatistikleri' as any, title: '📊 İşletme İstatistikleri', defaultWidth: 900, defaultHeight: 640 },
   'hedef-takip':          { key: 'hedef-takip',          title: '🎯 Hedef Takibi',          defaultWidth: 680, defaultHeight: 520 },
   'kasa':                 { key: 'kasa',                 title: '💰 Kasa',                  defaultWidth: 880, defaultHeight: 640 },
   'tedarikci-yonetimi':   { key: 'tedarikci-yonetimi',   title: '📦 Tedarikçi Yönetimi',    defaultWidth: 960, defaultHeight: 640 },

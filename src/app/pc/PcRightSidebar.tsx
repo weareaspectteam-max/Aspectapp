@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 
 // Şu an implement edilmiş PC ekranları (sonra kaldırılacak, hepsi aktif olunca check tamamen silinir)
-const ACTIVE_KEYS = new Set(['dashboard-win', 'messaging', 'live-feed', 'rotation']);
+const ACTIVE_KEYS = new Set(['dashboard-win', 'messaging', 'live-feed', 'rotation', 'leaderboard', 'academy', 'isletme-istatistikleri']);
 import type { WindowKey } from './pc-windows';
 
 interface Item {
@@ -30,9 +30,11 @@ interface Props {
   onOpen: (key: WindowKey) => void;
   onLogout: () => void;
   activeCenterView?: string;
+  userRole?: string;
 }
 
-export function PcRightSidebar({ onOpen, onLogout, activeCenterView }: Props) {
+export function PcRightSidebar({ onOpen, onLogout, activeCenterView, userRole }: Props) {
+  const isYonetici = userRole === 'yonetici';
   const sections: Section[] = [
     {
       title: 'YÖNETİCİ HIZLI ERİŞİM', color: '#34d399',
@@ -42,6 +44,7 @@ export function PcRightSidebar({ onOpen, onLogout, activeCenterView }: Props) {
         { key: 'prim-takip',            label: 'Hakediş Takip',       Icon: TrendingUp,    color: '#34d399' },
         { key: 'vardiya-raporlari',     label: 'Vardiya Raporları',   Icon: FileBarChart,  color: '#93c5fd' },
         { key: 'isletme-genel-durum',   label: 'İşletme Genel Durum', Icon: BarChart2,     color: '#6ee7b7' },
+        ...(isYonetici ? [{ key: 'isletme-istatistikleri' as WindowKey, label: 'İşletme İstatistikleri', Icon: BarChart2, color: '#a7c7e7' }] : []),
         { key: 'hedef-takip',           label: 'Hedef Takibi',        Icon: Target,        color: '#f9a8d4' },
         { key: 'kasa',                  label: 'Kasa',                Icon: Wallet,        color: '#fbbf24' },
         { key: 'tedarikci-yonetimi',    label: 'Tedarikçi Yönetimi',  Icon: Package,       color: '#38bdf8' },

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Maximize2, Minimize2 } from 'lucide-react';
 
 interface Props {
   title: string;
@@ -17,16 +17,37 @@ interface Props {
 
 const MIN_W = 320;
 const MIN_H = 240;
+const TOPBAR_H = 56;
 
 export function PcWindow({ title, x, y, w, h, z, onClose, onFocus, onMove, onResize, children }: Props) {
   const [dragging, setDragging] = useState(false);
   const [resizing, setResizing] = useState(false);
   const dragOffset = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
   const resizeStart = useRef<{ startX: number; startY: number; startW: number; startH: number }>({ startX: 0, startY: 0, startW: 0, startH: 0 });
+  const [maximized, setMaximized] = useState(false);
+  const prevRect = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+
+  const toggleMaximize = () => {
+    if (!onResize) return;
+    if (maximized) {
+      if (prevRect.current) {
+        onMove(prevRect.current.x, prevRect.current.y);
+        onResize(prevRect.current.w, prevRect.current.h);
+      }
+      setMaximized(false);
+    } else {
+      prevRect.current = { x, y, w, h };
+      onMove(0, TOPBAR_H);
+      onResize(window.innerWidth, window.innerHeight - TOPBAR_H);
+      setMaximized(true);
+    }
+  };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     onFocus();
     if ((e.target as HTMLElement).closest('[data-close]')) return;
+    if ((e.target as HTMLElement).closest('[data-max]')) return;
+    if (maximized) return;
     dragOffset.current = { dx: e.clientX - x, dy: e.clientY - y };
     setDragging(true);
     const handleMove = (ev: MouseEvent) => {
@@ -77,15 +98,33 @@ export function PcWindow({ title, x, y, w, h, z, onClose, onFocus, onMove, onRes
       <div
         className="pc-window-header"
         onMouseDown={handleMouseDown}
-        style={{ cursor: dragging ? 'grabbing' : 'grab' }}
+        onDoubleClick={(e) => {
+          if ((e.target as HTMLElement).closest('[data-close]')) return;
+          if ((e.target as HTMLElement).closest('[data-max]')) return;
+          toggleMaximize();
+        }}
+        style={{ cursor: maximized ? 'default' : (dragging ? 'grabbing' : 'grab') }}
       >
         <span className="pc-window-title">{title}</span>
-        <button data-close onClick={onClose} className="pc-window-close" aria-label="Kapat">
-          <X size={14} />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {onResize && (
+            <button
+              data-max
+              onClick={toggleMaximize}
+              className="pc-window-close"
+              aria-label={maximized ? 'Eski boyut' : 'Tam ekran'}
+              title={maximized ? 'Eski boyuta dön' : 'Tam ekran yap'}
+            >
+              {maximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
+          )}
+          <button data-close onClick={onClose} className="pc-window-close" aria-label="Kapat">
+            <X size={18} />
+          </button>
+        </div>
       </div>
       <div className="pc-window-body">{children}</div>
-      {onResize && (
+      {onResize && !maximized && (
         <>
           {/* Sağ kenar */}
           <div

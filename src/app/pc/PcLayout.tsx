@@ -8,6 +8,9 @@ import { PcDashboard, type CenterView } from './screens/PcDashboard';
 import { PcMesajlar } from './screens/PcMesajlar';
 import { PcPlaceholder } from './screens/PcPlaceholder';
 import { PcLiveFeed } from './screens/PcLiveFeed';
+import { PcLeaderboard } from './screens/PcLeaderboard';
+import { PcAcademy } from './screens/PcAcademy';
+import { PcIsletmeIstatistikleri } from './screens/PcIsletmeIstatistikleri';
 import { PcDmPopup } from './PcDmPopup';
 import { PcWindow } from './PcWindow';
 import { useWindowManager, WINDOW_REGISTRY, type WindowKey } from './pc-windows';
@@ -34,6 +37,7 @@ function renderWindowContent(
   lastRefresh: Date | null,
   userId: string,
   companyKey?: string,
+  leaderboardProps?: { userName: string; userRole: any; accessToken: string },
 ): React.ReactNode {
   const keyStr = String(key);
   const title = WINDOW_REGISTRY[keyStr]?.title || keyStr;
@@ -45,6 +49,15 @@ function renderWindowContent(
   }
   if (keyStr === 'live-feed' || keyStr.startsWith('live-feed:')) {
     return <PcLiveFeed companyKey={companyKey} />;
+  }
+  if (keyStr === 'leaderboard' && leaderboardProps) {
+    return <PcLeaderboard userName={leaderboardProps.userName} userId={userId} userRole={leaderboardProps.userRole} accessToken={leaderboardProps.accessToken} />;
+  }
+  if (keyStr === 'academy' && leaderboardProps) {
+    return <PcAcademy userName={leaderboardProps.userName} userRole={leaderboardProps.userRole} />;
+  }
+  if (keyStr === 'isletme-istatistikleri' && leaderboardProps) {
+    return <PcIsletmeIstatistikleri userName={leaderboardProps.userName} userRole={leaderboardProps.userRole} accessToken={leaderboardProps.accessToken} />;
   }
   if (keyStr.startsWith('gdm:')) {
     // global dm format: gdm:<userId>:<userName>:<companyName>
@@ -239,6 +252,7 @@ export function PcLayout({ userName, userId, userRole, userAvatar, accessToken, 
           </main>
           <PcRightSidebar
             activeCenterView={centerView}
+            userRole={userRole}
             onOpen={(k) => {
               // Canlı Feed: her tıklamada yeni pencere (multi-instance)
               if (k === 'live-feed') {
@@ -499,7 +513,7 @@ export function PcLayout({ userName, userId, userRole, userAvatar, accessToken, 
               onMove={(nx, ny) => moveWindow(w.key, nx, ny)}
               onResize={(nw, nh) => resizeWindow(w.key, nw, nh)}
             >
-              {renderWindowContent(w.key, data, refresh, loading, lastRefresh, userId, companyKey)}
+              {renderWindowContent(w.key, data, refresh, loading, lastRefresh, userId, companyKey, { userName, userRole, accessToken })}
             </PcWindow>
           );
         })}

@@ -5089,14 +5089,20 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       dunCiroSaatlik: Math.round(dunCiroSaatlik),
       dunCiroGunluk: Math.round(dunCiroGunluk),
       genelStok: (() => {
-        const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15"];
+        const albumBoyutlari = [3, 5, 7, 9, 11, 13, 15];
         let albumToplam = 0;
         let ribon = 0;
         let paspartu = 0;
         for (const kayit of bugunKayitlar) {
           const stok = kayit.kapanish || kayit.acilis;
           if (!stok) continue;
-          for (const alan of albumAlanlari) albumToplam += Number(stok[alan]) || 0;
+          for (const s of albumBoyutlari) {
+            // Yeni format: album3_tam + album3_yarim; eski format: album3 (ikisi de desteklenir)
+            const tam = Number(stok[`album${s}_tam`]) || 0;
+            const yarim = Number(stok[`album${s}_yarim`]) || 0;
+            const legacy = Number(stok[`album${s}`]) || 0;
+            albumToplam += (tam + yarim) || legacy;
+          }
           ribon += Number(stok.ribon) || 0;
           paspartu += Number(stok.paspartu) || 0;
         }

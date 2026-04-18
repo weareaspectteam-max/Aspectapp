@@ -113,6 +113,7 @@ function getSections(
         { icon: TrendingUp,    label: 'Hakediş Takip',        roles: ['yonetici','ust-mudur','idari'] as UserRole[],                    action: () => go('prim-takip')             },
         { icon: FileBarChart,  label: 'Vardiya Raporları',    roles: ['yonetici','ust-mudur','idari'] as UserRole[],                    action: () => go('vardiya-raporlari')      },
         { icon: BarChart2,     label: 'İşletme Genel Durum',  roles: ['yonetici','ust-mudur'] as UserRole[],                                    action: () => go('isletme-genel-durum')    },
+        { icon: BarChart2,     label: 'İşletme İstatistikleri',roles: ['yonetici'] as UserRole[],                                                action: () => go('isletme-istatistikleri') },
         { icon: Target,        label: 'Hedef Takibi',         roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('hedef-takip')            },
         { icon: Wallet,        label: 'Kasa',                 roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('kasa')                   },
         { icon: Package,       label: 'Tedarikçi Yönetimi', roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('tedarikci-yonetimi')     },
