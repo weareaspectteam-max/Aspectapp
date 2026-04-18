@@ -4105,7 +4105,7 @@ export function AspectAIPage({ userRole = 'personel', userName = 'Kullanıcı', 
   return (
     <div
       className="flex flex-col overflow-hidden"
-      style={{ height: 'calc(100vh - 60px - 51px)', background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #120830 50%, #1a0a3c 100%))' }}
+      style={{ height: 'calc(100dvh - 60px - 51px)', background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #120830 50%, #1a0a3c 100%))' }}
     >
       {/* Mekan Seçim Modalı */}
       {mekanModal && ozet && (

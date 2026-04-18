@@ -9,6 +9,8 @@ export interface PcDashboardData {
   toplamCiro: number;
   toplamAdet: number;
   toplamKare: number;
+  toplamBasilan?: number;
+  toplamIadeFoto?: number;
   anomaliSayisi: number;
   aktifMekanSayisi: number;
   toplamMekanSayisi: number;
@@ -17,7 +19,12 @@ export interface PcDashboardData {
   gecGirisSayisi?: number;
   aktifPersonelDetay?: { name: string; mekan?: string; checkinZamani?: string }[];
   tumPersonelDetay?: { id: string; name: string; mekan?: string; checkinZamani?: string; lateMin?: number; status: 'active' | 'late' | 'idle' }[];
-  mekanCiroList: { id: string; name: string; emoji: string; color: string; ciro: number; iskonto?: number; adet: number; kare?: number; acik?: boolean }[];
+  mekanCiroList: { id: string; name: string; emoji: string; color: string; ciro: number; iskonto?: number; adet: number; kare?: number; acik?: boolean; urunDagilimi?: { tip: string; adet: number }[] }[];
+  albumDagilimi?: { tip: string; adet: number }[];
+  odemeDagilimi?: { nakit: number; kart: number; iban: number };
+  dunCiroSaatlik?: number;
+  dunCiroGunluk?: number;
+  genelStok?: { albumToplam: number; ribon: number; paspartu: number };
 }
 
 export function usePcDashboard(accessToken: string, companyKey?: string) {

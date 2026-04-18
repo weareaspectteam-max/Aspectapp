@@ -4782,6 +4782,30 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
     const tumKayitlar = await getAllDailyStock(effectiveCompanyId, ckv);
     const bugunKayitlar = (tumKayitlar || []).filter((k: any) => k.tarih === today);
 
+    // Dünkü ciro hesabı (Dünden Değişim için)
+    const dunDate = new Date();
+    dunDate.setDate(dunDate.getDate() - 1);
+    const dunStr = `${dunDate.getFullYear()}-${String(dunDate.getMonth() + 1).padStart(2, "0")}-${String(dunDate.getDate()).padStart(2, "0")}`;
+    const dunKayitlar = (tumKayitlar || []).filter((k: any) => k.tarih === dunStr);
+    let dunCiroSaatlik = 0;  // dün şu ana kadar
+    let dunCiroGunluk = 0;   // dün tüm gün
+    const nowCutoff = new Date();
+    const cutoffH = nowCutoff.getHours();
+    const cutoffM = nowCutoff.getMinutes();
+    for (const dk of dunKayitlar) {
+      for (const s of (dk.satislar || []).filter((x: any) => !x.iptal)) {
+        const price = s.finalPrice || 0;
+        dunCiroGunluk += price;
+        if (!s.timestamp) continue;
+        const sd = new Date(s.timestamp);
+        const sh = sd.getHours();
+        const sm = sd.getMinutes();
+        if (sh < cutoffH || (sh === cutoffH && sm <= cutoffM)) {
+          dunCiroSaatlik += price;
+        }
+      }
+    }
+
     let toplamCiro = 0;
     let toplamAdet = 0;
     let toplamKare = 0;
@@ -4792,6 +4816,7 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
     let toplamDijitalAdet = 0;
     let toplamFizikselAdet = 0;
     let anomaliSayisi = 0;
+    const odemeDagilimi = { nakit: 0, kart: 0, iban: 0 };
     const aktifMekanlar: any[] = [];
     const saatlikData: Record<number, { saat: number; adet: number; ciro: number }> = {};
 
@@ -4828,6 +4853,11 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
         mekanAdet += adet;
         toplamIskontoDash += Number(s.discount) || 0;
         toplamBrutCiroDash += Number(s.totalPrice) || finalPrice;
+        // Ödeme yöntemi dağılımı
+        const pm = s.paymentMethod;
+        if (pm === "cash") odemeDagilimi.nakit += finalPrice;
+        else if (pm === "card") odemeDagilimi.kart += finalPrice;
+        else if (pm === "iban") odemeDagilimi.iban += finalPrice;
         for (const item of (s.items || [])) {
           const qty = Number(item.quantity) || 1;
           if (item.dijital) toplamDijitalAdet += qty;
@@ -4895,6 +4925,17 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       }, 0);
       const kare = (kayit.kareKayitlari || []).reduce((s: number, k: any) => s + (k.frameCount || 0), 0);
       const acikMi = !!kayit.acilis && !kayit.kapanish;
+      // Bu mekanın ürün dağılımı
+      const mekanAlbumSayac: Record<string, number> = {};
+      for (const s of satislar) {
+        for (const item of (s.items || [])) {
+          const tip = item.product || "Diğer";
+          mekanAlbumSayac[tip] = (mekanAlbumSayac[tip] || 0) + (item.quantity || 1);
+        }
+      }
+      const urunDagilimi = Object.entries(mekanAlbumSayac)
+        .map(([tip, adet]) => ({ tip, adet }))
+        .sort((a, b) => b.adet - a.adet);
       return {
         id: kayit.mekanId,
         name: mekan.name,
@@ -4905,6 +4946,7 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
         adet,
         kare,
         acik: acikMi,
+        urunDagilimi,
       };
     }).sort((a: any, b: any) => b.ciro - a.ciro);
     // Bugün kaydı olmayan mekanları "aktif değil" olarak ekle
@@ -4918,6 +4960,7 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
         color: m.color || "#9dd9ea",
         ciro: 0, iskonto: 0, adet: 0, kare: 0,
         acik: false,
+        urunDagilimi: [],
       }));
     const mekanCiroList = [...mekanCiroListAcik, ...mekanCiroListKapali];
 
@@ -5023,6 +5066,27 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       tumPersonelDetay,
       toplamPersonelSayisi,
       gecGirisSayisi,
+      odemeDagilimi: {
+        nakit: Math.round(odemeDagilimi.nakit),
+        kart: Math.round(odemeDagilimi.kart),
+        iban: Math.round(odemeDagilimi.iban),
+      },
+      dunCiroSaatlik: Math.round(dunCiroSaatlik),
+      dunCiroGunluk: Math.round(dunCiroGunluk),
+      genelStok: (() => {
+        const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15"];
+        let albumToplam = 0;
+        let ribon = 0;
+        let paspartu = 0;
+        for (const kayit of bugunKayitlar) {
+          const stok = kayit.kapanish || kayit.acilis;
+          if (!stok) continue;
+          for (const alan of albumAlanlari) albumToplam += Number(stok[alan]) || 0;
+          ribon += Number(stok.ribon) || 0;
+          paspartu += Number(stok.paspartu) || 0;
+        }
+        return { albumToplam, ribon, paspartu };
+      })(),
     });
   } catch (err) {
     console.log("Manager dashboard-summary error:", err);
@@ -10761,6 +10825,188 @@ app.post("/make-server-4da0b637/mesajlar/dm/:otherUserId", async (c) => {
     return c.json({ message: msg }, 201);
   } catch (err) {
     console.log("POST mesajlar/dm/:id error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// GLOBAL: Tüm şirket yöneticileri (sadece yonetici rolü görebilir)
+// GET /make-server-4da0b637/global/yoneticiler
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/global/yoneticiler", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const callerRole = user.user_metadata?.role;
+    const isSA = user.user_metadata?.originalRole === "superadmin";
+    if (callerRole !== "yonetici" && !isSA) return c.json({ error: "Yetki yok." }, 403);
+
+    const sb = getAdminClient();
+    const { data: { users } } = await sb.auth.admin.listUsers({ perPage: 1000 });
+    const list = (users || [])
+      .filter((u: any) => {
+        const role = u.user_metadata?.role;
+        // Yöneticiler + superadmin (yönetici gibi gösterilir, başkaları superadmin olduğunu bilmez)
+        return (role === "yonetici" || role === "superadmin") && u.id !== user.id;
+      })
+      .map((u: any) => ({
+        userId: u.id,
+        name: u.user_metadata?.full_name || u.user_metadata?.name || u.email || u.id,
+        avatar: u.user_metadata?.avatar || "👤",
+        email: u.email,
+        companyId: u.user_metadata?.company_id || "aspect",
+        // role alanı response'a yazılmıyor — superadmin/yonetici ayrımı dış kullanıcıya görünmez
+      }));
+
+    // Şirket isimlerini al
+    const companyIds = Array.from(new Set(list.map((y: any) => y.companyId)));
+    const companyNameMap: Record<string, string> = {};
+    for (const cid of companyIds) {
+      try {
+        const profile: any = await companyKvFor(cid).get(`company_profile_${cid}`);
+        companyNameMap[cid] = profile?.name || cid;
+      } catch { companyNameMap[cid] = cid; }
+    }
+    const enriched = list.map((y: any) => ({ ...y, companyName: companyNameMap[y.companyId] || y.companyId }));
+
+    return c.json({ yoneticiler: enriched });
+  } catch (err) {
+    console.log("GET global/yoneticiler error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// GLOBAL DM: Şirketler arası yönetici DM (global namespace)
+// GET /global/dm-list, GET /global/dm/:otherUserId, POST /global/dm/:otherUserId
+// ──────────────────────────────────────────
+const sortedGlobalDmKey = (a: string, b: string) => {
+  const [x, y] = [a, b].sort();
+  return `global_dm_${x}_${y}`;
+};
+
+const requireYoneticiOrSA = async (c: any) => {
+  const user = await verifyToken(c);
+  if (!user) return { user: null, error: c.json({ error: "Yetkisiz erişim." }, 401) };
+  const role = user.user_metadata?.role;
+  const isSA = user.user_metadata?.originalRole === "superadmin";
+  if (role !== "yonetici" && !isSA) return { user: null, error: c.json({ error: "Yetki yok." }, 403) };
+  return { user, error: null };
+};
+
+app.get("/make-server-4da0b637/global/dm-list", async (c) => {
+  try {
+    const { user, error } = await requireYoneticiOrSA(c);
+    if (error) return error;
+    const ckvGlobal = companyKvFor("global");
+    const listKey = `global_dm_list_${user!.id}`;
+    const userIds: string[] = (await ckvGlobal.get(listKey)) || [];
+
+    const sb = getAdminClient();
+    const conversations: any[] = [];
+    for (const otherId of userIds) {
+      try {
+        const { data: { user: otherUser } } = await sb.auth.admin.getUserById(otherId);
+        if (!otherUser) continue;
+        const dmKey = sortedGlobalDmKey(user!.id, otherId);
+        const data: any = (await ckvGlobal.get(dmKey)) || { messages: [] };
+        const msgs = data.messages || [];
+        const last = msgs[msgs.length - 1];
+        const readKey = `global_dm_read_${user!.id}`;
+        const readMap: any = (await ckvGlobal.get(readKey)) || {};
+        const lastRead = readMap[otherId] || 0;
+        const unread = msgs.filter((m: any) => m.senderId !== user!.id && new Date(m.timestamp).getTime() > lastRead).length;
+        conversations.push({
+          userId: otherId,
+          name: otherUser.user_metadata?.full_name || otherUser.email || otherId,
+          avatar: otherUser.user_metadata?.avatar || "👤",
+          companyId: otherUser.user_metadata?.company_id || "aspect",
+          lastMessage: last?.content || "",
+          lastMessageTime: last?.timestamp || null,
+          unread,
+        });
+      } catch {}
+    }
+    return c.json({ conversations });
+  } catch (err) {
+    console.log("GET global/dm-list error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+app.get("/make-server-4da0b637/global/dm/:otherUserId", async (c) => {
+  try {
+    const { user, error } = await requireYoneticiOrSA(c);
+    if (error) return error;
+    const { otherUserId } = c.req.param();
+    const ckvGlobal = companyKvFor("global");
+    const dmKey = sortedGlobalDmKey(user!.id, otherUserId);
+    const data: any = (await ckvGlobal.get(dmKey)) || { messages: [] };
+    // Okundu işaretle
+    const readKey = `global_dm_read_${user!.id}`;
+    const readMap: any = (await ckvGlobal.get(readKey)) || {};
+    readMap[otherUserId] = Date.now();
+    await ckvGlobal.set(readKey, readMap);
+    return c.json({ messages: data.messages || [] });
+  } catch (err) {
+    console.log("GET global/dm/:id error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+app.post("/make-server-4da0b637/global/dm/:otherUserId", async (c) => {
+  try {
+    const { user, error } = await requireYoneticiOrSA(c);
+    if (error) return error;
+    const { otherUserId } = c.req.param();
+    const { content, urgent } = await c.req.json();
+    if (!content?.trim()) return c.json({ error: "Mesaj boş olamaz." }, 400);
+
+    const ckvGlobal = companyKvFor("global");
+    const dmKey = sortedGlobalDmKey(user!.id, otherUserId);
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const msg = {
+      id,
+      senderId: user!.id,
+      senderName: user!.user_metadata?.full_name || user!.email || "Bilinmeyen",
+      senderRole: user!.user_metadata?.role || "yonetici",
+      content: content.trim(),
+      timestamp: new Date().toISOString(),
+      urgent: !!urgent,
+    };
+    const data: any = (await ckvGlobal.get(dmKey)) || { messages: [] };
+    const messages = [...(data.messages || []), msg].slice(-MAX_MSGS);
+    await ckvGlobal.set(dmKey, { messages, lastUpdated: new Date().toISOString() });
+
+    // Her iki tarafın global DM listesine ekle
+    for (const [meId, themId] of [[user!.id, otherUserId], [otherUserId, user!.id]]) {
+      const listKey = `global_dm_list_${meId}`;
+      const list: string[] = (await ckvGlobal.get(listKey)) || [];
+      if (!list.includes(themId)) {
+        await ckvGlobal.set(listKey, [...list, themId]);
+      }
+    }
+
+    // Acil mesajsa: alıcının kendi şirket KV'sine urgent inbox yaz (mobil polling oradan okur)
+    if (urgent) {
+      try {
+        const sb = getAdminClient();
+        const { data: { user: receiver } } = await sb.auth.admin.getUserById(otherUserId);
+        const receiverCompanyId = receiver?.user_metadata?.company_id || "aspect";
+        const receiverCkv = companyKvFor(receiverCompanyId);
+        await receiverCkv.set(`urgent_dm_${otherUserId}`, {
+          id, fromUserId: user!.id, fromName: msg.senderName,
+          fromRole: msg.senderRole, content: msg.content, timestamp: msg.timestamp,
+          global: true,
+        });
+        console.log(`Global ACİL DM: ${msg.senderName} → ${otherUserId}`);
+      } catch (e) { console.log("Global urgent write error:", e); }
+    }
+
+    console.log(`Global DM${urgent ? ' [ACİL]' : ''}: ${msg.senderName} → ${otherUserId}`);
+    return c.json({ message: msg }, 201);
+  } catch (err) {
+    console.log("POST global/dm/:id error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });

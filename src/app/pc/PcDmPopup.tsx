@@ -18,6 +18,7 @@ interface Message {
 interface Props {
   targetUserId: string;
   userId: string;
+  globalMode?: boolean;  // true ise /global/dm/... endpoint'i kullan (cross-company)
 }
 
 function timeShort(ts: string) {
@@ -28,7 +29,8 @@ function timeShort(ts: string) {
   return d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' });
 }
 
-export function PcDmPopup({ targetUserId, userId }: Props) {
+export function PcDmPopup({ targetUserId, userId, globalMode }: Props) {
+  const dmBase = globalMode ? `${SERVER}/global/dm` : `${SERVER}/mesajlar/dm`;
   const [messages, setMessages] = useState<Message[]>([]);
   const [msgInput, setMsgInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -43,14 +45,14 @@ export function PcDmPopup({ targetUserId, userId }: Props) {
     if (!silent) setLoading(true);
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${SERVER}/mesajlar/dm/${targetUserId}`, { headers });
+      const res = await fetch(`${dmBase}/${targetUserId}`, { headers });
       if (res.ok) {
         const d = await res.json();
         setMessages(d.messages || []);
       }
     } catch (e) { console.error('[PcDmPopup] load:', e); }
     finally { setLoading(false); }
-  }, [targetUserId]);
+  }, [targetUserId, dmBase]);
 
   useEffect(() => {
     loadMessages();
@@ -68,7 +70,7 @@ export function PcDmPopup({ targetUserId, userId }: Props) {
     setError('');
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${SERVER}/mesajlar/dm/${targetUserId}`, {
+      const res = await fetch(`${dmBase}/${targetUserId}`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: msgInput.trim(), urgent }),

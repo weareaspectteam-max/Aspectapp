@@ -1,4 +1,10 @@
-import { Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Users, Building2 } from 'lucide-react';
+import { authHeaders } from '../lib/api';
+import { projectId } from '../lib/supabase-info';
+import type { UserRole } from '../components/login';
+
+const SERVER = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
 interface Personel {
   id: string;
@@ -9,14 +15,43 @@ interface Personel {
   status: 'active' | 'late' | 'idle';
 }
 
+interface GlobalYonetici {
+  userId: string;
+  name: string;
+  avatar: string;
+  companyId: string;
+  companyName: string;
+}
+
 interface Props {
   tumPersonel: Personel[];
   aktifSayi: number;
   toplamSayi: number;
+  userRole: UserRole;
+  isSuperAdmin?: boolean;
   onOpenDm?: (userId: string, name: string) => void;
+  onOpenGlobalDm?: (userId: string, name: string, companyName: string) => void;
 }
 
-export function PcLeftPanel({ tumPersonel, aktifSayi, toplamSayi, onOpenDm }: Props) {
+export function PcLeftPanel({ tumPersonel, aktifSayi, toplamSayi, userRole, isSuperAdmin, onOpenDm, onOpenGlobalDm }: Props) {
+  const [yoneticiler, setYoneticiler] = useState<GlobalYonetici[]>([]);
+  const showGlobal = userRole === 'yonetici' || isSuperAdmin;
+
+  useEffect(() => {
+    if (!showGlobal) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const headers = await authHeaders();
+        const res = await fetch(`${SERVER}/global/yoneticiler`, { headers });
+        if (res.ok && !cancelled) {
+          const d = await res.json();
+          setYoneticiler(d.yoneticiler || []);
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [showGlobal]);
   return (
     <aside className="pc-sidebar pc-sidebar-left">
       <div className="pc-left-header">
@@ -84,6 +119,45 @@ export function PcLeftPanel({ tumPersonel, aktifSayi, toplamSayi, onOpenDm }: Pr
           })
         )}
       </div>
+
+      {/* En altta — Şirket Yöneticileri (cross-company DM) */}
+      {showGlobal && yoneticiler.length > 0 && (
+        <div style={{
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+          marginTop: 8, paddingTop: 10,
+          display: 'flex', flexDirection: 'column', gap: 4,
+          maxHeight: '40%', overflowY: 'auto',
+          flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px 6px', fontSize: 10, fontWeight: 800, color: '#c5a8f5', letterSpacing: 1 }}>
+            <Building2 size={11} />
+            ŞİRKET YÖNETİCİLERİ
+          </div>
+          {yoneticiler.map(y => (
+            <div
+              key={y.userId}
+              onClick={onOpenGlobalDm ? () => onOpenGlobalDm(y.userId, y.name, y.companyName) : undefined}
+              title={`${y.name} → ${y.companyName} (mesaj gönder)`}
+              style={{
+                padding: '7px 10px',
+                borderRadius: 8,
+                background: 'rgba(197,168,245,0.06)',
+                border: '1px solid rgba(197,168,245,0.15)',
+                cursor: onOpenGlobalDm ? 'pointer' : 'default',
+                transition: 'transform 0.1s',
+              }}
+              onMouseEnter={e => { if (onOpenGlobalDm) e.currentTarget.style.transform = 'scale(1.02)'; }}
+              onMouseLeave={e => { if (onOpenGlobalDm) e.currentTarget.style.transform = 'scale(1)'; }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 13 }}>{y.avatar || '👤'}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{y.name}</span>
+              </div>
+              <div style={{ fontSize: 9, color: '#c5a8f5', marginLeft: 18, marginTop: 2 }}>🏢 {y.companyName}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </aside>
   );
 }

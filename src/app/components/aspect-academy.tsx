@@ -708,21 +708,6 @@ export function AspectAcademy({ userName, userRole, onLogout, onNavigate }: Aspe
                         <span className="text-[9px] font-bold" style={{ color: showHidden ? '#fbbf24' : 'rgba(255,255,255,0.3)' }}>{hiddenItems.length}</span>
                       </button>
                     )}
-                    {!loading && (
-                      <button onClick={async () => {
-                        try {
-                          const res = await fetch(appendGhostParam(`${API_BASE}/academy/seed-guide`), { method: 'POST', headers: await authHeaders() });
-                          const d = await res.json();
-                          if (!res.ok) throw new Error(d.error || 'Hata');
-                          alert(`Rehber güncellendi: ${d.yeniIcerik || d.icerikSayisi || 0} yeni içerik eklendi.`);
-                          fetchData();
-                        } catch (e: any) { alert(e.message); }
-                      }}
-                        className="h-8 px-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center gap-1.5 active:scale-95 transition-all">
-                        <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-[10px] font-bold text-emerald-400">Rehber</span>
-                      </button>
-                    )}
                     <button onClick={() => setShowCatForm(true)}
                       className="h-8 px-3 rounded-xl bg-ta/15 border border-ta/30 flex items-center gap-1.5 active:scale-95 transition-all">
                       <Plus className="w-3.5 h-3.5 text-ta" />

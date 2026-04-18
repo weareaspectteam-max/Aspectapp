@@ -4,9 +4,10 @@ import type { UserRole } from '../components/login';
 import { PcRightSidebar } from './PcRightSidebar';
 import { PcLeftPanel } from './PcLeftPanel';
 import { PcTopBar } from './PcTopBar';
-import { PcDashboard } from './screens/PcDashboard';
+import { PcDashboard, type CenterView } from './screens/PcDashboard';
 import { PcMesajlar } from './screens/PcMesajlar';
 import { PcPlaceholder } from './screens/PcPlaceholder';
+import { PcLiveFeed } from './screens/PcLiveFeed';
 import { PcDmPopup } from './PcDmPopup';
 import { PcWindow } from './PcWindow';
 import { useWindowManager, WINDOW_REGISTRY, type WindowKey } from './pc-windows';
@@ -32,6 +33,7 @@ function renderWindowContent(
   loading: boolean,
   lastRefresh: Date | null,
   userId: string,
+  companyKey?: string,
 ): React.ReactNode {
   const keyStr = String(key);
   const title = WINDOW_REGISTRY[keyStr]?.title || keyStr;
@@ -40,6 +42,15 @@ function renderWindowContent(
   }
   if (keyStr === 'messaging') {
     return <PcMesajlar userId={userId} />;
+  }
+  if (keyStr === 'live-feed' || keyStr.startsWith('live-feed:')) {
+    return <PcLiveFeed companyKey={companyKey} />;
+  }
+  if (keyStr.startsWith('gdm:')) {
+    // global dm format: gdm:<userId>:<userName>:<companyName>
+    const parts = keyStr.split(':');
+    const targetId = parts[1];
+    return <PcDmPopup targetUserId={targetId} userId={userId} globalMode />;
   }
   if (keyStr.startsWith('dm:')) {
     // format: dm:<userId>:<userName>
@@ -51,9 +62,10 @@ function renderWindowContent(
 }
 
 export function PcLayout({ userName, userId, userRole, userAvatar, accessToken, isSuperAdmin, ghostCompanyId, ghostCompanyName, onSwitchCompany }: Props) {
-  const { windows, openWindow, closeWindow, focusWindow, moveWindow } = useWindowManager();
+  const { windows, openWindow, closeWindow, focusWindow, moveWindow, resizeWindow } = useWindowManager();
   const companyKey = ghostCompanyId || 'self';
   const { data, loading, lastRefresh, refresh } = usePcDashboard(accessToken, companyKey);
+  const [centerView, setCenterView] = useState<CenterView>('feed');
   const [locked, setLocked] = useState(false);
   const [unlockPassword, setUnlockPassword] = useState('');
   const [unlockError, setUnlockError] = useState('');
@@ -141,9 +153,15 @@ export function PcLayout({ userName, userId, userRole, userAvatar, accessToken, 
             tumPersonel={data?.tumPersonelDetay ?? []}
             aktifSayi={data?.aktifPersonelSayisi ?? 0}
             toplamSayi={data?.toplamPersonelSayisi ?? 0}
+            userRole={userRole}
+            isSuperAdmin={isSuperAdmin}
             onOpenDm={(targetId, name) => {
               const dmKey = `dm:${targetId}:${name}`;
               openWindow(dmKey, 'left', { title: `💬 ${name}` });
+            }}
+            onOpenGlobalDm={(targetId, name, companyName) => {
+              const dmKey = `gdm:${targetId}:${name}:${companyName}`;
+              openWindow(dmKey, 'left', { title: `🏢 ${name} (${companyName})` });
             }}
           />
           <main className="pc-main">
@@ -154,9 +172,28 @@ export function PcLayout({ userName, userId, userRole, userAvatar, accessToken, 
               onRefresh={refresh}
               onLockScreen={handleLock}
               companyKey={companyKey}
+              ghostCompanyName={ghostCompanyName}
+              onExitGhost={ghostCompanyId ? () => onSwitchCompany({ companyId: null }) : undefined}
+              centerView={centerView}
+              onCenterViewChange={setCenterView}
             />
           </main>
-          <PcRightSidebar onOpen={(k) => openWindow(k, 'right')} onLogout={handleLogout} />
+          <PcRightSidebar
+            activeCenterView={centerView}
+            onOpen={(k) => {
+              // Canlı Feed: her tıklamada yeni pencere (multi-instance)
+              if (k === 'live-feed') {
+                const uniqueKey = `live-feed:${Date.now()}`;
+                openWindow(uniqueKey, 'right', { title: '📡 Canlı Feed', defaultWidth: 520, defaultHeight: 640 });
+              } else if (k === 'rotation') {
+                // Dashboard'a in-place yönlendir (popup açma)
+                setCenterView('rotasyon-atama');
+              } else {
+                openWindow(k, 'right');
+              }
+            }}
+            onLogout={handleLogout}
+          />
         </div>
         {/* Kilit overlay — şifre sorar */}
         {locked && (
@@ -247,8 +284,9 @@ export function PcLayout({ userName, userId, userRole, userAvatar, accessToken, 
               onClose={() => closeWindow(w.key)}
               onFocus={() => focusWindow(w.key)}
               onMove={(nx, ny) => moveWindow(w.key, nx, ny)}
+              onResize={(nw, nh) => resizeWindow(w.key, nw, nh)}
             >
-              {renderWindowContent(w.key, data, refresh, loading, lastRefresh, userId)}
+              {renderWindowContent(w.key, data, refresh, loading, lastRefresh, userId, companyKey)}
             </PcWindow>
           );
         })}

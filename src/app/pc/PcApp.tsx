@@ -62,14 +62,23 @@ export function PcApp() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        const next = applyUser(session.user, session.access_token);
-        setAuth(next);
-        setAuthToken(next.accessToken);
-      }
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          // Fresh metadata için getUser() — getSession bayat user_metadata dönebilir
+          let userToUse = session.user;
+          try {
+            const { data: { user: freshUser } } = await supabase.auth.getUser();
+            if (freshUser) userToUse = freshUser;
+          } catch {}
+          const next = applyUser(userToUse, session.access_token);
+          setAuth(next);
+          setAuthToken(next.accessToken);
+        }
+      } catch {}
+      finally { setLoading(false); }
+    })();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT' || !session) {
@@ -77,8 +86,18 @@ export function PcApp() {
         setAuthToken('');
       } else if (session.user) {
         const next = applyUser(session.user, session.access_token);
-        setAuth(next);
-        setAuthToken(next.accessToken);
+        setAuth(prev => {
+          const keepGhost = !!prev.ghostCompanyId;
+          const merged: AuthState = {
+            ...next,
+            ghostCompanyId: prev.ghostCompanyId,
+            ghostCompanyName: prev.ghostCompanyName,
+            originalToken: keepGhost ? prev.originalToken : '',
+            accessToken: keepGhost ? prev.accessToken : session.access_token,
+          };
+          setAuthToken(merged.accessToken);
+          return merged;
+        });
       }
     });
 
@@ -140,7 +159,7 @@ export function PcApp() {
           setAuthToken(newToken);
         }
       } catch (e) {
-        console.error('[PcApp] ghost-token:', e);
+        console.error('[PcApp] switch:', e);
       }
     }
     setGhostCompanyIdInApi(companyId);

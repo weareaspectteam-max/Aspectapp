@@ -546,32 +546,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
           }),
         }
       );
-
-      // Kasaya yansıt
-      if (borcYon === 'alacak') {
-        // Birine borç veriyoruz → kasadan para çıkışı
-        const giderRes = await fetch(appendGhostParam(`${API_BASE}/isletme/giderler`), {
-          method: 'POST', headers: hdrs,
-          body: JSON.stringify({ category: 'borc', amount: tutar, description: `Borçlar — Verilen Borç — ${borcKisi}`, date: borcTarih, currency: 'TRY' }),
-        });
-        if (giderRes.ok) {
-          const giderData = await giderRes.json();
-          const giderId = giderData?.gider?.id || giderData?.id || giderData?.giderId;
-          if (giderId) {
-            await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/ode`), {
-              method: 'POST', headers: hdrs,
-              body: JSON.stringify({ giderId, tutar }),
-            });
-          }
-        }
-      } else {
-        // Birinden borç alıyoruz → kasaya para girişi
-        await fetch(appendGhostParam(`${API_BASE}/isletme/gelirler`), {
-          method: 'POST', headers: hdrs,
-          body: JSON.stringify({ amount: tutar, description: `Borçlar — Alınan Borç — ${borcKisi}`, date: borcTarih, mekanId: '', mekanAdi: '', paymentMethod: 'cash' }),
-        });
-      }
-
+      // Borçlar İGD'ye yazılmaz — sadece kasa_borc_ kaydı yeterli
       setBorcKisi('');
       setBorcTutar('');
       setBorcAciklama('');
@@ -647,32 +622,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
         appendGhostParam(`${API_BASE}/kasa/borclar/${borc.id}`),
         { method: 'DELETE', headers: hdrs }
       );
-
-      // İGD'deki etkiyi geri al
-      if (borc.yon === 'alacak') {
-        // Birine borç vermiştik (kasadan çıkmıştı) → kasaya geri ekle
-        await fetch(appendGhostParam(`${API_BASE}/isletme/gelirler`), {
-          method: 'POST', headers: hdrs,
-          body: JSON.stringify({ amount: borc.tutar, description: `Borçlar — İptal — ${borc.kisi}`, date: new Date().toISOString().split('T')[0], mekanId: '', mekanAdi: '', paymentMethod: 'cash' }),
-        });
-      } else {
-        // Birinden borç almıştık (kasaya girmişti) → kasadan düş
-        const giderRes = await fetch(appendGhostParam(`${API_BASE}/isletme/giderler`), {
-          method: 'POST', headers: hdrs,
-          body: JSON.stringify({ category: 'borc-iptal', amount: borc.tutar, description: `Borçlar — İptal — ${borc.kisi}`, date: new Date().toISOString().split('T')[0], currency: 'TRY' }),
-        });
-        if (giderRes.ok) {
-          const giderData = await giderRes.json();
-          const giderId = giderData?.gider?.id || giderData?.id || giderData?.giderId;
-          if (giderId) {
-            await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/ode`), {
-              method: 'POST', headers: hdrs,
-              body: JSON.stringify({ giderId, tutar: borc.tutar }),
-            });
-          }
-        }
-      }
-
+      // Borç silindi — İGD'ye dokunmaya gerek yok (borçlar İGD'de değil)
       fetchBorclar();
       fetchSirket();
     } catch {}
@@ -704,16 +654,15 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
     setAksiyonSaving(true);
     try {
       const odemeLabel = aksiyonOdemeYontemi === 'cash' ? 'Nakit' : aksiyonOdemeYontemi === 'card' ? 'Kart' : 'İban';
-      await fetch(appendGhostParam(`${API_BASE}/isletme/gelirler`), {
+      await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/islem`), {
         method: 'POST',
         headers: await authHeaders(),
         body: JSON.stringify({
+          type: 'gelir',
+          category: odemeLabel,
           amount: parseFloat(aksiyonTutar),
-          description: aksiyonAciklama || `${odemeLabel} ekleme`,
+          description: aksiyonAciklama || `${odemeLabel} girişi`,
           date: aksiyonTarih,
-          mekanId: '',
-          mekanAdi: '',
-          paymentMethod: aksiyonOdemeYontemi,
         }),
       });
       setShowParaGirisi(false);
@@ -726,29 +675,17 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
     if (!aksiyonTutar || !aksiyonKategori) return;
     setAksiyonSaving(true);
     try {
-      const hdrs = await authHeaders();
-      const giderRes = await fetch(appendGhostParam(`${API_BASE}/isletme/giderler`), {
+      await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/islem`), {
         method: 'POST',
-        headers: hdrs,
+        headers: await authHeaders(),
         body: JSON.stringify({
+          type: 'gider',
           category: aksiyonKategori,
           amount: parseFloat(aksiyonTutar),
-          description: aksiyonAciklama || 'Gider',
+          description: aksiyonAciklama || 'Para çıkışı',
           date: aksiyonTarih,
-          currency: 'TRY',
         }),
       });
-      if (aksiyonOdendi && giderRes.ok) {
-        const giderData = await giderRes.json();
-        const giderId = giderData?.gider?.id || giderData?.id || giderData?.giderId;
-        if (giderId) {
-          await fetch(appendGhostParam(`${API_BASE}/kasa/sirket/ode`), {
-            method: 'POST',
-            headers: hdrs,
-            body: JSON.stringify({ giderId, tutar: parseFloat(aksiyonTutar) }),
-          });
-        }
-      }
       setShowParaCikisi(false);
       resetAksiyonForm();
       fetchSirket();
@@ -998,8 +935,8 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
           </motion.div>
         )}
 
-        {/* Aksiyon Butonları */}
-        {isAdmin && (
+        {/* Aksiyon Butonları — sadece yönetici */}
+        {userRole === 'yonetici' && (
           <div className="grid grid-cols-2 gap-2.5">
             <button
               onClick={() => { resetAksiyonForm(); setShowParaGirisi(true); }}
@@ -1592,7 +1529,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
                           <span className={`text-xs font-bold shrink-0 ${islem.tip === 'silme' ? 'text-red-500' : islem.tip === 'gider' ? 'text-red-400' : islem.tip === 'odeme' ? 'text-orange-400' : 'text-emerald-400'}`}>
                             {islem.tip === 'silme' ? '🗑️ -' : (islem.tip === 'gider' || islem.tip === 'odeme') ? '-' : '+'}{formatMoney(islem.tutar)}
                           </span>
-                          {isAdmin && !d.ayKapatildi && islem.tip === 'odeme' && islem.giderId && (
+                          {false && isAdmin && !d.ayKapatildi && islem.tip === 'odeme' && islem.giderId && (
                             <button onClick={async () => {
                               if (!confirm('Bu ödemeyi silmek istiyor musunuz?')) return;
                               try {
@@ -1607,7 +1544,7 @@ export function Kasa({ userName, userRole, userId, onLogout, onNavigate }: KasaP
                               <Trash2 className="w-3 h-3" />
                             </button>
                           )}
-                          {isAdmin && !d.ayKapatildi && islem.tip !== 'devir' && islem.tip !== 'odeme' && (
+                          {false && isAdmin && !d.ayKapatildi && islem.tip !== 'devir' && islem.tip !== 'odeme' && (
                             <button onClick={() => deleteIslem('sirket', islem.id)} className="p-1 rounded text-white/20 active:text-red-400 shrink-0">
                               <Trash2 className="w-3 h-3" />
                             </button>

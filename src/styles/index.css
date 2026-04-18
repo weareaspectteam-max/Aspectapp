@@ -17,6 +17,31 @@
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Mobil klavye açılınca sayfa büyüme/kayma önleme */
+html, body {
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* dvh desteği — klavye açılınca viewport doğru hesaplansın */
+:root {
+  --app-height: 100vh;
+  --app-height: 100dvh;
+}
+
+/* Input focus'ta zoom engelleme (iOS 16px altı font-size zoom yapıyor) */
+input, textarea, select {
+  font-size: 16px !important;
+}
+
+/* Klavye açıkken fixed elementlerin kaymaması */
+@supports (height: 100dvh) {
+  .fixed {
+    position: fixed;
+  }
+}
+
 /* Kota kupa bounce animasyonu */
 @keyframes kotaBounce {
   0%   { transform: scale(0.3) translateY(6px); opacity: 0; }

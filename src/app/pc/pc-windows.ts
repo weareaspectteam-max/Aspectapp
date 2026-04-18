@@ -111,5 +111,9 @@ export function useWindowManager() {
     setWindows(prev => prev.map(w => w.key === key ? { ...w, x, y } : w));
   }, []);
 
-  return { windows, openWindow, closeWindow, focusWindow, moveWindow };
+  const resizeWindow = useCallback((key: WindowKey, w: number, h: number) => {
+    setWindows(prev => prev.map(win => win.key === key ? { ...win, w, h } : win));
+  }, []);
+
+  return { windows, openWindow, closeWindow, focusWindow, moveWindow, resizeWindow };
 }

@@ -98,7 +98,7 @@ export function PcTopBar({ userName, userRole, userAvatar, isSuperAdmin, ghostCo
         </div>
       </header>
 
-      {/* Gizli şirket seçici — sadece superadmin'in bildiği kısayolla (Ctrl+Shift+G) açılır */}
+      {/* Şirket analiz seçici — gizli kısayol (Ctrl+Shift+G) */}
       {showDialog && isSuperAdmin && (
         <div
           onClick={() => setShowDialog(false)}
@@ -109,7 +109,7 @@ export function PcTopBar({ userName, userRole, userAvatar, isSuperAdmin, ghostCo
             style={{ width: '100%', maxWidth: 420, maxHeight: '80vh', background: 'rgba(20, 15, 50, 0.98)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 16, padding: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>Şirket Seç</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>📊 Analiz Şirketi</div>
               <button onClick={() => setShowDialog(false)} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#fff', width: 28, height: 28, borderRadius: 8, cursor: 'pointer' }}>
                 <X size={14} />
               </button>
@@ -117,9 +117,9 @@ export function PcTopBar({ userName, userRole, userAvatar, isSuperAdmin, ghostCo
             {ghostCompanyId && (
               <button
                 onClick={() => { onSwitchCompany({ companyId: null }); setShowDialog(false); }}
-                style={{ width: '100%', padding: '10px 12px', background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.25)', borderRadius: 10, color: '#f87171', fontSize: 12, fontWeight: 700, cursor: 'pointer', marginBottom: 10 }}
+                style={{ width: '100%', padding: '10px 12px', background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.3)', borderRadius: 10, color: '#fbbf24', fontSize: 12, fontWeight: 700, cursor: 'pointer', marginBottom: 10 }}
               >
-                Ghost moddan çık ({ghostCompanyName})
+                Analizi Kapat ({ghostCompanyName})
               </button>
             )}
             <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -147,7 +147,7 @@ export function PcTopBar({ userName, userRole, userAvatar, isSuperAdmin, ghostCo
               ))}
             </div>
             <div style={{ marginTop: 12, fontSize: 10, color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>
-              Ctrl+Shift+G ile aç/kapat
+              Ctrl+Shift+G
             </div>
           </div>
         </div>
