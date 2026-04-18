@@ -55,6 +55,7 @@ import { AnomaliPanosu } from './components/anomali-panosu';
 import { IndirimIstatistik } from './components/indirim-istatistik';
 import { BirthdayCalendar } from './components/birthday-calendar';
 import { BirthdayNotifications } from './components/birthday-notifications';
+import { UrgentMessageModal } from './components/urgent-message-modal';
 import { Announcements } from './components/announcements';
 import { VardiyaRaporlari } from './components/vardiya-raporlari';
 import HedefTakip from './components/hedef-takip';
@@ -73,6 +74,7 @@ import { IptalTalepPanel } from './components/iptal-talep-panel';
 import { SuperAdminPanel } from './components/super-admin-panel';
 import { TedarikciPortal } from './components/tedarikci-portal';
 import { TedarikciYonetimi } from './components/tedarikci-yonetimi';
+import { PcApp } from './pc/PcApp';
 import type { UserRole } from './components/login';
 import type { ShiftSetupData } from './components/shift-setup';
 import type { Task } from './services/rotation-service';
@@ -90,6 +92,10 @@ const router = createBrowserRouter([
   {
     path: '/apply',
     Component: CompanyApplicationPage,
+  },
+  {
+    path: '/pc/*',
+    Component: PcApp,
   },
   {
     path: '/*',
@@ -1233,6 +1239,7 @@ function MainApp() {
       <div className="max-w-[480px] mx-auto min-h-screen relative">
         {/* Birthday Notifications */}
         {isLoggedIn && <BirthdayNotifications />}
+        <UrgentMessageModal isLoggedIn={isLoggedIn} />
 
         {/* Global Satış İptal Onay Paneli — yöneticiler için, tüm ekranlarda */}
         {isLoggedIn && (

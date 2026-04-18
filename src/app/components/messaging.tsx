@@ -8,7 +8,7 @@
  *  - Kanal oluşturma / silme             : yonetici + ust-mudur
  *
  * Layout: App.tsx → main(pt-[60px] pb-24) içinde render edilir.
- *   Chat görünümü height = calc(100vh - 60px - 96px)
+ *   Chat görünümü height = calc(100dvh - 60px - 96px)
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -446,7 +446,7 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
     const isProject = selectedCh?.type === 'project';
 
     return (
-      <div className="flex flex-col" style={{ height: 'calc(100vh - 60px - 96px)' }}>
+      <div className="flex flex-col" style={{ height: 'calc(100svh - 60px - 96px)' }}>
 
         {/* Header */}
         <div className="shrink-0 px-4 py-3 border-b border-white/10"
@@ -541,8 +541,15 @@ export function Messaging({ currentUser, userRole, userId, onNavigate }: Messagi
                 value={msgInput}
                 onChange={e => setMsgInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
+                onFocus={() => {
+                  // Mobil klavye açılınca görünür alanı input'a kaydır
+                  setTimeout(() => {
+                    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                  }, 300);
+                }}
                 placeholder="Mesaj yaz..."
-                className="flex-1 bg-transparent text-sm text-white placeholder-white/25 outline-none"
+                className="flex-1 bg-transparent text-[16px] text-white placeholder-white/25 outline-none"
+                style={{ fontSize: 16 }}
                 autoFocus
               />
               <button

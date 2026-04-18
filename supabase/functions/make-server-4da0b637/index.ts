@@ -4885,22 +4885,41 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       .sort((a, b) => b.adet - a.adet);
 
     // ── Mekan bazlı ciro sıralaması ──────────────────────────────────────────
-    const mekanCiroList = bugunKayitlar.map((kayit: any) => {
+    const mekanCiroListAcik = bugunKayitlar.map((kayit: any) => {
       const mekan = mekanMap[kayit.mekanId] || { name: kayit.mekanId, emoji: "📍", color: "#9dd9ea" };
       const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
       const ciro = satislar.reduce((sum: number, s: any) => sum + (s.finalPrice || 0), 0);
+      const iskonto = satislar.reduce((sum: number, s: any) => sum + (Number(s.discount) || 0), 0);
       const adet = satislar.reduce((sum: number, s: any) => {
         return sum + ((s.items || []).reduce((a: number, i: any) => a + (i.quantity || 1), 0) || 1);
       }, 0);
+      const kare = (kayit.kareKayitlari || []).reduce((s: number, k: any) => s + (k.frameCount || 0), 0);
+      const acikMi = !!kayit.acilis && !kayit.kapanish;
       return {
         id: kayit.mekanId,
         name: mekan.name,
         emoji: mekan.emoji || "📍",
         color: mekan.color || "#9dd9ea",
         ciro: Math.round(ciro),
+        iskonto: Math.round(iskonto),
         adet,
+        kare,
+        acik: acikMi,
       };
-    }).sort((a: any, b: any) => b.ciro - a.ciro).slice(0, 5);
+    }).sort((a: any, b: any) => b.ciro - a.ciro);
+    // Bugün kaydı olmayan mekanları "aktif değil" olarak ekle
+    const kayitliMekanIds = new Set(bugunKayitlar.map((k: any) => k.mekanId));
+    const mekanCiroListKapali = (mekanlarList || [])
+      .filter((m: any) => !kayitliMekanIds.has(m.id))
+      .map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        emoji: m.emoji || "📍",
+        color: m.color || "#9dd9ea",
+        ciro: 0, iskonto: 0, adet: 0, kare: 0,
+        acik: false,
+      }));
+    const mekanCiroList = [...mekanCiroListAcik, ...mekanCiroListKapali];
 
     // ── Personel bazlı performans sıralaması ───────────────────────────────��─
     const personelMap: Record<string, { name: string; ciro: number; satisAdet: number; mekan: string }> = {};
@@ -4936,6 +4955,7 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
 
     // Toplam personel: Supabase auth'tan şirketin tüm personelini say
     let toplamPersonelSayisi = 0;
+    let tumPersonelDetay: any[] = [];
     try {
       const sb = getAdminClient();
       const { data: { users } } = await sb.auth.admin.listUsers({ perPage: 1000 });
@@ -4949,6 +4969,32 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       const userNameMap: Record<string, string> = {};
       for (const u of companyUsers) { userNameMap[u.id] = u.user_metadata?.full_name || u.user_metadata?.name || u.email || u.id; }
       for (const ci of aktifPersonel) { ci._name = userNameMap[ci.userId] || ci.userId; }
+
+      // Tüm personel durumu (status: active | late | idle)
+      const checkinMap: Record<string, any> = {};
+      for (const ci of aktifPersonel) checkinMap[ci.userId] = ci;
+      tumPersonelDetay = companyUsers.map((u: any) => {
+        const ci = checkinMap[u.id];
+        if (ci) {
+          const lateMin = Number(ci.lateMin) || 0;
+          return {
+            id: u.id,
+            name: userNameMap[u.id],
+            mekan: ci.location || '',
+            checkinZamani: ci.checkInTime || '',
+            lateMin,
+            status: lateMin > 0 ? 'late' : 'active',
+          };
+        }
+        return { id: u.id, name: userNameMap[u.id], mekan: '', checkinZamani: '', lateMin: 0, status: 'idle' };
+      });
+      // Sıralama: active → late → idle, isim alfabetik
+      const order: Record<string, number> = { active: 0, late: 1, idle: 2 };
+      tumPersonelDetay.sort((a, b) => {
+        const so = order[a.status] - order[b.status];
+        if (so !== 0) return so;
+        return a.name.localeCompare(b.name, 'tr');
+      });
     } catch {}
 
     console.log(`Manager dashboard: ${today} — ciro:${toplamCiro} adet:${toplamAdet} kare:${toplamKare} anomali:${anomaliSayisi} personel:${personelPerformans.length} aktifPersonel:${aktifPersonelSayisi}/${toplamPersonelSayisi}`);
@@ -4974,6 +5020,7 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       personelPerformans,
       aktifPersonelSayisi,
       aktifPersonelDetay: aktifPersonel.map((ci: any) => ({ name: ci._name || ci.userId, mekan: ci.location || '', checkinZamani: ci.checkInTime || '' })),
+      tumPersonelDetay,
       toplamPersonelSayisi,
       gecGirisSayisi,
     });
@@ -10662,7 +10709,7 @@ app.post("/make-server-4da0b637/mesajlar/dm/:otherUserId", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const { otherUserId } = c.req.param();
-    const { content } = await c.req.json();
+    const { content, urgent } = await c.req.json();
     if (!content?.trim()) return c.json({ error: "Mesaj boş olamaz." }, 400);
 
     const ckvDmSendCompanyId = getCompanyId(user);
@@ -10676,6 +10723,7 @@ app.post("/make-server-4da0b637/mesajlar/dm/:otherUserId", async (c) => {
       senderRole: user.user_metadata?.role || "personel",
       content: content.trim(),
       timestamp: new Date().toISOString(),
+      urgent: !!urgent,
     };
 
     const data: any = await getKvCache(ckvDmSendCompanyId, ckv, dmKey) || { messages: [] };
@@ -10695,10 +10743,60 @@ app.post("/make-server-4da0b637/mesajlar/dm/:otherUserId", async (c) => {
       }
     }
 
-    console.log(`DM: ${user.user_metadata?.full_name} → ${otherUserId}`);
+    // Acil mesajsa: alıcının urgent inbox'ına yaz
+    if (urgent) {
+      const urgentKey = `urgent_dm_${otherUserId}`;
+      await ckv.set(urgentKey, {
+        id,
+        fromUserId: user.id,
+        fromName: msg.senderName,
+        fromRole: msg.senderRole,
+        content: msg.content,
+        timestamp: msg.timestamp,
+      });
+      console.log(`ACİL DM: ${msg.senderName} → ${otherUserId}`);
+    }
+
+    console.log(`DM${urgent ? ' [ACİL]' : ''}: ${user.user_metadata?.full_name} → ${otherUserId}`);
     return c.json({ message: msg }, 201);
   } catch (err) {
     console.log("POST mesajlar/dm/:id error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// MESAJLAR: Acil DM Poll (alıcı tarafı)
+// GET /make-server-4da0b637/mesajlar/acil → { message: {...} } veya { message: null }
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/mesajlar/acil", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const ckv = companyKvFor(getCompanyId(user));
+    const urgentKey = `urgent_dm_${user.id}`;
+    const urgent = await ckv.get(urgentKey);
+    return c.json({ message: urgent || null });
+  } catch (err) {
+    console.log("GET mesajlar/acil error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// MESAJLAR: Acil DM Okundu (X veya cevap sonrası)
+// POST /make-server-4da0b637/mesajlar/acil/okundu
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/mesajlar/acil/okundu", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const ckv = companyKvFor(getCompanyId(user));
+    const urgentKey = `urgent_dm_${user.id}`;
+    await ckv.del(urgentKey);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("POST mesajlar/acil/okundu error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
