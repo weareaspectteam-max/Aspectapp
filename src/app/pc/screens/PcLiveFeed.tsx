@@ -9,7 +9,7 @@ interface Props {
 type TypeFilter = 'all' | 'satis' | 'kare';
 
 export function PcLiveFeed({ companyKey }: Props) {
-  const { feed, loading } = useCanliFeed(companyKey);
+  const { feed, loading } = useCanliFeed(companyKey, 15_000);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [mekanFilter, setMekanFilter] = useState<string>('all');
   const wrapRef = useRef<HTMLDivElement>(null);

@@ -218,28 +218,35 @@ function FeedFilterDropdown({ value, onChange, mekanOptions }: { value: FeedFilt
   );
 }
 
-export function useCanliFeed(companyKey?: string) {
+export function useCanliFeed(companyKey?: string, pollMs?: number) {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchFeed = useCallback(async () => {
-    setLoading(true);
+  const fetchFeed = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const headers = await authHeaders();
       const res = await fetch(`${API_BASE}/stok/canli-satis${ghostParams()}`, { headers });
       const data = await res.json();
       if (res.ok) setFeed(data.feed || data.satislar || []);
     } catch {}
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, []);
 
   useEffect(() => {
     fetchFeed();
-    // Dışarıdan tetikleme için global ref
-    triggerFeedRefresh = fetchFeed;
-    return () => { if (triggerFeedRefresh === fetchFeed) triggerFeedRefresh = null; };
+    // Dışarıdan tetikleme için global ref (dashboard yenile butonu)
+    triggerFeedRefresh = () => fetchFeed();
+    return () => { if (triggerFeedRefresh && triggerFeedRefresh.toString() === (() => fetchFeed()).toString()) triggerFeedRefresh = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchFeed, companyKey]);
+
+  // Otomatik polling — pencere modu (pollMs > 0)
+  useEffect(() => {
+    if (!pollMs || pollMs <= 0) return;
+    const id = setInterval(() => fetchFeed(true), pollMs);
+    return () => clearInterval(id);
+  }, [fetchFeed, pollMs]);
 
   return { feed, loading };
 }
@@ -458,6 +465,7 @@ let triggerFeedRefresh: (() => void) | null = null;
 
 export function PcDashboard({ data, loading, lastRefresh, onRefresh, onLockScreen, companyKey, ghostCompanyName, onExitGhost, centerView: centerViewProp, onCenterViewChange }: PcDashboardProps) {
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoCountdown, setAutoCountdown] = useState(15);
 
   const handleRefreshAll = () => {
     onRefresh();
@@ -466,12 +474,22 @@ export function PcDashboard({ data, loading, lastRefresh, onRefresh, onLockScree
 
   // Otomatik yenileme (15 sn) — kullanıcı toggle ile açar
   useEffect(() => {
-    if (!autoRefresh) return;
-    const id = setInterval(() => {
-      onRefresh();
-      if (triggerFeedRefresh) triggerFeedRefresh();
-    }, 15_000);
-    return () => clearInterval(id);
+    if (!autoRefresh) {
+      setAutoCountdown(15);
+      return;
+    }
+    setAutoCountdown(15);
+    const tick = setInterval(() => {
+      setAutoCountdown(prev => {
+        if (prev <= 1) {
+          onRefresh();
+          if (triggerFeedRefresh) triggerFeedRefresh();
+          return 15;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(tick);
   }, [autoRefresh, onRefresh]);
   const [topMekanFilter, setTopMekanFilter] = useState<string>('all');
   const [internalCenterView, setInternalCenterView] = useState<CenterView>('feed');
@@ -592,7 +610,7 @@ export function PcDashboard({ data, loading, lastRefresh, onRefresh, onLockScree
             }}
           >
             {autoRefresh ? <Pause size={12} /> : <Play size={12} />}
-            {autoRefresh ? 'Oto · 15sn' : 'Otomatik'}
+            {autoRefresh ? `Oto · ${autoCountdown}sn` : 'Otomatik'}
             {autoRefresh && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399', boxShadow: '0 0 6px #34d399', marginLeft: 2 }} />}
           </button>
           <button onClick={handleRefreshAll} disabled={loading} title="Sayfayı yenile"

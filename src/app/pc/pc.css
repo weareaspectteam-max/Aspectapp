@@ -479,3 +479,121 @@
 
 .pc-no-scrollbar::-webkit-scrollbar { display: none; }
 .pc-no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ───────── KİLİT EKRANI ANİMASYONLARI ───────── */
+
+@keyframes pc-lock-fadein {
+  from { opacity: 0; transform: scale(1.03); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pc-lock-success-out {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.92); }
+}
+
+/* Aurora — yumuşak renk bantları yavaşça dalgalanır */
+@keyframes pc-aurora-1 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  33%      { transform: translate(8%, -5%) rotate(8deg); }
+  66%      { transform: translate(-5%, 6%) rotate(-6deg); }
+}
+@keyframes pc-aurora-2 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50%      { transform: translate(-10%, 8%) rotate(-12deg); }
+}
+@keyframes pc-aurora-3 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  40%      { transform: translate(7%, 7%) rotate(10deg); }
+  80%      { transform: translate(-6%, -4%) rotate(-8deg); }
+}
+
+/* Yıldız tozu — aşağıdan yukarı süzülen küçük parıltılar */
+@keyframes pc-star-rise {
+  0%   { transform: translateY(100vh) scale(0.6); opacity: 0; }
+  10%  { opacity: 0.9; }
+  90%  { opacity: 0.9; }
+  100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+}
+
+@keyframes pc-star-twinkle {
+  0%, 100% { opacity: 0.3; }
+  50%      { opacity: 1; }
+}
+
+/* Logo — gradient akma + glow pulse */
+@keyframes pc-logo-flow {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Logo harfleri — alttan üste sırayla giriş */
+@keyframes pc-logo-char-in {
+  from { opacity: 0; transform: translateY(20px); filter: blur(8px); }
+  to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+/* Lock — nefes alma */
+@keyframes pc-lock-breath {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(168,230,207,0.5)); }
+  50%      { transform: scale(1.07); filter: drop-shadow(0 0 22px rgba(168,230,207,0.95)); }
+}
+
+/* Orbital noktalar — kilitin etrafında dönen 4 nokta */
+@keyframes pc-orbit {
+  from { transform: rotate(0deg) translateX(46px) rotate(0deg); }
+  to   { transform: rotate(360deg) translateX(46px) rotate(-360deg); }
+}
+
+/* Input shake (yanlış şifre) */
+@keyframes pc-shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-8px); }
+  40%      { transform: translateX(8px); }
+  60%      { transform: translateX(-5px); }
+  80%      { transform: translateX(5px); }
+}
+
+/* Hatalı giriş — overlay kenarlarında kırmızı flash */
+@keyframes pc-flash-red {
+  0%   { box-shadow: inset 0 0 0 0 rgba(248,113,113,0); }
+  30%  { box-shadow: inset 0 0 80px 0 rgba(248,113,113,0.5); }
+  100% { box-shadow: inset 0 0 0 0 rgba(248,113,113,0); }
+}
+
+/* Doğru giriş — yeşil radial flash + zoom-out */
+@keyframes pc-flash-green {
+  0%   { box-shadow: inset 0 0 0 0 rgba(52,211,153,0); }
+  30%  { box-shadow: inset 0 0 100px 0 rgba(52,211,153,0.6); }
+  100% { box-shadow: inset 0 0 0 0 rgba(52,211,153,0); }
+}
+
+/* Maskot bounce — sürekli yumuşak zıplama */
+@keyframes pc-mascot-bounce {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50%      { transform: translateY(-6px) rotate(2deg); }
+}
+
+/* Maskot angry shake (yanlış şifre) */
+@keyframes pc-mascot-angry {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  20%      { transform: translateX(-6px) rotate(-5deg); }
+  40%      { transform: translateX(6px) rotate(5deg); }
+  60%      { transform: translateX(-4px) rotate(-3deg); }
+  80%      { transform: translateX(4px) rotate(3deg); }
+}
+
+/* Maskot happy jump */
+@keyframes pc-mascot-happy {
+  0%, 100% { transform: translateY(0) scale(1); }
+  40%      { transform: translateY(-14px) scale(1.1); }
+  70%      { transform: translateY(0) scale(1); }
+  85%      { transform: translateY(-6px) scale(1.05); }
+}
+
+/* Speech bubble pop-in */
+@keyframes pc-bubble-in {
+  from { opacity: 0; transform: scale(0.7) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
