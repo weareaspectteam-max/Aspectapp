@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { DollarSign, ShoppingBag, Camera, AlertTriangle, Clock, RefreshCw, ChevronDown, Columns2, Square, Play, Pause, EyeOff, X, TrendingUp, TrendingDown, Minus, Package, Film } from 'lucide-react';
 import { authHeaders, ghostParams } from '../../lib/api';
 import { projectId } from '../../lib/supabase-info';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import type { PcDashboardData } from '../usePcDashboard';
 import { PcSimpleDropdown } from '../PcSimpleDropdown';
 import { PcRotasyonAtama } from './PcRotasyonAtama';
@@ -473,6 +473,7 @@ export function PcDashboard({ data, loading, lastRefresh, onRefresh, onLockScree
     }, 15_000);
     return () => clearInterval(id);
   }, [autoRefresh, onRefresh]);
+  const [topMekanFilter, setTopMekanFilter] = useState<string>('all');
   const [internalCenterView, setInternalCenterView] = useState<CenterView>('feed');
   const centerView = centerViewProp ?? internalCenterView;
   const setCenterView = (v: CenterView) => {
@@ -481,7 +482,6 @@ export function PcDashboard({ data, loading, lastRefresh, onRefresh, onLockScree
   };
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [feedSplit, setFeedSplit] = useState(false);
-  const [salesMekanFilter, setSalesMekanFilter] = useState<string>('all');
 
   const anomali = data?.anomaliSayisi ?? 0;
   const gecGiris = data?.gecGirisSayisi ?? 0;
@@ -489,15 +489,58 @@ export function PcDashboard({ data, loading, lastRefresh, onRefresh, onLockScree
     : centerView === 'rotasyon' ? 'Rotasyon Bilgileri'
     : 'Rotasyon Atama';
 
+  // Üst 3 kart için filtrelenmiş veri (global mekan filter)
+  const filteredTop = useMemo(() => {
+    if (topMekanFilter === 'all' || !data) {
+      return {
+        toplamCiro: data?.toplamCiro ?? 0,
+        toplamAdet: data?.toplamAdet ?? 0,
+        toplamKare: data?.toplamKare ?? 0,
+        odemeDagilimi: data?.odemeDagilimi || { nakit: 0, kart: 0, iban: 0 },
+        albumDagilimi: data?.albumDagilimi || [],
+        satilan: data?.toplamBasilan ?? 0,
+        iade: data?.toplamIadeFoto ?? 0,
+      };
+    }
+    const m = data?.mekanCiroList?.find(x => x.id === topMekanFilter);
+    return {
+      toplamCiro: m?.ciro ?? 0,
+      toplamAdet: m?.adet ?? 0,
+      toplamKare: m?.kare ?? 0,
+      odemeDagilimi: m?.odemeDagilimi || { nakit: 0, kart: 0, iban: 0 },
+      albumDagilimi: m?.urunDagilimi || [],
+      satilan: m?.kareSatilan ?? 0,
+      iade: m?.kareIade ?? 0,
+    };
+  }, [data, topMekanFilter]);
+
   return (
     <>
       <div className="pc-dash-header">
-        <div>
-          <div className="pc-dash-title">Dashboard</div>
-          <div className="pc-dash-sub">
-            {new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' })}
-            {lastRefresh && ` · ${lastRefresh.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div>
+            <div className="pc-dash-title">Dashboard</div>
+            <div className="pc-dash-sub">
+              {new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' })}
+              {lastRefresh && ` · ${lastRefresh.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`}
+            </div>
           </div>
+          {(() => {
+            const allMekan = data?.mekanCiroList || [];
+            if (allMekan.length === 0) return null;
+            const opts = [
+              { value: 'all', label: '🏢 Tüm Mekanlar' },
+              ...allMekan.map(m => ({ value: m.id, label: `${m.emoji} ${m.name}`, color: m.color })),
+            ];
+            return (
+              <PcSimpleDropdown
+                options={opts}
+                value={topMekanFilter}
+                onChange={setTopMekanFilter}
+                align="left"
+              />
+            );
+          })()}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {ghostCompanyName && onExitGhost && (
@@ -581,12 +624,12 @@ export function PcDashboard({ data, loading, lastRefresh, onRefresh, onLockScree
               </div>
               <div>
                 <div className="pc-stat-card-label">Toplam Ciro</div>
-                <div className="pc-stat-card-value">{loading && !data ? '—' : formatTL(data?.toplamCiro ?? 0)}</div>
+                <div className="pc-stat-card-value">{loading && !data ? '—' : formatTL(filteredTop.toplamCiro)}</div>
               </div>
             </div>
             {/* Sağ: Ödeme Dağılımı stacked bar — tam yükseklik */}
             {(() => {
-              const od = data?.odemeDagilimi || { nakit: 0, kart: 0, iban: 0 };
+              const od = filteredTop.odemeDagilimi;
               const total = od.nakit + od.kart + od.iban;
               if (total === 0) {
                 return (
@@ -654,43 +697,38 @@ export function PcDashboard({ data, loading, lastRefresh, onRefresh, onLockScree
             { bg: 'rgba(249,168,212,0.18)', border: 'rgba(249,168,212,0.35)', text: '#f9a8d4' },
             { bg: 'rgba(251,146,60,0.18)',  border: 'rgba(251,146,60,0.35)',  text: '#fb923c' },
           ];
-          const mekanlar = (data?.mekanCiroList || []).filter(m => (m.urunDagilimi || []).length > 0);
-          const validIds = new Set(['all', ...mekanlar.map(m => m.id)]);
-          const activeFilter = validIds.has(salesMekanFilter) ? salesMekanFilter : 'all';
-          let albums: { tip: string; adet: number }[];
-          let displayCount: number;
-          if (activeFilter === 'all') {
-            albums = data?.albumDagilimi || [];
-            displayCount = data?.toplamAdet ?? 0;
-          } else {
-            const m = mekanlar.find(x => x.id === activeFilter);
-            albums = m?.urunDagilimi || [];
-            displayCount = m?.adet ?? 0;
-          }
-          // 2 satıra böl (yarıya, top-half üstte, alt-half altta)
-          const mid = Math.ceil(albums.length / 2);
-          const row1 = albums.slice(0, mid);
-          const row2 = albums.slice(mid);
-          const renderChip = (a: { tip: string; adet: number }, idx: number, offset: number) => {
-            const p = palette[(idx + offset) % palette.length];
+          const albums = filteredTop.albumDagilimi;
+          const displayCount = filteredTop.toplamAdet;
+          // Chip sayısına göre boyut ölçekle
+          const n = albums.length;
+          const sizeMode: 'lg' | 'md' | 'sm' | 'xs' =
+            n <= 5 ? 'lg' : n <= 8 ? 'md' : n <= 12 ? 'sm' : 'xs';
+          const cz = {
+            lg: { fontName: 11.5, fontNum: 13,   padX: 9, padY: 3, gap: 5, radius: 7,  rowGap: 5 },
+            md: { fontName: 10.5, fontNum: 12,   padX: 7, padY: 2.5, gap: 4, radius: 6,  rowGap: 4 },
+            sm: { fontName: 9.5,  fontNum: 11,   padX: 6, padY: 2,   gap: 3, radius: 5,  rowGap: 3 },
+            xs: { fontName: 9,    fontNum: 10,   padX: 5, padY: 1.5, gap: 2.5, radius: 4, rowGap: 2.5 },
+          }[sizeMode];
+          const renderChip = (a: { tip: string; adet: number }, idx: number) => {
+            const p = palette[idx % palette.length];
             return (
               <div
-                key={a.tip + idx + offset}
+                key={a.tip + idx}
                 title={`${a.tip}: ${a.adet}`}
                 style={{
                   flex: '0 0 auto',
                   background: p.bg,
                   border: `1px solid ${p.border}`,
-                  borderRadius: 7,
-                  padding: '2px 8px',
-                  display: 'flex', alignItems: 'center', gap: 4,
+                  borderRadius: cz.radius,
+                  padding: `${cz.padY}px ${cz.padX}px`,
+                  display: 'flex', alignItems: 'center', gap: cz.gap,
                   color: p.text,
                   whiteSpace: 'nowrap',
                   lineHeight: 1.2,
                 }}
               >
-                <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.95 }}>{a.tip}</span>
-                <span style={{ fontSize: 12, fontWeight: 900 }}>×{a.adet}</span>
+                <span style={{ fontSize: cz.fontName, fontWeight: 700, opacity: 0.95 }}>{a.tip}</span>
+                <span style={{ fontSize: cz.fontNum, fontWeight: 900 }}>×{a.adet}</span>
               </div>
             );
           };
@@ -706,51 +744,18 @@ export function PcDashboard({ data, loading, lastRefresh, onRefresh, onLockScree
                     <div className="pc-stat-card-value">{loading && !data ? '—' : displayCount.toLocaleString('tr-TR')}</div>
                   </div>
                 </div>
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', minWidth: 0, gap: 6, padding: '0 8px 0 0' }}>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', minWidth: 0, padding: '0 10px' }}>
                   <div
                     style={{
-                      flex: 1, display: 'flex', flexDirection: 'column',
-                      justifyContent: 'center', gap: 3, minWidth: 0, overflow: 'hidden', padding: '4px 0',
+                      flex: 1, display: 'flex', flexWrap: 'wrap', alignContent: 'center', alignItems: 'center',
+                      gap: cz.rowGap,
+                      minWidth: 0, overflow: 'hidden', padding: '4px 0',
                     }}
                   >
                     {albums.length === 0 ? (
                       <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, paddingLeft: 4 }}>Satış yok</div>
-                    ) : (
-                      <>
-                        <div style={{ display: 'flex', gap: 4, overflow: 'hidden' }}>
-                          {row1.map((a, idx) => renderChip(a, idx, 0))}
-                        </div>
-                        {row2.length > 0 && (
-                          <div style={{ display: 'flex', gap: 4, overflow: 'hidden' }}>
-                            {row2.map((a, idx) => renderChip(a, idx, mid))}
-                          </div>
-                        )}
-                      </>
-                    )}
+                    ) : albums.map((a, idx) => renderChip(a, idx))}
                   </div>
-                  {mekanlar.length > 0 && (
-                    <select
-                      value={activeFilter}
-                      onChange={e => setSalesMekanFilter(e.target.value)}
-                      title="Mekan filtrele"
-                      style={{
-                        flex: '0 0 auto',
-                        background: 'rgba(157,217,234,0.12)',
-                        border: '1px solid rgba(157,217,234,0.3)',
-                        borderRadius: 6,
-                        color: '#9dd9ea',
-                        fontSize: 11, fontWeight: 700,
-                        padding: '6px 10px',
-                        outline: 'none', cursor: 'pointer',
-                        minWidth: 130, maxWidth: 170,
-                      }}
-                    >
-                      <option value="all" style={{ background: '#1a1530', color: '#9dd9ea' }}>Tümü</option>
-                      {mekanlar.map(m => (
-                        <option key={m.id} value={m.id} style={{ background: '#1a1530', color: '#fff' }}>{m.emoji} {m.name}</option>
-                      ))}
-                    </select>
-                  )}
                 </div>
               </div>
             </div>
@@ -764,12 +769,12 @@ export function PcDashboard({ data, loading, lastRefresh, onRefresh, onLockScree
               </div>
               <div>
                 <div className="pc-stat-card-label">Toplam Kare</div>
-                <div className="pc-stat-card-value">{loading && !data ? '—' : (data?.toplamKare ?? 0).toLocaleString('tr-TR')}</div>
+                <div className="pc-stat-card-value">{loading && !data ? '—' : filteredTop.toplamKare.toLocaleString('tr-TR')}</div>
               </div>
             </div>
             {(() => {
-              const satilan = data?.toplamBasilan ?? 0;
-              const iade = data?.toplamIadeFoto ?? 0;
+              const satilan = filteredTop.satilan;
+              const iade = filteredTop.iade;
               if (satilan === 0 && iade === 0) {
                 return (
                   <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.3)', fontSize: 11, padding: 12 }}>

@@ -4927,7 +4927,13 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       const acikMi = !!kayit.acilis && !kayit.kapanish;
       // Bu mekanın ürün dağılımı
       const mekanAlbumSayac: Record<string, number> = {};
+      // Bu mekanın ödeme dağılımı
+      const mekanOdeme = { nakit: 0, kart: 0, iban: 0 };
       for (const s of satislar) {
+        const fp = s.finalPrice || 0;
+        if (s.paymentMethod === 'cash') mekanOdeme.nakit += fp;
+        else if (s.paymentMethod === 'card') mekanOdeme.kart += fp;
+        else if (s.paymentMethod === 'iban') mekanOdeme.iban += fp;
         for (const item of (s.items || [])) {
           const tip = item.product || "Diğer";
           mekanAlbumSayac[tip] = (mekanAlbumSayac[tip] || 0) + (item.quantity || 1);
@@ -4936,6 +4942,9 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
       const urunDagilimi = Object.entries(mekanAlbumSayac)
         .map(([tip, adet]) => ({ tip, adet }))
         .sort((a, b) => b.adet - a.adet);
+      // Bu mekanın satılan/iade kare (kapanış varsa)
+      const kareSatilan = Number(kayit.vardiyaToplam?.toplamCikisAdedi) || 0;
+      const kareIade = Number(kayit.vardiyaToplam?.toplamIadeFotograf) || 0;
       return {
         id: kayit.mekanId,
         name: mekan.name,
@@ -4947,6 +4956,9 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
         kare,
         acik: acikMi,
         urunDagilimi,
+        odemeDagilimi: { nakit: Math.round(mekanOdeme.nakit), kart: Math.round(mekanOdeme.kart), iban: Math.round(mekanOdeme.iban) },
+        kareSatilan,
+        kareIade,
       };
     }).sort((a: any, b: any) => b.ciro - a.ciro);
     // Bugün kaydı olmayan mekanları "aktif değil" olarak ekle
@@ -4961,6 +4973,9 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
         ciro: 0, iskonto: 0, adet: 0, kare: 0,
         acik: false,
         urunDagilimi: [],
+        odemeDagilimi: { nakit: 0, kart: 0, iban: 0 },
+        kareSatilan: 0,
+        kareIade: 0,
       }));
     const mekanCiroList = [...mekanCiroListAcik, ...mekanCiroListKapali];
 

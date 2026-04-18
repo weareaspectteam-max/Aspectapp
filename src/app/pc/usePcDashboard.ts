@@ -19,7 +19,7 @@ export interface PcDashboardData {
   gecGirisSayisi?: number;
   aktifPersonelDetay?: { name: string; mekan?: string; checkinZamani?: string }[];
   tumPersonelDetay?: { id: string; name: string; mekan?: string; checkinZamani?: string; lateMin?: number; status: 'active' | 'late' | 'idle' }[];
-  mekanCiroList: { id: string; name: string; emoji: string; color: string; ciro: number; iskonto?: number; adet: number; kare?: number; acik?: boolean; urunDagilimi?: { tip: string; adet: number }[] }[];
+  mekanCiroList: { id: string; name: string; emoji: string; color: string; ciro: number; iskonto?: number; adet: number; kare?: number; acik?: boolean; urunDagilimi?: { tip: string; adet: number }[]; odemeDagilimi?: { nakit: number; kart: number; iban: number }; kareSatilan?: number; kareIade?: number }[];
   albumDagilimi?: { tip: string; adet: number }[];
   odemeDagilimi?: { nakit: number; kart: number; iban: number };
   dunCiroSaatlik?: number;
