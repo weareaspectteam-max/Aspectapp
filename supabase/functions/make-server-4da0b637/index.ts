@@ -4723,6 +4723,14 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
     const tumSatislar = feed.filter((f) => f.type === "satis");
     const tumKareler = feed.filter((f) => f.type === "kare");
 
+    // Mekan başına bugünkü müşteri sayısı map'i (bugunKayitlar'dan)
+    const musteriSayisiMap: Record<string, number> = {};
+    for (const kayit of bugunKayitlar) {
+      if (kayit.mekanId && typeof kayit.musteriSayisi === "number" && kayit.musteriSayisi > 0) {
+        musteriSayisiMap[kayit.mekanId] = kayit.musteriSayisi;
+      }
+    }
+
     // Mekanlar listesi: getMekanlar() + feed'de görünen ama listede olmayan mekanlar
     const mekanlarMapFinal: Record<string, any> = {};
     for (const m of mekanlarList) mekanlarMapFinal[m.id] = m;
@@ -4732,7 +4740,12 @@ app.get("/make-server-4da0b637/stok/canli-satis", async (c) => {
         console.log(`[canli-satis] ⚠️ Mekan getMekanlar'da yok ama feed'de satış var: id=${mid} name=${mData.name}`);
       }
     }
-    const mekanlarFinal = Object.values(mekanlarMapFinal);
+    // Her mekana bugünkü musteriSayisi + kareCharpani attach
+    const mekanlarFinal = Object.values(mekanlarMapFinal).map((m: any) => ({
+      ...m,
+      musteriSayisi: musteriSayisiMap[m.id] || 0,
+      kareCharpani: m.kare_charpani || m.kareCharpani || 5,
+    }));
 
     console.log(`[canli-satis] → ${tumSatislar.length} satış, ${tumKareler.length} kare, ${mekanlarFinal.length} mekan döndürülüyor`);
     return c.json({ feed, satislar: tumSatislar, kareler: tumKareler, mekanlar: mekanlarFinal });

@@ -37,6 +37,8 @@ interface Mekan {
   name: string;
   emoji: string;
   color: string;
+  kareCharpani?: number;
+  musteriSayisi?: number;
 }
 
 interface LiveSalesFeedProps {
@@ -216,6 +218,12 @@ function MekanPanel({ mekan, items, defaultOpen = true }: MekanPanelProps) {
     ? Math.floor((Date.now() - new Date(lastItem.timestamp).getTime()) / 60_000)
     : null;
 
+  // Kare kotası: musteriSayisi × kareCharpani
+  const musteriSayisi = mekan.musteriSayisi || 0;
+  const carpan = mekan.kareCharpani || 5;
+  const kota = musteriSayisi * carpan;
+  const kotaPercent = kota > 0 ? Math.min(100, Math.round((totalFrames / kota) * 100)) : 0;
+
   return (
     <div className="rounded-2xl border overflow-hidden" style={{ borderColor: `${mekan.color}35`, backgroundColor: 'rgba(255,255,255,0.04)' }}>
       <button
@@ -254,6 +262,26 @@ function MekanPanel({ mekan, items, defaultOpen = true }: MekanPanelProps) {
         </div>
       </button>
 
+      {/* Kare kotası — her zaman görünür (panel açık/kapalı fark etmez) */}
+      {musteriSayisi > 0 ? (
+        <div className="px-4 pb-2 pt-1 flex items-center gap-2">
+          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+            <div
+              className="h-full rounded-full transition-all"
+              style={{ width: `${kotaPercent}%`, backgroundColor: mekan.color }}
+            />
+          </div>
+          <span className="text-[10px] text-white/50 shrink-0">
+            {musteriSayisi} müşteri · {totalFrames}/{kota} (%{kotaPercent})
+          </span>
+        </div>
+      ) : (
+        <div className="px-4 pb-2 pt-1 flex items-center gap-1.5">
+          <AlertCircle className="w-3 h-3 text-amber-400 shrink-0" />
+          <span className="text-[10px] text-white/40">Müşteri sayısı girilmedi</span>
+        </div>
+      )}
+
       {open && (
         <div className="px-3 pt-3 pb-1">
           {items.length === 0 ? (
@@ -286,6 +314,7 @@ export function LiveSalesFeed({
   const [mekanlar, setMekanlar] = useState<Mekan[]>([]);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('mekan');
+  const [showGelirDetay, setShowGelirDetay] = useState(false);
   const [loading, setLoading] = useState(true);
   const [spinning, setSpinning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -384,6 +413,27 @@ export function LiveSalesFeed({
   const kares = filtered.filter(i => i.type === 'kare');
   const totalRev = sales.reduce((s, i) => s + (i.finalPrice || 0), 0);
   const totalFrames = kares.reduce((s, i) => s + (i.frameCount || 0), 0);
+
+  // Ödeme kırılımı: POS / NAKİT TL / IBAN / EURO / DOLAR / DİĞER
+  const gelirBreakdown = (() => {
+    let pos = 0, iban = 0, nakitTL = 0;
+    const dovizMap: Record<string, { currencyTotal: number; tlTotal: number }> = {};
+    for (const s of sales) {
+      const tl = s.finalPrice || 0;
+      if (s.paymentMethod === 'card') { pos += tl; continue; }
+      if (s.paymentMethod === 'iban') { iban += tl; continue; }
+      // cash (veya undefined)
+      if (!s.currency || s.currency === 'TRY') { nakitTL += tl; continue; }
+      if (!dovizMap[s.currency]) dovizMap[s.currency] = { currencyTotal: 0, tlTotal: 0 };
+      dovizMap[s.currency].currencyTotal += (s.currencyPrice || 0);
+      dovizMap[s.currency].tlTotal += tl;
+    }
+    return { pos, iban, nakitTL, dovizMap };
+  })();
+
+  const currencySymbols: Record<string, string> = {
+    EUR: '€', USD: '$', GBP: '£', BGN: 'лв', RUB: '₽', SAR: '﷼',
+  };
 
   // Mekan grouped (sırala: son kayıt en üste)
   const grouped = mekanlar
@@ -572,12 +622,18 @@ export function LiveSalesFeed({
             label="satış"
             color="#4ade80"
           />
-          <StatChip
-            icon={<TrendingUp className="w-3 h-3" />}
-            value={`₺${totalRev.toLocaleString('tr-TR')}`}
-            label="gelir"
-            color="#fbbf24"
-          />
+          <button
+            onClick={() => setShowGelirDetay(v => !v)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shrink-0 active:scale-95 transition-all"
+            style={{ backgroundColor: '#fbbf2415', borderColor: showGelirDetay ? '#fbbf2480' : '#fbbf2440' }}
+          >
+            <span style={{ color: '#fbbf24' }}><TrendingUp className="w-3 h-3" /></span>
+            <div className="text-left">
+              <div className="text-xs font-bold text-white leading-none">₺{totalRev.toLocaleString('tr-TR')}</div>
+              <div className="text-[10px] text-white/40 leading-none mt-0.5">gelir</div>
+            </div>
+            {showGelirDetay ? <ChevronUp className="w-3 h-3 text-white/50" /> : <ChevronDown className="w-3 h-3 text-white/50" />}
+          </button>
           <StatChip
             icon={<Camera className="w-3 h-3" />}
             value={totalFrames}
@@ -598,6 +654,67 @@ export function LiveSalesFeed({
             <HelpCircle className="w-4 h-4 text-amber-400" />
           </button>
         </div>
+
+        {/* ── GELİR KIRILIMI (açılır) ── */}
+        {showGelirDetay && (
+          <div
+            className="mt-2 rounded-2xl border px-3 py-3"
+            style={{ backgroundColor: 'rgba(251,191,36,0.06)', borderColor: 'rgba(251,191,36,0.25)' }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-amber-300/90 uppercase tracking-wider">Gelir Kırılımı</span>
+              <span className="text-xs font-bold text-white">₺{totalRev.toLocaleString('tr-TR')}</span>
+            </div>
+            <div className="space-y-1.5">
+              {gelirBreakdown.pos > 0 && (
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-white/60 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                    POS (Kart)
+                  </span>
+                  <span className="text-white font-semibold">₺{gelirBreakdown.pos.toLocaleString('tr-TR')}</span>
+                </div>
+              )}
+              {gelirBreakdown.nakitTL > 0 && (
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-white/60 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    Nakit TL
+                  </span>
+                  <span className="text-white font-semibold">₺{gelirBreakdown.nakitTL.toLocaleString('tr-TR')}</span>
+                </div>
+              )}
+              {gelirBreakdown.iban > 0 && (
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-white/60 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
+                    IBAN
+                  </span>
+                  <span className="text-white font-semibold">₺{gelirBreakdown.iban.toLocaleString('tr-TR')}</span>
+                </div>
+              )}
+              {Object.entries(gelirBreakdown.dovizMap).map(([cur, v]) => {
+                const sym = currencySymbols[cur] || cur;
+                const label = cur === 'EUR' ? 'Euro' : cur === 'USD' ? 'Dolar' : cur;
+                return (
+                  <div key={cur} className="flex items-center justify-between text-[11px]">
+                    <span className="text-white/60 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                      {label}
+                    </span>
+                    <span className="text-white font-semibold">
+                      {sym}{v.currencyTotal.toLocaleString('tr-TR')}
+                      <span className="text-white/40 font-normal ml-1">≈ ₺{v.tlTotal.toLocaleString('tr-TR')}</span>
+                    </span>
+                  </div>
+                );
+              })}
+              {gelirBreakdown.pos === 0 && gelirBreakdown.iban === 0 && gelirBreakdown.nakitTL === 0 && Object.keys(gelirBreakdown.dovizMap).length === 0 && (
+                <div className="text-[11px] text-white/30 text-center py-2">Henüz satış yok</div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── FILTER + VIEW TOGGLE ROW ── */}
         <div className="flex items-center gap-2 mt-3">
