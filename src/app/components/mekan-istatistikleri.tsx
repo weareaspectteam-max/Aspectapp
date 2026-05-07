@@ -91,6 +91,7 @@ interface MekanData {
   paraBirimi: { currency: string; adet: number; tutarOriginal: number; tutarTRY: number }[];
   gunDagilim: { gun: number; ciro: number; satis: number; musteri: number }[];
   saatDagilim: { saat: number; ciro: number; satis: number }[];
+  saatDagilimAylik?: Record<string, { saat: number; ciro: number; satis: number }[]>;
   topPersonel: { id: string; name: string; ciro: number; satisAdet: number }[];
 }
 
@@ -507,7 +508,7 @@ export function MekanIstatistikleri({ accessToken, userRole }: Props) {
 
           {/* Karşılaştırma Modu */}
           {mode === 'karsilastir' && aktifMekanlar.length >= 2 && (
-            <KarsilastirmaGorunum mekanlar={aktifMekanlar} showFinancials={showFinancials} />
+            <KarsilastirmaGorunum mekanlar={aktifMekanlar} showFinancials={showFinancials} bitis={bitis} />
           )}
 
           {mode === 'karsilastir' && aktifMekanlar.length < 2 && (
@@ -686,10 +687,25 @@ function TekMekanGorunum({ mekan, showFinancials, baslangic, bitis, aktifAy, onA
   const k = mekan.kpi;
   const o = mekan.onceki;
 
-  /* Aylık trend grafiği — son 12 aya kadar göster */
-  const ayliklarChart = mekan.ayliklar.map(a => ({
-    ...a, label: ayLabel(a.ay),
-  }));
+  /* Aylık trend grafiği — Ocak'tan Aralık'a 12 ay (eksik aylar 0 doldurulur) */
+  const yilForChart = parseInt(bitis.slice(0, 4), 10);
+  const ayliklarChart = Array.from({ length: 12 }, (_, i) => {
+    const ayNo = i + 1;
+    const ayKey = `${yilForChart}-${String(ayNo).padStart(2, '0')}`;
+    const veri = mekan.ayliklar.find(x => x.ay === ayKey);
+    return {
+      ay: ayKey,
+      label: ayLabel(ayKey).replace(/ \d{4}$/, ''), // "Nis 2026" → "Nis"
+      ciro: veri?.ciro || 0,
+      musteri: veri?.musteri || 0,
+      iadeAdet: veri?.iadeAdet || 0,
+      iadeFoto: veri?.iadeFoto || 0,
+      indirimTL: veri?.indirimTL || 0,
+      brutoCiro: veri?.brutoCiro || 0,
+      anomali: veri?.anomali || 0,
+      gunSayisi: veri?.gunSayisi || 0,
+    };
+  });
 
   /* Para birimi pie verisi */
   const paraBirimiData = mekan.paraBirimi.map(p => ({
@@ -795,7 +811,7 @@ function TekMekanGorunum({ mekan, showFinancials, baslangic, bitis, aktifAy, onA
           <ResponsiveContainer width="100%" height={200} minWidth={0}>
             <LineChart data={ayliklarChart} margin={{ top: 5, right: 10, bottom: 0, left: -10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval="preserveStartEnd" />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval={0} />
               <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} tickFormatter={(v) => formatTLShort(v)} />
               <Tooltip {...tooltipStyle} formatter={(value: number) => [formatTLShort(value), 'Ciro']} />
               <Line type="monotone" dataKey="ciro" stroke="#22c55e" strokeWidth={2.5} dot={{ r: 3, fill: '#22c55e' }} activeDot={{ r: 5 }} />
@@ -811,7 +827,7 @@ function TekMekanGorunum({ mekan, showFinancials, baslangic, bitis, aktifAy, onA
           <ResponsiveContainer width="100%" height={180} minWidth={0}>
             <BarChart data={ayliklarChart} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval="preserveStartEnd" />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval={0} />
               <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} />
               <Tooltip {...tooltipStyle} formatter={(value: number) => [formatNumber(value), 'Müşteri']} />
               <Bar dataKey="musteri" fill="#60a5fa" radius={[6, 6, 0, 0]} />
@@ -827,7 +843,7 @@ function TekMekanGorunum({ mekan, showFinancials, baslangic, bitis, aktifAy, onA
           <ResponsiveContainer width="100%" height={160} minWidth={0}>
             <BarChart data={ayliklarChart} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval="preserveStartEnd" />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval={0} />
               <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} />
               <Tooltip {...tooltipStyle} formatter={(value: number) => [formatNumber(value), 'İade Satış']} />
               <Bar dataKey="iadeAdet" fill="#f87171" radius={[6, 6, 0, 0]} />
@@ -843,7 +859,7 @@ function TekMekanGorunum({ mekan, showFinancials, baslangic, bitis, aktifAy, onA
           <ResponsiveContainer width="100%" height={160} minWidth={0}>
             <BarChart data={ayliklarChart} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval="preserveStartEnd" />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval={0} />
               <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} />
               <Tooltip {...tooltipStyle} formatter={(value: number) => [formatNumber(value), 'İade Foto']} />
               <Bar dataKey="iadeFoto" fill="#fb923c" radius={[6, 6, 0, 0]} />
@@ -862,7 +878,7 @@ function TekMekanGorunum({ mekan, showFinancials, baslangic, bitis, aktifAy, onA
               indirimOrani: a.brutoCiro > 0 ? (a.indirimTL / a.brutoCiro) * 100 : 0,
             }))} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval="preserveStartEnd" />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval={0} />
               <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} tickFormatter={(v) => `%${Math.round(v)}`} />
               <Tooltip {...tooltipStyle} formatter={(value: number) => [formatPct(value), 'İndirim Oranı']} />
               <Line type="monotone" dataKey="indirimOrani" stroke="#fbbf24" strokeWidth={2} dot={{ r: 3, fill: '#fbbf24' }} />
@@ -1079,21 +1095,68 @@ function TekMekanGorunum({ mekan, showFinancials, baslangic, bitis, aktifAy, onA
         );
       })()}
 
-      {/* SAATLİK DAĞILIM */}
-      {showFinancials && veriliSaatler.length > 1 && (
-        <div style={{ ...glass, padding: 14 }}>
-          <SectionTitle emoji="⏰" title="Saatlik Yoğunluk" sub="satış adedi" />
-          <ResponsiveContainer width="100%" height={170} minWidth={0}>
-            <BarChart data={saatData} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="saat" tick={{ fontSize: 8, fill: 'rgba(255,255,255,0.5)' }} interval={2} />
-              <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} />
-              <Tooltip {...tooltipStyle} formatter={(value: number) => [formatNumber(value), 'Satış']} />
-              <Bar dataKey="satis" fill="#2dd4bf" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      {/* SAATLİK DAĞILIM — aktif aya göre */}
+      {showFinancials && (() => {
+        const yilForSaat = parseInt(bitis.slice(0, 4), 10);
+        const today = new Date();
+        const isCurrentYear = yilForSaat === today.getFullYear();
+        const lastAllowedAy = isCurrentYear ? today.getMonth() + 1 : 12;
+        const ayKey = `${yilForSaat}-${String(aktifAy).padStart(2, '0')}`;
+        const aySaatVeri = mekan.saatDagilimAylik?.[ayKey] || [];
+        const saatDataAy = Array.from({ length: 24 }, (_, saat) => {
+          const v = aySaatVeri.find(x => x.saat === saat);
+          return { saat: `${String(saat).padStart(2, '0')}:00`, satis: v?.satis || 0, ciro: v?.ciro || 0 };
+        });
+        const veriliSaatlerAy = saatDataAy.filter(s => s.satis > 0);
+        if (veriliSaatlerAy.length === 0) return null;
+        const ayAd = ayLabel(ayKey);
+        const prevDisabled = aktifAy <= 1;
+        const nextDisabled = aktifAy >= lastAllowedAy;
+
+        return (
+          <div style={{ ...glass, padding: 14 }}>
+            <SectionTitle emoji="⏰" title={`${ayAd} — Saatlik Yoğunluk`} sub="satış adedi" />
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                onClick={() => onAyChange(Math.max(1, aktifAy - 1))}
+                disabled={prevDisabled}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold transition-colors"
+                style={{
+                  background: prevDisabled ? 'rgba(255,255,255,0.03)' : 'rgba(var(--app-accent-rgb),0.12)',
+                  border: `1px solid ${prevDisabled ? 'rgba(255,255,255,0.06)' : 'rgba(var(--app-accent-rgb),0.3)'}`,
+                  color: prevDisabled ? 'rgba(255,255,255,0.25)' : 'var(--app-accent, #a855f7)',
+                  cursor: prevDisabled ? 'default' : 'pointer',
+                }}
+              >
+                <ChevronLeft style={{ width: 12, height: 12 }} /> Önceki
+              </button>
+              <span className="flex-1 text-center text-[11px] font-bold" style={{ color: 'rgba(255,255,255,0.6)' }}>{ayAd}</span>
+              <button
+                onClick={() => onAyChange(Math.min(lastAllowedAy, aktifAy + 1))}
+                disabled={nextDisabled}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold transition-colors"
+                style={{
+                  background: nextDisabled ? 'rgba(255,255,255,0.03)' : 'rgba(var(--app-accent-rgb),0.12)',
+                  border: `1px solid ${nextDisabled ? 'rgba(255,255,255,0.06)' : 'rgba(var(--app-accent-rgb),0.3)'}`,
+                  color: nextDisabled ? 'rgba(255,255,255,0.25)' : 'var(--app-accent, #a855f7)',
+                  cursor: nextDisabled ? 'default' : 'pointer',
+                }}
+              >
+                Sonraki <ChevronRight style={{ width: 12, height: 12 }} />
+              </button>
+            </div>
+            <ResponsiveContainer width="100%" height={170} minWidth={0}>
+              <BarChart data={saatDataAy} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                <XAxis dataKey="saat" tick={{ fontSize: 8, fill: 'rgba(255,255,255,0.5)' }} interval={2} />
+                <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} />
+                <Tooltip {...tooltipStyle} formatter={(value: number) => [formatNumber(value), 'Satış']} />
+                <Bar dataKey="satis" fill="#2dd4bf" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      })()}
 
       {/* KÂR/ZARAR — Takvim Yılı (Ocak–Aralık) */}
       {showFinancials && mekan.yearlyRent > 0 && (() => {
@@ -1101,15 +1164,29 @@ function TekMekanGorunum({ mekan, showFinancials, baslangic, bitis, aktifAy, onA
         const aylikKira = Math.round(mekan.yearlyRent / 12);
         // Cari yıl (bitis tarihinden)
         const yil = parseInt(bitis.slice(0, 4), 10);
+        const today = new Date();
+        const kapakGun = (yil === today.getFullYear()) ? today.getDate() : 31;
         const buckets = Array.from({ length: 12 }, (_, i) => {
           const ayNo = i + 1;
           const ayKey = `${yil}-${String(ayNo).padStart(2, '0')}`;
           const veri = mekan.ayliklar.find(x => x.ay === ayKey);
           const ciro = veri?.ciro || 0;
+          // Cari ay mı? — eğer öyleyse sadece tek çubuk (ciroGune'yi gizle)
+          const isCurrentMonth = (yil === today.getFullYear() && ayNo === today.getMonth() + 1);
+          // O ayın 1-{kapakGun} arası ciro toplamı (gunlukler'den) — sadece geçmiş aylar için
+          let ciroGune = 0;
+          if (!isCurrentMonth) {
+            for (const g of (mekan.gunlukler || [])) {
+              if (!g.tarih.startsWith(ayKey + '-')) continue;
+              const gun = parseInt(g.tarih.slice(8), 10);
+              if (gun <= kapakGun) ciroGune += g.ciro;
+            }
+          }
           return {
             ay: ayKey,
             label: ayLabel(ayKey).replace(/ \d{4}$/, ''), // "Nis 2026" → "Nis"
             ciro,
+            ciroGune,
             aylikKira,
             netKar: ciro - aylikKira,
           };
@@ -1119,7 +1196,7 @@ function TekMekanGorunum({ mekan, showFinancials, baslangic, bitis, aktifAy, onA
           <div style={{ ...glass, padding: 14 }}>
             <SectionTitle emoji="💰" title="Kâr Eşiği — Yıllık" sub={`${yil} · aylık kira ${formatTLShort(aylikKira)}`} />
             <p className="text-[11px] mb-2" style={{ color: 'rgba(255,255,255,0.55)' }}>
-              Ocak–Aralık · yeşil = ciro, kırmızı çizgi = aylık sabit kira
+              Solid = ay tamamı · Saydam = bugüne ({kapakGun}.) kadar · Kırmızı çizgi = aylık kira
             </p>
             <ResponsiveContainer width="100%" height={240} minWidth={0}>
               <BarChart data={buckets} margin={{ top: 5, right: 6, bottom: 0, left: -14 }}>
@@ -1128,7 +1205,10 @@ function TekMekanGorunum({ mekan, showFinancials, baslangic, bitis, aktifAy, onA
                 <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} tickFormatter={(v) => formatTLShort(v)} />
                 <Tooltip
                   {...tooltipStyle}
-                  formatter={(value: number) => [formatTLShort(value), 'Ciro']}
+                  formatter={(value: number, name: string) => {
+                    if (value === 0 && name !== 'Ay Tamamı') return ['', '']; // 0 değerli çubuk gösterme
+                    return [formatTLShort(value), name];
+                  }}
                   labelFormatter={(_label, payload) => {
                     const item = payload?.[0]?.payload;
                     return item ? ayLabel(item.ay) : '';
@@ -1147,12 +1227,8 @@ function TekMekanGorunum({ mekan, showFinancials, baslangic, bitis, aktifAy, onA
                     fontWeight: 700,
                   }}
                 />
-                <Bar
-                  dataKey="ciro"
-                  name="Ciro"
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={26}
-                >
+                <Legend wrapperStyle={{ fontSize: 10 }} iconType="circle" />
+                <Bar dataKey="ciro" name="Ay Tamamı" radius={[4, 4, 0, 0]} maxBarSize={14}>
                   {buckets.map((entry, i) => (
                     <Cell
                       key={i}
@@ -1160,10 +1236,19 @@ function TekMekanGorunum({ mekan, showFinancials, baslangic, bitis, aktifAy, onA
                     />
                   ))}
                 </Bar>
+                <Bar dataKey="ciroGune" name={`${kapakGun}. Güne Kadar`} radius={[4, 4, 0, 0]} maxBarSize={14}>
+                  {buckets.map((entry, i) => (
+                    <Cell
+                      key={i}
+                      fill={entry.ciroGune > 0 ? '#60a5fa' : 'transparent'}
+                      opacity={0.85}
+                    />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
             <p className="text-[10px] mt-2" style={{ color: 'rgba(255,255,255,0.35)' }}>
-              💡 Yeşil = kira üstü kâr · Sarı = kiranın altında · Gri = veri yok
+              💡 Mavi çubuklar her ayın aynı gününe kadar ki ciroyu gösterir — diğer aylar bu noktada nereye gelmişti? Yükseliş/düşüş trendi görünür.
             </p>
           </div>
         );
@@ -1211,7 +1296,7 @@ function TekMekanGorunum({ mekan, showFinancials, baslangic, bitis, aktifAy, onA
           <ResponsiveContainer width="100%" height={150} minWidth={0}>
             <LineChart data={ayliklarChart} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval="preserveStartEnd" />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval={0} />
               <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} />
               <Tooltip {...tooltipStyle} formatter={(value: number) => [formatNumber(value), 'Anomali']} />
               <Line type="monotone" dataKey="anomali" stroke="#f87171" strokeWidth={2} dot={{ r: 3, fill: '#f87171' }} />
@@ -1226,23 +1311,53 @@ function TekMekanGorunum({ mekan, showFinancials, baslangic, bitis, aktifAy, onA
 /* ════════════════════════════════════════════
    KARŞILAŞTIRMA GÖRÜNÜMÜ (2-3 mekan yan yana)
    ════════════════════════════════════════════ */
-function KarsilastirmaGorunum({ mekanlar, showFinancials }: { mekanlar: MekanData[]; showFinancials: boolean }) {
-  /* Aylık ciroyu birleşik dataset'e çevir: [{label, mekanA, mekanB, ...}] */
-  const ayKeys = Array.from(new Set(mekanlar.flatMap(m => m.ayliklar.map(a => a.ay)))).sort();
-  const ayCiroData = ayKeys.map(ay => {
-    const row: any = { ay, label: ayLabel(ay) };
+function KarsilastirmaGorunum({ mekanlar, showFinancials, bitis }: { mekanlar: MekanData[]; showFinancials: boolean; bitis: string }) {
+  /* 12 aylık birleşik dataset'ler (Ocak–Aralık padding) */
+  const yilK = parseInt(bitis.slice(0, 4), 10);
+  const ayKeys = Array.from({ length: 12 }, (_, i) => `${yilK}-${String(i + 1).padStart(2, '0')}`);
+  const ayLabelKisa = (k: string) => ayLabel(k).replace(/ \d{4}$/, '');
+
+  const buildAyData = (field: 'ciro' | 'musteri' | 'iadeAdet' | 'iadeFoto') =>
+    ayKeys.map(ay => {
+      const row: any = { ay, label: ayLabelKisa(ay) };
+      mekanlar.forEach(m => {
+        const a = m.ayliklar.find(x => x.ay === ay);
+        row[m.id] = a?.[field] || 0;
+      });
+      return row;
+    });
+
+  const ayCiroData = buildAyData('ciro');
+  const ayMusteriData = buildAyData('musteri');
+  const ayIadeData = buildAyData('iadeAdet');
+  const ayIadeFotoData = buildAyData('iadeFoto');
+
+  // Aylık indirim oranı (% — bruto cirodan iskontonun payı)
+  const ayIndirimData = ayKeys.map(ay => {
+    const row: any = { ay, label: ayLabelKisa(ay) };
     mekanlar.forEach(m => {
       const a = m.ayliklar.find(x => x.ay === ay);
-      row[m.id] = a?.ciro || 0;
+      row[m.id] = a && a.brutoCiro > 0 ? Math.round((a.indirimTL / a.brutoCiro) * 1000) / 10 : 0;
     });
     return row;
   });
 
-  const ayMusteriData = ayKeys.map(ay => {
-    const row: any = { ay, label: ayLabel(ay) };
+  // Hafta günü (0..6 → Pzt..Paz)
+  const haftaData = Array.from({ length: 7 }, (_, gun) => {
+    const row: any = { gun, label: ['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'][gun] };
     mekanlar.forEach(m => {
-      const a = m.ayliklar.find(x => x.ay === ay);
-      row[m.id] = a?.musteri || 0;
+      const g = m.gunDagilim.find(x => x.gun === gun);
+      row[m.id] = g?.ciro || 0;
+    });
+    return row;
+  });
+
+  // Saatlik (yıllık aggregate)
+  const saatData = Array.from({ length: 24 }, (_, saat) => {
+    const row: any = { saat, label: `${String(saat).padStart(2, '0')}:00` };
+    mekanlar.forEach(m => {
+      const s = m.saatDagilim.find(x => x.saat === saat);
+      row[m.id] = s?.satis || 0;
     });
     return row;
   });
@@ -1288,7 +1403,7 @@ function KarsilastirmaGorunum({ mekanlar, showFinancials }: { mekanlar: MekanDat
           <ResponsiveContainer width="100%" height={220} minWidth={0}>
             <LineChart data={ayCiroData} margin={{ top: 5, right: 10, bottom: 0, left: -10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval="preserveStartEnd" />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval={0} />
               <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} tickFormatter={(v) => formatTLShort(v)} />
               <Tooltip {...tooltipStyle} formatter={(value: number, name: string) => {
                 const m = mekanlar.find(x => x.id === name);
@@ -1321,7 +1436,7 @@ function KarsilastirmaGorunum({ mekanlar, showFinancials }: { mekanlar: MekanDat
           <ResponsiveContainer width="100%" height={220} minWidth={0}>
             <BarChart data={ayMusteriData} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval="preserveStartEnd" />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval={0} />
               <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} />
               <Tooltip {...tooltipStyle} formatter={(value: number, name: string) => {
                 const m = mekanlar.find(x => x.id === name);
@@ -1337,6 +1452,210 @@ function KarsilastirmaGorunum({ mekanlar, showFinancials }: { mekanlar: MekanDat
               ))}
             </BarChart>
           </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Aylık İade Satış karşılaştırma */}
+      {mekanlar.some(m => m.kpi.iadeAdet > 0) && (
+        <div style={{ ...glass, padding: 14 }}>
+          <SectionTitle emoji="↩️" title="Aylık İade Satış Karşılaştırma" sub="iptal edilen satış adedi" />
+          <ResponsiveContainer width="100%" height={200} minWidth={0}>
+            <BarChart data={ayIadeData} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval={0} />
+              <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} />
+              <Tooltip {...tooltipStyle} formatter={(value: number, name: string) => {
+                const m = mekanlar.find(x => x.id === name);
+                return [formatNumber(value), m?.name || name];
+              }} />
+              <Legend wrapperStyle={{ fontSize: 10 }} iconType="circle" formatter={(value: string) => mekanlar.find(m => m.id === value)?.name || value} />
+              {mekanlar.map((m, i) => (
+                <Bar key={m.id} dataKey={m.id} fill={COMPARE_COLORS[i]} radius={[4, 4, 0, 0]} />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Aylık İade Fotoğraf karşılaştırma */}
+      {mekanlar.some(m => m.ayliklar.some(a => a.iadeFoto > 0)) && (
+        <div style={{ ...glass, padding: 14 }}>
+          <SectionTitle emoji="🖼️" title="Aylık İade Fotoğraf Karşılaştırma" sub="basılan ama satılmayan kare" />
+          <ResponsiveContainer width="100%" height={200} minWidth={0}>
+            <BarChart data={ayIadeFotoData} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval={0} />
+              <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} />
+              <Tooltip {...tooltipStyle} formatter={(value: number, name: string) => {
+                const m = mekanlar.find(x => x.id === name);
+                return [formatNumber(value), m?.name || name];
+              }} />
+              <Legend wrapperStyle={{ fontSize: 10 }} iconType="circle" formatter={(value: string) => mekanlar.find(m => m.id === value)?.name || value} />
+              {mekanlar.map((m, i) => (
+                <Bar key={m.id} dataKey={m.id} fill={COMPARE_COLORS[i]} radius={[4, 4, 0, 0]} />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Aylık İndirim Oranı karşılaştırma — % ile */}
+      {showFinancials && mekanlar.some(m => m.kpi.indirimOrani > 0) && (
+        <div style={{ ...glass, padding: 14 }}>
+          <SectionTitle emoji="🏷️" title="Aylık İndirim Oranı Karşılaştırma" sub="brüto cironun yüzdesi" />
+          <ResponsiveContainer width="100%" height={220} minWidth={0}>
+            <LineChart data={ayIndirimData} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} interval={0} />
+              <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} tickFormatter={(v) => `%${Math.round(v)}`} />
+              <Tooltip {...tooltipStyle} formatter={(value: number, name: string) => {
+                const m = mekanlar.find(x => x.id === name);
+                return [formatPct(value), m?.name || name];
+              }} />
+              <Legend wrapperStyle={{ fontSize: 10 }} iconType="circle" formatter={(value: string) => mekanlar.find(m => m.id === value)?.name || value} />
+              {mekanlar.map((m, i) => (
+                <Line key={m.id} type="monotone" dataKey={m.id} stroke={COMPARE_COLORS[i]} strokeWidth={2.5} dot={{ r: 3, fill: COMPARE_COLORS[i] }} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Hafta Günü karşılaştırma */}
+      {showFinancials && haftaData.some(d => mekanlar.some(m => d[m.id] > 0)) && (
+        <div style={{ ...glass, padding: 14 }}>
+          <SectionTitle emoji="📅" title="Hafta Günü Karşılaştırma" sub="yıllık ciro · TL" />
+          <ResponsiveContainer width="100%" height={220} minWidth={0}>
+            <BarChart data={haftaData} margin={{ top: 5, right: 10, bottom: 0, left: -10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.6)' }} />
+              <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} tickFormatter={(v) => formatTLShort(v)} />
+              <Tooltip {...tooltipStyle} formatter={(value: number, name: string) => {
+                const m = mekanlar.find(x => x.id === name);
+                return [formatTLShort(value), m?.name || name];
+              }} />
+              <Legend wrapperStyle={{ fontSize: 10 }} iconType="circle" formatter={(value: string) => mekanlar.find(m => m.id === value)?.name || value} />
+              {mekanlar.map((m, i) => (
+                <Bar key={m.id} dataKey={m.id} fill={COMPARE_COLORS[i]} radius={[4, 4, 0, 0]} />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Saatlik karşılaştırma — yıllık */}
+      {showFinancials && saatData.some(d => mekanlar.some(m => d[m.id] > 0)) && (
+        <div style={{ ...glass, padding: 14 }}>
+          <SectionTitle emoji="⏰" title="Saatlik Yoğunluk Karşılaştırma" sub="yıllık · satış adedi" />
+          <ResponsiveContainer width="100%" height={200} minWidth={0}>
+            <LineChart data={saatData} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+              <XAxis dataKey="label" tick={{ fontSize: 8, fill: 'rgba(255,255,255,0.5)' }} interval={2} />
+              <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} />
+              <Tooltip {...tooltipStyle} formatter={(value: number, name: string) => {
+                const m = mekanlar.find(x => x.id === name);
+                return [formatNumber(value), m?.name || name];
+              }} />
+              <Legend wrapperStyle={{ fontSize: 10 }} iconType="circle" formatter={(value: string) => mekanlar.find(m => m.id === value)?.name || value} />
+              {mekanlar.map((m, i) => (
+                <Line key={m.id} type="monotone" dataKey={m.id} stroke={COMPARE_COLORS[i]} strokeWidth={2} dot={{ r: 2, fill: COMPARE_COLORS[i] }} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Para Birimi — her mekan kendi mini özeti */}
+      {showFinancials && mekanlar.some(m => m.paraBirimi.length > 0) && (
+        <div style={{ ...glass, padding: 14 }}>
+          <SectionTitle emoji="💱" title="Para Birimi Karşılaştırma" sub="ciro TL bazında" />
+          <div className="space-y-2 mt-2">
+            {mekanlar.map((m, idx) => {
+              const toplam = m.paraBirimi.reduce((s, p) => s + p.tutarTRY, 0);
+              if (toplam === 0) return null;
+              return (
+                <div key={m.id} style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 10, border: `1px solid ${COMPARE_COLORS[idx]}40` }}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div style={{ width: 8, height: 8, borderRadius: 999, background: COMPARE_COLORS[idx] }} />
+                    <span className="text-base">{m.emoji}</span>
+                    <span className="text-xs font-bold text-white flex-1 truncate">{m.name}</span>
+                    <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.5)' }}>{formatTLShort(toplam)}</span>
+                  </div>
+                  {/* Yatay stacked bar — her para birimi bir parça */}
+                  <div className="flex w-full overflow-hidden rounded-md" style={{ height: 14, background: 'rgba(255,255,255,0.04)' }}>
+                    {m.paraBirimi.map(p => {
+                      const pct = (p.tutarTRY / toplam) * 100;
+                      if (pct < 0.5) return null;
+                      return (
+                        <div
+                          key={p.currency}
+                          style={{
+                            width: `${pct}%`,
+                            background: CURRENCY_COLORS[p.currency] || '#94a3b8',
+                          }}
+                          title={`${p.currency} %${Math.round(pct)} (${formatTLShort(p.tutarTRY)})`}
+                        />
+                      );
+                    })}
+                  </div>
+                  {/* Etiketler */}
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {m.paraBirimi.map(p => {
+                      const pct = (p.tutarTRY / toplam) * 100;
+                      if (pct < 0.5) return null;
+                      return (
+                        <div key={p.currency} className="flex items-center gap-1">
+                          <div style={{ width: 6, height: 6, borderRadius: 999, background: CURRENCY_COLORS[p.currency] || '#94a3b8' }} />
+                          <span className="text-[9px] font-bold" style={{ color: 'rgba(255,255,255,0.85)' }}>{p.currency}</span>
+                          <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.4)' }}>%{Math.round(pct)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Kâr Eşiği — her mekan için yıllık özet */}
+      {showFinancials && mekanlar.some(m => m.yearlyRent > 0) && (
+        <div style={{ ...glass, padding: 14 }}>
+          <SectionTitle emoji="💰" title="Kâr Eşiği Karşılaştırma" sub="yıllık net" />
+          <div className="space-y-2 mt-2">
+            {mekanlar.map((m, idx) => {
+              if (m.yearlyRent === 0) return null;
+              const aylikKira = Math.round(m.yearlyRent / 12);
+              const today = new Date();
+              const buYil = today.getFullYear();
+              const yilForK = parseInt(bitis.slice(0, 4), 10);
+              // Cari yıl ise bugüne kadar geçen ay sayısı, geçmiş yıl ise 12
+              const gecenAy = yilForK === buYil ? today.getMonth() + 1 : 12;
+              const beklenenKira = aylikKira * gecenAy;
+              const ciro = m.kpi.ciroTRY;
+              const netKar = ciro - beklenenKira;
+              const orani = beklenenKira > 0 ? (ciro / beklenenKira) * 100 : 0;
+              const kar = netKar > 0;
+              return (
+                <div key={m.id} style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 10, border: `1px solid ${COMPARE_COLORS[idx]}40` }}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <div style={{ width: 8, height: 8, borderRadius: 999, background: COMPARE_COLORS[idx] }} />
+                    <span className="text-base">{m.emoji}</span>
+                    <span className="text-xs font-bold text-white flex-1 truncate">{m.name}</span>
+                    <span className="text-[10px] font-bold" style={{ color: kar ? '#22c55e' : '#f87171' }}>
+                      {kar ? '✓ Kâr' : '⚠ Zarar'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <MiniKpi label="Ciro" value={formatTLShort(ciro)} yoy={0} />
+                    <MiniKpi label="Beklenen Kira" value={formatTLShort(beklenenKira)} yoy={0} />
+                    <MiniKpi label="Net" value={formatTLShort(netKar)} yoy={orani - 100} isPercent />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </>

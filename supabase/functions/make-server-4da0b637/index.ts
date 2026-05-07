@@ -20600,10 +20600,12 @@ app.get("/make-server-4da0b637/mekan/istatistik", async (c) => {
         anomali: number;
         gunSayisi: number;
       }>;
+      oncekiAyliklar: Record<string, { ciro: number }>;
       gunlukler: Record<string, { ciro: number; satis: number; musteri: number; iadeAdet: number }>;
       paraBirimi: Record<string, { adet: number; tutarOriginal: number; tutarTRY: number }>;
       gunDagilim: Record<number, { ciro: number; satis: number; musteri: number }>;
       saatDagilim: Record<number, { satis: number; ciro: number }>;
+      saatDagilimAylik: Record<string, Record<number, { satis: number; ciro: number }>>;
       personelMap: Record<string, { id: string; name: string; ciro: number; satisAdet: number }>;
     }
 
@@ -20625,10 +20627,12 @@ app.get("/make-server-4da0b637/mekan/istatistik", async (c) => {
         kpi: bosKpi(),
         onceki: bosKpi(),
         ayliklar: {},
+        oncekiAyliklar: {},
         gunlukler: {},
         paraBirimi: {},
         gunDagilim: {},
         saatDagilim: {},
+        saatDagilimAylik: {},
         personelMap: {},
       };
     };
@@ -20716,6 +20720,12 @@ app.get("/make-server-4da0b637/mekan/istatistik", async (c) => {
         }
 
         // Aylık satış metrikleri
+        if (inOnceki && !s.iptal) {
+          // Geçen yıl aynı dönem ay bazlı (YoY karşılaştırma)
+          const oAyKey = kayit.tarih.slice(0, 7);
+          if (!stats.oncekiAyliklar[oAyKey]) stats.oncekiAyliklar[oAyKey] = { ciro: 0 };
+          stats.oncekiAyliklar[oAyKey].ciro += finalPrice;
+        }
         if (inMevcut) {
           const ayKey = kayit.tarih.slice(0, 7);
           const ayData = stats.ayliklar[ayKey];
@@ -20765,6 +20775,14 @@ app.get("/make-server-4da0b637/mekan/istatistik", async (c) => {
               stats.saatDagilim[saat].ciro += finalPrice;
               stats.saatDagilim[saat].satis++;
             }
+            // Aylık saatlik dağılım
+            const sAyKey = kayit.tarih.slice(0, 7);
+            if (!stats.saatDagilimAylik[sAyKey]) stats.saatDagilimAylik[sAyKey] = {};
+            if (!stats.saatDagilimAylik[sAyKey][saat]) stats.saatDagilimAylik[sAyKey][saat] = { satis: 0, ciro: 0 };
+            if (!s.iptal) {
+              stats.saatDagilimAylik[sAyKey][saat].ciro += finalPrice;
+              stats.saatDagilimAylik[sAyKey][saat].satis++;
+            }
           }
 
           // Personel
@@ -20810,6 +20828,10 @@ app.get("/make-server-4da0b637/mekan/istatistik", async (c) => {
         }))
         .sort((a, b) => a.ay.localeCompare(b.ay));
 
+      const oncekiAyliklar = Object.entries(s.oncekiAyliklar)
+        .map(([ay, v]) => ({ ay, ciro: r0(v.ciro) }))
+        .sort((a, b) => a.ay.localeCompare(b.ay));
+
       // Günlük: tarih sıralı
       const gunlukler = Object.entries(s.gunlukler)
         .map(([tarih, v]) => ({
@@ -20839,6 +20861,15 @@ app.get("/make-server-4da0b637/mekan/istatistik", async (c) => {
         const v = s.saatDagilim[saat] || { satis: 0, ciro: 0 };
         return { saat, ciro: r0(v.ciro), satis: v.satis };
       });
+
+      // Aylık saatlik: { "2026-04": [{saat, ciro, satis}, ...], ... }
+      const saatDagilimAylik: Record<string, { saat: number; ciro: number; satis: number }[]> = {};
+      for (const [ayKey, hourMap] of Object.entries(s.saatDagilimAylik)) {
+        saatDagilimAylik[ayKey] = Array.from({ length: 24 }, (_, saat) => {
+          const v = hourMap[saat] || { satis: 0, ciro: 0 };
+          return { saat, ciro: r0(v.ciro), satis: v.satis };
+        });
+      }
 
       const topPersonel = Object.values(s.personelMap)
         .sort((a, b) => b.ciro - a.ciro)
@@ -20883,10 +20914,12 @@ app.get("/make-server-4da0b637/mekan/istatistik", async (c) => {
           kareBasiGelir: r0(oncekiKareBasi),
         },
         ayliklar,
+        oncekiAyliklar,
         gunlukler,
         paraBirimi,
         gunDagilim,
         saatDagilim,
+        saatDagilimAylik,
         topPersonel,
       };
     };
