@@ -59,6 +59,14 @@ export function IsletmeIstatistikleri({ userName, userRole, onNavigate }: Isletm
       tab:         'kare-istatistik',
       show:        isYonetici,
     },
+    {
+      emoji:       '🏪',
+      title:       'Mekan İstatistikleri',
+      description: 'Aylık ciro, müşteri, iade, kâr eşiği ve karşılaştırma',
+      color:       '#7ec8dd',
+      tab:         'mekan-istatistikleri',
+      show:        ['yonetici', 'ust-mudur'].includes(userRole),
+    },
   ].filter(c => c.show);
 
   return (

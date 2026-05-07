@@ -62,6 +62,7 @@ import HedefTakip from './components/hedef-takip';
 import { VardiyaIstatistikleri } from './components/vardiya-istatistikleri';
 import { FrameTracking } from './components/frame-tracking';
 import { KareIstatistik } from './components/kare-istatistik';
+import { MekanIstatistikleri } from './components/mekan-istatistikleri';
 import { OperationsDemo } from './components/operations-demo';
 import { ShiftSetup } from './components/shift-setup';
 import { ShiftChoice } from './components/shift-choice';
@@ -1098,6 +1099,21 @@ function MainApp() {
           <KareIstatistik
             userName={userName}
             userRole={userRole}
+            onLogout={handleLogout}
+            onNavigate={handleNavigate}
+          />
+        );
+
+      case 'mekan-istatistikleri':
+        if (!['yonetici', 'ust-mudur'].includes(userRole)) {
+          handleNavigate('isletme-istatistikleri');
+          return null;
+        }
+        return (
+          <MekanIstatistikleri
+            userName={userName}
+            userRole={userRole}
+            accessToken={accessToken}
             onLogout={handleLogout}
             onNavigate={handleNavigate}
           />

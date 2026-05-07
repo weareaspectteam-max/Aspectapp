@@ -6,6 +6,7 @@ import { AnomaliPanosu } from '../../components/anomali-panosu';
 import { IndirimIstatistik } from '../../components/indirim-istatistik';
 import { VardiyaIstatistikleri } from '../../components/vardiya-istatistikleri';
 import { KareIstatistik } from '../../components/kare-istatistik';
+import { MekanIstatistikleri } from '../../components/mekan-istatistikleri';
 import type { UserRole } from '../../components/login';
 
 interface Props {
@@ -14,7 +15,7 @@ interface Props {
   accessToken: string;
 }
 
-type Sub = 'satis-raporu' | 'anomali-panosu' | 'indirim-istatistik' | 'vardiya-istatistikleri' | 'kare-istatistik';
+type Sub = 'satis-raporu' | 'anomali-panosu' | 'indirim-istatistik' | 'vardiya-istatistikleri' | 'kare-istatistik' | 'mekan-istatistikleri';
 
 const SUB_TITLES: Record<Sub, string> = {
   'satis-raporu': 'Satış İstatistikleri',
@@ -22,13 +23,14 @@ const SUB_TITLES: Record<Sub, string> = {
   'indirim-istatistik': 'İndirim İstatistikleri',
   'vardiya-istatistikleri': 'Vardiya İstatistikleri',
   'kare-istatistik': 'Personel Performans',
+  'mekan-istatistikleri': 'Mekan İstatistikleri',
 };
 
 export function PcIsletmeIstatistikleri({ userName, userRole, accessToken }: Props) {
   const [subScreen, setSubScreen] = useState<Sub | null>(null);
 
   const handleNavigate = (tab: string) => {
-    if (['satis-raporu', 'anomali-panosu', 'indirim-istatistik', 'vardiya-istatistikleri', 'kare-istatistik'].includes(tab)) {
+    if (['satis-raporu', 'anomali-panosu', 'indirim-istatistik', 'vardiya-istatistikleri', 'kare-istatistik', 'mekan-istatistikleri'].includes(tab)) {
       setSubScreen(tab as Sub);
     } else {
       // Tanımsız tab → hub'a dön
@@ -89,6 +91,7 @@ export function PcIsletmeIstatistikleri({ userName, userRole, accessToken }: Pro
         {subScreen === 'indirim-istatistik' && <IndirimIstatistik {...commonProps} />}
         {subScreen === 'vardiya-istatistikleri' && <VardiyaIstatistikleri {...commonProps} />}
         {subScreen === 'kare-istatistik' && <KareIstatistik {...commonProps} />}
+        {subScreen === 'mekan-istatistikleri' && <MekanIstatistikleri {...commonProps} />}
       </div>
     </div>
   );
