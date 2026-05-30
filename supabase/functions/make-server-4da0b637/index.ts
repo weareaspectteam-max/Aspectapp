@@ -17407,7 +17407,9 @@ app.get("/make-server-4da0b637/kasa/sirket", async (c) => {
     const borcTahsilatToplam = 0;
     const borcOdemeToplam = 0;
 
-    const bakiye = devirBakiye + acilisTutar + toplamDevir + toplamParaGirisi + kasaIslemGelir + borcAlinanToplam + borcTahsilatToplam - toplamOdpienenGider - kasaIslemGider - borcVerilenToplam - borcOdemeToplam;
+    // NOT: Manuel borçlar (kasa_borc_) kasa bakiyesini ETKİLEMEZ (SYSTEM.md).
+    // Net Bakiye, frontend'de alacak/verecek (kur çevrimli) ile ayrıca gösterilir.
+    const bakiye = devirBakiye + acilisTutar + toplamDevir + toplamParaGirisi + kasaIslemGelir - toplamOdpienenGider - kasaIslemGider;
 
     // İşlem geçmişi: ödeme yapılmış giderler
     // Gider map oluştur — giderId → gider bilgisi (tarih, açıklama)
@@ -18273,12 +18275,26 @@ app.post("/make-server-4da0b637/kasa/sirket/ay-kapat", async (c) => {
     const devirBakiye = oncekiKapatis?.bakiye ?? 0;
 
     // Bu ayın verilerini hesapla
-    const [devirler, tumGiderlerKapat, tumOdemelerKapat, mekanlarKapat] = await Promise.all([
+    const [devirler, tumGiderlerKapat, tumOdemelerKapat, mekanlarKapat, tumGelirlerKapat, tumKasaIslemlerKapat] = await Promise.all([
       getKasaByPrefix(_ayKapatCompanyId, ckv, "kasa_devir_"),
       getAllGiderler(_ayKapatCompanyId, ckv),
       getKasaByPrefix(_ayKapatCompanyId, ckv, "kasa_odeme_"),
       getMekanlarFor(_ayKapatCompanyId),
+      getAllGelirler(_ayKapatCompanyId, ckv),
+      getKasaByPrefix(_ayKapatCompanyId, ckv, "kasa_islem_"),
     ]);
+    // Açılış bakiyesi (canlı /sirket ile aynı)
+    const acilisKaydiKapat = await getKasaRecord(_ayKapatCompanyId, ckv, `kasa_acilis_${ay}`);
+    const acilisTutarKapat = acilisKaydiKapat?.tutar || 0;
+    // Döviz kurları — giderleri TRY'ye çevirmek için (canlı /sirket ile aynı)
+    const exRatesKapat: any = await ckv.get("cost_exchange_rates").catch(() => null) || { EUR: 38, USD: 33, GBP: 41.20 };
+    const toTLKapat = (amount: number, currency: string) => {
+      if (!currency || currency === "TRY") return amount;
+      if (currency === "EUR") return amount * (Number(exRatesKapat.EUR) || 38);
+      if (currency === "USD") return amount * (Number(exRatesKapat.USD) || 33);
+      if (currency === "GBP") return amount * (Number(exRatesKapat.GBP) || 41.2);
+      return amount;
+    };
 
     const ayDevirler = (devirler || []).filter((d: any) => d.tarih?.startsWith(ay));
     const toplamDevir = ayDevirler.reduce((s: number, d: any) => s + (d.ciro || 0), 0);
@@ -18288,8 +18304,8 @@ app.post("/make-server-4da0b637/kasa/sirket/ay-kapat", async (c) => {
     const kart = ayDevirler.reduce((s: number, d: any) => s + (d.kart || 0), 0);
     const iban = ayDevirler.reduce((s: number, d: any) => s + (d.iban || 0), 0);
 
-    // İGD giderleri + mekan kiraları → bekleyen ödemeleri hesapla
-    const ayGiderleriKapat = (tumGiderlerKapat || []).filter((g: any) => g.date?.startsWith(ay));
+    // İGD giderleri + mekan kiraları → bekleyen ödemeleri hesapla (döviz → TRY, canlı /sirket ile aynı)
+    const ayGiderleriKapat = (tumGiderlerKapat || []).filter((g: any) => g.date?.startsWith(ay)).map((g: any) => ({ ...g, amount: toTLKapat(g.amount || 0, g.currency) }));
     // Mekan kiraları
     const mekanKiralariKapat: any[] = [];
     const [yilK, ayNumK] = [yil, ayNum];
@@ -18316,17 +18332,33 @@ app.post("/make-server-4da0b637/kasa/sirket/ay-kapat", async (c) => {
       const efektifTutar = Math.max(0, (g.amount || 0) - silinenTutar);
       if (efektifTutar <= 0) continue;
 
-      const odpienenKisim = odeme ? (odeme.odemeler || []).reduce((s: number, o: any) => s + (o.tutar || 0), 0) : 0;
-      toplamOdpienenKapat += odpienenKisim;
-      const kalan = efektifTutar - odpienenKisim;
-      if (kalan > 0 && !odeme?.odpiendi) {
-        odenmemisler.push({ giderId: gId, amount: g.amount, kalanTutar: kalan, personelAdi: g.personelAdi || "", category: g.category || "", description: g.description || "", odemeTipi: g.odemeTipi || "" });
-      } else if (odeme?.odpiendi) {
+      // Ödeme durumu — canlı /sirket ile birebir aynı (if/else; tam ödenende çift sayma YOK)
+      if (odeme && odeme.odpiendi) {
+        // Tamamen ödendi
         toplamOdpienenKapat += odeme.odpienenTutar || efektifTutar;
+      } else if (odeme && odeme.odemeler?.length > 0) {
+        // Kısmi ödeme yapılmış
+        const odpienenKisim = (odeme.odemeler || []).reduce((s: number, o: any) => s + (o.tutar || 0), 0);
+        toplamOdpienenKapat += odpienenKisim;
+        const kalan = efektifTutar - odpienenKisim;
+        if (kalan > 0) {
+          odenmemisler.push({ giderId: gId, amount: g.amount, kalanTutar: kalan, personelAdi: g.personelAdi || "", category: g.category || "", description: g.description || "", odemeTipi: g.odemeTipi || "" });
+        }
+      } else {
+        // Hiç ödenmemiş
+        odenmemisler.push({ giderId: gId, amount: g.amount, kalanTutar: efektifTutar, personelAdi: g.personelAdi || "", category: g.category || "", description: g.description || "", odemeTipi: g.odemeTipi || "" });
       }
     }
 
-    const ayBakiye = devirBakiye + toplamDevir - toplamOdpienenKapat;
+    // Para girişleri + manuel kasa işlemleri (canlı /sirket bakiyesiyle BİREBİR aynı formül)
+    const ayGelirleriKapat = (tumGelirlerKapat || []).filter((g: any) => g.date?.startsWith(ay));
+    const toplamParaGirisiKapat = ayGelirleriKapat.reduce((s: number, g: any) => s + (g.amount || 0), 0);
+    const ayKasaIslemleriKapat = (tumKasaIslemlerKapat || []).filter((i: any) => i.date?.startsWith(ay));
+    const kasaIslemGelirKapat = ayKasaIslemleriKapat.filter((i: any) => i.type === 'gelir').reduce((s: number, i: any) => s + (i.amount || 0), 0);
+    const kasaIslemGiderKapat = ayKasaIslemleriKapat.filter((i: any) => i.type === 'gider').reduce((s: number, i: any) => s + (i.amount || 0), 0);
+
+    // NOT: Manuel borçlar bakiyeyi etkilemez (SYSTEM.md) — canlı /sirket ile aynı.
+    const ayBakiye = devirBakiye + acilisTutarKapat + toplamDevir + toplamParaGirisiKapat + kasaIslemGelirKapat - toplamOdpienenKapat - kasaIslemGiderKapat;
 
     const kapatis = {
       ay,
