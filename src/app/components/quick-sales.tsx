@@ -1444,21 +1444,40 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
     return sum + Math.round(kb * (effectivePrintType === 'tam' ? 1 : 2));
   }, 0) - Number(globalIadePhotos));
 
-  // ── Satışlardan albüm düşümü — backend stok/kapanis ile tutarlı ──
+  // ── Satışlardan albüm düşümü — backend stok/kapanis ile BİREBİR tutarlı ──
+  // Anahtarlar suffix'li (album3_yarim / album3_tam) olmalı; stok alanları da suffix'li.
+  // Bare `album3` kullanılırsa stokAlanlari ile eşleşmez → satılanlar düşülmemiş gibi
+  // görünüp sahte kapanış anomalisi çıkar. Backend gibi: önce mekanın printType'ından
+  // düş, o tip biterse kalanı diğer tipten düş.
   const kapanisSatisAlbumDusum = useMemo(() => {
     const result: Record<string, number> = {};
+    const tercihSuffix = effectivePrintType === 'tam' ? '_tam' : '_yarim';
+    const digerSuffix = effectivePrintType === 'tam' ? '_yarim' : '_tam';
+    const acilis = stokGunluk?.acilis
+      ? migrateStok(stokGunluk.acilis as StokSayim, effectivePrintType)
+      : ({} as StokSayim);
     for (const satis of allSalesForKapanis) {
+      if (satis.iptal) continue; // İptal satışlar stoktan düşülmez
       for (const item of (satis.items || [])) {
         if (item.dijital) continue; // Dijital satışlar stoktan düşülmez
         const match = String(item.product || '').match(/^(\d+)/);
-        if (match) {
-          const alan = `album${match[1]}`;
-          result[alan] = (result[alan] || 0) + (Number(item.quantity) || 0);
+        if (!match) continue;
+        const sz = match[1];
+        const tercihAlan = `album${sz}${tercihSuffix}`;
+        const digerAlan = `album${sz}${digerSuffix}`;
+        if (!(tercihAlan in stokAlanAdi)) continue; // sadece geçerli albüm (album1 vb. hariç)
+        const qty = Number(item.quantity) || 0;
+        const tercihMevcut = Math.max(0, (Number((acilis as Record<string, number>)[tercihAlan]) || 0) - (result[tercihAlan] || 0));
+        if (tercihMevcut >= qty) {
+          result[tercihAlan] = (result[tercihAlan] || 0) + qty;
+        } else {
+          result[tercihAlan] = (result[tercihAlan] || 0) + tercihMevcut;
+          result[digerAlan] = (result[digerAlan] || 0) + (qty - tercihMevcut);
         }
       }
     }
     return result;
-  }, [allSalesForKapanis]);
+  }, [allSalesForKapanis, stokGunluk, effectivePrintType]);
 
   const kapanisAnomaliDetect = (): Record<string, number> => {
     if (!stokGunluk?.acilis) return {};
