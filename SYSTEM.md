@@ -154,6 +154,39 @@ vardiyaToplam.paperName = "Kagit A, Kagit B" (virgul ile)
 
 ---
 
+## Bozuk Albüm Sistemi
+
+Bozulan/hasarli albumler satilabilir stoktan dusulup ayri "bozuk" kutusunda **birikimli mevcut bakiye** olarak tutulur. Imha/iade ile dusurulur.
+
+### KV Yapisi
+| Key | Icerik |
+|-----|--------|
+| `depo_stok.bozuk` | Depo bozuk bakiyesi: `{ album3_tam, album3_yarim, ..., album15_yarim }` |
+| `mekan_bozuk_{mekanId}` | Mekan bozuk birikimli bakiye: `{ mekanId, album{n}_tam/_yarim, guncellenmeTarihi }` |
+| `bozuk_hareket_{ts}` | Mekan imha/iade log (`tip:"mekan_bozuk_cikar"`, sebep) |
+| `depo_hareket_{ts}` | Depo bozuk log (`tip:"bozuk"` / `"bozuk_cikar"`, sebep) |
+
+### Kapanis Entegrasyonu (`/stok/kapanis`)
+- Payload'a `bozuk: Record<string,number>` (suffix'li, frontend printType'a gore ayirir)
+- `beklenen[alan] -= bozuk[alan]` → bozuk eksik/anomali sayilmaz
+- `kayit.kapanisBozuk` kaydedilir (denetim + idempotency baseline)
+- `mekan_bozuk_{mekanId}` idempotent guncellenir: `delta = yeni - eski(kayittan)`, re-close'da cift saymaz
+- `/stok/acilis-sifirla`: `kapanisBozuk` katkisi geri alinir (reverse)
+
+### Endpoint'ler (roller: yonetici/ust-mudur/mudur/operasyon)
+| Metod | Route | Aciklama |
+|-------|-------|----------|
+| POST | `/depo/bozuk` | Depo satilabilirden dus → bozuk kutusuna |
+| POST | `/depo/bozuk-cikar` | Depo bozuk imha/iade (satilabilire geri EKLENMEZ) |
+| POST | `/bozuk/mekan-cikar` | Mekan bozuk imha/iade |
+
+### Frontend
+- **quick-sales kapanis:** "Bozuk Albumler" acilir bolumu (reyona bagli degil), boyut bazli giris
+- **stok-dagilimi:** "Bozuk Albumler" karti (depo + her mekan, boyut bazli) + DepoModal "Bozuk" tab + mekan imha/iade modali
+- `/stok/genel-durum`: `depo.bozuk` + her `mekanOzet.bozuk` doner
+
+---
+
 ## Vardiya Raporlari
 
 **Frontend:** `src/app/components/vardiya-raporlari/` (13 dosya)
