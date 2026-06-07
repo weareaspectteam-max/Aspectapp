@@ -4000,7 +4000,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     const companyId = getCompanyId(user);
     const ckv = companyKvFor(companyId);
 
-    const { mekanId, tarih, sayim, not: kapanisNot, printerData, photo: kapanisPhoto } = await c.req.json();
+    const { mekanId, tarih, sayim, not: kapanisNot, printerData, photo: kapanisPhoto, bozuk } = await c.req.json();
     if (!mekanId || !tarih || !sayim) {
       return c.json({ error: "mekanId, tarih ve sayim zorunludur." }, 400);
     }
@@ -4048,6 +4048,12 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     }
 
     const alanlar = ["album3_tam","album3_yarim","album5_tam","album5_yarim","album7_tam","album7_yarim","album9_tam","album9_yarim","album11_tam","album11_yarim","album13_tam","album13_yarim","album15_tam","album15_yarim","paspartu","ribon"];
+
+    // Bozuk albümler (opsiyonel) — sadece albüm alanları, suffix'li, clamp ≥0.
+    // Frontend printType'a göre _tam/_yarim ayrımını zaten yapıp gönderir.
+    const albumAlanlar = alanlar.filter(a => a !== "paspartu" && a !== "ribon");
+    const newBozuk: Record<string, number> = {};
+    for (const a of albumAlanlar) newBozuk[a] = Math.max(0, Math.round(Number(bozuk?.[a]) || 0));
 
     // Mekan printType'ını al
     const mekanObjStok: any = await ckv.get(`mekan_${mekanId}`).catch(() => null);
@@ -4097,6 +4103,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       for (const ak of gelenOnaylandi) toplam += ak.gercekMiktar?.[alan] || 0;
       for (const ak of gidenOnaylandi) toplam -= ak.gercekMiktar?.[alan] || 0;
       toplam -= satisAlbumDusum[alan] || 0;
+      toplam -= newBozuk[alan] || 0; // bozuk albümler satılabilir stoktan çıktı — eksik/anomali sayılmaz
       if (alan === "ribon") toplam -= toplamRibonDegisim;
       beklenen[alan] = Math.max(0, toplam);
     }
@@ -4267,6 +4274,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       kapanisNot: kapanisNot || "",
       farkliTipKullanim: farkliTipKullanim.length > 0 ? farkliTipKullanim : undefined,
       satisAlbumDusum,
+      kapanisBozuk: newBozuk,
       kapanisYapildi: true,
       kapanisZamani: new Date().toISOString(),
       kapanisYapanId: user.id,
@@ -4286,6 +4294,25 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
 
     await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, kayit);
     pgWrite("daily_stock", "upsert", { id: `${mekanId}_${tarih}`, company_id: companyId, venue_id: mekanId, date: tarih, extra_data: kayit, updated_at: new Date().toISOString() });
+
+    // ── Bozuk albümler: mekan birikimli bakiyesini idempotent güncelle ──
+    // delta = yeni - eski(kayıttan); re-close'da çift saymaz.
+    try {
+      const oldBozuk: Record<string, number> = (existing?.kapanisBozuk) || {};
+      let bozukDeltaVar = false;
+      for (const a of albumAlanlar) { if ((newBozuk[a] || 0) !== (Number(oldBozuk[a]) || 0)) { bozukDeltaVar = true; break; } }
+      if (bozukDeltaVar) {
+        const bozukKey = `mekan_bozuk_${mekanId}`;
+        const cumBozuk: any = await ckv.get(bozukKey) || { mekanId };
+        for (const a of albumAlanlar) {
+          const delta = (newBozuk[a] || 0) - (Number(oldBozuk[a]) || 0);
+          if (delta !== 0) cumBozuk[a] = Math.max(0, (Number(cumBozuk[a]) || 0) + delta);
+        }
+        cumBozuk.mekanId = mekanId;
+        cumBozuk.guncellenmeTarihi = new Date().toISOString();
+        await ckv.set(bozukKey, cumBozuk);
+      }
+    } catch (bozukErr) { console.log("Bozuk birikim güncelleme hatası (non-fatal):", bozukErr); }
 
     // ── PostgreSQL dual-write (kapanış) ──
     try {
@@ -4415,6 +4442,7 @@ app.post("/make-server-4da0b637/stok/acilis-sifirla", async (c) => {
       kapanisYapanAd: _kya,
       kapanisAnomali: _kano,
       kapanisBeklenen: _kb,
+      kapanisBozuk: _kbz,
       printerData: _pd,
       toplamRibonDegisim: _tr,
       vardiyaToplam: _vt,
@@ -4431,6 +4459,22 @@ app.post("/make-server-4da0b637/stok/acilis-sifirla", async (c) => {
     };
 
     await ckv.set(kvKey, yeniKayit);
+
+    // ── Bozuk albümler: bu kapanışın mekan birikimine katkısını geri al (reverse) ──
+    try {
+      const oldBozuk: Record<string, number> = existing?.kapanisBozuk || {};
+      if (oldBozuk && Object.keys(oldBozuk).length > 0) {
+        const bozukKey = `mekan_bozuk_${mekanId}`;
+        const cum: any = await ckv.get(bozukKey) || { mekanId };
+        for (const a of Object.keys(oldBozuk)) {
+          cum[a] = Math.max(0, (Number(cum[a]) || 0) - (Number(oldBozuk[a]) || 0));
+        }
+        cum.mekanId = mekanId;
+        cum.guncellenmeTarihi = new Date().toISOString();
+        await ckv.set(bozukKey, cum);
+      }
+    } catch (bozukErr) { console.log("Bozuk reverse hatası (non-fatal):", bozukErr); }
+
     console.log(`Açılış+Kapanış sıfırlandı: ${mekanId} / ${tarih} by ${user.id}`);
     return c.json({ message: "Açılış ve kapanış başarıyla sıfırlandı. Satış verileri korundu.", kayit: yeniKayit });
   } catch (err) {
@@ -6446,6 +6490,11 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
       album15_tam:"#e6ad76", album15_yarim:"#ffc78f",
     };
 
+    // Bozuk albümler — tüm mekanların birikimli bakiyesini tek seferde çek (mekanId → kayıt)
+    const tumBozukKayitlar: any[] = await ckv.getByPrefix("mekan_bozuk_").catch(() => []) || [];
+    const bozukMap: Record<string, any> = {};
+    for (const b of tumBozukKayitlar) { if (b?.mekanId) bozukMap[b.mekanId] = b; }
+
     const mekanOzetleri: any[] = mekanlarList.map((mekan: any) => {
       const kayit = kayitMap[mekan.id];
       const isFallback = kayit?._fallback === true;
@@ -6489,6 +6538,14 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
       // Mekan ribonlar (tip bazlı)
       const mekanRibonlar: Record<string, number> = stok?.ribonlar || {};
 
+      // Bozuk albümler (birikimli bakiye)
+      const mb = bozukMap[mekan.id] || {};
+      const bozuk: Record<string, number> = {};
+      for (const sz of [3, 5, 7, 9, 11, 13, 15]) {
+        bozuk[`album${sz}_tam`] = Number(mb[`album${sz}_tam`]) || 0;
+        bozuk[`album${sz}_yarim`] = Number(mb[`album${sz}_yarim`]) || 0;
+      }
+
       return {
         id: mekan.id,
         name: mekan.name,
@@ -6496,6 +6553,7 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
         color: mekan.color || "#9dd9ea",
         vardiyaDurumu,
         albumSayilari,
+        bozuk,
         ribonlar: mekanRibonlar,
         stokRibonAdet,
         makinaKalan,
@@ -6512,9 +6570,12 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
     // Depo stoğunu dahil et (tam/yarım migrasyonuyla)
     const depoStokMigrated: any = migrateDepoStok(await ckv.get("depo_stok") || {});
     const depoAlbumSayilari: Record<string, number> = {};
+    const depoBozuk: Record<string, number> = {};
     for (const s of [3, 5, 7, 9, 11, 13, 15]) {
       depoAlbumSayilari[`album${s}_tam`] = Number(depoStokMigrated[`album${s}_tam`]) || 0;
       depoAlbumSayilari[`album${s}_yarim`] = Number(depoStokMigrated[`album${s}_yarim`]) || 0;
+      depoBozuk[`album${s}_tam`] = Number(depoStokMigrated.bozuk?.[`album${s}_tam`]) || 0;
+      depoBozuk[`album${s}_yarim`] = Number(depoStokMigrated.bozuk?.[`album${s}_yarim`]) || 0;
     }
     const depoRibonTakim = Number(depoStokMigrated.ribon) || 0;
     const depoRibonlar: Record<string, number> = depoStokMigrated.ribonlar || {};
@@ -6554,6 +6615,7 @@ app.get("/make-server-4da0b637/stok/genel-durum", async (c) => {
       ribonPerTakim: RIBON_PER_TAKIM,
       depo: {
         albumSayilari: depoAlbumSayilari,
+        bozuk: depoBozuk,
         ribonTakim: depoRibonTakim,
         ribonAdet: depoRibonAdet,
         ribonlar: depoRibonlar,
@@ -6771,6 +6833,164 @@ app.get("/make-server-4da0b637/depo/hareketler", async (c) => {
   }
 });
 
+// Bozuk albüm alan listesi (sadece albümler, suffix'li)
+const BOZUK_ALBUM_ALANLAR = ["album3_tam","album3_yarim","album5_tam","album5_yarim","album7_tam","album7_yarim","album9_tam","album9_yarim","album11_tam","album11_yarim","album13_tam","album13_yarim","album15_tam","album15_yarim"];
+
+// ──────────────────────────────────────────
+// DEPO: Bozuk işaretle (satılabilirden düş → bozuk kutusuna)
+// POST /make-server-4da0b637/depo/bozuk
+// Body: { alan: string, miktar: number, not?: string }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/depo/bozuk", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role;
+    if (!["admin", "yonetici", "ust-mudur", "mudur", "operasyon"].includes(role)) return c.json({ error: "Yalnızca yönetici, müdür ve operasyon işlem yapabilir." }, 403);
+
+    const { alan, miktar, not: notText } = await c.req.json();
+    if (!alan || !BOZUK_ALBUM_ALANLAR.includes(alan)) return c.json({ error: "Geçersiz albüm alanı." }, 400);
+    if (!miktar || miktar <= 0) return c.json({ error: "Pozitif miktar zorunludur." }, 400);
+
+    const ckv = companyKvFor(getCompanyId(user));
+    const mevcutStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
+
+    const eskiDeger = Number(mevcutStok[alan]) || 0;
+    if (eskiDeger < miktar) return c.json({ error: `Yetersiz stok. Mevcut: ${eskiDeger}, İstenen: ${miktar}` }, 400);
+    mevcutStok[alan] = eskiDeger - miktar;
+    if (!mevcutStok.bozuk || typeof mevcutStok.bozuk !== "object") mevcutStok.bozuk = {};
+    mevcutStok.bozuk[alan] = (Number(mevcutStok.bozuk[alan]) || 0) + miktar;
+    mevcutStok.guncellenmeTarihi = new Date().toISOString();
+    await ckv.set("depo_stok", mevcutStok);
+
+    const hareket = {
+      id: `depo_hareket_${Date.now()}`,
+      tip: "bozuk",
+      alan,
+      kagitTipiId: null,
+      miktar,
+      eskiDeger,
+      yeniDeger: mevcutStok[alan],
+      bozukYeni: mevcutStok.bozuk[alan],
+      not: notText || "",
+      tarih: new Date().toISOString(),
+      kullaniciId: user.id,
+      kullaniciAdi: user.user_metadata?.full_name || user.email,
+    };
+    await ckv.set(hareket.id, hareket);
+
+    console.log(`Depo bozuk: ${alan} +${miktar} bozuk (${hareket.kullaniciAdi})`);
+    return c.json({ basarili: true, sellableYeni: mevcutStok[alan], bozukYeni: mevcutStok.bozuk[alan], hareket });
+  } catch (err) {
+    console.log("Depo bozuk error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// DEPO: Bozuk çıkar (imha / iade) — bozuk kutusundan düş, satılabilire geri EKLENMEZ
+// POST /make-server-4da0b637/depo/bozuk-cikar
+// Body: { alan: string, miktar: number, sebep: "imha"|"iade", not?: string }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/depo/bozuk-cikar", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role;
+    if (!["admin", "yonetici", "ust-mudur", "mudur", "operasyon"].includes(role)) return c.json({ error: "Yalnızca yönetici, müdür ve operasyon işlem yapabilir." }, 403);
+
+    const { alan, miktar, sebep, not: notText } = await c.req.json();
+    if (!alan || !BOZUK_ALBUM_ALANLAR.includes(alan)) return c.json({ error: "Geçersiz albüm alanı." }, 400);
+    if (!miktar || miktar <= 0) return c.json({ error: "Pozitif miktar zorunludur." }, 400);
+    if (!["imha", "iade"].includes(sebep)) return c.json({ error: "Sebep imha veya iade olmalı." }, 400);
+
+    const ckv = companyKvFor(getCompanyId(user));
+    const mevcutStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
+    if (!mevcutStok.bozuk || typeof mevcutStok.bozuk !== "object") mevcutStok.bozuk = {};
+
+    const eskiDeger = Number(mevcutStok.bozuk[alan]) || 0;
+    if (eskiDeger < miktar) return c.json({ error: `Yetersiz bozuk stok. Mevcut: ${eskiDeger}, İstenen: ${miktar}` }, 400);
+    mevcutStok.bozuk[alan] = eskiDeger - miktar;
+    mevcutStok.guncellenmeTarihi = new Date().toISOString();
+    await ckv.set("depo_stok", mevcutStok);
+
+    const hareket = {
+      id: `depo_hareket_${Date.now()}`,
+      tip: "bozuk_cikar",
+      alan,
+      kagitTipiId: null,
+      miktar,
+      eskiDeger,
+      yeniDeger: mevcutStok.bozuk[alan],
+      sebep,
+      not: notText || "",
+      tarih: new Date().toISOString(),
+      kullaniciId: user.id,
+      kullaniciAdi: user.user_metadata?.full_name || user.email,
+    };
+    await ckv.set(hareket.id, hareket);
+
+    console.log(`Depo bozuk çıkar (${sebep}): ${alan} -${miktar} (${hareket.kullaniciAdi})`);
+    return c.json({ basarili: true, bozukYeni: mevcutStok.bozuk[alan], hareket });
+  } catch (err) {
+    console.log("Depo bozuk-cikar error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// BOZUK: Mekan bozuk çıkar (imha / iade) — mekan birikimli bakiyesinden düş
+// POST /make-server-4da0b637/bozuk/mekan-cikar
+// Body: { mekanId: string, alan: string, miktar: number, sebep: "imha"|"iade", not?: string }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/bozuk/mekan-cikar", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role;
+    if (!["admin", "yonetici", "ust-mudur", "mudur", "operasyon"].includes(role)) return c.json({ error: "Yalnızca yönetici, müdür ve operasyon işlem yapabilir." }, 403);
+
+    const { mekanId, alan, miktar, sebep, not: notText } = await c.req.json();
+    if (!mekanId) return c.json({ error: "mekanId zorunludur." }, 400);
+    if (!alan || !BOZUK_ALBUM_ALANLAR.includes(alan)) return c.json({ error: "Geçersiz albüm alanı." }, 400);
+    if (!miktar || miktar <= 0) return c.json({ error: "Pozitif miktar zorunludur." }, 400);
+    if (!["imha", "iade"].includes(sebep)) return c.json({ error: "Sebep imha veya iade olmalı." }, 400);
+
+    const ckv = companyKvFor(getCompanyId(user));
+    const bozukKey = `mekan_bozuk_${mekanId}`;
+    const cum: any = await ckv.get(bozukKey) || { mekanId };
+
+    const eskiDeger = Number(cum[alan]) || 0;
+    if (eskiDeger < miktar) return c.json({ error: `Yetersiz bozuk stok. Mevcut: ${eskiDeger}, İstenen: ${miktar}` }, 400);
+    cum[alan] = eskiDeger - miktar;
+    cum.mekanId = mekanId;
+    cum.guncellenmeTarihi = new Date().toISOString();
+    await ckv.set(bozukKey, cum);
+
+    const hareket = {
+      id: `bozuk_hareket_${Date.now()}`,
+      tip: "mekan_bozuk_cikar",
+      mekanId,
+      alan,
+      miktar,
+      eskiDeger,
+      yeniDeger: cum[alan],
+      sebep,
+      not: notText || "",
+      tarih: new Date().toISOString(),
+      kullaniciId: user.id,
+      kullaniciAdi: user.user_metadata?.full_name || user.email,
+    };
+    await ckv.set(hareket.id, hareket);
+
+    console.log(`Mekan bozuk çıkar (${sebep}): ${mekanId} ${alan} -${miktar} (${hareket.kullaniciAdi})`);
+    return c.json({ basarili: true, bozukYeni: cum[alan], hareket });
+  } catch (err) {
+    console.log("Mekan bozuk-cikar error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 // ──────────────────────────────────────────
 // STOK: Mekan / Depo stok güncelle (yönetici)
 // POST /make-server-4da0b637/stok/mekan/guncelle
@@ -6898,7 +7118,7 @@ app.post("/make-server-4da0b637/stok/mekan/sifirla", async (c) => {
     const _sgCompanyId = getCompanyId(user);
     const ckv = companyKvFor(_sgCompanyId);
     if (mekanId === "depo") {
-      const depoSifir: Record<string, any> = { ribon: 0, guncellenmeTarihi: new Date().toISOString() };
+      const depoSifir: Record<string, any> = { ribon: 0, bozuk: {}, guncellenmeTarihi: new Date().toISOString() };
       for (const s of [3, 5, 7, 9, 11, 13, 15]) {
         depoSifir[`album${s}_tam`] = 0;
         depoSifir[`album${s}_yarim`] = 0;

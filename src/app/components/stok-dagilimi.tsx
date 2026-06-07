@@ -59,6 +59,7 @@ interface MekanOzet {
   id: string; name: string; emoji: string; color: string;
   vardiyaDurumu: 'acik' | 'kapandi' | 'yok' | 'onceki_kapanis';
   albumSayilari: Record<string, number>;
+  bozuk?: Record<string, number>;
   ribonlar?: Record<string, number>;
   stokRibonAdet: number;
   makinaKalan: number;
@@ -70,6 +71,7 @@ interface MekanOzet {
 }
 interface DepoOzet {
   albumSayilari: Record<string, number>;
+  bozuk?: Record<string, number>;
   ribonTakim: number;
   ribonAdet: number;
   ribonlar?: Record<string, number>;
@@ -83,9 +85,9 @@ interface GenelDurum {
   depo: DepoOzet;
 }
 interface Hareket {
-  id: string; tip: 'giris'|'cikis'; alan: string; miktar: number;
+  id: string; tip: 'giris'|'cikis'|'bozuk'|'bozuk_cikar'; alan: string; miktar: number;
   eskiDeger: number; yeniDeger: number; not: string; tarih: string;
-  kullaniciAdi: string; hedefMekan?: string;
+  kullaniciAdi: string; hedefMekan?: string; sebep?: 'imha'|'iade';
 }
 interface Transfer {
   id: string;
@@ -844,7 +846,7 @@ function StokSifirlaOnay({
 
 // ─── Depo Yönetim Modalı ──────────────────────────────────────────────────────
 function DepoModal({
-  onClose, onSuccess, mekanlar, kagitTipleri, depoRibonlar, depoAlbumSayilari, depoRibonTakim,
+  onClose, onSuccess, mekanlar, kagitTipleri, depoRibonlar, depoAlbumSayilari, depoRibonTakim, depoBozuk, initialTab,
 }: {
   onClose: () => void;
   onSuccess: () => void;
@@ -853,8 +855,12 @@ function DepoModal({
   depoRibonlar?: Record<string, number>;
   depoAlbumSayilari?: Record<string, number>;
   depoRibonTakim?: number;
+  depoBozuk?: Record<string, number>;
+  initialTab?: 'giris' | 'cikis' | 'gecmis' | 'bozuk';
 }) {
-  const [sekme, setSekme] = useState<'giris' | 'cikis' | 'gecmis'>('giris');
+  const [sekme, setSekme] = useState<'giris' | 'cikis' | 'gecmis' | 'bozuk'>(initialTab || 'giris');
+  const [bozukAlan, setBozukAlan] = useState<string>('album3_tam');
+  const [bozukMiktar, setBozukMiktar] = useState('');
   // Depo giriş/çıkış: tam/yarım alanları kullan
   const depoGirisAlanlari = [...DEPO_ALBUMLER, 'ribon'] as const;
   const [alan, setAlan] = useState<string>('album3_tam');
@@ -919,6 +925,34 @@ function DepoModal({
     finally { setGecmisYukleniyor(false); }
   };
 
+  const bozukIslem = async (mod: 'isaretle' | 'imha' | 'iade') => {
+    if (!bozukMiktar || isNaN(Number(bozukMiktar)) || Number(bozukMiktar) <= 0) {
+      setHata('Geçerli bir miktar girin.');
+      return;
+    }
+    setYukleniyor(true); setHata(''); setBasarili('');
+    try {
+      const headers = await authHeaders();
+      if (mod === 'isaretle') {
+        const res = await fetch(`${API_BASE}/depo/bozuk`, { method: 'POST', headers, body: JSON.stringify({ alan: bozukAlan, miktar: Number(bozukMiktar), not }) });
+        const json = await res.json();
+        if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+        setBasarili(`✓ ${bozukMiktar} adet ${ALAN_ETIKET[bozukAlan]} bozuk olarak işaretlendi.`);
+      } else {
+        const res = await fetch(`${API_BASE}/depo/bozuk-cikar`, { method: 'POST', headers, body: JSON.stringify({ alan: bozukAlan, miktar: Number(bozukMiktar), sebep: mod, not }) });
+        const json = await res.json();
+        if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+        setBasarili(`✓ ${bozukMiktar} adet ${ALAN_ETIKET[bozukAlan]} ${mod === 'imha' ? 'imha edildi' : 'iade edildi'}.`);
+      }
+      setBozukMiktar(''); setNot('');
+      onSuccess();
+    } catch (err: any) {
+      setHata(err.message || 'İşlem başarısız.');
+    } finally {
+      setYukleniyor(false);
+    }
+  };
+
   useEffect(() => {
     if (sekme === 'gecmis') gecmisYukle();
   }, [sekme]);
@@ -946,9 +980,9 @@ function DepoModal({
 
         {/* Sekmeler */}
         <div className="flex border-b border-white/8">
-          {(['giris','cikis','gecmis'] as const).map(s => {
-            const labels = { giris: 'Giriş', cikis: 'Çıkış', gecmis: 'Geçmiş' };
-            const icons = { giris: ArrowDownToLine, cikis: ArrowUpFromLine, gecmis: Clock };
+          {(['giris','cikis','bozuk','gecmis'] as const).map(s => {
+            const labels = { giris: 'Giriş', cikis: 'Çıkış', bozuk: 'Bozuk', gecmis: 'Geçmiş' };
+            const icons = { giris: ArrowDownToLine, cikis: ArrowUpFromLine, bozuk: AlertTriangle, gecmis: Clock };
             const Ikon = icons[s];
             return (
               <button key={s} onClick={() => { setSekme(s); setHata(''); setBasarili(''); }}
@@ -1163,13 +1197,22 @@ function DepoModal({
                   <div key={h.id} className="rounded-xl bg-white/4 border border-white/8 px-4 py-3">
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
-                        <span className={`text-xs font-bold ${h.tip === 'giris' ? 'text-emerald-400' : 'text-amber-400'}`}>
-                          {h.tip === 'giris' ? '▲ Giriş' : '▼ Çıkış'}
-                        </span>
-                        <span className="text-xs text-white font-semibold">{ALAN_ETIKET[h.alan] || h.alan}</span>
-                        <span className={`text-xs font-bold ${h.tip === 'giris' ? 'text-emerald-300' : 'text-amber-300'}`}>
-                          {h.tip === 'giris' ? '+' : '-'}{h.miktar}
-                        </span>
+                        {(() => {
+                          const tb: Record<string, { renk: string; sayiRenk: string; etiket: string; isaret: string }> = {
+                            giris: { renk: 'text-emerald-400', sayiRenk: 'text-emerald-300', etiket: '▲ Giriş', isaret: '+' },
+                            cikis: { renk: 'text-amber-400', sayiRenk: 'text-amber-300', etiket: '▼ Çıkış', isaret: '-' },
+                            bozuk: { renk: 'text-red-400', sayiRenk: 'text-red-300', etiket: '✕ Bozuk', isaret: '+' },
+                            bozuk_cikar: { renk: 'text-purple-400', sayiRenk: 'text-purple-300', etiket: `♻ ${h.sebep === 'iade' ? 'İade' : 'İmha'}`, isaret: '-' },
+                          };
+                          const t = tb[h.tip] || tb.giris;
+                          return (
+                            <>
+                              <span className={`text-xs font-bold ${t.renk}`}>{t.etiket}</span>
+                              <span className="text-xs text-white font-semibold">{ALAN_ETIKET[h.alan] || h.alan}</span>
+                              <span className={`text-xs font-bold ${t.sayiRenk}`}>{t.isaret}{h.miktar}</span>
+                            </>
+                          );
+                        })()}
                       </div>
                       <span className="text-[9px] text-white/25">
                         {new Date(h.tarih).toLocaleString('tr-TR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}
@@ -1184,6 +1227,244 @@ function DepoModal({
                 ))
               )}
             </div>
+          )}
+
+          {/* Bozuk */}
+          {sekme === 'bozuk' && (
+            <div className="p-5 space-y-4">
+              {/* Mevcut depo bozuk özeti */}
+              <div className="rounded-xl bg-red-500/8 border border-red-500/20 px-4 py-3">
+                <p className="text-[11px] font-semibold text-red-300/70 uppercase tracking-wider mb-2">Depodaki Bozuklar</p>
+                {DEPO_ALBUMLER.filter(a => (depoBozuk?.[a] || 0) > 0).length === 0 ? (
+                  <p className="text-xs text-white/30">Bozuk albüm yok.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {DEPO_ALBUMLER.filter(a => (depoBozuk?.[a] || 0) > 0).map(a => (
+                      <span key={a} className="text-xs font-semibold px-2 py-1 rounded-lg bg-red-500/15 text-red-200">{ALAN_ETIKET[a]}: {depoBozuk?.[a]}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Ürün seçimi */}
+              <div>
+                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Ürün</label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {DEPO_ALBUMLER.map(a => {
+                    const sellable = depoAlbumSayilari?.[a] || 0;
+                    const broken = depoBozuk?.[a] || 0;
+                    return (
+                      <button key={a} onClick={() => setBozukAlan(a)}
+                        className={`py-2 px-1 rounded-xl text-xs font-semibold border transition-all flex flex-col items-center gap-0.5 ${
+                          bozukAlan === a ? 'border-red-400/60 bg-red-500/20 text-red-200' : 'border-white/8 bg-white/4 text-white/40 active:bg-white/8'
+                        }`}>
+                        <span>{ALAN_ETIKET[a]}</span>
+                        <span className="text-[9px] font-black text-emerald-400/70">{sellable}{broken > 0 ? <span className="text-red-400/70"> / {broken}b</span> : null}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-white/25 mt-1">Yeşil: satılabilir · kırmızı: bozuk</p>
+              </div>
+
+              {/* Miktar */}
+              <div>
+                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Miktar</label>
+                <input type="number" inputMode="numeric" value={bozukMiktar} onChange={e => setBozukMiktar(e.target.value)}
+                  placeholder="0"
+                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-red-400/50 transition-colors placeholder-white/20" />
+              </div>
+
+              {/* Not */}
+              <div>
+                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Not (opsiyonel)</label>
+                <input type="text" value={not} onChange={e => setNot(e.target.value)}
+                  placeholder="Örn: Kırık kapak"
+                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-red-400/50 transition-colors placeholder-white/20" />
+              </div>
+
+              {hata && <div className="rounded-xl bg-red-500/12 border border-red-500/20 px-4 py-3 text-xs text-red-300">{hata}</div>}
+              {basarili && <div className="rounded-xl bg-emerald-500/12 border border-emerald-500/20 px-4 py-3 text-xs text-emerald-300">{basarili}</div>}
+
+              <button onClick={() => bozukIslem('isaretle')} disabled={yukleniyor || !bozukMiktar}
+                className="w-full h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 bg-gradient-to-r from-red-500/80 to-rose-500/80 text-white">
+                {yukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4" />}
+                Bozuk İşaretle (stoktan düş)
+              </button>
+
+              <div className="flex gap-2">
+                <button onClick={() => bozukIslem('imha')} disabled={yukleniyor || !bozukMiktar}
+                  className="flex-1 h-11 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 bg-white/6 border border-white/12 text-white/70">
+                  <Trash2 className="w-3.5 h-3.5" /> İmha Et
+                </button>
+                <button onClick={() => bozukIslem('iade')} disabled={yukleniyor || !bozukMiktar}
+                  className="flex-1 h-11 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 bg-white/6 border border-white/12 text-white/70">
+                  <ArrowUpFromLine className="w-3.5 h-3.5" /> İade Et
+                </button>
+              </div>
+              <p className="text-[10px] text-white/25 text-center">İmha/İade bozuk kutusundan düşer — satılabilire geri eklenmez.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Bozuk Albümler Kartı ────────────────────────────────────────────────────
+function BozukAlbumCard({ mekanlar, depo, isYonetici, onDepoIsle, onMekanIsle }: {
+  mekanlar: MekanOzet[];
+  depo: DepoOzet;
+  isYonetici: boolean;
+  onDepoIsle: () => void;
+  onMekanIsle: (m: MekanOzet) => void;
+}) {
+  const [acik, setAcik] = useState(false);
+  const sizes = [3, 5, 7, 9, 11, 13, 15];
+  const toplamOf = (b?: Record<string, number>) => sizes.reduce((s, sz) => s + (Number(b?.[`album${sz}_tam`]) || 0) + (Number(b?.[`album${sz}_yarim`]) || 0), 0);
+  const rows = [
+    { id: '__depo__', emoji: '🏪', name: 'Depo', bozuk: depo.bozuk, t: toplamOf(depo.bozuk), onIsle: onDepoIsle },
+    ...mekanlar.map(m => ({ id: m.id, emoji: m.emoji, name: m.name, bozuk: m.bozuk, t: toplamOf(m.bozuk), onIsle: () => onMekanIsle(m) })),
+  ].filter(r => r.t > 0);
+  const genelToplam = rows.reduce((s, r) => s + r.t, 0);
+
+  return (
+    <div className="mx-4 mb-4 rounded-2xl border border-red-500/20 bg-[rgba(239,68,68,0.04)] backdrop-blur overflow-hidden">
+      <button onClick={() => setAcik(v => !v)} className="w-full px-4 pt-4 pb-3 border-b border-white/8 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-red-400" />
+          <span className="text-sm font-bold text-white">Bozuk Albümler</span>
+          {genelToplam > 0 && <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-red-500/20 text-red-300">{genelToplam}</span>}
+        </div>
+        <ChevronDown className={`w-4 h-4 text-white/40 transition-transform ${acik ? 'rotate-180' : ''}`} />
+      </button>
+      {genelToplam === 0 ? (
+        <div className="px-4 py-4"><p className="text-xs text-white/30">Hiç bozuk albüm yok 🎉</p></div>
+      ) : acik && (
+        <div className="p-3 space-y-2">
+          {rows.map(r => (
+            <div key={r.id} className="rounded-xl bg-black/30 border border-white/8 px-3 py-2.5">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">{r.emoji}</span>
+                  <span className="text-sm font-semibold text-white">{r.name}</span>
+                  <span className="text-xs font-bold px-1.5 py-0.5 rounded-md bg-red-500/15 text-red-300">{r.t}</span>
+                </div>
+                {isYonetici && (
+                  <button onClick={r.onIsle} className="text-[10px] font-semibold px-2 py-1 rounded-lg bg-white/6 border border-white/12 text-white/60 active:scale-95">İmha/İade</button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {sizes.map(sz => {
+                  const tam = Number(r.bozuk?.[`album${sz}_tam`]) || 0;
+                  const yarim = Number(r.bozuk?.[`album${sz}_yarim`]) || 0;
+                  if (tam + yarim === 0) return null;
+                  return (
+                    <span key={sz} className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-red-500/10 text-red-200">
+                      {sz} Kare: {tam + yarim}{(tam > 0 && yarim > 0) ? <span className="text-white/40"> (T{tam}/Y{yarim})</span> : null}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Mekan Bozuk Çıkar (İmha/İade) Modalı ────────────────────────────────────
+function MekanBozukCikarModal({ mekan, onClose, onSuccess }: {
+  mekan: MekanOzet;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const alanlar: string[] = [];
+  for (const sz of [3, 5, 7, 9, 11, 13, 15]) {
+    for (const suf of ['_tam', '_yarim']) {
+      const a = `album${sz}${suf}`;
+      if ((Number(mekan.bozuk?.[a]) || 0) > 0) alanlar.push(a);
+    }
+  }
+  const [alan, setAlan] = useState<string>(alanlar[0] || '');
+  const [miktar, setMiktar] = useState('');
+  const [yukleniyor, setYukleniyor] = useState(false);
+  const [hata, setHata] = useState('');
+  const [basarili, setBasarili] = useState('');
+
+  const islem = async (sebep: 'imha' | 'iade') => {
+    if (!alan) { setHata('Bu mekanda bozuk albüm yok.'); return; }
+    if (!miktar || isNaN(Number(miktar)) || Number(miktar) <= 0) { setHata('Geçerli bir miktar girin.'); return; }
+    setYukleniyor(true); setHata(''); setBasarili('');
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${API_BASE}/bozuk/mekan-cikar`, { method: 'POST', headers, body: JSON.stringify({ mekanId: mekan.id, alan, miktar: Number(miktar), sebep }) });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+      setBasarili(`✓ ${miktar} adet ${ALAN_ETIKET[alan]} ${sebep === 'imha' ? 'imha edildi' : 'iade edildi'}.`);
+      setMiktar('');
+      onSuccess();
+    } catch (err: any) {
+      setHata(err.message || 'İşlem başarısız.');
+    } finally {
+      setYukleniyor(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-md bg-[#0e0826] border border-white/12 rounded-t-3xl overflow-hidden mb-16" style={{ maxHeight: '92vh' }}>
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/10">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">{mekan.emoji}</span>
+            <div>
+              <h2 className="text-sm font-bold text-white">{mekan.name} — Bozuk İmha/İade</h2>
+              <p className="text-[10px] text-white/30">Birikimli bozuktan düşer</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-transform">
+            <X className="w-4 h-4 text-white/60" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          {alanlar.length === 0 ? (
+            <p className="text-sm text-white/40 text-center py-6">Bu mekanda bozuk albüm yok.</p>
+          ) : (
+            <>
+              <div>
+                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Ürün</label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {alanlar.map(a => (
+                    <button key={a} onClick={() => setAlan(a)}
+                      className={`py-2 px-1 rounded-xl text-xs font-semibold border transition-all flex flex-col items-center gap-0.5 ${
+                        alan === a ? 'border-red-400/60 bg-red-500/20 text-red-200' : 'border-white/8 bg-white/4 text-white/40 active:bg-white/8'
+                      }`}>
+                      <span>{ALAN_ETIKET[a]}</span>
+                      <span className="text-[9px] font-black text-red-400/70">{mekan.bozuk?.[a] || 0}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Miktar</label>
+                <input type="number" inputMode="numeric" value={miktar} onChange={e => setMiktar(e.target.value)} placeholder="0"
+                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-red-400/50 transition-colors placeholder-white/20" />
+              </div>
+              {hata && <div className="rounded-xl bg-red-500/12 border border-red-500/20 px-4 py-3 text-xs text-red-300">{hata}</div>}
+              {basarili && <div className="rounded-xl bg-emerald-500/12 border border-emerald-500/20 px-4 py-3 text-xs text-emerald-300">{basarili}</div>}
+              <div className="flex gap-2">
+                <button onClick={() => islem('imha')} disabled={yukleniyor || !miktar}
+                  className="flex-1 h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 bg-gradient-to-r from-red-500/80 to-rose-500/80 text-white">
+                  {yukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} İmha Et
+                </button>
+                <button onClick={() => islem('iade')} disabled={yukleniyor || !miktar}
+                  className="flex-1 h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 bg-white/6 border border-white/12 text-white/70">
+                  {yukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpFromLine className="w-4 h-4" />} İade Et
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -1733,6 +2014,8 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
   const [hata, setHata] = useState(false);
   const [sonGuncelleme, setSonGuncelleme] = useState<Date | null>(null);
   const [depoModalAcik, setDepoModalAcik] = useState(false);
+  const [depoModalInitTab, setDepoModalInitTab] = useState<'giris' | 'cikis' | 'gecmis' | 'bozuk'>('giris');
+  const [mekanBozukHedef, setMekanBozukHedef] = useState<MekanOzet | null>(null);
   const [aktarimModalAcik, setAktarimModalAcik] = useState(false);
   const [transferler, setTransferler] = useState<Transfer[]>([]);
   const [transferYukleniyor, setTransferYukleniyor] = useState(false);
@@ -1879,6 +2162,15 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
           {/* 2 · Ribon Stoğu */}
           <RibonCard mekanlar={veri.mekanlar} depo={veri.depo} kagitTipleri={kagitTipleri} />
 
+          {/* 2b · Bozuk Albümler (depo + mekan) */}
+          <BozukAlbumCard
+            mekanlar={veri.mekanlar}
+            depo={veri.depo}
+            isYonetici={isYonetici}
+            onDepoIsle={() => { setDepoModalInitTab('bozuk'); setDepoModalAcik(true); }}
+            onMekanIsle={(m) => setMekanBozukHedef(m)}
+          />
+
           {/* 3 · Mekan Bazlı Albüm Dağılımı */}
           <div className="mx-4 mb-4 rounded-2xl border border-white/12 bg-[rgba(255,255,255,0.04)] backdrop-blur overflow-hidden">
             <div className="px-4 pt-4 pb-3 border-b border-white/8 flex items-center gap-2">
@@ -1940,8 +2232,19 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
           depoRibonlar={veri.depo.ribonlar}
           depoAlbumSayilari={veri.depo.albumSayilari}
           depoRibonTakim={veri.depo.ribonTakim}
-          onClose={() => setDepoModalAcik(false)}
-          onSuccess={() => { setDepoModalAcik(false); yukle(); }}
+          depoBozuk={veri.depo.bozuk}
+          initialTab={depoModalInitTab}
+          onClose={() => { setDepoModalAcik(false); setDepoModalInitTab('giris'); }}
+          onSuccess={() => { setDepoModalAcik(false); setDepoModalInitTab('giris'); yukle(); }}
+        />
+      )}
+
+      {/* Mekan Bozuk İmha/İade Modalı */}
+      {mekanBozukHedef && (
+        <MekanBozukCikarModal
+          mekan={mekanBozukHedef}
+          onClose={() => setMekanBozukHedef(null)}
+          onSuccess={() => { setMekanBozukHedef(null); yukle(); }}
         />
       )}
 

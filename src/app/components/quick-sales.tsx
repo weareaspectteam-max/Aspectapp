@@ -239,12 +239,14 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [kapanisNot, setKapanisNot] = useState('');
   const [kapanisAnomali, setKapanisAnomali] = useState<Partial<StokSayim>>({});
   const [kapanisBeklenen, setKapanisBeklenen] = useState<StokSayim | null>(null);
+  const [kapanisBozuk, setKapanisBozuk] = useState<Record<string, number>>({}); // boyut bazlı bozuk albüm (suffix'li)
   const [kapanisAnomaliNeden, setKapanisAnomaliNeden] = useState('');
   const [kapanisYaziciAnomali, setKapanisYaziciAnomali] = useState<{ netSatilan: number; satisToplam: number; fark: number } | null>(null);
   const [printerRibbonChanges, setPrinterRibbonChanges] = useState<Record<string, string>>({});
   const [globalIadePhotos, setGlobalIadePhotos] = useState<string>(''); // tek alan — yazıcı başına değil
   const [showClosingCount, setShowClosingCount] = useState(false);
   const [showDamagedAlbums, setShowDamagedAlbums] = useState(false);
+  const [showBozukGiris, setShowBozukGiris] = useState(false);
   const [closingCount, setClosingCount] = useState<{ shelfEnd: Record<string, number>; damagedAlbums: Record<string, number> }>({
     shelfEnd: { album3: 0, album5: 0, album7: 0, album9: 0, album11: 0, album13: 0, album15: 0 },
     damagedAlbums: { album3: 0, album5: 0, album7: 0, album9: 0, album11: 0, album13: 0, album15: 0 },
@@ -1492,6 +1494,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         beklenen += (ek.miktar as Record<string, number>)[alan] || 0;
       }
       beklenen -= kapanisSatisAlbumDusum[alan] || 0;
+      beklenen -= kapanisBozuk[alan] || 0; // bozuk albümler satılabilirden çıktı — eksik sayılmaz
       if (alan === 'ribon') beklenen -= toplamRibonDegisim;
       beklenen = Math.max(0, beklenen);
       const fark = (kapanisSayim[alan] ?? 0) - beklenen;
@@ -1665,7 +1668,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
 
     const mekanId = resolvedMekanId || selectedProject.id;
     const resizedVenuePhoto = venuePhotoPreview ? await resizePhoto(venuePhotoPreview) : null;
-    const result = await postKapanis(mekanId, tarih, finalKapanisSayim, kapanisNot, printerData, resizedVenuePhoto);
+    const result = await postKapanis(mekanId, tarih, finalKapanisSayim, kapanisNot, printerData, resizedVenuePhoto, kapanisBozuk);
     setStokKaydediliyor(false);
     if (result && !('__hata' in result)) {
       setKapanisAnomali((result as any).anomali || {});
@@ -3635,7 +3638,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                               const albumAcilis = (migratedAcilisSayim[alan] || 0);
                               const albumEkleme = stokEklemeler.reduce((s, ek) => s + ((ek.miktar as Record<string, number>)[alan] || 0), 0);
                               const albumSatilan = kapanisSatisAlbumDusum[alan] || 0;
-                              const clientBeklenenAlbum = Math.max(0, albumAcilis + albumEkleme - albumSatilan);
+                              const albumBozuk = kapanisBozuk[alan] || 0;
+                              const clientBeklenenAlbum = Math.max(0, albumAcilis + albumEkleme - albumSatilan - albumBozuk);
 
                               // Kapanış öncesi: her zaman client hesabını göster; sonrası: server değeri
                               let beklenen: number | null = kapanisBeklenen?.[alan] ?? null;
@@ -3658,6 +3662,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                                             <span className="text-white">{albumAcilis}</span>
                                             {albumEkleme > 0 && <span className="text-[#ffd4a3]"> +{albumEkleme}</span>}
                                             {albumSatilan > 0 && <span className="text-[#ffb3ba]"> −{albumSatilan} satıldı</span>}
+                                            {albumBozuk > 0 && <span className="text-red-400"> −{albumBozuk} bozuk</span>}
                                             {' = '}Beklenen <span className="font-bold text-[#9dd9ea]">{beklenen}</span>
                                           </p>
                                         ) : null}
@@ -3686,6 +3691,50 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                                 </div>
                               );
                             })}
+
+                            {/* ── Bozuk Albümler (opsiyonel) — satılabilirden düşülür, anomali çıkmaz ── */}
+                            {!shiftEndDone && (() => {
+                              const bozukAlanlar = stokAlanlari.filter(a => String(a).startsWith('album'));
+                              const bozukToplam = bozukAlanlar.reduce((s, a) => s + (Number(kapanisBozuk[a]) || 0), 0);
+                              return (
+                                <div className="bg-red-500/5 border border-red-500/20 rounded-xl overflow-hidden">
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowBozukGiris(v => !v)}
+                                    className="w-full flex items-center justify-between px-4 py-3"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <AlertCircle className="w-4 h-4 text-red-400" />
+                                      <span className="text-sm font-semibold text-red-200">Bozuk Albümler</span>
+                                      {bozukToplam > 0 && (
+                                        <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-red-500/20 text-red-300">{bozukToplam}</span>
+                                      )}
+                                    </div>
+                                    <ChevronRight className={`w-4 h-4 text-red-300 transition-transform ${showBozukGiris ? 'rotate-90' : ''}`} />
+                                  </button>
+                                  {showBozukGiris && (
+                                    <div className="px-4 pb-4 space-y-2">
+                                      <p className="text-[11px] text-gray-400">Bozulan albümleri girin — satılabilir stoktan düşülür, eksik/anomali olarak görünmez.</p>
+                                      {bozukAlanlar.map(alan => (
+                                        <div key={`bozuk_${alan}`} className="flex items-center justify-between bg-black/30 border border-white/10 rounded-xl px-4 py-2">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-lg">{stokAlanEmoji[alan]}</span>
+                                            <span className="text-sm text-white">{stokAlanAdi[alan]}</span>
+                                          </div>
+                                          <input
+                                            type="number" inputMode="numeric"
+                                            value={kapanisBozuk[alan] || ''}
+                                            onChange={e => setKapanisBozuk(p => ({ ...p, [alan]: parseInt(e.target.value) || 0 }))}
+                                            placeholder="0"
+                                            className="w-20 px-2 py-2 border border-red-500/30 bg-red-500/10 rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-red-400/50 text-center font-bold text-lg"
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
 
                             {/* ── Kağıt tipine göre ribon kapanış (tam stok modu) ── */}
                             {(() => {
@@ -3755,6 +3804,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                                 let bek = (migrateStok(stokGunluk!.acilis as StokSayim, effectivePrintType))[a] || 0;
                                 for (const ek of stokEklemeler) bek += (ek.miktar as Record<string, number>)[a] || 0;
                                 bek -= kapanisSatisAlbumDusum[a] || 0;
+                                bek -= kapanisBozuk[a] || 0;
                                 return (kapanisSayim[a] ?? 0) !== Math.max(0, bek);
                               }) && (
                               <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center gap-2">

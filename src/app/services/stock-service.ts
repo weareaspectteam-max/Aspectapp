@@ -88,6 +88,7 @@ export interface StokGunluk {
   kapanisYapanAd?: string;
   kapanisAnomali?: Partial<StokSayim>;
   kapanisBeklenen?: StokSayim;
+  kapanisBozuk?: Record<string, number>;
   satislar?: VardiyaSatis[];
   kareKayitlari?: KareKayit[];
 }
@@ -214,13 +215,14 @@ export const postKapanis = async (
   sayim: StokSayim,
   not?: string,
   printerData?: PrinterKapanis[],
-  photo?: string | null
+  photo?: string | null,
+  bozuk?: Record<string, number>
 ): Promise<{ kayit: StokGunluk; anomali: Partial<StokSayim>; beklenen: StokSayim } | { __hata: string } | null> => {
   try {
     const res = await fetch(`${API_BASE}/stok/kapanis`, {
       method: 'POST',
       headers: await authHeaders(),
-      body: JSON.stringify({ mekanId, tarih, sayim, not, printerData: printerData || [], photo: photo || undefined }),
+      body: JSON.stringify({ mekanId, tarih, sayim, not, printerData: printerData || [], photo: photo || undefined, bozuk: bozuk || undefined }),
     });
     if (!res.ok) {
       let errMsg = `HTTP ${res.status}`;
