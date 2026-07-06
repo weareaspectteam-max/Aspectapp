@@ -639,7 +639,6 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
                     <div className="pa">{o.isim.split(' ').map((w: string) => w[0]).slice(0, 2).join('')}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 650 }}>{o.isim} <span className="pct">%{o.yuzde}</span></div>
-                      <div style={{ fontSize: 11, color: 'var(--mut2)', marginTop: 2 }} className="tnum">{o.cekti > 0 ? `Çekti ${fmt(o.cekti)}` : ''}{o.cekti > 0 && o.koydu > 0 ? ' · ' : ''}{o.koydu > 0 ? `Koydu ${fmt(o.koydu)}` : ''}{o.cekti === 0 && o.koydu === 0 ? 'Hareket yok' : ''}</div>
                     </div>
                     <div style={{ fontSize: 11, fontWeight: 650, textAlign: 'right', color: o.denge > 0 ? 'var(--pos)' : o.denge < 0 ? 'var(--neg)' : 'var(--mut2)' }}>
                       {o.denge > 0 ? `${fmt(o.denge)} alacaklı` : o.denge < 0 ? `${fmt(-o.denge)} borçlu` : 'dengede'}
