@@ -301,6 +301,14 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
       await reloadOrtak(); await fetchData();
     } catch (e: any) { alert(e.message); } finally { setSaving(false); }
   };
+  const ortakGeriAl = async (id: string) => {
+    if (!confirm('Bu ortak işlemini geri almak istiyor musun?')) return;
+    setSaving(true);
+    try {
+      await fetch(appendGhostParam(`${API_BASE}/kasa2/geri-al`), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ id }) });
+      await reloadOrtak(); await fetchData();
+    } catch (e: any) { alert(e.message); } finally { setSaving(false); }
+  };
 
   // ── Borç / Alacak ──
   const reloadBorc = async () => { try { const r = await fetch(appendGhostParam(`${API_BASE}/kasa2/borclar`), { headers: await authHeaders() }); if (r.ok) setBorcData(await r.json()); } catch {} };
@@ -671,6 +679,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
                         <div className="m"><span className="mono">{h.tarih}</span>{h.kaynak === 'pay_dagitim' ? ' · pay dağıtımı' : ''}</div>
                       </div>
                       <div className={`amt2 ${h.yon === 'giris' ? 'pos' : 'neg'}`}>{h.yon === 'giris' ? '+' : '−'}{fmt(h.tutar)}</div>
+                      <button className="geri" onClick={() => ortakGeriAl(h.id)}>Geri Al</button>
                     </div>
                   ))}
                 </div>
