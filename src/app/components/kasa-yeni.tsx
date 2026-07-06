@@ -202,6 +202,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
   const [showGorunur, setShowGorunur] = useState(false);
   const [gorunurList, setGorunurList] = useState<any[] | null>(null);
   const [gorunurSet, setGorunurSet] = useState<Set<string>>(new Set());
+  const [ortakSet, setOrtakSet] = useState<Set<string>>(new Set());
 
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null);
@@ -352,15 +353,16 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
     setShowGorunur(true); setGorunurList(null);
     try {
       const r = await fetch(appendGhostParam(`${API_BASE}/kasa2/gorunurluk`), { headers: await authHeaders() });
-      if (r.ok) { const d = await r.json(); setGorunurList(d.kullanicilar || []); setGorunurSet(new Set((d.kullanicilar || []).filter((u: any) => u.izinli).map((u: any) => u.id))); }
+      if (r.ok) { const d = await r.json(); const ku = d.kullanicilar || []; setGorunurList(ku); setGorunurSet(new Set(ku.filter((u: any) => u.izinli).map((u: any) => u.id))); setOrtakSet(new Set(ku.filter((u: any) => u.ortakIzinli).map((u: any) => u.id))); }
       else setGorunurList([]);
     } catch { setGorunurList([]); }
   };
   const toggleGorunur = (id: string) => { setGorunurSet(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; }); };
+  const toggleOrtak = (id: string) => { setOrtakSet(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; }); };
   const saveGorunur = async () => {
     setSaving(true);
     try {
-      await fetch(appendGhostParam(`${API_BASE}/kasa2/gorunurluk`), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ gorunur: Array.from(gorunurSet) }) });
+      await fetch(appendGhostParam(`${API_BASE}/kasa2/gorunurluk`), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ gorunur: Array.from(gorunurSet), ortakGorunur: Array.from(ortakSet) }) });
       setShowGorunur(false);
     } catch (e: any) { alert(e.message); } finally { setSaving(false); }
   };
@@ -484,7 +486,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
         <button className="subbtn" onClick={openOdeme} style={{ width: '100%' }}>📅 Ödemeler — maaşlar</button>
         <div className="subacts">
           <button className="subbtn" onClick={openBorc}>⇄ Borç / Alacak</button>
-          {isYonetici && <button className="subbtn yon" onClick={openOrtak}>🔒 Ortaklar</button>}
+          {data.ortakGorebilir && <button className="subbtn yon" onClick={openOrtak}>🔒 Ortaklar</button>}
           {isYonetici && <button className="subbtn yon" onClick={openGorunur}>🔒 Kimler görebilir</button>}
         </div>
 
@@ -632,7 +634,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
               <div style={{ marginTop: 4 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                   <span className="cap">Ortak durumu</span>
-                  <button className="geri" onClick={ortakSifirla}>🔒 Sıfırla</button>
+                  {isYonetici && <button className="geri" onClick={ortakSifirla}>🔒 Sıfırla</button>}
                 </div>
                 {ortakData.ortaklar.map((o: any) => (
                   <div key={o.id} className="partner">
@@ -678,7 +680,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
                         <div className="m"><span className="mono">{h.tarih}</span>{h.kaynak === 'pay_dagitim' ? ' · pay dağıtımı' : ''}</div>
                       </div>
                       <div className={`amt2 ${h.yon === 'giris' ? 'pos' : 'neg'}`}>{h.yon === 'giris' ? '+' : '−'}{fmt(h.tutar)}</div>
-                      <button className="geri" onClick={() => ortakGeriAl(h.id)}>Geri Al</button>
+                      {isYonetici && <button className="geri" onClick={() => ortakGeriAl(h.id)}>Geri Al</button>}
                     </div>
                   ))}
                 </div>
@@ -796,16 +798,19 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
           <div className="k2sheet" style={{ maxHeight: '88vh', overflowY: 'auto' }}>
             <div className="sh"><h3>🔒 Kimler görebilir</h3><button className="close" onClick={() => setShowGorunur(false)}>×</button></div>
             {!gorunurList ? <div className="empty">Yükleniyor…</div> : (<>
-              <div style={{ fontSize: 12, color: 'var(--mut2)', marginBottom: 12 }}>Yeni kasayı hangi personel görebilsin? Sen (yönetici) her zaman görürsün.</div>
+              <div style={{ fontSize: 12, color: 'var(--mut2)', marginBottom: 12, lineHeight: 1.5 }}>Her kişi için ayrı: <b style={{ color: 'var(--pos)' }}>Kasa</b> = ana kasa, <b style={{ color: '#c9b8ff' }}>Ortak</b> = ortaklar/pay dağıtımı. Sen (yönetici) her ikisini her zaman görürsün.</div>
               {gorunurList.length === 0 && <div className="empty">Üst müdür / müdür / idari personel yok.</div>}
               {gorunurList.map((u: any) => (
-                <div key={u.id} className="partner" onClick={() => toggleGorunur(u.id)} style={{ cursor: 'pointer' }}>
+                <div key={u.id} className="partner">
                   <div className="pa">{(u.isim || '?').split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 650 }}>{u.isim}</div>
                     <div style={{ fontSize: 11, color: 'var(--mut2)', marginTop: 2 }}>{u.rol}</div>
                   </div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: gorunurSet.has(u.id) ? 'var(--pos)' : 'var(--mut2)' }}>{gorunurSet.has(u.id) ? '✓ görebilir' : 'kapalı'}</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="geri" style={gorunurSet.has(u.id) ? { color: 'var(--pos)', borderColor: 'var(--pos)' } : undefined} onClick={() => toggleGorunur(u.id)}>Kasa{gorunurSet.has(u.id) ? ' ✓' : ''}</button>
+                    <button className="geri" style={ortakSet.has(u.id) ? { color: '#c9b8ff', borderColor: 'var(--brand)' } : undefined} onClick={() => toggleOrtak(u.id)}>Ortak{ortakSet.has(u.id) ? ' ✓' : ''}</button>
+                  </div>
                 </div>
               ))}
               <button className="save" disabled={saving} onClick={saveGorunur} style={{ marginTop: 14 }}>Kaydet</button>

@@ -17481,6 +17481,20 @@ const _kasa2Erisim = (role: string, isSA: boolean, userId: string, gorunur: any)
   if (gorunur === null || gorunur === undefined) return role === "ust-mudur"; // ayarlanmamış → eski davranış
   return Array.isArray(gorunur) && gorunur.includes(userId);
 };
+// Ortaklar görünürlüğü — varsayılan SADECE yönetici (null → üst müdür göremez), listede olan üst müdür görebilir
+const _kasa2OrtakGorunur = async (companyId: string) => {
+  try {
+    const db = getAdminClient();
+    const { data } = await db.from("company_settings").select("value").eq("company_id", companyId).eq("key", "kasa2_ortak_gorunur").maybeSingle();
+    return data?.value ?? null;
+  } catch { return null; }
+};
+const _kasa2OrtakYetki = async (user: any) => {
+  const role = user.user_metadata?.role || "personel";
+  if (role === "yonetici" || user.user_metadata?.originalRole === "superadmin") return true;
+  const list = await _kasa2OrtakGorunur(getCompanyId(user));
+  return Array.isArray(list) && list.includes(user.id);
+};
 
 // Satışları pot bazında topla (milat sonrası). Nakit=nakit, Banka=kart+iban.
 const _kasa2Sales = async (companyId: string, ckv: any, milat: string) => {
@@ -17622,8 +17636,10 @@ app.get("/make-server-4da0b637/kasa2", async (c) => {
       aylar.push({ ay: mm, ciro, gider, kar: ciro - gider, gelecek: false });
     }
 
+    const _ortakGorList = await _kasa2OrtakGorunur(companyId);
+    const ortakGorebilir = role === "yonetici" || isSA || (Array.isArray(_ortakGorList) && _ortakGorList.includes(user.id));
     return c.json({
-      kurulmadi: false, milat,
+      kurulmadi: false, milat, ortakGorebilir,
       bakiye: { toplam: Math.round(nakit + banka), nakit: Math.round(nakit), banka: Math.round(banka) },
       bugun: { giren: Math.round(bugunGiren), cikan: Math.round(bugunCikan) },
       hareketler: ledger,
@@ -17782,7 +17798,7 @@ app.get("/make-server-4da0b637/kasa2/ortaklar", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
-    if (!_kasa2YoneticiMi(user)) return c.json({ error: "Yetkiniz yok." }, 403);
+    if (!(await _kasa2OrtakYetki(user))) return c.json({ error: "Yetkiniz yok." }, 403);
     const companyId = getCompanyId(user);
     const db = getAdminClient();
     const ortaklar = await _kasa2Ortaklar(companyId);
@@ -17846,7 +17862,7 @@ app.post("/make-server-4da0b637/kasa2/pay-dagit", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
-    if (!_kasa2YoneticiMi(user)) return c.json({ error: "Yetkiniz yok." }, 403);
+    if (!(await _kasa2OrtakYetki(user))) return c.json({ error: "Yetkiniz yok." }, 403);
     const companyId = getCompanyId(user);
     const { toplam, pot } = await c.req.json();
     const t = Math.round(Number(toplam) || 0);
@@ -17872,7 +17888,7 @@ app.post("/make-server-4da0b637/kasa2/ortak-hareket", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
-    if (!_kasa2YoneticiMi(user)) return c.json({ error: "Yetkiniz yok." }, 403);
+    if (!(await _kasa2OrtakYetki(user))) return c.json({ error: "Yetkiniz yok." }, 403);
     const companyId = getCompanyId(user);
     const { ortak_id, yon, tutar, pot, aciklama, kasaEtkile } = await c.req.json();
     const t = Math.round(Number(tutar) || 0);
@@ -18043,13 +18059,15 @@ app.get("/make-server-4da0b637/kasa2/gorunurluk", async (c) => {
     if (!_kasa2YoneticiMi(user)) return c.json({ error: "Yetkiniz yok." }, 403);
     const companyId = getCompanyId(user);
     const gorunur = await _kasa2Gorunur(companyId);
+    const ortakGorunur = await _kasa2OrtakGorunur(companyId);
     const supabase = getAdminClient();
     const { data: usersData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
     const roller = ["ust-mudur", "mudur", "idari"];
     const liste = (usersData?.users || [])
       .filter((u: any) => (u.user_metadata?.company_id || "aspect") === companyId && roller.includes(u.user_metadata?.role))
       .map((u: any) => ({ id: u.id, isim: u.user_metadata?.full_name || u.email || "?", rol: u.user_metadata?.role,
-        izinli: gorunur === null ? u.user_metadata?.role === "ust-mudur" : (Array.isArray(gorunur) && gorunur.includes(u.id)) }))
+        izinli: gorunur === null ? u.user_metadata?.role === "ust-mudur" : (Array.isArray(gorunur) && gorunur.includes(u.id)),
+        ortakIzinli: Array.isArray(ortakGorunur) && ortakGorunur.includes(u.id) }))
       .sort((a: any, b: any) => String(a.rol).localeCompare(String(b.rol)) || String(a.isim).localeCompare(String(b.isim)));
     return c.json({ kullanicilar: liste, ayarlandi: gorunur !== null });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
@@ -18062,11 +18080,12 @@ app.post("/make-server-4da0b637/kasa2/gorunurluk", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     if (!_kasa2YoneticiMi(user)) return c.json({ error: "Yetkiniz yok." }, 403);
     const companyId = getCompanyId(user);
-    const { gorunur } = await c.req.json();
+    const { gorunur, ortakGorunur } = await c.req.json();
     if (!Array.isArray(gorunur)) return c.json({ error: "gorunur array olmalı." }, 400);
     const db = getAdminClient();
     await db.from("company_settings").upsert({ company_id: companyId, key: "kasa2_gorunur", value: gorunur, updated_at: new Date().toISOString() });
-    return c.json({ ok: true, gorunur });
+    if (Array.isArray(ortakGorunur)) await db.from("company_settings").upsert({ company_id: companyId, key: "kasa2_ortak_gorunur", value: ortakGorunur, updated_at: new Date().toISOString() });
+    return c.json({ ok: true, gorunur, ortakGorunur });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
