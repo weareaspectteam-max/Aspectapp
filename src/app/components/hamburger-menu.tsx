@@ -116,6 +116,7 @@ function getSections(
         { icon: BarChart2,     label: 'İşletme İstatistikleri',roles: ['yonetici'] as UserRole[],                                                action: () => go('isletme-istatistikleri') },
         { icon: Target,        label: 'Hedef Takibi',         roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('hedef-takip')            },
         { icon: Wallet,        label: 'Kasa',                 roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('kasa')                   },
+        { icon: Wallet,        label: 'Kasa (Yeni) ✨',       roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('kasa-yeni')              },
         { icon: Package,       label: 'Tedarikçi Yönetimi', roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('tedarikci-yonetimi')     },
       ],
     },

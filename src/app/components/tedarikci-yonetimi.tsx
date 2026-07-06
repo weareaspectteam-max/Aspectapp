@@ -117,6 +117,9 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
   const siparisler: any[] = data?.siparisler || [];
   const teslimatlar: any[] = data?.teslimatlar || [];
   const odemeler: any[] = data?.odemeler || [];
+  // Döviz → TRY (bakiye/toplam hesaplarında para birimi karışmasın)
+  const rates: any = data?.exchangeRates || { EUR: 38, USD: 33, GBP: 41.2 };
+  const toTRY = (v: number, cur?: string) => { const cc = (cur || 'TRY').toUpperCase(); const n = Number(v) || 0; return cc === 'EUR' ? n * (Number(rates.EUR) || 38) : cc === 'USD' ? n * (Number(rates.USD) || 33) : cc === 'GBP' ? n * (Number(rates.GBP) || 41.2) : n; };
 
   // Derived: selected cari's supplier type + product list
   const selectedCari = cariler.find((c: any) => c.id === orderCariId);
@@ -224,14 +227,15 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
     if (!showPayment || !payAmount) return;
     setActionLoading('pay');
     try {
-      await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/odemeler`), {
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/odemeler`), {
         method: 'POST', headers: getHeaders(),
         body: JSON.stringify({ siparisId: showPayment, amount: payAmount, currency: payCurrency, paymentMethod: payMethod, paymentDate: payDate }),
       });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Ödeme kaydedilemedi'); }
       setShowPayment(null);
       setPayAmount(0);
       fetchData();
-    } finally { setActionLoading(''); }
+    } catch (e: any) { alert(e.message); } finally { setActionLoading(''); }
   };
 
   // ── Input helper ──
@@ -300,9 +304,9 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
             {s.notes && <p className="text-white/30 text-xs italic">{s.notes}</p>}
             {/* Bakiye */}
             {(() => {
-              const sipTutar = s.teklifFiyat || s.totalAmount || 0;
+              const sipTutar = toTRY(s.teklifFiyat || s.totalAmount || 0, s.currency);
               const sipOdemeler = odemeler.filter((o: any) => o.siparisId === (s.id || '').replace('siparis_', '') && o.status !== 'reddedildi' && o.status !== 'iptal');
-              const odpipienenToplam = sipOdemeler.reduce((a: number, o: any) => a + (o.amount || 0), 0);
+              const odpipienenToplam = sipOdemeler.reduce((a: number, o: any) => a + toTRY(o.amount || 0, o.currency), 0);
               const kalanBorc = sipTutar - odpipienenToplam;
               return (
                 <div className="flex items-center gap-3 mt-2 pt-2 border-t" style={{ borderColor: glassBorder }}>
@@ -632,7 +636,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
 
         return groups.map((g) => {
           const aktifCount = g.orders.filter((s: any) => !['tamamlandi', 'iptal'].includes(s.status)).length;
-          const toplamTutar = g.orders.reduce((a: number, s: any) => a + (s.teklifFiyat || s.totalAmount || 0), 0);
+          const toplamTutar = g.orders.filter((s: any) => ['onaylandi', 'kismen_teslim', 'teslim_edildi', 'tamamlandi'].includes(s.status)).reduce((a: number, s: any) => a + toTRY(s.teklifFiyat || s.totalAmount || 0, s.currency), 0);
           const isExpanded = expandedSuppliers.has(g.cariId);
           const aktifOrders = g.orders.filter((s: any) => !['tamamlandi', 'iptal'].includes(s.status));
           const arsivOrders = g.orders.filter((s: any) => ['tamamlandi', 'iptal'].includes(s.status));
@@ -647,7 +651,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                   <p className="text-white/40 text-[10px]">{aktifCount} aktif sipariş · ₺{toplamTutar.toLocaleString('tr-TR')}</p>
                   {(() => {
                     const cariOdemeler = odemeler.filter((o: any) => o.cariId === g.cariId && o.status !== 'reddedildi' && o.status !== 'iptal');
-                    const odpipienenToplam = cariOdemeler.reduce((a: number, o: any) => a + (o.amount || 0), 0);
+                    const odpipienenToplam = cariOdemeler.reduce((a: number, o: any) => a + toTRY(o.amount || 0, o.currency), 0);
                     const kalanBorc = toplamTutar - odpipienenToplam;
                     if (odpipienenToplam > 0 || kalanBorc > 0) return (
                       <p className="text-[10px] mt-0.5">
@@ -1047,9 +1051,9 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                 };
 
                 const mySip = siparisler.filter((s: any) => s.cariId === selectedTedarikci.id && ['onaylandi', 'kismen_teslim', 'teslim_edildi', 'tamamlandi'].includes(s.status));
-                const toplam = mySip.reduce((a: number, s: any) => a + (s.teklifFiyat || s.totalAmount || 0), 0);
+                const toplam = mySip.reduce((a: number, s: any) => a + toTRY(s.teklifFiyat || s.totalAmount || 0, s.currency), 0);
                 const tumOdemeler = odemeler.filter((o: any) => o.cariId === selectedTedarikci.id && o.status !== 'reddedildi' && o.status !== 'iptal');
-                const odenen = tumOdemeler.reduce((a: number, o: any) => a + (o.amount || 0), 0);
+                const odenen = tumOdemeler.reduce((a: number, o: any) => a + toTRY(o.amount || 0, o.currency), 0);
                 const kalan = toplam - odenen;
 
                 const filtreliOdemeler = tumOdemeler.filter((o: any) => donemFiltre(o.paymentDate || o.createdAt));
@@ -1062,7 +1066,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                   }
                 }
                 const toplamTeslimAdet = Object.values(teslimKalemler).reduce((a: number, v: number) => a + v, 0);
-                const donemOdenen = filtreliOdemeler.reduce((a: number, o: any) => a + (o.amount || 0), 0);
+                const donemOdenen = filtreliOdemeler.reduce((a: number, o: any) => a + toTRY(o.amount || 0, o.currency), 0);
 
                 return (
                   <>
@@ -1154,13 +1158,14 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                             setActionLoading('onodeme');
                             try {
                               // Sipariş olmadan ödeme — kasadan düşer
-                              await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/odemeler`), {
+                              const _onRes = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/odemeler`), {
                                 method: 'POST', headers: getHeaders(),
                                 body: JSON.stringify({ siparisId: `on_odeme_${Date.now()}`, cariId: selectedTedarikci.id, amount: parseFloat(onOdemeTutar), currency: 'TRY', paymentMethod: 'havale', paymentDate: new Date().toISOString().slice(0, 10), aciklama: onOdemeAciklama || '' }),
                               });
+                              if (!_onRes.ok) { const _d = await _onRes.json().catch(() => ({})); alert(_d.error || 'Ödeme kaydedilemedi'); return; }
                               setShowOnOdeme(false); setOnOdemeTutar(''); setOnOdemeAciklama('');
                               fetchData();
-                            } finally { setActionLoading(''); }
+                            } catch (e: any) { alert(e.message); } finally { setActionLoading(''); }
                           }} disabled={!onOdemeTutar || actionLoading === 'onodeme'}
                             className="flex-1 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40"
                             style={{ background: 'linear-gradient(135deg, #34d399, #10b981)' }}>

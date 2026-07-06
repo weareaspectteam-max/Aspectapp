@@ -35,6 +35,7 @@ import { StaffProfile } from './components/staff-profile';
 import { Settings } from './components/settings';
 import { AspectAcademy } from './components/aspect-academy';
 import { Kasa } from './components/kasa';
+import { KasaYeni } from './components/kasa-yeni';
 import { AspectAIPage } from './components/aspect-ai-page';
 import { BusinessPanel } from './components/business-panel';
 import { MekanManagement } from './components/mekan-management';
@@ -796,6 +797,17 @@ function MainApp() {
       case 'kasa':
         return (
           <Kasa
+            userName={userName}
+            userRole={userRole}
+            userId={userId}
+            onLogout={handleLogout}
+            onNavigate={handleNavigate}
+          />
+        );
+
+      case 'kasa-yeni':
+        return (
+          <KasaYeni
             userName={userName}
             userRole={userRole}
             userId={userId}
