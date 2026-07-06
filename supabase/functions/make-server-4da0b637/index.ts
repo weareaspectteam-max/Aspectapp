@@ -17505,6 +17505,8 @@ const _kasa2Sales = async (companyId: string, ckv: any, milat: string) => {
   const yil = today.slice(0, 4);
   const ciroByAy = Array(12).fill(0);       // aylık ciro (tüm satış geçmişi, milat'tan bağımsız)
   const ayHasData = Array(12).fill(false);
+  // ay → mekanId → {nakit, banka, toplam} — aylık gelir kırılımı (mekan bazlı)
+  const gelirByAyMekan: Record<string, { nakit: number; banka: number; toplam: number }>[] = Array.from({ length: 12 }, () => ({}));
   let totNakit = 0, totBanka = 0;
   for (const k of (kayitlar || [])) {
     const tarih = k.tarih || (k.id || "").split("_").pop();
@@ -17513,7 +17515,12 @@ const _kasa2Sales = async (companyId: string, ckv: any, milat: string) => {
     // Yıllık ciro — bu yılın tüm ayları (milat filtresi UYGULANMAZ)
     if (String(tarih).startsWith(yil)) {
       const mi = Number(String(tarih).slice(5, 7)) - 1;
-      if (mi >= 0 && mi < 12) { ciroByAy[mi] += ci.toplam; ayHasData[mi] = true; }
+      if (mi >= 0 && mi < 12) {
+        ciroByAy[mi] += ci.toplam; ayHasData[mi] = true;
+        const mk = gelirByAyMekan[mi];
+        if (!mk[k.mekanId]) mk[k.mekanId] = { nakit: 0, banka: 0, toplam: 0 };
+        mk[k.mekanId].nakit += ci.nakit; mk[k.mekanId].banka += (ci.kart + ci.iban); mk[k.mekanId].toplam += ci.toplam;
+      }
     }
     // Bakiye/bugün için milat filtresi
     if (tarih < milat) continue;
@@ -17530,7 +17537,7 @@ const _kasa2Sales = async (companyId: string, ckv: any, milat: string) => {
       }
     }
   }
-  return { byDate, byVenueToday, totNakit, totBanka, today, ciroByAy, ayHasData, yil: Number(yil) };
+  return { byDate, byVenueToday, totNakit, totBanka, today, ciroByAy, ayHasData, gelirByAyMekan, yil: Number(yil) };
 };
 
 // GET /kasa2 — bakiye + bugün + hareketler + yıllık seri
@@ -17609,27 +17616,46 @@ app.get("/make-server-4da0b637/kasa2", async (c) => {
 
     // Yıllık performans — aylık CİRO / GİDER / KÂR
     const yil = sales.yil;
-    // Aylık gider = işletme giderleri (isletme_gider_) + kira (yearlyRent)
+    // Aylık gider = kasadan çıkan her para (pay dağıtımı/ortak + açılış hariç), başlığa (kategori) göre kırılır
+    const _gLabel: Record<string, string> = { yakit: "Yakıt", market: "Market", malzeme: "Albüm", ekipman: "Ekipman", ribon: "Ribon", avans: "Avans", hakedis: "Hakediş", kira: "Mekan kirası", fatura: "Faturalar", lojman: "Lojman", maas: "Maaş", borc: "Borç ödeme", duzeltme: "Düzeltme", diger: "Diğer" };
     const giderByAy = Array(12).fill(0);
-    const tumGiderYil = await getAllGiderler(companyId, ckv);
-    for (const g of (tumGiderYil || [])) {
-      const gd = g.date || g.tarih;
-      if (!gd || !String(gd).startsWith(String(yil))) continue;
-      const mi = Number(String(gd).slice(5, 7)) - 1;
-      if (mi >= 0 && mi < 12) giderByAy[mi] += Number(g.amount) || 0;
-    }
-    for (const m of (mekanlar || [])) {
-      const yk = Number(m.yearlyRent) || (m.yearlyRents ? Number(m.yearlyRents[String(yil)]) || 0 : 0);
-      if (yk <= 0) continue;
-      for (let mm = 1; mm <= 12; mm++) {
-        const days = new Date(Date.UTC(yil, mm, 0)).getUTCDate();
-        giderByAy[mm - 1] += (yk / 365) * days;
+    const giderByAyKat: Record<string, number>[] = Array.from({ length: 12 }, () => ({}));               // ay → kategori → tutar
+    const gelirManuelByAy: Record<string, { nakit: number; banka: number; toplam: number }>[] = Array.from({ length: 12 }, () => ({})); // ay → başlık → tutar (elle "Para girdi")
+    for (const h of hrows) {
+      const ht = h.tarih; if (!ht || !String(ht).startsWith(String(yil))) continue;
+      const mi = Number(String(ht).slice(5, 7)) - 1; if (mi < 0 || mi > 11) continue;
+      if (h.kaynak === "acilis" || h.kategori === "ortak" || h.extra_data?.kasaHaric) continue; // pay dağıtımı/ortak + açılış hariç
+      const t = Number(h.tutar) || 0;
+      if (h.yon === "cikis") {
+        giderByAy[mi] += t;
+        const kk = h.kategori || "diger";
+        giderByAyKat[mi][kk] = (giderByAyKat[mi][kk] || 0) + t;
+      } else if (h.yon === "giris" && h.kaynak === "gelir") {
+        const ad = (h.aciklama || "Para girdi").trim();
+        const g = gelirManuelByAy[mi][ad] || { nakit: 0, banka: 0, toplam: 0 };
+        if (h.pot === "banka") g.banka += t; else g.nakit += t; g.toplam += t;
+        gelirManuelByAy[mi][ad] = g;
       }
     }
     const aylar: any[] = [];
+    const aylikDetay: any[] = []; // her ay: { gelir:[{isim,nakit,banka,toplam,elle?}], gider:[{baslik,tutar}] }
     for (let mm = 1; mm <= 12; mm++) {
       const idx = mm - 1;
       const ayBasi = `${yil}-${String(mm).padStart(2, "0")}-01`;
+      // gelir kırılımı: mekan satışları + elle "Para girdi" girişleri
+      const gelirDetay: any[] = [];
+      for (const [mekanId, v] of Object.entries(sales.gelirByAyMekan[idx] || {}) as any[]) {
+        if (v.toplam <= 0) continue;
+        gelirDetay.push({ isim: mekanMap[mekanId]?.name || mekanId, nakit: Math.round(v.nakit), banka: Math.round(v.banka), toplam: Math.round(v.toplam) });
+      }
+      for (const [ad, v] of Object.entries(gelirManuelByAy[idx]) as any[]) {
+        gelirDetay.push({ isim: ad, nakit: Math.round(v.nakit), banka: Math.round(v.banka), toplam: Math.round(v.toplam), elle: true });
+      }
+      gelirDetay.sort((a, b) => b.toplam - a.toplam);
+      // gider kırılımı: kategoriye (başlığa) göre
+      const giderDetay = Object.entries(giderByAyKat[idx]).map(([kk, t]: any) => ({ baslik: _gLabel[kk] || kk, tutar: Math.round(t) })).sort((a, b) => b.tutar - a.tutar);
+      aylikDetay.push({ gelir: gelirDetay, gider: giderDetay });
+
       if (!sales.ayHasData[idx] && ayBasi > today) { aylar.push({ ay: mm, ciro: null, gider: null, kar: null, gelecek: true }); continue; }
       const ciro = Math.round(sales.ciroByAy[idx]);
       const gider = Math.round(giderByAy[idx]);
@@ -17644,7 +17670,7 @@ app.get("/make-server-4da0b637/kasa2", async (c) => {
       bugun: { giren: Math.round(bugunGiren), cikan: Math.round(bugunCikan) },
       hareketler: ledger,
       gecmis,
-      yillik: { yil, aylar },
+      yillik: { yil, aylar, detay: aylikDetay },
       personeller: (maaslarList || []).map((m: any) => ({ id: m.userId || m.id || m.name, isim: m.name || "Personel" })).filter((p: any) => p.id),
       mekanlar: (mekanlar || []).map((m: any) => ({ id: m.id || m.mekanId, isim: m.name })).filter((m: any) => m.id && m.isim),
     });
@@ -17699,7 +17725,7 @@ app.post("/make-server-4da0b637/kasa2/gider", async (c) => {
     const kategori = body.kategori || "diger";
     const notMetin = (body.aciklama || "").trim();
     // Kategori etiketi + bağlam (kime/neye) → ledger'da "Kira — Zoka", "Avans — Ayşe" gibi görünür
-    const _katLabel: Record<string, string> = { yakit: "Yakıt", market: "Market", malzeme: "Malzeme", ekipman: "Ekipman", avans: "Avans", hakedis: "Hakediş", kira: "Kira", diger: "Diğer" };
+    const _katLabel: Record<string, string> = { yakit: "Yakıt", market: "Market", malzeme: "Albüm", ekipman: "Ekipman", ribon: "Ribon", avans: "Avans", hakedis: "Hakediş", kira: "Mekan kirası", fatura: "Faturalar", lojman: "Lojman", maas: "Maaş", diger: "Diğer" };
     const _ctx = kategori === "avans" && body.personelAdi ? ` — ${String(body.personelAdi).trim()}`
       : kategori === "kira" && body.mekanAdi ? ` — ${String(body.mekanAdi).trim()}` : "";
     const _label = (_katLabel[kategori] || kategori) + _ctx;
@@ -17992,11 +18018,14 @@ app.get("/make-server-4da0b637/kasa2/odemeler", async (c) => {
       ckv.getByPrefix("cost_salary_").catch(() => []),
       getMekanlarFor(companyId),
       ckv.get("cost_exchange_rates").catch(() => null),
-      db.from("kasa_hareket").select("kaynak_id").eq("company_id", companyId).in("kaynak", ["maas", "kira"]).eq("iptal", false),
+      db.from("kasa_hareket").select("kaynak_id, tutar").eq("company_id", companyId).in("kaynak", ["maas", "kira"]).eq("iptal", false),
     ]);
     const rates: any = exRates || { EUR: 38, USD: 33, GBP: 41.2 };
     const toTL = (v: number, cur: string) => cur === "EUR" ? v * (Number(rates.EUR) || 38) : cur === "USD" ? v * (Number(rates.USD) || 33) : cur === "GBP" ? v * (Number(rates.GBP) || 41.2) : v;
-    const paid = new Set(((paidRes as any).data || []).map((r: any) => r.kaynak_id));
+    // Ödenmiş kalemler için GERÇEK ödenen tutar (düzenlenmiş olabilir: kesinti/fazla)
+    const paidTutar: Record<string, number> = {};
+    for (const r of ((paidRes as any).data || [])) paidTutar[r.kaynak_id] = (paidTutar[r.kaynak_id] || 0) + (Number(r.tutar) || 0);
+    const paid = new Set(Object.keys(paidTutar));
     // Bu ayki avanslar (personel bazında) — maaştan düşülür (avans zaten kasadan çıktı)
     const { data: avansRows } = await db.from("kasa_hareket").select("tutar, extra_data, tarih").eq("company_id", companyId).eq("kategori", "avans").eq("iptal", false);
     const avansByPerson: Record<string, number> = {};
@@ -18018,7 +18047,8 @@ app.get("/make-server-4da0b637/kasa2/odemeler", async (c) => {
       const avans = Math.round(avansByPerson[personId] || 0);
       const tutar = Math.max(0, base - avans);
       const key = `maas_${m.id || m.userId || m.name}_${ay}`;
-      items.push({ key, tip: "maas", baslik: `Maaş — ${m.name || "Personel"}`, tutar, base, avans, ay, odendi: paid.has(key) });
+      const odendi = paid.has(key);
+      items.push({ key, tip: "maas", baslik: `Maaş — ${m.name || "Personel"}`, tutar: odendi ? Math.round(paidTutar[key]) : tutar, base, avans, ay, odendi });
     }
     // NOT: Kiralar Ödemeler'e OTOMATİK gelmez (kullanıcı kararı) — ödenince "Gider ekle" ile manuel girilir.
     // gecikmiş: bu aydan önceki ay ve ödenmemiş

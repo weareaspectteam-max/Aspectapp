@@ -14,15 +14,39 @@ interface KasaYeniProps {
 
 const AYLAR_KISA = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
 const KATEGORILER = [
-  { k: 'yakit', l: 'Yakıt' }, { k: 'market', l: 'Market' }, { k: 'malzeme', l: 'Malzeme' },
-  { k: 'ekipman', l: 'Ekipman' }, { k: 'avans', l: 'Avans' }, { k: 'hakedis', l: 'Hakediş' },
-  { k: 'kira', l: 'Kira' }, { k: 'diger', l: 'Diğer' },
+  { k: 'yakit', l: 'Yakıt' }, { k: 'market', l: 'Market' }, { k: 'malzeme', l: 'Albüm' },
+  { k: 'ekipman', l: 'Ekipman' }, { k: 'ribon', l: 'Ribon' }, { k: 'avans', l: 'Avans' },
+  { k: 'hakedis', l: 'Hakediş' }, { k: 'kira', l: 'Mekan kirası' }, { k: 'fatura', l: 'Faturalar' },
+  { k: 'lojman', l: 'Lojman' }, { k: 'maas', l: 'Maaş' }, { k: 'diger', l: 'Diğer' },
 ];
+// Chip'ler alfabetik (tr sıralama); "Diğer" catch-all olarak en sonda sabit
+const KATEGORILER_SIRALI = [...KATEGORILER].sort((a, b) =>
+  a.k === 'diger' ? 1 : b.k === 'diger' ? -1 : a.l.localeCompare(b.l, 'tr'));
 
 const fmt = (n: number) => Math.round(n || 0).toLocaleString('tr-TR');
 // Türkçe sayı girişi: nokta = BİNLİK ayıracı (kuruş değil). Tam TL girilir.
 const parseNum = (s: string) => parseInt(String(s).replace(/\D/g, '') || '0', 10);
 const fmtIn = (s: string) => { const d = String(s).replace(/\D/g, ''); return d ? Number(d).toLocaleString('tr-TR') : ''; };
+
+// Ekran klavyesi (numpad): tam TL, binlik ayraçlı biçimli metin döner. Cihaz klavyesi kullanılmaz.
+const padApply = (cur: string, k: string) => {
+  const d = String(cur).replace(/\D/g, '');
+  let nd: string;
+  if (k === 'C') nd = '';
+  else if (k === '⌫') nd = d.slice(0, -1);
+  else { if (d.length >= 9) return cur; nd = d + k; }
+  return nd ? Number(nd).toLocaleString('tr-TR') : '';
+};
+const PAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'];
+function Numpad({ onKey }: { onKey: (k: string) => void }) {
+  return (
+    <div className="k2pad">
+      {PAD_KEYS.map((k) => (
+        <button key={k} type="button" className={`pk ${k === 'C' ? 'clr' : k === '⌫' ? 'bsp' : ''}`} onClick={() => onKey(k)}>{k}</button>
+      ))}
+    </div>
+  );
+}
 
 const CSS = `
 .k2{--bg:#0d0a1a;--bg2:#150f2c;--surface:#191331;--surface2:#140e29;--line:rgba(167,139,250,.15);--line2:rgba(167,139,250,.08);--ink:#f3f0fb;--mut:#a79ecf;--mut2:#6f6796;--brand:#9a7cff;--brand2:#d05fe0;--pos:#39dc98;--posBg:rgba(57,220,152,.13);--neg:#ff6a83;--negBg:rgba(255,106,131,.13);--bank:#6aa0ff;--bankBg:rgba(106,160,255,.14);--amber:#f5b544;--shadow:0 1px 0 rgba(255,255,255,.03),0 26px 48px -28px rgba(0,0,0,.72);--sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
@@ -97,6 +121,37 @@ const CSS = `
 .k2 .in::placeholder{color:var(--mut2);font-weight:400}
 .k2 .in:focus{outline:none;border-color:var(--brand)}
 .k2 .totalbox{display:flex;justify-content:space-between;align-items:baseline;padding:12px 15px;background:rgba(154,124,255,.08);border-radius:12px}
+/* numpad + tutar kutusu (cihaz klavyesi yok) */
+.k2sheet .amt{display:flex;align-items:center;justify-content:flex-end;gap:8px;width:100%;min-height:54px;background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px 15px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;transition:border-color .15s,box-shadow .15s}
+.k2sheet .amt.on{border-color:var(--brand);box-shadow:0 0 0 3px rgba(154,124,255,.13)}
+.k2sheet .amt .lab{margin-right:auto;font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;font-weight:650;color:var(--mut2)}
+.k2sheet .amt .val{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink);line-height:1}
+.k2sheet .amt .val.z{color:var(--mut2)}
+.k2sheet .amt .cur{font-size:15px;font-weight:700;color:var(--mut2)}
+.k2sheet .amtrow{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.k2sheet .amtrow .amt{padding:10px 12px;flex-wrap:wrap}
+.k2sheet .amtrow .amt .val{font-size:21px}
+.k2 .k2pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:9px}
+.k2 .k2pad .pk{padding:14px 0;border-radius:12px;border:1px solid var(--line);background:var(--surface2);color:var(--ink);font-family:inherit;font-size:20px;font-weight:750;cursor:pointer;font-variant-numeric:tabular-nums;-webkit-tap-highlight-color:transparent;transition:transform .06s ease,background .15s}
+.k2 .k2pad .pk:active{transform:scale(.95);background:rgba(154,124,255,.15)}
+.k2 .k2pad .pk.clr{color:var(--neg);font-size:17px}
+.k2 .k2pad .pk.bsp{color:var(--amber);font-size:18px}
+/* aya tıklayınca açılan kırılım (HERO içi) */
+.k2 .aydetay{margin-top:12px;background:var(--surface2);border:1px solid var(--line2);border-radius:12px;padding:10px 12px;max-height:240px;overflow-y:auto}
+.k2 .aydetay .adh{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;font-weight:650;color:var(--mut2);margin-bottom:6px}
+.k2 .aydetay .adrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--line2)}
+.k2 .aydetay .adrow:first-of-type{border-top:none}
+.k2 .aydetay .adk{display:flex;flex-direction:column;min-width:0;gap:1px}
+.k2 .aydetay .adk b{font-size:13px;font-weight:650;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.k2 .aydetay .adsub{font-size:10.5px;color:var(--mut2);font-variant-numeric:tabular-nums}
+.k2 .aydetay .adv{font-size:13.5px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}
+.k2 .aydetay .adv.pos{color:var(--pos)}.k2 .aydetay .adv.neg{color:var(--neg)}
+.k2 .aydetay .adbos{font-size:12px;color:var(--mut2);padding:6px 2px}
+.k2 .aydetay .adkar{display:flex;flex-direction:column;gap:7px}
+.k2 .aydetay .adkar>div{display:flex;justify-content:space-between;align-items:baseline}
+.k2 .aydetay .adkar span{font-size:12px;color:var(--mut)}
+.k2 .aydetay .adkar b{font-size:14.5px;font-weight:750;font-variant-numeric:tabular-nums}
+.k2 .aydetay .adkar b.pos{color:var(--pos)}.k2 .aydetay .adkar b.neg{color:var(--neg)}
 /* modal */
 .k2mod{position:fixed;inset:0;background:rgba(6,4,14,.6);display:flex;align-items:flex-end;justify-content:center;z-index:60;padding:12px}
 .k2sheet{width:100%;max-width:412px;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:18px 18px 20px;box-shadow:0 -14px 48px rgba(0,0,0,.5)}
@@ -166,6 +221,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
   const [gNot, setGNot] = useState('');
   const [gPersonel, setGPersonel] = useState<{ id: string; isim: string } | null>(null);
   const [gMekan, setGMekan] = useState<{ id: string; isim: string } | null>(null);
+  const [gField, setGField] = useState<'tutar' | 'nakit' | 'banka'>('tutar'); // numpad hedefi
 
   // gelir modal
   const [showGelir, setShowGelir] = useState(false);
@@ -198,6 +254,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
   const [odemeData, setOdemeData] = useState<any>(null);
   const [odemeItem, setOdemeItem] = useState<any>(null);
   const [odemeItemPot, setOdemeItemPot] = useState<'nakit' | 'banka'>('banka');
+  const [odemeTutarStr, setOdemeTutarStr] = useState(''); // ödemeden önce düzenlenebilir tutar (kesinti/fazla)
   // görünürlük (kimler görebilir)
   const [showGorunur, setShowGorunur] = useState(false);
   const [gorunurList, setGorunurList] = useState<any[] | null>(null);
@@ -229,6 +286,12 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
     } catch (e: any) { setError(e.message); } finally { setSaving(false); }
   };
 
+  // numpad → aktif tutar alanına yaz (tek tutar veya karışık nakit/banka)
+  const giderKey = (k: string) => {
+    const setter = gField === 'nakit' ? setGNakit : gField === 'banka' ? setGBanka : setGTutar;
+    setter((prev) => padApply(prev, k));
+  };
+
   const kaydetGider = async () => {
     setSaving(true);
     try {
@@ -245,7 +308,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
         }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Hata'); }
-      setShowGider(false); setGTutar(''); setGNakit(''); setGBanka(''); setGNot(''); setGOdeme('nakit'); setGKat('yakit'); setGPersonel(null); setGMekan(null);
+      setShowGider(false); setGTutar(''); setGNakit(''); setGBanka(''); setGNot(''); setGOdeme('nakit'); setGKat('yakit'); setGPersonel(null); setGMekan(null); setGField('tutar');
       await fetchData();
     } catch (e: any) { alert(e.message); } finally { setSaving(false); }
   };
@@ -342,7 +405,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
     if (!odemeItem) return;
     setSaving(true);
     try {
-      const r = await fetch(appendGhostParam(`${API_BASE}/kasa2/odeme-yap`), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ key: odemeItem.key, tutar: odemeItem.tutar, pot: odemeItemPot, baslik: odemeItem.baslik, tip: odemeItem.tip }) });
+      const r = await fetch(appendGhostParam(`${API_BASE}/kasa2/odeme-yap`), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ key: odemeItem.key, tutar: parseNum(odemeTutarStr), pot: odemeItemPot, baslik: odemeItem.baslik, tip: odemeItem.tip }) });
       if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || 'Hata'); }
       setOdemeItem(null); await reloadOdeme(); await fetchData();
     } catch (e: any) { alert(e.message); } finally { setSaving(false); }
@@ -461,6 +524,51 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
             ))}</div>
           </>) : (<div className="empty" style={{ padding: '18px 10px' }}>Bu yıl için {metrikAd} verisi yok.</div>)}
 
+          {selAy != null && data.yillik?.detay?.[selAy] && (() => {
+            const d = data.yillik.detay[selAy];
+            const gelirTop = (d.gelir || []).reduce((s: number, x: any) => s + x.toplam, 0);
+            const giderTop = (d.gider || []).reduce((s: number, x: any) => s + x.tutar, 0);
+            const kar = gelirTop - giderTop;
+            return (
+              <div className="aydetay">
+                <div className="adh">{AYLAR_KISA[selAy]} · {metrik === 'gider' ? 'Gider kırılımı' : metrik === 'kar' ? 'Ay özeti' : 'Gelir kırılımı'}</div>
+                {metrik === 'kar' ? (
+                  <div className="adkar">
+                    <div><span>Gelir</span><b className="pos">+{fmt(gelirTop)} ₺</b></div>
+                    <div><span>Gider</span><b className="neg">−{fmt(giderTop)} ₺</b></div>
+                    <div><span>Kâr</span><b className={kar >= 0 ? 'pos' : 'neg'}>{kar >= 0 ? '+' : '−'}{fmt(Math.abs(kar))} ₺</b></div>
+                  </div>
+                ) : metrik === 'gider' ? (
+                  (d.gider || []).length === 0
+                    ? <div className="adbos">Bu ay kasadan çıkan gider yok.</div>
+                    : d.gider.map((x: any, i: number) => (
+                        <div className="adrow" key={i}>
+                          <div className="adk"><b>{x.baslik}</b></div>
+                          <span className="adv neg">−{fmt(x.tutar)} ₺</span>
+                        </div>
+                      ))
+                ) : (
+                  (d.gelir || []).length === 0
+                    ? <div className="adbos">Bu ay gelir yok.</div>
+                    : d.gelir.map((x: any, i: number) => (
+                        <div className="adrow" key={i}>
+                          <div className="adk">
+                            <b>{x.isim}{x.elle ? ' · elle' : ''}</b>
+                            <span className="adsub">
+                              {x.nakit > 0 ? `nakit ${fmt(x.nakit)}` : ''}
+                              {x.nakit > 0 && x.banka > 0 ? ' · ' : ''}
+                              {x.banka > 0 ? `banka ${fmt(x.banka)}` : ''}
+                              {x.nakit <= 0 && x.banka <= 0 ? '—' : ''}
+                            </span>
+                          </div>
+                          <span className="adv pos">+{fmt(x.toplam)} ₺</span>
+                        </div>
+                      ))
+                )}
+              </div>
+            );
+          })()}
+
           <div className="hr" />
           <div className="flow">
             <div className="fc"><span className="cap">Bugün giren</span><div className="v pos tnum">+{fmt(bugun.giren)} ₺</div></div>
@@ -545,15 +653,25 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
       {/* GIDER MODAL */}
       {showGider && (
         <div className="k2mod" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowGider(false); }}>
-          <div className="k2sheet">
+          <div className="k2sheet" style={{ maxHeight: '92vh', overflowY: 'auto' }}>
             <div className="sh"><h3>Gider ekle</h3><button className="close" onClick={() => setShowGider(false)}>×</button></div>
             <div className="fld"><span className="cap">Tutar (₺)</span>
               {gOdeme !== 'karisik'
-                ? <input className="in tnum" inputMode="numeric" placeholder="0" value={gTutar} onChange={(e) => setGTutar(fmtIn(e.target.value))} />
-                : <div style={{ fontSize: 13, color: 'var(--mut2)', padding: '8px 2px' }}>Nakit + Banka toplamı aşağıda</div>}
+                ? <div className="amt on" onClick={() => setGField('tutar')}>
+                    <span className={`val ${gTutar ? '' : 'z'}`}>{gTutar || '0'}</span><span className="cur">₺</span>
+                  </div>
+                : <div className="amtrow">
+                    <div className={`amt ${gField === 'nakit' ? 'on' : ''}`} onClick={() => setGField('nakit')}>
+                      <span className="lab">Nakit</span><span className={`val ${gNakit ? '' : 'z'}`}>{gNakit || '0'}</span><span className="cur">₺</span>
+                    </div>
+                    <div className={`amt ${gField === 'banka' ? 'on' : ''}`} onClick={() => setGField('banka')}>
+                      <span className="lab">Banka</span><span className={`val ${gBanka ? '' : 'z'}`}>{gBanka || '0'}</span><span className="cur">₺</span>
+                    </div>
+                  </div>}
+              <Numpad onKey={giderKey} />
             </div>
             <div className="fld"><span className="cap">Kategori</span>
-              <div className="chips">{KATEGORILER.map((k) => (<span key={k.k} className={`ch ${gKat === k.k ? 'on' : ''}`} onClick={() => setGKat(k.k)}>{k.l}</span>))}</div>
+              <div className="chips">{KATEGORILER_SIRALI.map((k) => (<span key={k.k} className={`ch ${gKat === k.k ? 'on' : ''}`} onClick={() => setGKat(k.k)}>{k.l}</span>))}</div>
             </div>
             {gKat === 'avans' && (
               <div className="fld"><span className="cap">Kime avans? (maaşından düşülür)</span>
@@ -573,14 +691,9 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
             )}
             <div className="fld"><span className="cap">Ödeme kaynağı</span>
               <div className="seg">
-                {(['nakit', 'banka', 'karisik'] as const).map((o) => (<div key={o} className={`s ${gOdeme === o ? 'on' : ''}`} onClick={() => setGOdeme(o)}>{o === 'nakit' ? 'Nakit' : o === 'banka' ? 'Banka' : 'Karışık'}</div>))}
+                {(['nakit', 'banka', 'karisik'] as const).map((o) => (<div key={o} className={`s ${gOdeme === o ? 'on' : ''}`} onClick={() => { setGOdeme(o); setGField(o === 'karisik' ? 'nakit' : 'tutar'); }}>{o === 'nakit' ? 'Nakit' : o === 'banka' ? 'Banka' : 'Karışık'}</div>))}
               </div>
-              {gOdeme === 'karisik' && (
-                <div className="split">
-                  <div><span className="cap" style={{ display: 'block', marginBottom: 6 }}>Nakit</span><input className="in tnum" inputMode="numeric" placeholder="0" value={gNakit} onChange={(e) => setGNakit(fmtIn(e.target.value))} /></div>
-                  <div><span className="cap" style={{ display: 'block', marginBottom: 6 }}>Banka</span><input className="in tnum" inputMode="numeric" placeholder="0" value={gBanka} onChange={(e) => setGBanka(fmtIn(e.target.value))} /></div>
-                </div>
-              )}
+              {gOdeme === 'karisik' && <div style={{ fontSize: 11.5, color: 'var(--mut2)', marginTop: 8 }}>Yukarıdaki Nakit / Banka kutusuna dokun, tuş takımıyla gir.</div>}
             </div>
             <div className="fld"><span className="cap">Not — isteğe bağlı</span>
               <input className="in" style={{ fontSize: 14, fontWeight: 400 }} placeholder="ör. Shell benzinlik" value={gNot} onChange={(e) => setGNot(e.target.value)} />
@@ -593,10 +706,13 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
       {/* GELIR MODAL */}
       {showGelir && (
         <div className="k2mod" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowGelir(false); }}>
-          <div className="k2sheet">
+          <div className="k2sheet" style={{ maxHeight: '92vh', overflowY: 'auto' }}>
             <div className="sh"><h3>Para girdi</h3><button className="close" onClick={() => setShowGelir(false)}>×</button></div>
             <div className="fld"><span className="cap">Tutar (₺)</span>
-              <input className="in tnum" inputMode="numeric" placeholder="0" value={glTutar} onChange={(e) => setGlTutar(fmtIn(e.target.value))} />
+              <div className="amt on">
+                <span className={`val ${glTutar ? '' : 'z'}`}>{glTutar || '0'}</span><span className="cur">₺</span>
+              </div>
+              <Numpad onKey={(k) => setGlTutar((prev) => padApply(prev, k))} />
             </div>
             <div className="fld"><span className="cap">Hangi bölmeye?</span>
               <div className="seg" style={{ gridTemplateColumns: '1fr 1fr' }}>
@@ -768,7 +884,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
                   </div>
                   <div className="amt2" style={{ color: it.odendi ? 'var(--mut2)' : 'var(--ink)' }}>{fmt(it.tutar)} ₺</div>
                   {it.odendi ? <span style={{ fontSize: 11, color: 'var(--pos)', fontWeight: 650, marginLeft: 8 }}>ödendi ✓</span>
-                    : <button className="ode" onClick={() => { setOdemeItem(it); setOdemeItemPot('banka'); }}>Öde</button>}
+                    : <button className="ode" onClick={() => { setOdemeItem(it); setOdemeItemPot('banka'); setOdemeTutarStr(fmtIn(String(it.tutar || 0))); }}>Öde</button>}
                 </div>
               ))}
               <div style={{ fontSize: 11, color: 'var(--mut2)', marginTop: 12, lineHeight: 1.5 }}>Maaşlar Maliyet Yönetimi'ndeki tanımlardan otomatik gelir; ödediğinde kasadan düşer. <b style={{ color: 'var(--mut)' }}>Kiralar burada değil</b> — kirayı ödediğinde "Gider ekle" ile manuel girersin.</div>
@@ -781,13 +897,25 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
         <div className="k2mod" onMouseDown={(e) => { if (e.target === e.currentTarget) setOdemeItem(null); }} style={{ zIndex: 70 }}>
           <div className="k2sheet">
             <div className="sh"><h3>Öde — {odemeItem.baslik}</h3><button className="close" onClick={() => setOdemeItem(null)}>×</button></div>
-            <div className="fld"><span className="cap">Tutar</span><div className="amtbox"><span className="n tnum">{fmt(odemeItem.tutar)}</span><span className="u">₺</span></div></div>
+            <div className="fld"><span className="cap">Tutar — düzenleyebilirsin</span>
+              <div className="amt on"><span className={`val ${odemeTutarStr ? '' : 'z'}`}>{odemeTutarStr || '0'}</span><span className="cur">₺</span></div>
+              <Numpad onKey={(k) => setOdemeTutarStr((prev) => padApply(prev, k))} />
+              {(() => {
+                const yeni = parseNum(odemeTutarStr); const fark = yeni - (odemeItem.tutar || 0);
+                return (
+                  <div style={{ fontSize: 11.5, color: 'var(--mut2)', marginTop: 8, lineHeight: 1.55 }}>
+                    Tanımlı net: <b style={{ color: 'var(--mut)' }}>{fmt(odemeItem.tutar)} ₺</b>{odemeItem.avans > 0 ? ` · maaş ${fmt(odemeItem.base)} − avans ${fmt(odemeItem.avans)}` : ''}
+                    {fark !== 0 && <><br /><b style={{ color: fark < 0 ? 'var(--neg)' : 'var(--pos)' }}>{fark < 0 ? `Kesinti −${fmt(-fark)} ₺` : `Fazla +${fmt(fark)} ₺`}</b> · ödenecek {fmt(yeni)} ₺</>}
+                  </div>
+                );
+              })()}
+            </div>
             <div className="fld"><span className="cap">Hangi bölmeden çıksın?</span>
               <div className="seg" style={{ gridTemplateColumns: '1fr 1fr' }}>
                 {(['banka', 'nakit'] as const).map((o) => (<div key={o} className={`s ${odemeItemPot === o ? 'on' : ''}`} onClick={() => setOdemeItemPot(o)}>{o === 'banka' ? 'Banka' : 'Nakit'}</div>))}
               </div>
             </div>
-            <button className="save" disabled={saving} onClick={odemeYap}>{saving ? 'Ödeniyor…' : 'Öde'}</button>
+            <button className="save" disabled={saving || parseNum(odemeTutarStr) <= 0} onClick={odemeYap}>{saving ? 'Ödeniyor…' : `${fmt(parseNum(odemeTutarStr))} ₺ Öde`}</button>
           </div>
         </div>
       )}
