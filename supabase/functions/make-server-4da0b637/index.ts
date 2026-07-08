@@ -5173,6 +5173,139 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
 });
 
 // ══════════════════════════════════════════
+// PRİM (Hakediş): Aylık hesap — Kasa (Ödemeler) bunu kullanır.
+// ⚠️ /primler/rapor içindeki inline hesapla BİREBİR AYNI mantıktır; birini
+// değiştirirsen diğerini de güncelle (Kasa ile Hakediş Takip aynı rakamı göstermeli).
+// ══════════════════════════════════════════
+async function _computePrimReport(companyId: string, ay: string) {
+  const [yil, ayNo] = ay.split("-").map(Number);
+  const ckv = companyKvFor(companyId);
+
+  const mekanlarList: any[] = await getMekanlarFor(companyId);
+  const mekanMap: Record<string, any> = {};
+  for (const m of mekanlarList) mekanMap[m.id] = m;
+
+  const tumKayitlar: any[] = await getAllDailyStock(companyId, ckv);
+  const ayKayitlari = tumKayitlar.filter((k: any) => {
+    if (!k.tarih) return false;
+    const [ky, ka] = k.tarih.split("-").map(Number);
+    return ky === yil && ka === ayNo;
+  });
+
+  const [tumOdemeler, tumSilindi] = await Promise.all([
+    ckv.getByPrefix("prim_odendi_").catch(() => []),
+    ckv.getByPrefix("prim_silindi_").catch(() => []),
+  ]);
+  const odemeMap: Record<string, { odendi: boolean; odemeTarihi?: string }> = {};
+  for (const o of (tumOdemeler || [])) {
+    if (o.key) odemeMap[o.key] = { odendi: o.odendi || false, odemeTarihi: o.odemeTarihi };
+  }
+  const silinenKeys = new Set<string>(
+    (tumSilindi || []).filter((s: any) => s.silindi).map((s: any) => s.orijinalKey).filter(Boolean)
+  );
+
+  const [tumRotasyonlar, tumKidemler, kidemCarpanlari, hakedisDahilRaw] = await Promise.all([
+    ckv.getByPrefix("rotation_task_").catch(() => []),
+    ckv.getByPrefix("kidem_personel_").catch(() => []),
+    ckv.get("kidem_carpanlari").catch(() => null),
+    ckv.get(HAKEDIS_DAHIL_KEY).catch(() => []),
+  ]);
+  const hakedisDahilSet = new Set<string>(hakedisDahilRaw || []);
+  const kidemMap: Record<string, string> = {};
+  for (const k of (tumKidemler || [])) {
+    if (k?.userId && k?.kidemSeviye) kidemMap[k.userId] = k.kidemSeviye;
+  }
+  const carpanlar: Record<string, number> = kidemCarpanlari || { kidemsiz: 1.0, kidemli: 1.15, kidemliPlus: 1.30 };
+
+  const getGorevHakedis = (kademe: any, gorev: string | undefined, gorevKisiSayisi: number, soloMu: boolean, personelId: string): number => {
+    let baseTutar = 0;
+    if (soloMu) {
+      baseTutar = Number(kademe.primTek) || 0;
+    } else {
+      const bantKey = gorev === 'baski' ? 'baskiBantlar'
+        : gorev === 'album' ? 'albumBantlar'
+        : gorev === 'gozlemci' ? 'gozlemciBantlar'
+        : 'fotografBantlar';
+      const bantlar: any[] = kademe[bantKey];
+      if (bantlar && Array.isArray(bantlar) && bantlar.length > 0) {
+        const bant = bantlar.find((b: any) => gorevKisiSayisi >= Number(b.min) && gorevKisiSayisi <= Number(b.max));
+        baseTutar = bant ? Number(bant.tutar) || 0 : 0;
+      } else {
+        if (gorev === 'baski') baseTutar = Number(kademe.primBaski) || Number(kademe.primCoklu) || 0;
+        else if (gorev === 'album') baseTutar = Number(kademe.primAlbum) || Number(kademe.primCoklu) || 0;
+        else if (gorev === 'gozlemci') baseTutar = Number(kademe.primGozlemci) || 0;
+        else baseTutar = Number(kademe.primFotograf) || Number(kademe.primCoklu) || 0;
+      }
+    }
+    const kidemSeviye = kidemMap[personelId] || 'kidemsiz';
+    const carpan = Number(carpanlar[kidemSeviye]) ?? 1.0;
+    return Math.round(baseTutar * carpan);
+  };
+
+  const primKayitlari: any[] = [];
+  for (const kayit of ayKayitlari) {
+    const mekan = mekanMap[kayit.mekanId];
+    if (!mekan || !mekan.kotaKademeleri || mekan.kotaKademeleri.length === 0) continue;
+
+    const satislar = (kayit.satislar || []).filter((s: any) => !s.iptal);
+    const ciro = satislar.reduce((sum: number, s: any) => sum + (s.finalPrice || 0), 0);
+
+    const mekanAdi: string = mekan.name || "";
+    const rotasyonPersonelList: Array<{ id: string; name: string; gorev?: string }> = [];
+    const seenIds = new Set<string>();
+    for (const task of (tumRotasyonlar || [])) {
+      if (task.date !== kayit.tarih) continue;
+      if (!["sent", "revised"].includes(task.status)) continue;
+      if (task.location !== mekanAdi) continue;
+      if (!Array.isArray(task.personnel)) continue;
+      for (const p of task.personnel) {
+        if (p.id && p.name && !seenIds.has(p.id)) {
+          if (!hakedisDahilSet.has(p.id)) continue;
+          seenIds.add(p.id);
+          rotasyonPersonelList.push({ id: p.id, name: p.name, gorev: p.gorev });
+        }
+      }
+    }
+    if (rotasyonPersonelList.length === 0) continue;
+    const rotasyonPersoneller = rotasyonPersonelList;
+    const personelSayisi = rotasyonPersoneller.length;
+    const soloMu = personelSayisi === 1 && !rotasyonPersoneller[0].gorev;
+
+    const gorevSayilari: Record<string, number> = {};
+    for (const p of rotasyonPersoneller) {
+      const g = p.gorev || '_solo';
+      gorevSayilari[g] = (gorevSayilari[g] || 0) + 1;
+    }
+
+    const sortedKademeler = [...mekan.kotaKademeleri].sort((a: any, b: any) => Number(a.hedef) - Number(b.hedef));
+    for (let ki = 0; ki < sortedKademeler.length; ki++) {
+      const kademe = sortedKademeler[ki];
+      if (ciro >= Number(kademe.hedef)) {
+        for (const personel of rotasyonPersoneller) {
+          const gorevKisiSayisi = gorevSayilari[personel.gorev || '_solo'] || 1;
+          const primMiktar = getGorevHakedis(kademe, personel.gorev, gorevKisiSayisi, soloMu, personel.id);
+          const safeAd = encodeURIComponent(personel.name);
+          const odemeKey = `prim_odendi_${kayit.mekanId}_${kayit.tarih}_${ki}_${safeAd}`;
+          const odemeData = odemeMap[odemeKey] || null;
+          primKayitlari.push({
+            mekanId: kayit.mekanId, mekanName: mekan.name, mekanEmoji: mekan.emoji || "📍", mekanColor: mekan.color || "#9dd9ea",
+            tarih: kayit.tarih, ciro: Math.round(ciro), kademeIndex: ki, kademeHedef: Number(kademe.hedef),
+            primMiktar, personelAdi: personel.name, personelGorev: personel.gorev, personelSayisi, coklu: !soloMu, gorevKisiSayisi,
+            kidemSeviye: kidemMap[personel.id] || 'kidemsiz', odendi: odemeData?.odendi || false, odemeTarihi: odemeData?.odemeTarihi || null, odemeKey,
+          });
+        }
+      }
+    }
+  }
+
+  const primKayitlariFinal = primKayitlari.map(p => ({ ...p, silindi: silinenKeys.has(p.odemeKey) })).filter(p => !p.silindi || p.odendi);
+  const toplamPrim = primKayitlariFinal.reduce((s, p) => s + p.primMiktar, 0);
+  const odenenPrim = primKayitlariFinal.filter(p => p.odendi).reduce((s, p) => s + p.primMiktar, 0);
+  const bekleyenPrim = toplamPrim - odenenPrim;
+  return { ay, mekanMap, primKayitlari: primKayitlariFinal, toplamPrim, odenenPrim, bekleyenPrim };
+}
+
+// ══════════════════════════════════════════
 // PRİM: Aylık rapor — KİŞİ BAZLI prim kayıtları
 // GET /primler/rapor?ay=2026-03
 // ══════════════════════════════════════════
@@ -5370,7 +5503,7 @@ app.get("/make-server-4da0b637/primler/rapor", async (c) => {
     // ── Bekleyen hakedişleri İGD'ye gider olarak yaz (idempotent) ──
     // Bu, kasada personele borç olarak görünmesini sağlar
     const mevcutGiderKeys = new Set<string>();
-    const tumGiderlerPrim = await getAllGiderler(_hakCompanyId, ckv);
+    const tumGiderlerPrim = await getAllGiderler(effCIdPrim, ckv);
     for (const g of tumGiderlerPrim) { if (g.primOdemeKey) mevcutGiderKeys.add(g.primOdemeKey); }
 
     let primGiderEklenen = 0;
@@ -5806,7 +5939,7 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
     const ckv = companyKvFor(getCompanyId(user));
     let tumGiderler: any[] = [];
     if (!odendiMi) {
-      tumGiderler = await getAllGiderler(_hakCompanyId, ckv);
+      tumGiderler = await getAllGiderler(getCompanyId(user), ckv);
     }
 
     for (const key of odemeKeys) {
@@ -5826,7 +5959,7 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
       if (odendiMi && detay) {
         // Ödeme → bekleyen İGD giderini bul ve kasada ödendi işaretle
         // Eğer bekleyen yoksa yeni İGD gider oluştur (geriye uyumluluk)
-        if (!tumGiderler.length) tumGiderler = await getAllGiderler(_hakCompanyId, ckv);
+        if (!tumGiderler.length) tumGiderler = await getAllGiderler(getCompanyId(user), ckv);
         const bekleyenGider = tumGiderler.find((g: any) => g.primOdemeKey === key);
 
         if (bekleyenGider) {
@@ -5882,7 +6015,7 @@ app.post("/make-server-4da0b637/primler/ode", async (c) => {
           try {
             const _hakVar = await getAdminClient().from("kasa_hareket").select("id").eq("company_id", getCompanyId(user)).eq("kaynak_id", key).eq("iptal", false).limit(1);
             if (!(_hakVar.data && _hakVar.data.length)) {
-              await kasaHareketYaz(getCompanyId(user), { tarih: todayStr, yon: "cikis", pot: "nakit", tutar: Math.round(Number(detay.primMiktar) || 0), kategori: "hakedis", kaynak: "hakedis", kaynak_id: key, aciklama: `Hakediş — ${detay.personelAdi || ""}`, olusturan: user.user_metadata?.full_name || user.email || "", olusturan_id: user.id });
+              await kasaHareketYaz(getCompanyId(user), { tarih: todayStr, yon: "cikis", pot: "nakit", tutar: Math.round(Number(detay.primMiktar) || 0), kategori: "hakedis", kaynak: "hakedis", kaynak_id: key, aciklama: `Hakediş — ${detay.personelAdi || ""}`, olusturan: user.user_metadata?.full_name || user.email || "", olusturan_id: user.id, extra_data: { hakedisAy: String(detay.tarih || todayStr).slice(0, 7), personelAdi: detay.personelAdi } });
             }
           } catch (e) { console.log("[kasa2 hakedis]", e); }
         }
@@ -17497,11 +17630,13 @@ const _kasa2OrtakYetki = async (user: any) => {
 };
 
 // Satışları pot bazında topla (milat sonrası). Nakit=nakit, Banka=kart+iban.
-const _kasa2Sales = async (companyId: string, ckv: any, milat: string) => {
+// refGun: "bugünün hareketleri" + giren/çıkan için hangi iş günü baz alınsın (varsayılan bugün).
+const _kasa2Sales = async (companyId: string, ckv: any, milat: string, refGun?: string) => {
   const kayitlar = await getAllDailyStock(companyId, ckv);
   const byDate: Record<string, { nakit: number; banka: number }> = {};
-  const byVenueToday: Record<string, any> = {};
+  const byVenueGun: Record<string, any> = {};   // seçili günün mekan bazlı satışı
   const today = bizDateTR();
+  const gun = refGun || today;
   const yil = today.slice(0, 4);
   const ciroByAy = Array(12).fill(0);       // aylık ciro (tüm satış geçmişi, milat'tan bağımsız)
   const ayHasData = Array(12).fill(false);
@@ -17528,16 +17663,16 @@ const _kasa2Sales = async (companyId: string, ckv: any, milat: string) => {
     totNakit += ci.nakit; totBanka += banka;
     if (!byDate[tarih]) byDate[tarih] = { nakit: 0, banka: 0 };
     byDate[tarih].nakit += ci.nakit; byDate[tarih].banka += banka;
-    if (tarih === today) {
+    if (tarih === gun) {
       const adet = (k.satislar || []).filter((s: any) => !s.iptal).length;
       if (adet > 0 || ci.toplam > 0) {
-        const ex = byVenueToday[k.mekanId] || { mekanId: k.mekanId, satisAdet: 0, nakit: 0, banka: 0, kart: 0, iban: 0, toplam: 0 };
+        const ex = byVenueGun[k.mekanId] || { mekanId: k.mekanId, satisAdet: 0, nakit: 0, banka: 0, kart: 0, iban: 0, toplam: 0 };
         ex.satisAdet += adet; ex.nakit += ci.nakit; ex.banka += banka; ex.kart += ci.kart; ex.iban += ci.iban; ex.toplam += ci.toplam;
-        byVenueToday[k.mekanId] = ex;
+        byVenueGun[k.mekanId] = ex;
       }
     }
   }
-  return { byDate, byVenueToday, totNakit, totBanka, today, ciroByAy, ayHasData, gelirByAyMekan, yil: Number(yil) };
+  return { byDate, byVenueGun, totNakit, totBanka, today, gun, ciroByAy, ayHasData, gelirByAyMekan, yil: Number(yil) };
 };
 
 // GET /kasa2 — bakiye + bugün + hareketler + yıllık seri
@@ -17557,11 +17692,14 @@ app.get("/make-server-4da0b637/kasa2", async (c) => {
     if (!milatRec?.tarih) return c.json({ kurulmadi: true });
     const milat = milatRec.tarih;
     const today = bizDateTR();
+    // Gün gezinme: ?gun=YYYY-MM-DD (milat..bugün arası); yoksa bugün. Sol/sağ ok bunu değiştirir.
+    const _reqGun = c.req.query("gun");
+    const gun = (_reqGun && /^\d{4}-\d{2}-\d{2}$/.test(_reqGun) && _reqGun <= today && _reqGun >= milat) ? _reqGun : today;
     const db = getAdminClient();
 
     const [hareketRes, sales, mekanlar, maaslarList] = await Promise.all([
       db.from("kasa_hareket").select("*").eq("company_id", companyId).eq("iptal", false),
-      _kasa2Sales(companyId, ckv, milat),
+      _kasa2Sales(companyId, ckv, milat, gun),
       getMekanlarFor(companyId),
       ckv.getByPrefix("cost_salary_").catch(() => []),
     ]);
@@ -17577,27 +17715,27 @@ app.get("/make-server-4da0b637/kasa2", async (c) => {
       if (h.pot === "nakit") nakit += d; else if (h.pot === "banka") banka += d;
     }
 
-    // Bugün giren/çıkan
-    let bugunGiren = (sales.byDate[today]?.nakit || 0) + (sales.byDate[today]?.banka || 0);
+    // Seçili günün giren/çıkanı (bugün ya da geçmiş bir gün — sabah 7 iş günü kırılımıyla)
+    let bugunGiren = (sales.byDate[gun]?.nakit || 0) + (sales.byDate[gun]?.banka || 0);
     let bugunCikan = 0;
     for (const h of hrows) {
-      if (h.tarih !== today || h.kaynak === "acilis" || h.extra_data?.kasaHaric) continue;
+      if (h.tarih !== gun || h.kaynak === "acilis" || h.extra_data?.kasaHaric) continue;
       if (h.yon === "giris") bugunGiren += Number(h.tutar); else bugunCikan += Number(h.tutar);
     }
 
-    // Bugünün hareketleri: mekan bazlı satış + manuel hareketler
+    // Seçili günün hareketleri: mekan bazlı satış + manuel hareketler
     const ledger: any[] = [];
-    for (const v of Object.values(sales.byVenueToday) as any[]) {
+    for (const v of Object.values(sales.byVenueGun) as any[]) {
       const m = mekanMap[v.mekanId] || {};
       ledger.push({
-        id: `satis_${v.mekanId}`, tip: "satis", tarih: today, ts: `${today}T23:59:59`,
+        id: `satis_${v.mekanId}`, tip: "satis", tarih: gun, ts: `${gun}T23:59:59`,
         baslik: m.name || v.mekanId, emoji: m.emoji || "",
         satisAdet: v.satisAdet, nakit: Math.round(v.nakit), banka: Math.round(v.banka), tutar: Math.round(v.toplam),
       });
     }
     const isYonView = role === "yonetici" || isSA;
     for (const h of hrows) {
-      if (h.tarih !== today || h.kaynak === "acilis" || h.extra_data?.kasaHaric) continue;
+      if (h.tarih !== gun || h.kaynak === "acilis" || h.extra_data?.kasaHaric) continue;
       if (!isYonView && h.kategori === "ortak") continue; // pay dağıtımı üst müdüre sızmasın
       ledger.push({
         id: h.id, tip: h.yon === "giris" ? "giris" : "cikis", tarih: h.tarih, ts: h.ts,
@@ -17666,6 +17804,7 @@ app.get("/make-server-4da0b637/kasa2", async (c) => {
     const ortakGorebilir = role === "yonetici" || isSA || (Array.isArray(_ortakGorList) && _ortakGorList.includes(user.id));
     return c.json({
       kurulmadi: false, milat, ortakGorebilir,
+      gun, bugunTarih: today, canPrev: gun > milat, canNext: gun < today,   // sol/sağ ok gezinme
       bakiye: { toplam: Math.round(nakit + banka), nakit: Math.round(nakit), banka: Math.round(banka) },
       bugun: { giren: Math.round(bugunGiren), cikan: Math.round(bugunCikan) },
       hareketler: ledger,
@@ -18014,11 +18153,12 @@ app.get("/make-server-4da0b637/kasa2/odemeler", async (c) => {
     const [yil, ayNum] = ay.split("-").map(Number);
     const ayGun = new Date(yil, ayNum, 0).getDate();
     const db = getAdminClient();
-    const [maaslar, mekanlar, exRates, paidRes] = await Promise.all([
+    const [maaslar, mekanlar, exRates, paidRes, hakRes] = await Promise.all([
       ckv.getByPrefix("cost_salary_").catch(() => []),
       getMekanlarFor(companyId),
       ckv.get("cost_exchange_rates").catch(() => null),
       db.from("kasa_hareket").select("kaynak_id, tutar").eq("company_id", companyId).in("kaynak", ["maas", "kira"]).eq("iptal", false),
+      db.from("kasa_hareket").select("tutar, extra_data").eq("company_id", companyId).eq("kaynak", "hakedis").eq("iptal", false),
     ]);
     const rates: any = exRates || { EUR: 38, USD: 33, GBP: 41.2 };
     const toTL = (v: number, cur: string) => cur === "EUR" ? v * (Number(rates.EUR) || 38) : cur === "USD" ? v * (Number(rates.USD) || 33) : cur === "GBP" ? v * (Number(rates.GBP) || 41.2) : v;
@@ -18050,6 +18190,39 @@ app.get("/make-server-4da0b637/kasa2/odemeler", async (c) => {
       const odendi = paid.has(key);
       items.push({ key, tip: "maas", baslik: `Maaş — ${m.name || "Personel"}`, tutar: odendi ? Math.round(paidTutar[key]) : tutar, base, avans, ay, odendi });
     }
+    // ── Hakediş (prim) — kişi başı, Hakediş Takip'le AYNI hesaptan ──
+    // Bekleyen = ödenmemiş kayıtların kişi bazlı toplamı; ödeyince Hakediş Takip'te de "ödendi" olur.
+    try {
+      const prim = await _computePrimReport(companyId, ay);
+      // Bekleyen: kota hesabından (ödenmemiş kalemler). Ödenen: GERÇEK kasa çıkışından (düzenlenmiş olabilir).
+      const hakPaid: Record<string, number> = {};
+      for (const r of ((hakRes as any).data || [])) {
+        if (r.extra_data?.hakedisAy !== ay) continue;
+        const pad = r.extra_data?.personelAdi;
+        if (!pad) continue;
+        hakPaid[pad] = (hakPaid[pad] || 0) + (Number(r.tutar) || 0);
+      }
+      const byPerson: Record<string, { bekleyen: number; keys: any[] }> = {};
+      for (const p of (prim.primKayitlari || [])) {
+        if (p.odendi) continue; // ödenmiş kalem → gerçek tutar hakPaid'ten gelir, kota'dan sayma
+        const ad = p.personelAdi || "?";
+        if (!byPerson[ad]) byPerson[ad] = { bekleyen: 0, keys: [] };
+        byPerson[ad].bekleyen += p.primMiktar || 0;
+        byPerson[ad].keys.push({ key: p.odemeKey, personelAdi: p.personelAdi, mekanAdi: p.mekanName, tarih: p.tarih, kademeIndex: p.kademeIndex, primMiktar: p.primMiktar });
+      }
+      const tumAd = new Set([...Object.keys(byPerson), ...Object.keys(hakPaid)]);
+      for (const ad of tumAd) {
+        const bek = Math.round(byPerson[ad]?.bekleyen || 0);
+        const odn = Math.round(hakPaid[ad] || 0);
+        if (bek <= 0 && odn <= 0) continue;
+        const acik = bek > 0;
+        items.push({
+          key: `hakedis_${encodeURIComponent(ad)}_${ay}`, tip: "hakedis",
+          baslik: `Hakediş — ${ad}`, tutar: acik ? bek : odn,
+          ay, odendi: !acik, keys: byPerson[ad]?.keys || [], personelAdi: ad,
+        });
+      }
+    } catch (e) { console.log("[kasa2 odemeler hakedis]", e); }
     // NOT: Kiralar Ödemeler'e OTOMATİK gelmez (kullanıcı kararı) — ödenince "Gider ekle" ile manuel girilir.
     // gecikmiş: bu aydan önceki ay ve ödenmemiş
     const buAy = bugun.slice(0, 7);
@@ -18069,14 +18242,49 @@ app.post("/make-server-4da0b637/kasa2/odeme-yap", async (c) => {
     const role = user.user_metadata?.role || "personel";
     if (!["yonetici", "ust-mudur"].includes(role) && user.user_metadata?.originalRole !== "superadmin") return c.json({ error: "Yetkiniz yok." }, 403);
     const companyId = getCompanyId(user);
-    const { key, tutar, pot, baslik, tip } = await c.req.json();
+    const body = await c.req.json();
+    const { key, tutar, pot, baslik, tip } = body;
+    const db = getAdminClient();
+    const by = user.user_metadata?.full_name || user.email || "";
+    const potN = pot === "nakit" ? "nakit" : "banka";
+
+    // ── Hakediş ödemesi: kişinin bekleyen kalemlerini tek çıkışla öde (tutar DÜZENLENEBİLİR) ──
+    // Kota hesabı kalemleri Hakediş Takip'te "ödendi" işaretlenir (senkron); kasa çıkışı ise
+    // kullanıcının girdiği (düzenlenmiş) toplam kadar olur — kesinti/fazla mümkün.
+    if (tip === "hakedis") {
+      const keys: any[] = Array.isArray(body.keys) ? body.keys : [];
+      if (!keys.length) return c.json({ error: "Ödenecek hakediş kalemi yok." }, 400);
+      const ckv = companyKvFor(companyId);
+      const now = new Date().toISOString();
+      const todayStr = bizDateTR();
+      const ad = keys[0]?.personelAdi || "";
+      const kAy = String(keys[0]?.tarih || todayStr).slice(0, 7);
+      const origSum = keys.reduce((s: number, d: any) => s + Math.round(Number(d.primMiktar) || 0), 0);
+      const odenecek = Math.round(Number(tutar) || 0) || origSum;   // düzenlenmiş toplam (yoksa kota toplamı)
+      if (odenecek <= 0) return c.json({ error: "Tutar zorunlu." }, 400);
+      const kid = `hakedis_${encodeURIComponent(ad)}_${kAy}_${origSum}`;
+      // idempotent: aynı kalem kümesi zaten ödendiyse tekrar yazma
+      const { data: kex } = await db.from("kasa_hareket").select("id").eq("company_id", companyId).eq("kaynak_id", kid).eq("iptal", false).limit(1);
+      if (kex && kex.length) return c.json({ error: "Bu hakediş zaten ödenmiş." }, 400);
+      const tumGiderler = await getAllGiderler(companyId, ckv).catch(() => []);
+      // Her kalemi Hakediş Takip'te "ödendi" işaretle (senkron)
+      for (const d of keys) {
+        const k = d.key; if (!k) continue;
+        const amt = Math.round(Number(d.primMiktar) || 0);
+        await ckv.set(k, { key: k, odendi: true, odemeTarihi: now, odeyenKisi: user.email || user.id, personelAdi: d.personelAdi, mekanAdi: d.mekanAdi, primMiktar: amt });
+        const bg = (tumGiderler || []).find((g: any) => g.primOdemeKey === k);
+        if (bg) { bg.odemeTipi = "prim"; bg.description = `Hakediş Ödemesi ✅ ${d.personelAdi || ""} — ${d.mekanAdi || ""} ${d.tarih || todayStr}`; await ckv.set(`isletme_gider_${bg.id}`, bg); }
+      }
+      // Tek kasa çıkışı — düzenlenmiş toplam. extra_data → Ödemeler'de "bu ay ödenen" doğru toplanır.
+      await kasaHareketYaz(companyId, { tarih: todayStr, yon: "cikis", pot: potN, tutar: odenecek, kategori: "hakedis", kaynak: "hakedis", kaynak_id: kid, aciklama: `Hakediş — ${ad}`, olusturan: by, olusturan_id: user.id, extra_data: { hakedisAy: kAy, personelAdi: ad } });
+      return c.json({ ok: true, odenen: odenecek });
+    }
+
     const t = Math.round(Number(tutar) || 0);
     if (!key || t <= 0) return c.json({ error: "key ve tutar zorunlu." }, 400);
-    const db = getAdminClient();
     const { data: ex } = await db.from("kasa_hareket").select("id").eq("company_id", companyId).eq("kaynak_id", key).eq("iptal", false).limit(1);
     if (ex && ex.length) return c.json({ error: "Bu ödeme zaten yapılmış." }, 400);
-    const by = user.user_metadata?.full_name || user.email || "";
-    await kasaHareketYaz(companyId, { tarih: bizDateTR(), yon: "cikis", pot: pot === "nakit" ? "nakit" : "banka", tutar: t, kategori: tip === "kira" ? "kira" : "maas", kaynak: tip === "kira" ? "kira" : "maas", kaynak_id: key, aciklama: baslik || key, olusturan: by, olusturan_id: user.id });
+    await kasaHareketYaz(companyId, { tarih: bizDateTR(), yon: "cikis", pot: potN, tutar: t, kategori: tip === "kira" ? "kira" : "maas", kaynak: tip === "kira" ? "kira" : "maas", kaynak_id: key, aciklama: baslik || key, olusturan: by, olusturan_id: user.id });
     return c.json({ ok: true });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });

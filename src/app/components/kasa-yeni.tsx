@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { projectId } from '../lib/supabase-info';
 import { authHeaders, appendGhostParam } from '../lib/api';
 
@@ -13,6 +13,21 @@ interface KasaYeniProps {
 }
 
 const AYLAR_KISA = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+const AYLAR_TAM = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+// İş günü tarih aritmetiği (YYYY-MM-DD) — UTC bazlı, saat kaymasından etkilenmez
+const gunEkle = (tarih: string, delta: number) => {
+  const [y, m, d] = tarih.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + delta);
+  return dt.toISOString().slice(0, 10);
+};
+const gunAdi = (tarih: string, bugunTarih: string) => {
+  if (!tarih) return '';
+  if (tarih === bugunTarih) return 'Bugün';
+  if (tarih === gunEkle(bugunTarih, -1)) return 'Dün';
+  const [y, m, d] = tarih.split('-').map(Number);
+  return `${d} ${AYLAR_TAM[m - 1]}`;
+};
 const KATEGORILER = [
   { k: 'yakit', l: 'Yakıt' }, { k: 'market', l: 'Market' }, { k: 'malzeme', l: 'Albüm' },
   { k: 'ekipman', l: 'Ekipman' }, { k: 'ribon', l: 'Ribon' }, { k: 'avans', l: 'Avans' },
@@ -84,6 +99,13 @@ const CSS = `
 .k2 .flow .fc{padding:2px 4px 12px}
 .k2 .flow .fc+.fc{border-left:1px solid var(--line);padding-left:16px}
 .k2 .flow .v{font-size:17px;font-weight:750;margin-top:5px}.k2 .flow .v.pos{color:var(--pos)}.k2 .flow .v.neg{color:var(--neg)}
+.k2 .daynav{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 2px 1px}
+.k2 .daynav .dnlabel{font-size:12.5px;font-weight:650;color:var(--ink);text-align:center;flex:1;font-variant-numeric:tabular-nums}
+.k2 .daynav .dnlabel small{display:block;font-size:10px;font-weight:600;color:var(--mut2);letter-spacing:.04em;margin-top:1px}
+.k2 .daynav .dnav{width:30px;height:30px;flex:0 0 auto;border-radius:9px;border:1px solid var(--line);background:var(--surface2);color:var(--mut);font-size:17px;line-height:1;cursor:pointer;display:grid;place-items:center;font-family:inherit;-webkit-tap-highlight-color:transparent}
+.k2 .daynav .dnav:disabled{opacity:.28;cursor:default}
+.k2 .daynav .dnav:not(:disabled):active{transform:scale(.92)}
+.k2 .daynav .dnav:not(:disabled):hover{color:#c9b8ff;border-color:var(--brand)}
 .k2 .pots{display:grid;grid-template-columns:1fr 1fr;gap:11px}
 .k2 .pot{padding:14px 15px 15px;position:relative;overflow:hidden}
 .k2 .pot .key{position:absolute;left:0;top:14px;bottom:14px;width:2.5px;border-radius:2px}
@@ -205,6 +227,9 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
   const isYonetici = userRole === 'yonetici';
   const [selAy, setSelAy] = useState<number | null>(null);
   const [metrik, setMetrik] = useState<'ciro' | 'gider' | 'kar'>('ciro');
+  const [selGun, setSelGun] = useState<string | null>(null); // null = bugün (canlı takip); tarih = geçmiş gün
+  const selGunRef = useRef<string | null>(null);
+  selGunRef.current = selGun;
 
   // setup form
   const [suNakit, setSuNakit] = useState('');
@@ -261,18 +286,48 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
   const [gorunurSet, setGorunurSet] = useState<Set<string>>(new Set());
   const [ortakSet, setOrtakSet] = useState<Set<string>>(new Set());
 
-  const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+  const fetchData = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
+    setError(null);
     try {
       const hdrs = await authHeaders();
-      const res = await fetch(appendGhostParam(`${API_BASE}/kasa2`), { headers: hdrs });
+      const q = selGunRef.current ? `?gun=${selGunRef.current}` : '';
+      const res = await fetch(appendGhostParam(`${API_BASE}/kasa2${q}`), { headers: hdrs });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());
     } catch (e: any) { setError(e.message || 'Veri alınamadı'); }
-    finally { setLoading(false); }
+    finally { if (!opts?.silent) setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // Gün değişince (sol/sağ ok) yeniden çek
+  useEffect(() => { fetchData(); }, [fetchData, selGun]);
+
+  // Otomatik tazeleme: bugünü izlerken (canlı satış) + sabah 7'de iş günü dönünce ekran kendiliğinden sıfırlanır
+  const fetchRef = useRef(fetchData);
+  fetchRef.current = fetchData;
+  const busyRef = useRef(false);
+  useEffect(() => {
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (selGunRef.current) return;   // geçmiş gün görünümü sabit kalsın
+      if (busyRef.current) return;     // modal/işlem açıkken dokunma
+      fetchRef.current({ silent: true });
+    };
+    const id = setInterval(tick, 45000);
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
+  }, []);
+
+  // Sol/sağ ok: bir gün geri / ileri (bugüne dönünce null = canlı takip)
+  const stepGun = (delta: number) => {
+    if (!data) return;
+    const cur = data.gun || data.bugunTarih;
+    if (!cur) return;
+    const nx = gunEkle(cur, delta);
+    if (delta > 0) { setSelGun(nx >= data.bugunTarih ? null : nx); return; }
+    if (data.milat && nx < data.milat) return;
+    setSelGun(nx);
+  };
 
   const kurKasa = async () => {
     setSaving(true);
@@ -405,9 +460,21 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
     if (!odemeItem) return;
     setSaving(true);
     try {
-      const r = await fetch(appendGhostParam(`${API_BASE}/kasa2/odeme-yap`), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ key: odemeItem.key, tutar: parseNum(odemeTutarStr), pot: odemeItemPot, baslik: odemeItem.baslik, tip: odemeItem.tip }) });
+      const r = await fetch(appendGhostParam(`${API_BASE}/kasa2/odeme-yap`), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ key: odemeItem.key, tutar: parseNum(odemeTutarStr), pot: odemeItemPot, baslik: odemeItem.baslik, tip: odemeItem.tip, keys: odemeItem.keys }) });
       if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || 'Hata'); }
       setOdemeItem(null); await reloadOdeme(); await fetchData();
+    } catch (e: any) { alert(e.message); } finally { setSaving(false); }
+  };
+  // Hakediş sil (iptal) — kota kalemlerini prim_silindi_ işaretler; Hakediş Takip'le senkron, kasadan düşmez
+  const hakedisSil = async (it: any) => {
+    const keys = (it.keys || []).map((k: any) => k.key).filter(Boolean);
+    if (!keys.length) return;
+    if (!confirm(`${it.personelAdi || it.baslik} için bekleyen ${fmt(it.tutar)} ₺ hakediş silinsin mi? Bu hakediş ödenmeyecek (Hakediş Takip'ten geri alınabilir).`)) return;
+    setSaving(true);
+    try {
+      const r = await fetch(appendGhostParam(`${API_BASE}/primler/sil`), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ odemeKeys: keys }) });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || 'Hata'); }
+      await reloadOdeme();
     } catch (e: any) { alert(e.message); } finally { setSaving(false); }
   };
 
@@ -429,6 +496,9 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
       setShowGorunur(false);
     } catch (e: any) { alert(e.message); } finally { setSaving(false); }
   };
+
+  // Otomatik tazeleme sırasında modal/işlem açıksa dokunma
+  busyRef.current = showGider || showGelir || showOrtak || showBorc || showOdeme || !!odemeFor || !!odemeItem || showGorunur || saving;
 
   if (loading && !data) return (<div className="k2"><style>{CSS}</style><div className="wrap"><div className="empty" style={{ paddingTop: 80 }}>Yükleniyor…</div></div></div>);
 
@@ -468,6 +538,10 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
   const bak = data.bakiye || { toplam: 0, nakit: 0, banka: 0 };
   const bugun = data.bugun || { giren: 0, cikan: 0 };
   const net = bugun.giren - bugun.cikan;
+  const bugunTarih: string = data.bugunTarih || '';
+  const aktifGun: string = data.gun || bugunTarih;
+  const gunBugun = aktifGun === bugunTarih;              // bugünü mü izliyoruz
+  const gunEtiket = gunAdi(aktifGun, bugunTarih);        // "Bugün" / "Dün" / "7 Temmuz"
   const sp = buildSpark(data.yillik?.aylar || [], metrik);
   const pointByI: Record<number, any> = {};
   if (sp) sp.points.forEach((p: any) => { pointByI[p.i] = p; });
@@ -492,7 +566,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
         <div className="card hero">
           <span className="cap">Elimde toplam</span>
           <div className="big tnum">{fmt(bak.toplam)}<span className="u">₺</span></div>
-          <span className={`delta ${net >= 0 ? 'pos' : 'neg'}`}>{net >= 0 ? '▲' : '▼'} {net >= 0 ? '+' : '−'}{fmt(Math.abs(net))} ₺ · bugün</span>
+          <span className={`delta ${net >= 0 ? 'pos' : 'neg'}`}>{net >= 0 ? '▲' : '▼'} {net >= 0 ? '+' : '−'}{fmt(Math.abs(net))} ₺ · {gunBugun ? 'bugün' : gunEtiket}</span>
 
           <div className="metrikbar">
             {([['ciro', 'Gelir'], ['gider', 'Gider'], ['kar', 'Kâr']] as const).map(([k, l]) => (
@@ -570,9 +644,14 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
           })()}
 
           <div className="hr" />
+          <div className="daynav">
+            <button className="dnav" disabled={!data.canPrev} onClick={() => stepGun(-1)} aria-label="Önceki gün">‹</button>
+            <div className="dnlabel">{gunEtiket}{gunBugun && <small>canlı · sabah 7'de sıfırlanır</small>}{!gunBugun && <small>{aktifGun.split('-').reverse().join('.')}</small>}</div>
+            <button className="dnav" disabled={!data.canNext} onClick={() => stepGun(1)} aria-label="Sonraki gün">›</button>
+          </div>
           <div className="flow">
-            <div className="fc"><span className="cap">Bugün giren</span><div className="v pos tnum">+{fmt(bugun.giren)} ₺</div></div>
-            <div className="fc"><span className="cap">Bugün çıkan</span><div className="v neg tnum">−{fmt(bugun.cikan)} ₺</div></div>
+            <div className="fc"><span className="cap">{gunBugun ? 'Bugün giren' : 'Giren'}</span><div className="v pos tnum">+{fmt(bugun.giren)} ₺</div></div>
+            <div className="fc"><span className="cap">{gunBugun ? 'Bugün çıkan' : 'Çıkan'}</span><div className="v neg tnum">−{fmt(bugun.cikan)} ₺</div></div>
           </div>
         </div>
 
@@ -599,9 +678,9 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
         </div>
 
         {/* LEDGER */}
-        <div className="lhead"><h2>Bugünün hareketleri</h2><span className="n">{hareketler.length} kayıt</span></div>
+        <div className="lhead"><h2>{gunBugun ? 'Bugünün hareketleri' : `${gunEtiket} hareketleri`}</h2><span className="n">{hareketler.length} kayıt</span></div>
         <div className="card" style={{ overflow: 'hidden' }}>
-          {hareketler.length === 0 && <div className="empty">Bugün henüz hareket yok.</div>}
+          {hareketler.length === 0 && <div className="empty">{gunBugun ? 'Bugün henüz hareket yok.' : 'Bu gün hareket yok.'}</div>}
           {hareketler.map((h: any) => {
             const inRow = h.tip === 'satis' || h.tip === 'giris';
             return (
@@ -646,7 +725,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
         </>)}
 
         <div style={{ textAlign: 'center', marginTop: 6 }}>
-          <button className="geri" onClick={fetchData} style={{ borderColor: 'var(--line)' }}>↻ Yenile</button>
+          <button className="geri" onClick={() => fetchData()} style={{ borderColor: 'var(--line)' }}>↻ Yenile</button>
         </div>
       </div></div>
 
@@ -874,20 +953,23 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
                 <div style={{ flex: 1, background: 'var(--negBg)', borderRadius: 10, padding: '10px 12px' }}><div className="cap">Bekleyen</div><div style={{ fontSize: 18, fontWeight: 750, color: 'var(--neg)' }} className="tnum">{fmt(odemeData.toplamBekleyen)} ₺</div></div>
                 <div style={{ flex: 1, background: 'var(--posBg)', borderRadius: 10, padding: '10px 12px' }}><div className="cap">Bu ay ödenen</div><div style={{ fontSize: 18, fontWeight: 750, color: 'var(--pos)' }} className="tnum">{fmt(odemeData.toplamOdenen)} ₺</div></div>
               </div>
-              {(odemeData.items || []).length === 0 && <div className="empty">Tanımlı maaş yok.<br />Maliyet Yönetimi'nden ekle.</div>}
+              {(odemeData.items || []).length === 0 && <div className="empty">Ödeme kalemi yok.<br />Maaşlar Maliyet Yönetimi'nden, hakedişler kotalardan gelir.</div>}
               {(odemeData.items || []).map((it: any) => (
                 <div key={it.key} className="item" style={{ paddingLeft: 15, opacity: it.odendi ? .55 : 1 }}>
-                  <span className="k" style={{ background: it.odendi ? 'var(--pos)' : it.gecikmis ? 'var(--neg)' : it.tip === 'kira' ? 'var(--amber)' : 'var(--brand)' }} />
+                  <span className="k" style={{ background: it.odendi ? 'var(--pos)' : it.gecikmis ? 'var(--neg)' : it.tip === 'kira' ? 'var(--amber)' : it.tip === 'hakedis' ? 'var(--brand2)' : 'var(--brand)' }} />
                   <div className="body">
                     <div className="t">{it.baslik}</div>
-                    <div className="m">{it.tip === 'kira' ? 'Kira' : 'Maaş'} · {it.ay}{it.avans > 0 && <span style={{ color: 'var(--amber)' }}> · bu ay avans −{fmt(it.avans)} (maaş {fmt(it.base)})</span>}{it.gecikmis && <span style={{ color: 'var(--neg)', fontWeight: 700 }}> · gecikmiş</span>}</div>
+                    <div className="m">{it.tip === 'kira' ? 'Kira' : it.tip === 'hakedis' ? 'Hakediş' : 'Maaş'} · {it.ay}{it.tip === 'hakedis' && (it.keys?.length > 0) && <span style={{ color: 'var(--mut2)' }}> · {it.keys.length} kalem</span>}{it.avans > 0 && <span style={{ color: 'var(--amber)' }}> · bu ay avans −{fmt(it.avans)} (maaş {fmt(it.base)})</span>}{it.gecikmis && <span style={{ color: 'var(--neg)', fontWeight: 700 }}> · gecikmiş</span>}</div>
                   </div>
                   <div className="amt2" style={{ color: it.odendi ? 'var(--mut2)' : 'var(--ink)' }}>{fmt(it.tutar)} ₺</div>
                   {it.odendi ? <span style={{ fontSize: 11, color: 'var(--pos)', fontWeight: 650, marginLeft: 8 }}>ödendi ✓</span>
-                    : <button className="ode" onClick={() => { setOdemeItem(it); setOdemeItemPot('banka'); setOdemeTutarStr(fmtIn(String(it.tutar || 0))); }}>Öde</button>}
+                    : (<>
+                        {it.tip === 'hakedis' && <button className="geri" onClick={() => hakedisSil(it)}>Sil</button>}
+                        <button className="ode" onClick={() => { setOdemeItem(it); setOdemeItemPot(it.tip === 'hakedis' ? 'nakit' : 'banka'); setOdemeTutarStr(fmtIn(String(it.tutar || 0))); }}>Öde</button>
+                      </>)}
                 </div>
               ))}
-              <div style={{ fontSize: 11, color: 'var(--mut2)', marginTop: 12, lineHeight: 1.5 }}>Maaşlar Maliyet Yönetimi'ndeki tanımlardan otomatik gelir; ödediğinde kasadan düşer. <b style={{ color: 'var(--mut)' }}>Kiralar burada değil</b> — kirayı ödediğinde "Gider ekle" ile manuel girersin.</div>
+              <div style={{ fontSize: 11, color: 'var(--mut2)', marginTop: 12, lineHeight: 1.5 }}>Maaşlar Maliyet Yönetimi'nden, <b style={{ color: 'var(--mut)' }}>hakedişler kota/rotasyondan</b> otomatik gelir; ödediğinde kasadan düşer, hakediş Hakediş Takip'te de <b style={{ color: 'var(--pos)' }}>ödendi</b> işaretlenir. <b style={{ color: 'var(--mut)' }}>Kiralar burada değil</b> — kirayı "Gider ekle" ile manuel girersin.</div>
             </>)}
           </div>
         </div>
@@ -904,8 +986,11 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
                 const yeni = parseNum(odemeTutarStr); const fark = yeni - (odemeItem.tutar || 0);
                 return (
                   <div style={{ fontSize: 11.5, color: 'var(--mut2)', marginTop: 8, lineHeight: 1.55 }}>
-                    Tanımlı net: <b style={{ color: 'var(--mut)' }}>{fmt(odemeItem.tutar)} ₺</b>{odemeItem.avans > 0 ? ` · maaş ${fmt(odemeItem.base)} − avans ${fmt(odemeItem.avans)}` : ''}
+                    {odemeItem.tip === 'hakedis'
+                      ? <>Kota hesabı: <b style={{ color: 'var(--mut)' }}>{fmt(odemeItem.tutar)} ₺</b>{odemeItem.keys?.length > 0 ? ` · ${odemeItem.keys.length} kalem` : ''}</>
+                      : <>Tanımlı net: <b style={{ color: 'var(--mut)' }}>{fmt(odemeItem.tutar)} ₺</b>{odemeItem.avans > 0 ? ` · maaş ${fmt(odemeItem.base)} − avans ${fmt(odemeItem.avans)}` : ''}</>}
                     {fark !== 0 && <><br /><b style={{ color: fark < 0 ? 'var(--neg)' : 'var(--pos)' }}>{fark < 0 ? `Kesinti −${fmt(-fark)} ₺` : `Fazla +${fmt(fark)} ₺`}</b> · ödenecek {fmt(yeni)} ₺</>}
+                    {odemeItem.tip === 'hakedis' && <><br /><span style={{ color: 'var(--mut2)' }}>Ödeyince Hakediş Takip'te de ödendi olur.</span></>}
                   </div>
                 );
               })()}
