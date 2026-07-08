@@ -106,6 +106,12 @@ const CSS = `
 .k2 .daynav .dnav:disabled{opacity:.28;cursor:default}
 .k2 .daynav .dnav:not(:disabled):active{transform:scale(.92)}
 .k2 .daynav .dnav:not(:disabled):hover{color:#c9b8ff;border-color:var(--brand)}
+.k2 .mevcut{padding:14px 16px 15px;position:relative;overflow:hidden;margin-bottom:11px}
+.k2 .mevcut .key{position:absolute;left:0;top:14px;bottom:14px;width:2.5px;border-radius:2px;background:linear-gradient(var(--brand),var(--brand2))}
+.k2 .mevcut .lab{font-size:12px;color:var(--mut);font-weight:600;padding-left:9px;display:flex;align-items:center;gap:7px}
+.k2 .mevcut .amt{font-size:27px;font-weight:800;letter-spacing:-.025em;margin-top:6px;padding-left:9px}
+.k2 .mevcut .amt .u{font-size:14px;color:var(--mut2);font-weight:600}
+.k2 .mevcut .sub{font-size:11.5px;color:var(--mut2);margin-top:4px;padding-left:9px;font-variant-numeric:tabular-nums}
 .k2 .pots{display:grid;grid-template-columns:1fr 1fr;gap:11px}
 .k2 .pot{padding:14px 15px 15px;position:relative;overflow:hidden}
 .k2 .pot .key{position:absolute;left:0;top:14px;bottom:14px;width:2.5px;border-radius:2px}
@@ -653,6 +659,13 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
             <div className="fc"><span className="cap">{gunBugun ? 'Bugün giren' : 'Giren'}</span><div className="v pos tnum">+{fmt(bugun.giren)} ₺</div></div>
             <div className="fc"><span className="cap">{gunBugun ? 'Bugün çıkan' : 'Çıkan'}</span><div className="v neg tnum">−{fmt(bugun.cikan)} ₺</div></div>
           </div>
+        </div>
+
+        {/* MEVCUT KASA — nakit + banka toplamı (tek bakışta elde ne var) */}
+        <div className="card mevcut"><span className="key" />
+          <div className="lab">Mevcut Kasa <span className="live">canlı</span></div>
+          <div className="amt tnum">{fmt(bak.toplam)} <span className="u">₺</span></div>
+          <div className="sub">Nakit {fmt(bak.nakit)} {bak.banka < 0 ? '−' : '+'} Banka {fmt(Math.abs(bak.banka))} ₺</div>
         </div>
 
         {/* POTS */}
