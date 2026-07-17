@@ -265,6 +265,8 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
   const [ortakData, setOrtakData] = useState<any>(null);
   const [payTutar, setPayTutar] = useState('');
   const [payPot, setPayPot] = useState<'nakit' | 'banka'>('banka');
+  // Dağıtım önizlemesi (backend'den gelir): borçlunun payı borca mahsup, satır satır döküm
+  const [payPlan, setPayPlan] = useState<any>(null);
   const [ohOrtak, setOhOrtak] = useState('');
   const [ohYon, setOhYon] = useState<'cikis' | 'giris'>('cikis');
   const [ohTutar, setOhTutar] = useState('');
@@ -399,15 +401,26 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
 
   // ── Ortaklar ──
   const reloadOrtak = async () => { try { const r = await fetch(appendGhostParam(`${API_BASE}/kasa2/ortaklar`), { headers: await authHeaders() }); if (r.ok) setOrtakData(await r.json()); } catch {} };
-  const openOrtak = async () => { setShowOrtak(true); setOrtakData(null); await reloadOrtak(); };
-  const payDagit = async () => {
+  const openOrtak = async () => { setShowOrtak(true); setOrtakData(null); setPayPlan(null); await reloadOrtak(); };
+  // 1. adım: backend'den dağıtım planını al (hiçbir şey yazılmaz) → döküm göster
+  const payOnizle = async () => {
     const t = parseNum(payTutar); if (t <= 0) return;
-    if (!confirm(`${fmt(t)} ₺ ortaklara yüzdelerine göre dağıtılsın mı? (${payPot === 'banka' ? 'Banka' : 'Nakit'}'tan düşer)`)) return;
+    setSaving(true);
+    try {
+      const r = await fetch(appendGhostParam(`${API_BASE}/kasa2/pay-dagit`), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ toplam: t, pot: payPot, onizle: true }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Hata');
+      setPayPlan(d);
+    } catch (e: any) { alert(e.message); } finally { setSaving(false); }
+  };
+  // 2. adım: kullanıcı dökümü gördü, onayladı → gerçek dağıtım
+  const payDagit = async () => {
+    const t = parseNum(payTutar); if (t <= 0 || !payPlan) return;
     setSaving(true);
     try {
       const r = await fetch(appendGhostParam(`${API_BASE}/kasa2/pay-dagit`), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ toplam: t, pot: payPot }) });
       if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || 'Hata'); }
-      setPayTutar(''); await reloadOrtak(); await fetchData();
+      setPayTutar(''); setPayPlan(null); await reloadOrtak(); await fetchData();
     } catch (e: any) { alert(e.message); } finally { setSaving(false); }
   };
   const ortakHareket = async () => {
@@ -827,16 +840,41 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
             {!ortakData ? <div className="empty">Yükleniyor…</div> : (<>
               <div className="fld">
                 <span className="cap">Pay Dağıt — dağıtılacak toplam</span>
-                <input className="in tnum" inputMode="numeric" placeholder="0" value={payTutar} onChange={(e) => setPayTutar(fmtIn(e.target.value))} />
+                <input className="in tnum" inputMode="numeric" placeholder="0" value={payTutar} onChange={(e) => { setPayTutar(fmtIn(e.target.value)); setPayPlan(null); }} />
                 <div className="seg" style={{ gridTemplateColumns: '1fr 1fr', marginTop: 8 }}>
-                  {(['banka', 'nakit'] as const).map((o) => (<div key={o} className={`s ${payPot === o ? 'on' : ''}`} onClick={() => setPayPot(o)}>{o === 'banka' ? 'Banka' : 'Nakit'}</div>))}
+                  {(['banka', 'nakit'] as const).map((o) => (<div key={o} className={`s ${payPot === o ? 'on' : ''}`} onClick={() => { setPayPot(o); setPayPlan(null); }}>{o === 'banka' ? 'Banka' : 'Nakit'}</div>))}
                 </div>
-                {parseNum(payTutar) > 0 && (
+                {parseNum(payTutar) > 0 && !payPlan && (
                   <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--mut2)', lineHeight: 1.6 }}>
                     {ortakData.ortaklar.map((o: any) => `${o.isim.split(' ')[0]} %${o.yuzde}: ${fmt(parseNum(payTutar) * o.yuzde / 100)} ₺`).join('  ·  ')}
                   </div>
                 )}
-                <button className="save" disabled={saving || parseNum(payTutar) <= 0} onClick={payDagit} style={{ marginTop: 10 }}>Dağıt</button>
+                {payPlan ? (
+                  <div style={{ marginTop: 10, background: 'rgba(154,124,255,.07)', border: '1px solid var(--line)', borderRadius: 12, padding: '10px 12px' }}>
+                    <span className="cap" style={{ display: 'block', marginBottom: 6 }}>Dağıtım dökümü — onay bekliyor</span>
+                    {payPlan.plan.map((x: any) => (
+                      <div key={x.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, lineHeight: 1.8 }}>
+                        <span style={{ whiteSpace: 'nowrap' }}>{x.isim.split(' ')[0]} <span className="pct">%{x.yuzde}</span></span>
+                        <span className="tnum" style={{ textAlign: 'right' }}>
+                          {x.mahsup > 0
+                            ? (x.nakit > 0
+                              ? <>payı {fmt(x.pay)} → <b style={{ color: '#f5b544' }}>{fmt(x.mahsup)} borca mahsup</b> + <b>{fmt(x.nakit)} nakit</b></>
+                              : <>payı {fmt(x.pay)} → <b style={{ color: '#f5b544' }}>tamamı borca mahsup</b> · <b>0 nakit</b>{x.yeniDenge < 0 ? ` (kalan borç ${fmt(-x.yeniDenge)})` : ''}</>)
+                            : <>payı {fmt(x.pay)} → <b>{fmt(x.nakit)} nakit</b></>}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="tnum" style={{ borderTop: '1px solid var(--line)', marginTop: 8, paddingTop: 8, fontSize: 12.5, fontWeight: 700 }}>
+                      Kasadan çıkacak: {fmt(payPlan.toplamNakit)} ₺{payPlan.toplamMahsup > 0 ? <span style={{ color: '#f5b544' }}> · Borca mahsup (kasada kalır): {fmt(payPlan.toplamMahsup)} ₺</span> : null}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                      <button className="save" disabled={saving} onClick={payDagit} style={{ flex: 1 }}>Onayla ve Dağıt</button>
+                      <button className="geri" disabled={saving} onClick={() => setPayPlan(null)}>Vazgeç</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button className="save" disabled={saving || parseNum(payTutar) <= 0} onClick={payOnizle} style={{ marginTop: 10 }}>Dökümü Gör</button>
+                )}
               </div>
 
               <div style={{ marginTop: 4 }}>
@@ -885,7 +923,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
                       <span className="k" style={{ background: h.yon === 'giris' ? 'var(--pos)' : 'var(--neg)' }} />
                       <div className="body">
                         <div className="t">{h.aciklama || (h.yon === 'giris' ? 'Koydu' : 'Çekti')}</div>
-                        <div className="m"><span className="mono">{h.tarih}</span>{h.kaynak === 'pay_dagitim' ? ' · pay dağıtımı' : ''}</div>
+                        <div className="m"><span className="mono">{h.tarih}</span>{h.kaynak === 'pay_dagitim' ? ' · pay dağıtımı' : h.kaynak === 'pay_mahsup' ? ' · payından borca mahsup (kasadan çıkmadı)' : ''}</div>
                       </div>
                       <div className={`amt2 ${h.yon === 'giris' ? 'pos' : 'neg'}`}>{h.yon === 'giris' ? '+' : '−'}{fmt(h.tutar)}</div>
                       {isYonetici && <button className="geri" onClick={() => ortakGeriAl(h.id)}>Geri Al</button>}

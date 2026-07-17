@@ -17934,7 +17934,16 @@ app.post("/make-server-4da0b637/kasa2/geri-al", async (c) => {
     const { id } = await c.req.json();
     if (!id) return c.json({ error: "id zorunlu." }, 400);
     const db = getAdminClient();
-    const { error } = await db.from("kasa_hareket").update({ iptal: true, iptal_ts: new Date().toISOString(), iptal_by: user.user_metadata?.full_name || user.email || "" }).eq("company_id", companyId).eq("id", id);
+    const iptalBy = user.user_metadata?.full_name || user.email || "";
+    // Pay dağıtımı satırları GRUP halinde geri alınır (nakit + mahsup satırları bir bütün) —
+    // tek satırı geri almak dağıtımı yarım/tutarsız bırakır (17 Tem 2026).
+    const { data: row } = await db.from("kasa_hareket").select("kaynak, kaynak_id").eq("company_id", companyId).eq("id", id).maybeSingle();
+    if (row && ["pay_dagitim", "pay_mahsup"].includes(row.kaynak) && row.kaynak_id) {
+      const { error } = await db.from("kasa_hareket").update({ iptal: true, iptal_ts: new Date().toISOString(), iptal_by: iptalBy }).eq("company_id", companyId).eq("kaynak_id", row.kaynak_id).in("kaynak", ["pay_dagitim", "pay_mahsup"]).eq("iptal", false);
+      if (error) return c.json({ error: error.message }, 500);
+      return c.json({ ok: true, grup: true });
+    }
+    const { error } = await db.from("kasa_hareket").update({ iptal: true, iptal_ts: new Date().toISOString(), iptal_by: iptalBy }).eq("company_id", companyId).eq("id", id);
     if (error) return c.json({ error: error.message }, 500);
     return c.json({ ok: true });
   } catch (err) {
@@ -17958,6 +17967,51 @@ const _kasa2Ortaklar = async (companyId: string) => {
 };
 const _kasa2YoneticiMi = (user: any) => (user.user_metadata?.role || "personel") === "yonetici" || user.user_metadata?.originalRole === "superadmin";
 
+// Ortak dengelerini hareket defterinden türetir — TEK KAYNAK (GET /ortaklar + pay-dagit kullanır).
+// Kurallar:
+//  · koydu (giris)           → koyan +tutar, birebir (yüzdeyle alakasız)
+//  · pay_mahsup (giris)      → ortağın payı borcuna mahsup edildi: denge +tutar, koydu SAYILMAZ, kasa etkilenmez (kasaHaric)
+//  · pay_dagitim (cikis)     → NÖTR (adil dağıtım — herkes payını aldı, kimse borçlanmaz), sadece kasadan çıkar
+//  · ad-hoc çekim (cikis)    → ÖNCE kendi alacağını kapatır (1:1, paylaşılmaz), FAZLASI erken kâr avansıdır:
+//                              tüm ortaklara hisse oranında + yazılır, çekene − yazılır (toplam sıfır).
+// Sıralı işlenmek ZORUNDA (ts) — settle-first modeli sıraya duyarlıdır.
+const _kasa2OrtakDenge = async (companyId: string, ortaklar: any[]) => {
+  const db = getAdminClient();
+  const { data: rows } = await db.from("kasa_hareket").select("*").eq("company_id", companyId).eq("kategori", "ortak").eq("iptal", false);
+  const cekti: Record<string, number> = {};
+  const koydu: Record<string, number> = {};
+  const denge: Record<string, number> = {};
+  for (const o of ortaklar) denge[o.id] = 0;
+  const hareketler: any[] = [];
+  const sirali = (rows || []).slice().sort((a: any, b: any) => String(a.ts || a.tarih).localeCompare(String(b.ts || b.tarih)));
+  for (const h of sirali) {
+    const tutar = Number(h.tutar) || 0;
+    const oid = h.ortak_id;
+    if (h.yon === "cikis") {
+      cekti[oid] = (cekti[oid] || 0) + tutar;
+      if (h.kaynak === "pay_dagitim") {
+        // Adil dağıtım → denge NÖTR. Sadece kasadan çıkar.
+      } else {
+        const credit = Math.max(0, denge[oid] || 0);
+        const settle = Math.min(tutar, credit);
+        denge[oid] = (denge[oid] || 0) - settle;
+        const excess = tutar - settle;
+        if (excess > 0) {
+          for (const o of ortaklar) denge[o.id] = (denge[o.id] || 0) + ((o.yuzde || 0) / 100) * excess;
+          denge[oid] = (denge[oid] || 0) - excess;
+        }
+      }
+    } else if (h.kaynak === "pay_mahsup") {
+      denge[oid] = (denge[oid] || 0) + tutar;
+    } else {
+      koydu[oid] = (koydu[oid] || 0) + tutar;
+      denge[oid] = (denge[oid] || 0) + tutar;
+    }
+    hareketler.push({ id: h.id, ortak_id: h.ortak_id, tarih: h.tarih, ts: h.ts, yon: h.yon, tutar: tutar, kaynak: h.kaynak, aciklama: h.aciklama });
+  }
+  return { cekti, koydu, denge, hareketler };
+};
+
 // GET /kasa2/ortaklar — pay yüzdeleri + her ortağın aldığı/denge
 app.get("/make-server-4da0b637/kasa2/ortaklar", async (c) => {
   try {
@@ -17965,43 +18019,10 @@ app.get("/make-server-4da0b637/kasa2/ortaklar", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     if (!(await _kasa2OrtakYetki(user))) return c.json({ error: "Yetkiniz yok." }, 403);
     const companyId = getCompanyId(user);
-    const db = getAdminClient();
     const ortaklar = await _kasa2Ortaklar(companyId);
-    const { data: rows } = await db.from("kasa_hareket").select("*").eq("company_id", companyId).eq("kategori", "ortak").eq("iptal", false);
-    // Her ortağın CARİ HESABI: çekti (çıkış) vs koydu (giriş). Denge = koydu − çekti.
-    // Denge > 0 → işletme ona borçlu (alacaklı). Denge < 0 → net çekmiş. Yüzde SADECE Pay Dağıt'ta kullanılır (denge'de değil).
-    const cekti: Record<string, number> = {};
-    const koydu: Record<string, number> = {};
-    const denge: Record<string, number> = {};
-    for (const o of ortaklar) denge[o.id] = 0;
-    const hareketler: any[] = [];
-    // ÖNCE ALACAĞINI KAPAT modeli — sıralı işlenmeli (ts'e göre)
-    const sirali = (rows || []).slice().sort((a: any, b: any) => String(a.ts || a.tarih).localeCompare(String(b.ts || b.tarih)));
-    for (const h of sirali) {
-      const tutar = Number(h.tutar) || 0;
-      const oid = h.ortak_id;
-      if (h.yon === "cikis") {
-        cekti[oid] = (cekti[oid] || 0) + tutar;
-        if (h.kaynak === "pay_dagitim") {
-          // Adil dağıtım → denge NÖTR (herkes payını aldı, kimse borçlanmaz). Sadece kasadan çıkar.
-        } else {
-          // Ad-hoc çekim: ÖNCE alacağını kapat (1:1, paylaşılmaz), FAZLASI hisseye göre paylaşılır.
-          const credit = Math.max(0, denge[oid] || 0);
-          const settle = Math.min(tutar, credit);
-          denge[oid] = (denge[oid] || 0) - settle;
-          const excess = tutar - settle;
-          if (excess > 0) {
-            for (const o of ortaklar) denge[o.id] = (denge[o.id] || 0) + ((o.yuzde || 0) / 100) * excess;
-            denge[oid] = (denge[oid] || 0) - excess;
-          }
-        }
-      } else {
-        // Koyma: sadece koyan alacaklı (yüzdeyle alakası yok).
-        koydu[oid] = (koydu[oid] || 0) + tutar;
-        denge[oid] = (denge[oid] || 0) + tutar;
-      }
-      hareketler.push({ id: h.id, ortak_id: h.ortak_id, tarih: h.tarih, ts: h.ts, yon: h.yon, tutar: tutar, kaynak: h.kaynak, aciklama: h.aciklama });
-    }
+    // Her ortağın CARİ HESABI — hesaplama _kasa2OrtakDenge'de (pay-dagit ile TEK kaynak).
+    // Denge > 0 → işletme ona borçlu (alacaklı). Denge < 0 → net çekmiş. Yüzde denge'de değil, dağıtım/avans paylaşımında kullanılır.
+    const { cekti, koydu, denge, hareketler } = await _kasa2OrtakDenge(companyId, ortaklar);
     const sonuc = ortaklar.map((o: any) => ({ ...o, cekti: Math.round(cekti[o.id] || 0), koydu: Math.round(koydu[o.id] || 0), denge: Math.round(denge[o.id] || 0) }));
     const toplamCekti = Object.values(cekti).reduce((a: number, b: number) => a + b, 0);
     return c.json({ ortaklar: sonuc, toplamDagitilan: Math.round(toplamCekti), hareketler: hareketler.sort((a, b) => String(b.ts || b.tarih).localeCompare(String(a.ts || a.tarih))).slice(0, 40) });
@@ -18022,29 +18043,63 @@ app.post("/make-server-4da0b637/kasa2/ortak-sifirla", async (c) => {
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
-// POST /kasa2/pay-dagit — yüzdelere göre böl, kasadan düş
+// POST /kasa2/pay-dagit — yüzdelere göre böl; BORÇLUNUN PAYI ÖNCE BORCUNA MAHSUP edilir,
+// kalanı nakit çıkar. { onizle: true } ile hiçbir şey yazmadan dağıtım planını döndürür.
+// Mahsup edilen kısım kasadan ÇIKMAZ (şirket, ortağın borcundan tahsil etmiş olur) —
+// diğer ortaklar o dağıtımda fazladan nakit ALMAZ; para kasada kalır, sonraki dağıtımda
+// yine hisselere göre bölünür (17 Tem 2026 Özgür kararı).
 app.post("/make-server-4da0b637/kasa2/pay-dagit", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     if (!(await _kasa2OrtakYetki(user))) return c.json({ error: "Yetkiniz yok." }, 403);
     const companyId = getCompanyId(user);
-    const { toplam, pot } = await c.req.json();
+    const { toplam, pot, onizle } = await c.req.json();
     const t = Math.round(Number(toplam) || 0);
     if (t <= 0) return c.json({ error: "Geçerli tutar girin." }, 400);
     const p = pot === "nakit" ? "nakit" : "banka";
     const ortaklar = await _kasa2Ortaklar(companyId);
+    // Emniyet: yüzdeler 100 etmiyorsa dağıtım eksik/fazla olur — hiç yapma.
+    const toplamYuzde = ortaklar.reduce((a: number, o: any) => a + (Number(o.yuzde) || 0), 0);
+    if (Math.abs(toplamYuzde - 100) > 0.01) {
+      return c.json({ error: `Ortak yüzdeleri toplamı %${toplamYuzde} — %100 olmalı. Dağıtım yapılmadı.` }, 400);
+    }
+    // Paylar (en büyük kalan yöntemi): toplamı KURUŞSUZ tam t eder, yuvarlama farkı kaybolmaz.
+    const raw = ortaklar.map((o: any) => ({ o, exact: (t * (Number(o.yuzde) || 0)) / 100 }));
+    const pays: Record<string, number> = {};
+    let verilen = 0;
+    for (const r of raw) { pays[r.o.id] = Math.floor(r.exact); verilen += pays[r.o.id]; }
+    const kalanSira = raw.slice().sort((a: any, b: any) => (b.exact - Math.floor(b.exact)) - (a.exact - Math.floor(a.exact)));
+    for (let i = 0; i < t - verilen; i++) pays[kalanSira[i % kalanSira.length].o.id] += 1;
+    // Güncel dengeler (aynı algoritma — tek kaynak): borçlunun payı önce borca mahsup.
+    const { denge } = await _kasa2OrtakDenge(companyId, ortaklar);
+    const plan = ortaklar.map((o: any) => {
+      const pay = pays[o.id] || 0;
+      const borc = Math.max(0, -(denge[o.id] || 0));
+      const mahsup = Math.min(pay, Math.ceil(borc)); // borç tam kapansın diye yukarı yuvarla
+      const nakit = pay - mahsup;
+      return {
+        id: o.id, isim: o.isim, yuzde: o.yuzde, pay, mahsup, nakit,
+        oncekiDenge: Math.round(denge[o.id] || 0),
+        yeniDenge: Math.round((denge[o.id] || 0) + mahsup),
+      };
+    });
+    const toplamNakit = plan.reduce((a: number, x: any) => a + x.nakit, 0);
+    const toplamMahsup = plan.reduce((a: number, x: any) => a + x.mahsup, 0);
+    if (onizle) return c.json({ ok: true, onizle: true, plan, toplam: t, toplamNakit, toplamMahsup, pot: p });
     const by = user.user_metadata?.full_name || user.email || "";
     const tarih = bizDateTR();
     const grupId = `paydagit_${Date.now()}`;
-    const dagitim: any[] = [];
-    for (const o of ortaklar) {
-      const pay = Math.round(t * (o.yuzde || 0) / 100);
-      if (pay <= 0) continue;
-      await kasaHareketYaz(companyId, { tarih, yon: "cikis", pot: p, tutar: pay, kategori: "ortak", kaynak: "pay_dagitim", kaynak_id: grupId, ortak_id: o.id, aciklama: `Pay dağıtımı — ${o.isim} (%${o.yuzde})`, olusturan: by, olusturan_id: user.id });
-      dagitim.push({ ortak: o.isim, pay });
+    for (const x of plan) {
+      if (x.nakit > 0) {
+        await kasaHareketYaz(companyId, { tarih, yon: "cikis", pot: p, tutar: x.nakit, kategori: "ortak", kaynak: "pay_dagitim", kaynak_id: grupId, ortak_id: x.id, aciklama: `Pay dağıtımı — ${x.isim} (%${x.yuzde})${x.mahsup > 0 ? ` · ${x.mahsup} ₺ borca mahsup sonrası` : ""}`, olusturan: by, olusturan_id: user.id });
+      }
+      if (x.mahsup > 0) {
+        // Kasadan çıkmaz (kasaHaric) — sadece ortağın borcunu eritir.
+        await kasaHareketYaz(companyId, { tarih, yon: "giris", pot: p, tutar: x.mahsup, kategori: "ortak", kaynak: "pay_mahsup", kaynak_id: grupId, ortak_id: x.id, aciklama: `Pay dağıtımı — ${x.isim} payından borca mahsup`, extra_data: { kasaHaric: true }, olusturan: by, olusturan_id: user.id });
+      }
     }
-    return c.json({ ok: true, dagitim, toplam: t });
+    return c.json({ ok: true, plan, toplam: t, toplamNakit, toplamMahsup });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
