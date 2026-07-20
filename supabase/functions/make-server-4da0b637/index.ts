@@ -11993,6 +11993,20 @@ app.post("/make-server-4da0b637/kapanis-bildirim/test", async (c) => {
     if (gunKayitlar.length === 0) {
       return c.json({ error: `${tarih} tarihinde kapanmış vardiya bulunamadı.` }, 404);
     }
+    // sifirla: true → o günün teslim işaretleri + açık kayıtları silinir (akış sıfırdan denenebilir)
+    // DİKKAT: gerçek teslim verisi olan bir gün için kullanılmamalı — sadece test amaçlı.
+    if (body?.sifirla === true) {
+      const tumAcikTest: any[] = await ckv.getByPrefix("kapanis_acik_").catch(() => []) || [];
+      for (const kayit of gunKayitlar) {
+        const raporIdT = `${kayit.mekanId}_${tarih}`;
+        await ckv.del(`kapanis_teslim_${raporIdT}`).catch(() => {});
+        for (const a of tumAcikTest) {
+          if (a?.raporId === raporIdT && a?.id) await ckv.del(`kapanis_acik_${a.id}`).catch(() => {});
+        }
+      }
+      console.log(`Kapanış bildirim testi: ${tarih} teslim/açık kayıtları sıfırlandı`);
+    }
+
     const mekanAdlari: string[] = [];
     for (const kayit of gunKayitlar) {
       const mekanObj: any = await ckv.get(`mekan_${kayit.mekanId}`) || {};
