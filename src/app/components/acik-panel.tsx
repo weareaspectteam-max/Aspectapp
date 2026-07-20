@@ -34,10 +34,11 @@ export interface AcikKaydi {
   mekanAdi: string;
   mekanEmoji: string;
   tarih: string;
-  beklenen: { nakit: number; kart: number; iban: number };
-  alinan: { nakit: number; kart: number; iban: number };
+  /** Personelin kendi görünümünde (acigim) sunucu bu alanları GÖNDERMEZ — ciro bilgisi gizli */
+  beklenen?: { nakit: number; kart: number; iban: number };
+  alinan?: { nakit: number; kart: number; iban: number };
   /** pozitif: açık (eksik), negatif: fazla */
-  acik: { nakit: number; kart: number; iban: number };
+  acik?: { nakit: number; kart: number; iban: number };
   acikToplam: number;
   kalanAcik: number;
   tahsilatlar: { tutar: number; alanId: string; alanAd: string; zaman: string }[];
@@ -57,11 +58,14 @@ export function AcikSatir({ kayit, canTahsil, onTahsil, islemde }: {
   const fazla = kayit.acikToplam < 0;
   const kapali = !fazla && kayit.kalanAcik <= 0;
 
-  const kalemler = ([
-    ['💵 Nakit', kayit.beklenen.nakit, kayit.alinan.nakit],
-    ['💳 Kart', kayit.beklenen.kart, kayit.alinan.kart],
-    ['🏦 IBAN', kayit.beklenen.iban, kayit.alinan.iban],
-  ] as [string, number, number][]).filter(([, b, a]) => b !== a);
+  // beklenen/alınan yoksa (personelin kendi görünümü) kalem kırılımı gösterilmez — sadece açık tutarı
+  const kalemler = kayit.beklenen && kayit.alinan
+    ? ([
+        ['💵 Nakit', kayit.beklenen.nakit, kayit.alinan.nakit],
+        ['💳 Kart', kayit.beklenen.kart, kayit.alinan.kart],
+        ['🏦 IBAN', kayit.beklenen.iban, kayit.alinan.iban],
+      ] as [string, number, number][]).filter(([, b, a]) => b !== a)
+    : [];
 
   return (
     <div style={{

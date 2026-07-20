@@ -11876,6 +11876,7 @@ app.get("/make-server-4da0b637/kapanis-bildirim/acik", async (c) => {
 });
 
 // GET /kapanis-bildirim/acigim — personel SADECE kendi açık/fazla kayıtlarını görür
+// Beklenen/alınan tutarlar (günlük ciro bilgisi) personele GÖNDERİLMEZ — sadece açık/fazla + tahsilatlar
 app.get("/make-server-4da0b637/kapanis-bildirim/acigim", async (c) => {
   try {
     const user = await verifyToken(c);
@@ -11883,7 +11884,22 @@ app.get("/make-server-4da0b637/kapanis-bildirim/acigim", async (c) => {
     const ckv = companyKvFor(getCompanyId(user));
     const tum: any[] = await ckv.getByPrefix(`kapanis_acik_${user.id}_`).catch(() => []) || [];
     tum.sort((a: any, b: any) => String(b.tarih || "").localeCompare(String(a.tarih || "")));
-    return c.json({ acikler: tum });
+    const sade = tum.map((k: any) => ({
+      id: k.id,
+      personelId: k.personelId,
+      personelAd: k.personelAd,
+      raporId: k.raporId,
+      mekanId: k.mekanId,
+      mekanAdi: k.mekanAdi,
+      mekanEmoji: k.mekanEmoji,
+      tarih: k.tarih,
+      acikToplam: k.acikToplam,
+      kalanAcik: k.kalanAcik,
+      tahsilatlar: k.tahsilatlar || [],
+      alanAd: k.alanAd,
+      zaman: k.zaman,
+    }));
+    return c.json({ acikler: sade });
   } catch (err) {
     console.log("GET kapanis-bildirim/acigim error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
