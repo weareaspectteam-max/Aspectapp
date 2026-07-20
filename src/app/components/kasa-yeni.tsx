@@ -688,6 +688,9 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
         <div className="pots">
           <div className="card pot nk"><span className="key" />
             <div className="lab">Nakit Kasa</div><div className="amt tnum">{fmt(bak.nakit)} <span className="u">₺</span></div><div className="sub">Cepteki fiziksel para</div>
+            {(data.teslimatAcigi || 0) > 0 && (
+              <div className="sub" style={{ color: 'var(--neg)', fontWeight: 650 }}>⚠️ Teslimat açığı −{fmt(data.teslimatAcigi)} ₺ düşüldü (tahsil edilince geri gelir)</div>
+            )}
           </div>
           <div className="card pot bk"><span className="key" />
             <div className="lab">Banka</div><div className="amt tnum">{fmt(bak.banka)} <span className="u">₺</span></div><div className="sub">Kart · İban</div>

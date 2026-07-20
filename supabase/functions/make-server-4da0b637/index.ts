@@ -18463,6 +18463,22 @@ app.get("/make-server-4da0b637/kasa2", async (c) => {
       if (h.pot === "nakit") nakit += d; else if (h.pot === "banka") banka += d;
     }
 
+    // Teslimat açıkları: satışta görünen ama fiilen teslim edilmeyen nakit kasada YOK — düşülür.
+    // Personel açığını sonradan ödeyince (tahsilat) kalan düşer → kasa kendiliğinden yükselir.
+    // Fazla verilen nakit fiziksel olarak kasada — eklenir. Gün kapatma açıkları da dahil.
+    let teslimatAcigi = 0, teslimatFazlasi = 0;
+    try {
+      const acikKayitlari: any[] = await ckv.getByPrefix("kapanis_acik_").catch(() => []) || [];
+      for (const a of acikKayitlari) {
+        if (String(a?.tarih || "") < milat) continue;
+        const kalan = Number(a?.kalanAcik) || 0;
+        const topl = Number(a?.acikToplam) || 0;
+        if (kalan > 0) teslimatAcigi += kalan;
+        else if (topl < 0) teslimatFazlasi += -topl;
+      }
+      nakit = nakit - teslimatAcigi + teslimatFazlasi;
+    } catch (taErr) { console.log("kasa2 teslimat açığı hesabı (non-fatal):", taErr); }
+
     // Seçili günün giren/çıkanı (bugün ya da geçmiş bir gün — sabah 7 iş günü kırılımıyla)
     let bugunGiren = (sales.byDate[gun]?.nakit || 0) + (sales.byDate[gun]?.banka || 0);
     let bugunCikan = 0;
@@ -18554,6 +18570,8 @@ app.get("/make-server-4da0b637/kasa2", async (c) => {
       kurulmadi: false, milat, ortakGorebilir,
       gun, bugunTarih: today, canPrev: gun > milat, canNext: gun < today,   // sol/sağ ok gezinme
       bakiye: { toplam: Math.round(nakit + banka), nakit: Math.round(nakit), banka: Math.round(banka) },
+      teslimatAcigi: Math.round(teslimatAcigi),     // eksik teslim edilen nakit (kasadan düşüldü, tahsil edilince geri gelir)
+      teslimatFazlasi: Math.round(teslimatFazlasi), // fazla verilen nakit (kasaya eklendi)
       bugun: { giren: Math.round(bugunGiren), cikan: Math.round(bugunCikan) },
       hareketler: ledger,
       gecmis,
