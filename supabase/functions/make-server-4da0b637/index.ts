@@ -11773,7 +11773,7 @@ app.post("/make-server-4da0b637/kapanis-bildirim/teslim", async (c) => {
       return c.json({ error: "Teslim işaretleme yetkiniz yok." }, 403);
     }
 
-    const { raporId, personelId, islem } = await c.req.json();
+    const { raporId, personelId, islem, kismi } = await c.req.json();
     if (!raporId || !personelId || !["teslim", "geri"].includes(islem)) {
       return c.json({ error: "raporId, personelId ve islem (teslim/geri) zorunludur." }, 400);
     }
@@ -11793,11 +11793,53 @@ app.post("/make-server-4da0b637/kapanis-bildirim/teslim", async (c) => {
     for (const p of hedefler) {
       if (islem === "teslim") {
         if ((p.nakitTL || 0) <= 0) continue;
-        teslim.kisiler[p.id] = { alindi: true, alanId: user.id, alanAd: yapanAd, zaman: now };
+        const kayitK: any = { alindi: true, alanId: user.id, alanAd: yapanAd, zaman: now };
+        let acikToplam = 0;
+        let alinanToplam: number | undefined = undefined;
+        // Kısmi teslim: nakit/kart/iban ayrı ayrı alınan girilir, beklenenle fark açık olarak kaydedilir
+        if (kismi && personelId !== "hepsi") {
+          // Fark = beklenen - alınan → pozitif: açık (eksik), negatif: fazla
+          const beklenen = { nakit: p.nakitTL || 0, kart: p.krediTL || 0, iban: p.ibanTL || 0 };
+          const alinan = {
+            nakit: Math.max(0, Math.round(Number(kismi.nakit) || 0)),
+            kart: Math.max(0, Math.round(Number(kismi.kart) || 0)),
+            iban: Math.max(0, Math.round(Number(kismi.iban) || 0)),
+          };
+          const acik = {
+            nakit: beklenen.nakit - alinan.nakit,
+            kart: beklenen.kart - alinan.kart,
+            iban: beklenen.iban - alinan.iban,
+          };
+          acikToplam = acik.nakit + acik.kart + acik.iban;
+          alinanToplam = alinan.nakit + alinan.kart + alinan.iban;
+          kayitK.kismi = true;
+          kayitK.alinan = alinan;
+          kayitK.acik = { ...acik, toplam: acikToplam };
+          const farkVar = acik.nakit !== 0 || acik.kart !== 0 || acik.iban !== 0;
+          if (farkVar) {
+            await ckv.set(`kapanis_acik_${p.id}_${raporId}`, {
+              id: `${p.id}_${raporId}`,
+              personelId: p.id, personelAd: p.ad,
+              raporId, mekanId: rapor.mekanId, mekanAdi: rapor.mekanAdi, mekanEmoji: rapor.mekanEmoji, tarih: rapor.tarih,
+              beklenen, alinan, acik, acikToplam,
+              kalanAcik: Math.max(0, acikToplam),
+              tahsilatlar: [], alanId: user.id, alanAd: yapanAd, zaman: now,
+            });
+          } else {
+            await ckv.del(`kapanis_acik_${p.id}_${raporId}`).catch(() => {});
+          }
+        } else {
+          // Tam teslim — varsa eski açık kaydını temizle (geri alıp yeniden tam işaretleme)
+          await ckv.del(`kapanis_acik_${p.id}_${raporId}`).catch(() => {});
+        }
+        teslim.kisiler[p.id] = kayitK;
+        teslim.log.push({ islem, personelId: p.id, personelAd: p.ad, tutar: p.nakitTL || 0, kismi: !!kayitK.kismi, alinanToplam, acikToplam, yapanId: user.id, yapanAd, zaman: now });
       } else {
         delete teslim.kisiler[p.id];
+        // Teslim geri alınınca açık kaydı da silinir (tutarlılık)
+        await ckv.del(`kapanis_acik_${p.id}_${raporId}`).catch(() => {});
+        teslim.log.push({ islem, personelId: p.id, personelAd: p.ad, tutar: p.nakitTL || 0, yapanId: user.id, yapanAd, zaman: now });
       }
-      teslim.log.push({ islem, personelId: p.id, personelAd: p.ad, tutar: p.nakitTL || 0, yapanId: user.id, yapanAd, zaman: now });
     }
     await ckv.set(teslimKey, teslim);
 
@@ -11812,6 +11854,74 @@ app.post("/make-server-4da0b637/kapanis-bildirim/teslim", async (c) => {
     return c.json({ ok: true, teslim, tamamlandi });
   } catch (err) {
     console.log("POST kapanis-bildirim/teslim error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// GET /kapanis-bildirim/acik — TÜM personelin açık/fazla kayıtları (yonetici + ust-mudur)
+app.get("/make-server-4da0b637/kapanis-bildirim/acik", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const rol = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur"].includes(rol)) return c.json({ error: "Yetki yok." }, 403);
+    const ckv = companyKvFor(getCompanyId(user));
+    const tum: any[] = await ckv.getByPrefix("kapanis_acik_").catch(() => []) || [];
+    tum.sort((a: any, b: any) => String(b.tarih || "").localeCompare(String(a.tarih || "")));
+    return c.json({ acikler: tum });
+  } catch (err) {
+    console.log("GET kapanis-bildirim/acik error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// GET /kapanis-bildirim/acigim — personel SADECE kendi açık/fazla kayıtlarını görür
+app.get("/make-server-4da0b637/kapanis-bildirim/acigim", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const ckv = companyKvFor(getCompanyId(user));
+    const tum: any[] = await ckv.getByPrefix(`kapanis_acik_${user.id}_`).catch(() => []) || [];
+    tum.sort((a: any, b: any) => String(b.tarih || "").localeCompare(String(a.tarih || "")));
+    return c.json({ acikler: tum });
+  } catch (err) {
+    console.log("GET kapanis-bildirim/acigim error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /kapanis-bildirim/acik-tahsil — Body: { acikId, tutar }
+// Sonradan ödeme: yonetici/ust-mudur ya da teslim yetkisi olanlar girebilir
+app.post("/make-server-4da0b637/kapanis-bildirim/acik-tahsil", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const ckv = companyKvFor(getCompanyId(user));
+    const rol = user.user_metadata?.role;
+    if (!["yonetici", "ust-mudur"].includes(rol)) {
+      const config: any = await ckv.get("kapanis_bildirim_config");
+      const kisi = (config?.kisiler || []).find((k: any) => k.userId === user.id);
+      if (!kisi || kisi.teslimYetkisi !== true) return c.json({ error: "Yetki yok." }, 403);
+    }
+    const { acikId, tutar } = await c.req.json();
+    const t = Math.round(Number(tutar) || 0);
+    if (!acikId || t <= 0) return c.json({ error: "acikId ve pozitif tutar zorunludur." }, 400);
+    const kayit: any = await ckv.get(`kapanis_acik_${acikId}`);
+    if (!kayit) return c.json({ error: "Açık kaydı bulunamadı." }, 404);
+    if ((kayit.kalanAcik || 0) <= 0) return c.json({ error: "Bu kaydın kalan açığı yok." }, 400);
+    const tahsil = Math.min(t, kayit.kalanAcik);
+    const now = new Date().toISOString();
+    kayit.tahsilatlar = [...(kayit.tahsilatlar || []), {
+      tutar: tahsil, alanId: user.id,
+      alanAd: user.user_metadata?.full_name || user.email || "", zaman: now,
+    }];
+    const toplamTahsil = kayit.tahsilatlar.reduce((s: number, x: any) => s + (Number(x.tutar) || 0), 0);
+    kayit.kalanAcik = Math.max(0, Math.max(0, kayit.acikToplam) - toplamTahsil);
+    await ckv.set(`kapanis_acik_${acikId}`, kayit);
+    console.log(`Açık tahsilat: ${acikId} ₺${tahsil} by ${user.id} | kalan: ${kayit.kalanAcik}`);
+    return c.json({ ok: true, kayit });
+  } catch (err) {
+    console.log("POST kapanis-bildirim/acik-tahsil error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });

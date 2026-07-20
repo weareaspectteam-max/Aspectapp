@@ -27,6 +27,10 @@ export interface TeslimKisi {
   alanId: string;
   alanAd: string;
   zaman: string;
+  kismi?: boolean;
+  alinan?: { nakit: number; kart: number; iban: number };
+  /** pozitif: açık (eksik), negatif: fazla */
+  acik?: { nakit: number; kart: number; iban: number; toplam: number };
 }
 
 export interface TeslimLog {
@@ -34,10 +38,15 @@ export interface TeslimLog {
   personelId: string;
   personelAd: string;
   tutar: number;
+  kismi?: boolean;
+  alinanToplam?: number;
+  acikToplam?: number;
   yapanId: string;
   yapanAd: string;
   zaman: string;
 }
+
+export interface KismiGiris { nakit: number; kart: number; iban: number; }
 
 export interface TeslimKaydi {
   raporId: string;
@@ -106,8 +115,8 @@ function OzetChip({ label, value }: { label: string; value: string | number }) {
 interface DetayProps {
   rapor: KapanisRapor;
   canTeslim?: boolean;
-  /** personelId ya da 'hepsi' */
-  onTeslim?: (personelId: string, islem: 'teslim' | 'geri') => void;
+  /** personelId ya da 'hepsi'; kismi verilirse kısmi teslim */
+  onTeslim?: (personelId: string, islem: 'teslim' | 'geri', kismi?: KismiGiris) => void;
   /** işlem sürerken personelId (buton spinner'ı) */
   islemde?: string | null;
 }
@@ -115,6 +124,22 @@ interface DetayProps {
 /** Rapor detay gövdesi — popup ve geçmiş listesi aynı bileşeni kullanır */
 export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde = null }: DetayProps) {
   const [logAcik, setLogAcik] = useState(false);
+  const [kismiPid, setKismiPid] = useState<string | null>(null);
+  const [kismiVals, setKismiVals] = useState<{ nakit: string; kart: string; iban: string }>({ nakit: '', kart: '', iban: '' });
+
+  const kismiBaslat = (p: KapanisRaporPersonel) => {
+    setKismiPid(p.id);
+    setKismiVals({ nakit: String(p.nakitTL || 0), kart: String(p.krediTL || 0), iban: String(p.ibanTL || 0) });
+  };
+  const kismiKaydet = (p: KapanisRaporPersonel) => {
+    if (!onTeslim) return;
+    onTeslim(p.id, 'teslim', {
+      nakit: Math.max(0, Math.round(Number(kismiVals.nakit) || 0)),
+      kart: Math.max(0, Math.round(Number(kismiVals.kart) || 0)),
+      iban: Math.max(0, Math.round(Number(kismiVals.iban) || 0)),
+    });
+    setKismiPid(null);
+  };
   const teslim = rapor.teslim;
   const bekleyen = teslimBekleyenler(rapor);
   const kalanNakit = bekleyen.reduce((s, p) => s + (p.nakitTL || 0), 0);
@@ -233,50 +258,143 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
                 </div>
               </div>
 
-              {/* Teslim durumu / düğmesi — sadece nakiti olanlar */}
-              {p.nakitTL > 0 && (
-                alindi ? (
-                  <button
-                    onClick={() => canTeslim && onTeslim && onTeslim(p.id, 'geri')}
-                    disabled={!canTeslim || busy}
-                    title={canTeslim ? 'Geri almak için tekrar dokun' : undefined}
-                    style={{
-                      width: '100%', marginTop: 8, padding: '9px 10px', borderRadius: 10,
-                      background: 'rgba(168,230,207,0.2)', border: '1.5px solid rgba(168,230,207,0.55)',
-                      color: RENK.nakit, fontWeight: 800, fontSize: 12,
-                      cursor: canTeslim ? 'pointer' : 'default',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                      opacity: busy ? 0.6 : 1,
-                    }}
-                  >
-                    {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={3} />}
-                    Teslim Alındı · {kayit?.alanAd}{kayit?.zaman ? ` · ${fmtLogZaman(kayit.zaman)}` : ''}
-                  </button>
-                ) : canTeslim ? (
-                  <button
-                    onClick={() => onTeslim && onTeslim(p.id, 'teslim')}
-                    disabled={busy}
-                    style={{
-                      width: '100%', marginTop: 8, padding: '9px 10px', borderRadius: 10,
-                      background: 'rgba(251,191,36,0.12)', border: '1.5px solid rgba(251,191,36,0.5)',
-                      color: RENK.amber, fontWeight: 800, fontSize: 12, cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                      opacity: busy ? 0.6 : 1,
-                    }}
-                  >
-                    {busy ? <Loader2 size={13} className="animate-spin" /> : <Wallet size={13} />}
-                    Teslim Aldım · {fmtTL(p.nakitTL)}
-                  </button>
-                ) : (
-                  <div style={{
-                    marginTop: 8, padding: '7px 10px', borderRadius: 10, textAlign: 'center',
-                    background: 'rgba(251,191,36,0.06)', border: '1px dashed rgba(251,191,36,0.35)',
-                    color: 'rgba(251,191,36,0.8)', fontWeight: 700, fontSize: 11,
-                  }}>
-                    ⏳ Teslim bekliyor
+              {/* Teslim durumu / düğmeleri — sadece nakiti olanlar */}
+              {p.nakitTL > 0 && (() => {
+                if (alindi) {
+                  const acikT = kayit?.acik?.toplam || 0;
+                  return (
+                    <button
+                      onClick={() => canTeslim && onTeslim && onTeslim(p.id, 'geri')}
+                      disabled={!canTeslim || busy}
+                      title={canTeslim ? 'Geri almak için tekrar dokun' : undefined}
+                      style={{
+                        width: '100%', marginTop: 8, padding: '9px 10px', borderRadius: 10,
+                        background: acikT > 0 ? 'rgba(248,113,113,0.12)' : 'rgba(168,230,207,0.2)',
+                        border: acikT > 0 ? '1.5px solid rgba(248,113,113,0.5)' : '1.5px solid rgba(168,230,207,0.55)',
+                        color: acikT > 0 ? '#f87171' : RENK.nakit, fontWeight: 800, fontSize: 12,
+                        cursor: canTeslim ? 'pointer' : 'default',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, flexWrap: 'wrap',
+                        opacity: busy ? 0.6 : 1,
+                      }}
+                    >
+                      {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={3} />}
+                      Teslim Alındı
+                      {acikT > 0 ? ` · ⚠️ ${fmtTL(acikT)} açık` : acikT < 0 ? ` · +${fmtTL(-acikT)} fazla` : ''}
+                      {' · '}{kayit?.alanAd}{kayit?.zaman ? ` · ${fmtLogZaman(kayit.zaman)}` : ''}
+                    </button>
+                  );
+                }
+                if (!canTeslim) {
+                  return (
+                    <div style={{
+                      marginTop: 8, padding: '7px 10px', borderRadius: 10, textAlign: 'center',
+                      background: 'rgba(251,191,36,0.06)', border: '1px dashed rgba(251,191,36,0.35)',
+                      color: 'rgba(251,191,36,0.8)', fontWeight: 700, fontSize: 11,
+                    }}>
+                      ⏳ Teslim bekliyor
+                    </div>
+                  );
+                }
+                if (kismiPid === p.id) {
+                  // Kısmi teslim: nakit/kart/iban ayrı ayrı alınan girilir
+                  const beklenen = { nakit: p.nakitTL || 0, kart: p.krediTL || 0, iban: p.ibanTL || 0 };
+                  const girilen = {
+                    nakit: Math.max(0, Math.round(Number(kismiVals.nakit) || 0)),
+                    kart: Math.max(0, Math.round(Number(kismiVals.kart) || 0)),
+                    iban: Math.max(0, Math.round(Number(kismiVals.iban) || 0)),
+                  };
+                  const fark = (beklenen.nakit - girilen.nakit) + (beklenen.kart - girilen.kart) + (beklenen.iban - girilen.iban);
+                  return (
+                    <div style={{
+                      marginTop: 8, padding: 10, borderRadius: 10,
+                      background: 'rgba(251,191,36,0.06)', border: '1.5px solid rgba(251,191,36,0.4)',
+                    }}>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: RENK.amber, marginBottom: 6, letterSpacing: 0.5 }}>KISMİ TESLİM — NE KADAR ALDIN?</div>
+                      {([
+                        ['nakit', '💵 Nakit', beklenen.nakit],
+                        ['kart', '💳 Kart', beklenen.kart],
+                        ['iban', '🏦 IBAN', beklenen.iban],
+                      ] as ['nakit' | 'kart' | 'iban', string, number][]).filter(([, , b]) => b > 0).map(([alan, etiket, b]) => (
+                        <div key={alan} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', flex: 1 }}>{etiket} <span style={{ color: 'rgba(255,255,255,0.35)' }}>(beklenen {fmtTL(b)})</span></span>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            value={kismiVals[alan]}
+                            onChange={e => setKismiVals(v => ({ ...v, [alan]: e.target.value }))}
+                            style={{
+                              width: 90, padding: '7px 8px', borderRadius: 8, textAlign: 'right',
+                              background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.2)',
+                              color: '#fff', fontSize: 14, fontWeight: 800, outline: 'none',
+                            }}
+                          />
+                        </div>
+                      ))}
+                      <div style={{
+                        fontSize: 12, fontWeight: 900, textAlign: 'center', padding: '6px 0', marginBottom: 6,
+                        color: fark > 0 ? '#f87171' : fark < 0 ? RENK.nakit : 'rgba(255,255,255,0.5)',
+                      }}>
+                        {fark > 0 ? `⚠️ Açık: ${fmtTL(fark)}` : fark < 0 ? `Fazla: ${fmtTL(-fark)}` : 'Fark yok — tam teslim'}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          onClick={() => kismiKaydet(p)}
+                          disabled={busy}
+                          style={{
+                            flex: 1, padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                            background: 'rgba(168,230,207,0.18)', border: '1px solid rgba(168,230,207,0.5)',
+                            color: RENK.nakit, fontWeight: 800, fontSize: 12, opacity: busy ? 0.6 : 1,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                          }}
+                        >
+                          {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} strokeWidth={3} />} Kaydet
+                        </button>
+                        <button
+                          onClick={() => setKismiPid(null)}
+                          style={{
+                            padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                            background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+                            color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 12,
+                          }}
+                        >
+                          Vazgeç
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                    <button
+                      onClick={() => onTeslim && onTeslim(p.id, 'teslim')}
+                      disabled={busy}
+                      style={{
+                        flex: 2, padding: '9px 10px', borderRadius: 10,
+                        background: 'rgba(251,191,36,0.12)', border: '1.5px solid rgba(251,191,36,0.5)',
+                        color: RENK.amber, fontWeight: 800, fontSize: 12, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        opacity: busy ? 0.6 : 1,
+                      }}
+                    >
+                      {busy ? <Loader2 size={13} className="animate-spin" /> : <Wallet size={13} />}
+                      Teslim Aldım · {fmtTL(p.nakitTL)}
+                    </button>
+                    <button
+                      onClick={() => kismiBaslat(p)}
+                      disabled={busy}
+                      title="Eksik/fazla aldıysan tutarları ayrı ayrı gir"
+                      style={{
+                        flex: 1, padding: '9px 8px', borderRadius: 10,
+                        background: 'rgba(248,113,113,0.08)', border: '1.5px solid rgba(248,113,113,0.4)',
+                        color: '#f87171', fontWeight: 800, fontSize: 12, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      ➗ Kısmi
+                    </button>
                   </div>
-                )
-              )}
+                );
+              })()}
             </div>
           );
         })}
@@ -322,7 +440,9 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
                   <b style={{ color: 'rgba(255,255,255,0.85)' }}>{fmtLogZaman(l.zaman)}</b>
                   {' · '}
                   {l.islem === 'teslim'
-                    ? <>{l.yapanAd}, <b>{l.personelAd}</b>'den {fmtTL(l.tutar)} teslim aldı</>
+                    ? l.kismi
+                      ? <>{l.yapanAd}, <b>{l.personelAd}</b>'den {fmtTL(l.alinanToplam || 0)} teslim aldı{(l.acikToplam || 0) > 0 ? <b style={{ color: '#f87171' }}> ({fmtTL(l.acikToplam!)} açık)</b> : (l.acikToplam || 0) < 0 ? <b style={{ color: '#a8e6cf' }}> (+{fmtTL(-l.acikToplam!)} fazla)</b> : null}</>
+                      : <>{l.yapanAd}, <b>{l.personelAd}</b>'den {fmtTL(l.tutar)} teslim aldı</>
                     : <>{l.yapanAd}, <b>{l.personelAd}</b> işaretini geri aldı</>}
                 </div>
               ))}
@@ -422,7 +542,7 @@ export function KapanisBildirimModal({ isLoggedIn }: Props) {
     }
   };
 
-  const teslimYap = async (raporId: string, personelId: string, islem: 'teslim' | 'geri') => {
+  const teslimYap = async (raporId: string, personelId: string, islem: 'teslim' | 'geri', kismi?: KismiGiris) => {
     const key = `${raporId}:${personelId}`;
     if (islemde) return;
     setIslemde(key);
@@ -431,7 +551,7 @@ export function KapanisBildirimModal({ isLoggedIn }: Props) {
       const res = await fetch(`${SERVER}/kapanis-bildirim/teslim${ghostParams()}`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raporId, personelId, islem }),
+        body: JSON.stringify({ raporId, personelId, islem, kismi }),
       });
       const d = await res.json();
       if (res.ok && d.teslim) {
@@ -570,7 +690,7 @@ export function KapanisBildirimModal({ isLoggedIn }: Props) {
                       rapor={r}
                       canTeslim={canTeslim}
                       islemde={islemde?.startsWith(`${r.id}:`) ? islemde.split(':')[1] : null}
-                      onTeslim={(pid, islem) => teslimYap(r.id, pid, islem)}
+                      onTeslim={(pid, islem, kismi) => teslimYap(r.id, pid, islem, kismi)}
                     />
                   </div>
                 )}

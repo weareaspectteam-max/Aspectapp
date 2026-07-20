@@ -321,15 +321,30 @@ Yonetici menu girisini her zaman gorur; digerleri sadece config'de kayitliysa.
 - KV: `kapanis_teslim_{raporId}` → `{ kisiler: {personelId: {alindi, alanId, alanAd, zaman}}, log: [] }`
 - Ileride: teslim log'u yeni kasa hareket defterine "teslimat girisi" olarak baglanabilir
 
+### Acik Sistemi (kismi teslim + acik takibi)
+- "Teslim Aldim" = TAM teslim (tek dokunus). Yaninda "➗ Kismi" dugmesi:
+  nakit/kart/iban AYRI AYRI alinan girilir, beklenen ile fark aninda gosterilir
+- Fark pozitif = ACIK (eksik), negatif = FAZLA — ikisi de kaydedilir
+- Acik kaydi: `kapanis_acik_{personelId}_{raporId}` → beklenen/alinan/acik (3 kalem), acikToplam, kalanAcik, tahsilatlar[]
+- Tam teslim veya geri alma → o kisinin acik kaydi silinir (tutarlilik)
+- Sonradan odeme: "Tahsil Et" (kismi/tam) → tahsilatlar[]'a eklenir, kalanAcik duser
+- **Acik Takip** sayfasi (`acik-panel.tsx`, YONETICI HIZLI ERISIM menusu): SADECE yonetici+ust-mudur,
+  tum personelin acik/eksik/fazlasi, personel bazli gruplu, tahsilat girisi
+- **Aciklarim** sayfasi (`acik-takip.tsx`, PERSONEL PANELI menusu): her personel YALNIZCA kendi kayitlarini gorur (salt goruntuleme)
+- Ortak satir bileseni: `AcikSatir` (acik-panel.tsx icinden export)
+
 ### Endpoint'ler
 | Metod | Route | Aciklama |
 |-------|-------|----------|
 | GET | `/kapanis-bildirim/config` | Yetki matrisi oku (yonetici) |
-| POST | `/kapanis-bildirim/config` | Yetki matrisi kaydet (yonetici) — kisi: userId, ad, rol, scope, teslimYetkisi |
+| POST | `/kapanis-bildirim/config` | Yetki matrisi kaydet (yonetici) — kisi: userId, ad, rol, scope, bildirim, teslimYetkisi |
 | GET | `/kapanis-bildirim/durum` | Popup poll: `{ yetkili, canTeslim, bekleyenler(+teslim) }` |
 | POST | `/kapanis-bildirim/okundu` | Body `{raporId}` — bekleyen isaretini sil |
-| POST | `/kapanis-bildirim/teslim` | Body `{raporId, personelId\|'hepsi', islem:'teslim'\|'geri'}` — teslimYetkisi gerekli |
+| POST | `/kapanis-bildirim/teslim` | Body `{raporId, personelId\|'hepsi', islem:'teslim'\|'geri', kismi?:{nakit,kart,iban}}` — teslimYetkisi gerekli |
 | GET | `/kapanis-bildirim/liste` | Son 30 gun raporlari + teslim durumu (scope filtreli; 60+ gun lazy temizlik) |
+| GET | `/kapanis-bildirim/acik` | TUM acik kayitlari (SADECE yonetici + ust-mudur) |
+| GET | `/kapanis-bildirim/acigim` | Kullanicinin SADECE kendi acik kayitlari |
+| POST | `/kapanis-bildirim/acik-tahsil` | Body `{acikId, tutar}` — yonetici/ust-mudur veya teslimYetkisi |
 | POST | `/kapanis-bildirim/test` | Yonetici: dunun kapanislarini kendine popup gonderir (X-Migration-Key alternatif auth) |
 
 ### Menu Gorunurlugu

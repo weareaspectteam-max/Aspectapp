@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { projectId } from '../lib/supabase-info';
 import { authHeaders, appendGhostParam } from '../lib/api';
-import { KapanisRaporDetay, teslimBekleyenler, type KapanisRapor } from './kapanis-bildirim-modal';
+import { KapanisRaporDetay, teslimBekleyenler, type KapanisRapor, type KismiGiris } from './kapanis-bildirim-modal';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -121,7 +121,7 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
     setKisiler(prev => prev.map(k => k.userId === userId ? { ...k, [alan]: !k[alan] } : k));
   };
 
-  const teslimYap = async (raporId: string, personelId: string, islem: 'teslim' | 'geri') => {
+  const teslimYap = async (raporId: string, personelId: string, islem: 'teslim' | 'geri', kismi?: KismiGiris) => {
     if (islemde) return;
     setIslemde(`${raporId}:${personelId}`);
     try {
@@ -129,7 +129,7 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
       const res = await fetch(appendGhostParam(`${API_BASE}/kapanis-bildirim/teslim`), {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raporId, personelId, islem }),
+        body: JSON.stringify({ raporId, personelId, islem, kismi }),
       });
       const d = await res.json();
       if (res.ok && d.teslim) {
@@ -490,7 +490,7 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
                     rapor={r}
                     canTeslim={canTeslim}
                     islemde={islemde?.startsWith(`${r.id}:`) ? islemde.split(':')[1] : null}
-                    onTeslim={(pid, islem) => teslimYap(r.id, pid, islem)}
+                    onTeslim={(pid, islem, kismi) => teslimYap(r.id, pid, islem, kismi)}
                   />
                 </div>
               )}

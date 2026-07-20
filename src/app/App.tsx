@@ -59,6 +59,8 @@ import { BirthdayNotifications } from './components/birthday-notifications';
 import { UrgentMessageModal } from './components/urgent-message-modal';
 import { KapanisBildirimModal } from './components/kapanis-bildirim-modal';
 import { KapanisBildirimleri } from './components/kapanis-bildirimleri';
+import { AcikPanel } from './components/acik-panel';
+import { AcikTakip } from './components/acik-takip';
 import { Announcements } from './components/announcements';
 import { VardiyaRaporlari } from './components/vardiya-raporlari';
 import HedefTakip from './components/hedef-takip';
@@ -909,6 +911,26 @@ function MainApp() {
       case 'kapanis-bildirimleri':
         return (
           <KapanisBildirimleri
+            userName={userName}
+            userRole={userRole}
+            accessToken={accessToken}
+            onNavigate={handleNavigate}
+          />
+        );
+
+      case 'acik-panel':
+        return (
+          <AcikPanel
+            userName={userName}
+            userRole={userRole}
+            accessToken={accessToken}
+            onNavigate={handleNavigate}
+          />
+        );
+
+      case 'acik-takip':
+        return (
+          <AcikTakip
             userName={userName}
             userRole={userRole}
             accessToken={accessToken}

@@ -120,6 +120,7 @@ function getSections(
         { icon: BarChart2,     label: 'İşletme İstatistikleri',roles: ['yonetici'] as UserRole[],                                                action: () => go('isletme-istatistikleri') },
         { icon: Target,        label: 'Hedef Takibi',         roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('hedef-takip')            },
         { icon: Wallet,        label: 'Kasa',                 roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('kasa-yeni')              },
+        { icon: AlertTriangle, label: 'Açık Takip',           roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('acik-panel')             },
         { icon: Package,       label: 'Tedarikçi Yönetimi', roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('tedarikci-yonetimi')     },
         // operasyon: aynı sayfa, parasal veri içermeyen teslimat onayı görünümü açılır
         { icon: Package,       label: 'Teslimat Onayı',     roles: ['operasyon'] as UserRole[],                                                 action: () => go('tedarikci-yonetimi')     },
@@ -159,6 +160,7 @@ function getSections(
       color: '#fbbf24',
       items: [
         { icon: Wallet,       label: 'Hakedişlerim',           roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('personel-prim-takip')  },
+        { icon: AlertTriangle, label: 'Açıklarım',             roles: ['mudur','operasyon','idari','personel'] as UserRole[],                        action: () => go('acik-takip')           },
         { icon: CalendarDays, label: 'İzin Talebi',            roles: ['operasyon','personel'] as UserRole[],                                        action: () => go('personel-izin-talebi') },
         { icon: CalendarDays, label: 'Kişisel İzin Çizelgesi', roles: ['yonetici','ust-mudur','mudur','operasyon','idari','personel'] as UserRole[], action: () => go('kisisel-izin-cetveli') },
       ],
