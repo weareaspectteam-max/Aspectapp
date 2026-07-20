@@ -40,6 +40,7 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
   /* ── Rapor listesi ── */
   const [raporlar, setRaporlar] = useState<KapanisRapor[]>([]);
   const [canTeslim, setCanTeslim] = useState(false);
+  const [canDetay, setCanDetay] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [acikRapor, setAcikRapor] = useState<string | null>(null);
@@ -66,6 +67,7 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
       if (!res.ok) throw new Error(d.error || 'Raporlar yüklenemedi');
       setRaporlar(d.raporlar || []);
       setCanTeslim(!!d.canTeslim);
+      setCanDetay(!!d.canDetay);
     } catch (e: any) {
       setError(e.message || 'Ağ hatası');
     } finally {
@@ -489,6 +491,7 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
                   <KapanisRaporDetay
                     rapor={r}
                     canTeslim={canTeslim}
+                    canDetay={canDetay}
                     islemde={islemde?.startsWith(`${r.id}:`) ? islemde.split(':')[1] : null}
                     onTeslim={(pid, islem, kismi) => teslimYap(r.id, pid, islem, kismi)}
                   />

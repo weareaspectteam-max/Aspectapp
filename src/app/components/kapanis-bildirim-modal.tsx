@@ -134,6 +134,8 @@ interface DetayProps {
   islemde?: string | null;
   /** Popup modu: teslim alınanlar listeden düşer, sadece bekleyenler görünür (geri alma geçmiş listesinden) */
   sadeceBekleyen?: boolean;
+  /** Rapor Detayı (ciro, ürün dökümü) — sadece yönetici + üst müdür (sunucu da veriyi başkasına göndermez) */
+  canDetay?: boolean;
 }
 
 /**
@@ -142,7 +144,7 @@ interface DetayProps {
  * Ürün dökümü, ciro özeti vb. "Rapor Detayı" bölümünde isteğe bağlı açılır.
  * Popup ve geçmiş listesi aynı bileşeni kullanır.
  */
-export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde = null, sadeceBekleyen = false }: DetayProps) {
+export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde = null, sadeceBekleyen = false, canDetay = false }: DetayProps) {
   const [logAcik, setLogAcik] = useState(false);
   const [raporDetayAcik, setRaporDetayAcik] = useState(false);
   const [kismiPid, setKismiPid] = useState<string | null>(null);
@@ -483,7 +485,8 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
         </button>
       )}
 
-      {/* ── 4. Rapor Detayı (isteğe bağlı): ciro özeti + ödeme kırılımı + ürün dökümü ── */}
+      {/* ── 4. Rapor Detayı — sadece yönetici + üst müdür ── */}
+      {canDetay && <>
       <button
         onClick={() => setRaporDetayAcik(a => !a)}
         style={{
@@ -555,6 +558,7 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
           </div>
         </div>
       )}
+      </>}
 
       {/* ── 5. Teslim geçmişi (log) ── */}
       {(teslim?.log?.length || 0) > 0 && (
@@ -605,6 +609,7 @@ interface Props {
 export function KapanisBildirimModal({ isLoggedIn }: Props) {
   const [raporlar, setRaporlar] = useState<KapanisRapor[]>([]);
   const [canTeslim, setCanTeslim] = useState(false);
+  const [canDetay, setCanDetay] = useState(false);
   const [minimized, setMinimized] = useState(true);
   const [acikRapor, setAcikRapor] = useState<string | null>(null);
   const [islemde, setIslemde] = useState<string | null>(null); // `${raporId}:${personelId|hepsi}`
@@ -627,6 +632,7 @@ export function KapanisBildirimModal({ isLoggedIn }: Props) {
       const d = await res.json();
       try { localStorage.setItem(YETKILI_LS_KEY, d.yetkili ? '1' : '0'); } catch {}
       setCanTeslim(!!d.canTeslim);
+      setCanDetay(!!d.canDetay);
       const gelen: KapanisRapor[] = d.bekleyenler || [];
 
       // Yeni (hiç gösterilmemiş) rapor var mı? → popup'ı aç, o kartı genişlet
@@ -823,6 +829,7 @@ export function KapanisBildirimModal({ isLoggedIn }: Props) {
                     <KapanisRaporDetay
                       rapor={r}
                       canTeslim={canTeslim}
+                      canDetay={canDetay}
                       islemde={islemde?.startsWith(`${r.id}:`) ? islemde.split(':')[1] : null}
                       onTeslim={(pid, islem, kismi) => teslimYap(r.id, pid, islem, kismi)}
                       sadeceBekleyen

@@ -4131,6 +4131,21 @@ function kapanisRaporOlustur(kayit: any, mekanObj: any, mekanId: string, tarih: 
   };
 }
 
+// Rapor detayı (ciro, ürün dökümü, özet) sadece yonetici+ust-mudur'e gider.
+// Diğer yetkililer yalnızca tahsilat verisini görür — kişi bazlı nakit/kart/iban kalır.
+function kapanisRaporSadelestir(r: any): any {
+  return {
+    ...r,
+    toplamCiro: 0,
+    toplamIskonto: 0,
+    satilanFotograf: 0,
+    toplamIade: 0,
+    toplamCikis: 0,
+    musteriSayisi: 0,
+    personeller: (r.personeller || []).map((p: any) => ({ ...p, toplamTL: 0, iskontoTL: 0, satirlar: [] })),
+  };
+}
+
 // POST /stok/kapanis
 // Body: { mekanId, tarih, sayim, not? }
 // ──────────────────────────────────────────
@@ -11692,7 +11707,8 @@ app.get("/make-server-4da0b637/kapanis-bildirim/durum", async (c) => {
       }
     }
     raporlar.sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
-    return c.json({ yetkili, canTeslim, bekleyenler: raporlar });
+    const canDetay = ["yonetici", "ust-mudur"].includes(user.user_metadata?.role);
+    return c.json({ yetkili, canTeslim, canDetay, bekleyenler: canDetay ? raporlar : raporlar.map(kapanisRaporSadelestir) });
   } catch (err) {
     console.log("GET kapanis-bildirim/durum error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -11752,7 +11768,12 @@ app.get("/make-server-4da0b637/kapanis-bildirim/liste", async (c) => {
       teslim: await ckv.get(`kapanis_teslim_${r.id}`).catch(() => null) || null,
     })));
 
-    return c.json({ raporlar: zengin, canTeslim: kisi?.teslimYetkisi === true });
+    const canDetayListe = ["yonetici", "ust-mudur"].includes(user.user_metadata?.role);
+    return c.json({
+      raporlar: canDetayListe ? zengin : zengin.map(kapanisRaporSadelestir),
+      canTeslim: kisi?.teslimYetkisi === true,
+      canDetay: canDetayListe,
+    });
   } catch (err) {
     console.log("GET kapanis-bildirim/liste error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
