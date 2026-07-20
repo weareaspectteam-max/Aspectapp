@@ -288,15 +288,21 @@ Amac: aksam tahsilatinda "kimden ne kadar nakit alinacak" karisikligini onlemek.
 **Frontend:** `kapanis-bildirim-modal.tsx` (popup + paylasilan `KapanisRaporDetay` bileseni), `kapanis-bildirimleri.tsx` (gecmis liste + yonetici yetki paneli)
 **Mount:** App.tsx ve PcApp.tsx (UrgentMessageModal yaninda), 20 sn poll
 
+### Yetki Modeli (kisi basina 3 seviye, hepsi varsayilan KAPALI)
+1. **Config'de kayitli olmak** → menu + gecmis liste erisimi (scope'taki mekanlarla sinirli)
+2. **`bildirim: true`** → kapanista popup duser (bekleyen kaydi olusur)
+3. **`teslimYetkisi: true`** → "Teslim Aldim" isaretleyebilir
+Yonetici menu girisini her zaman gorur; digerleri sadece config'de kayitliysa.
+
 ### KV Yapisi
 | Key | Icerik |
 |-----|--------|
-| `kapanis_bildirim_config` | `{ kisiler: [{userId, ad, rol, scope: 'all' veya mekanId[]}] }` |
+| `kapanis_bildirim_config` | `{ kisiler: [{userId, ad, rol, scope: 'all' veya mekanId[], bildirim, teslimYetkisi}] }` |
 | `kapanis_rapor_{mekanId}_{tarih}` | Rapor snapshot — re-close ayni ID'ye yazar (cift popup olmaz) |
 | `kapanis_bekleyen_{userId}_{raporId}` | Okunmamis popup isareti — X'e basinca silinir |
 
 ### Uretim (`/stok/kapanis` icinde, non-fatal try)
-- Config'de mekani kapsayan kisi varsa rapor uretilir
+- Config'de mekani kapsayan kisi varsa rapor uretilir; bekleyen (popup) SADECE bildirim:true olanlara yazilir
 - Kisi bazli satis kirilimi: nakit/iban/kredi (odeme siniflandirmasi `/vardiya/raporlar` ile ayni string matching), urun satirlari, iskonto
 - Ozet: toplamCiro, nakit/iban/kredi, iade, cikis, satilanFotograf, musteriSayisi
 - **"Elden alinacak" = sadece nakit** — kart + IBAN sirket hesabina gider, bilgi amacli gosterilir

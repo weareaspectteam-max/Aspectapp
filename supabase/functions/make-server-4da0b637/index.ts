@@ -4541,17 +4541,20 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     try {
       const bildirimConfig: any = await ckv.get("kapanis_bildirim_config");
       const bilKisiler: any[] = bildirimConfig?.kisiler || [];
-      const hedefKisiler = bilKisiler.filter((k: any) =>
+      // Mekanı kapsayan herkes için rapor üretilir (geçmiş liste görüntüleme);
+      // popup (bekleyen) sadece bildirim: true olanlara düşer.
+      const kapsayanlar = bilKisiler.filter((k: any) =>
         k?.userId && (k.scope === "all" || (Array.isArray(k.scope) && k.scope.includes(mekanId)))
       );
-      if (hedefKisiler.length > 0) {
+      if (kapsayanlar.length > 0) {
         const mekanObjBil: any = mekan || await ckv.get(`mekan_${mekanId}`) || {};
         const rapor = kapanisRaporOlustur(kayit, mekanObjBil, mekanId, tarih);
         await ckv.set(`kapanis_rapor_${rapor.id}`, rapor);
-        for (const kisi of hedefKisiler) {
+        const bildirimliler = kapsayanlar.filter((k: any) => k.bildirim === true);
+        for (const kisi of bildirimliler) {
           await ckv.set(`kapanis_bekleyen_${kisi.userId}_${rapor.id}`, { raporId: rapor.id, userId: kisi.userId, ts: rapor.createdAt });
         }
-        console.log(`Kapanış bildirimi üretildi: ${rapor.id} → ${hedefKisiler.length} kişi`);
+        console.log(`Kapanış bildirimi üretildi: ${rapor.id} → ${kapsayanlar.length} görür, ${bildirimliler.length} popup alır`);
       }
     } catch (bildirimErr) { console.log("Kapanış bildirimi üretme hatası (non-fatal):", bildirimErr); }
 
@@ -11648,6 +11651,7 @@ app.post("/make-server-4da0b637/kapanis-bildirim/config", async (c) => {
         ad: String(k.ad || ""),
         rol: String(k.rol || ""),
         scope: k.scope === "all" ? "all" : k.scope.map(String),
+        bildirim: k.bildirim === true,
         teslimYetkisi: k.teslimYetkisi === true,
       }));
     await ckv.set("kapanis_bildirim_config", {
@@ -11840,7 +11844,7 @@ app.post("/make-server-4da0b637/kapanis-bildirim/test", async (c) => {
     // Hedef kişi config'de yoksa scope 'all' ile ekle — popup poll'u config üyeliği ister
     const testConfig: any = await ckv.get("kapanis_bildirim_config") || { kisiler: [] };
     if (!(testConfig.kisiler || []).some((k: any) => k.userId === hedefUserId)) {
-      testConfig.kisiler = [...(testConfig.kisiler || []), { userId: hedefUserId, ad: hedefAd, rol: "yonetici", scope: "all", teslimYetkisi: true }];
+      testConfig.kisiler = [...(testConfig.kisiler || []), { userId: hedefUserId, ad: hedefAd, rol: "yonetici", scope: "all", bildirim: true, teslimYetkisi: true }];
       await ckv.set("kapanis_bildirim_config", testConfig);
       console.log(`Kapanış bildirim testi: ${hedefUserId} config'e eklendi (scope: all)`);
     }

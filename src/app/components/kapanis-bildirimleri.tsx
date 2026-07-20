@@ -25,7 +25,7 @@ const trDate = (t: string) => {
 
 interface Kullanici { id: string; ad: string; rol: string; email: string; }
 interface MekanItem { id: string; name: string; emoji: string; }
-interface ConfigKisi { userId: string; ad: string; rol: string; scope: 'all' | string[]; teslimYetkisi?: boolean; }
+interface ConfigKisi { userId: string; ad: string; rol: string; scope: 'all' | string[]; bildirim?: boolean; teslimYetkisi?: boolean; }
 
 interface Props {
   userName: string;
@@ -111,13 +111,14 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
     setKisiler(prev => {
       const varMi = prev.find(k => k.userId === u.id);
       if (varMi) return prev.filter(k => k.userId !== u.id);
-      return [...prev, { userId: u.id, ad: u.ad, rol: u.rol, scope: 'all' as const }];
+      // Varsayılan: sadece görüntüleme — popup ve teslim yetkisi kapalı
+      return [...prev, { userId: u.id, ad: u.ad, rol: u.rol, scope: 'all' as const, bildirim: false, teslimYetkisi: false }];
     });
   };
 
-  const teslimYetkiToggle = (userId: string) => {
+  const kisiAyarToggle = (userId: string, alan: 'bildirim' | 'teslimYetkisi') => {
     setKaydedildi(false);
-    setKisiler(prev => prev.map(k => k.userId === userId ? { ...k, teslimYetkisi: !k.teslimYetkisi } : k));
+    setKisiler(prev => prev.map(k => k.userId === userId ? { ...k, [alan]: !k[alan] } : k));
   };
 
   const teslimYap = async (raporId: string, personelId: string, islem: 'teslim' | 'geri') => {
@@ -248,7 +249,8 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
           {panelAcik && (
             <div style={{ padding: '0 14px 14px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', margin: '10px 0', lineHeight: 1.5 }}>
-                Seçtiğin kişilere vardiya kapanınca tahsilat popup'ı düşer. Kişi bazında ya tüm mekanları ya da seçili mekanları görür.
+                Kişiyi işaretlersen bu sayfayı ve kapanış raporlarını <b style={{ color: 'rgba(255,255,255,0.75)' }}>görebilir</b> (seçtiğin mekanlarla sınırlı).
+                Kapanışta <b style={{ color: 'rgba(255,255,255,0.75)' }}>popup bildirimi</b> ve <b style={{ color: 'rgba(255,255,255,0.75)' }}>teslim işaretleme</b> ayrı yetkilerdir — varsayılan kapalıdır.
               </div>
 
               {/* Test: dünün kapanışlarını kendine popup olarak gönder */}
@@ -350,26 +352,37 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
                     )}
 
                     {secili && kisi && (
-                      <button
-                        onClick={() => teslimYetkiToggle(u.id)}
-                        style={{
-                          marginTop: 8, padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', gap: 6,
-                          background: kisi.teslimYetkisi ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.05)',
-                          border: kisi.teslimYetkisi ? '1px solid rgba(251,191,36,0.5)' : '1px solid rgba(255,255,255,0.12)',
-                          color: kisi.teslimYetkisi ? '#fbbf24' : 'rgba(255,255,255,0.5)',
-                        }}
-                      >
-                        <span style={{
-                          width: 14, height: 14, borderRadius: 4, flexShrink: 0,
-                          border: kisi.teslimYetkisi ? 'none' : '1.5px solid rgba(255,255,255,0.3)',
-                          background: kisi.teslimYetkisi ? '#fbbf24' : 'transparent',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>
-                          {kisi.teslimYetkisi && <Check size={10} color="#1a0a3c" strokeWidth={3} />}
-                        </span>
-                        💰 "Teslim Aldım" işaretleyebilir
-                      </button>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                        {([
+                          ['bildirim', '🔔 Kapanışta popup bildirimi alır', '#9dd9ea'],
+                          ['teslimYetkisi', '💰 "Teslim Aldım" işaretleyebilir', '#fbbf24'],
+                        ] as ['bildirim' | 'teslimYetkisi', string, string][]).map(([alan, etiket, renk]) => {
+                          const aktif = !!kisi[alan];
+                          return (
+                            <button
+                              key={alan}
+                              onClick={() => kisiAyarToggle(u.id, alan)}
+                              style={{
+                                padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: 6,
+                                background: aktif ? `${renk}26` : 'rgba(255,255,255,0.05)',
+                                border: aktif ? `1px solid ${renk}80` : '1px solid rgba(255,255,255,0.12)',
+                                color: aktif ? renk : 'rgba(255,255,255,0.5)',
+                              }}
+                            >
+                              <span style={{
+                                width: 14, height: 14, borderRadius: 4, flexShrink: 0,
+                                border: aktif ? 'none' : '1.5px solid rgba(255,255,255,0.3)',
+                                background: aktif ? renk : 'transparent',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              }}>
+                                {aktif && <Check size={10} color="#1a0a3c" strokeWidth={3} />}
+                              </span>
+                              {etiket}
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 );
