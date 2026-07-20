@@ -97,6 +97,18 @@ const RENK = {
   amber: '#fbbf24',
 };
 
+/* Kısmi giriş — kasa numpad'iyle aynı davranış: cihaz klavyesi yok, binlik ayraçlı tam TL */
+const padParse = (s: string) => parseInt(String(s).replace(/\D/g, '') || '0', 10);
+const padApply = (cur: string, k: string) => {
+  const d = String(cur).replace(/\D/g, '');
+  let nd: string;
+  if (k === 'C') nd = '';
+  else if (k === '⌫') nd = d.slice(0, -1);
+  else { if (d.length >= 9) return cur; nd = d + k; }
+  return nd ? Number(nd).toLocaleString('tr-TR') : '';
+};
+const PAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'];
+
 /** Nakit teslimi bekleyen kişiler (nakit > 0 ve işaretlenmemiş) */
 export const teslimBekleyenler = (rapor: KapanisRapor): KapanisRaporPersonel[] =>
   (rapor.personeller || []).filter(p => (p.nakitTL || 0) > 0 && !rapor.teslim?.kisiler?.[p.id]?.alindi);
@@ -134,18 +146,24 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
   const [logAcik, setLogAcik] = useState(false);
   const [raporDetayAcik, setRaporDetayAcik] = useState(false);
   const [kismiPid, setKismiPid] = useState<string | null>(null);
+  const [kismiAlan, setKismiAlan] = useState<'nakit' | 'kart' | 'iban'>('nakit');
   const [kismiVals, setKismiVals] = useState<{ nakit: string; kart: string; iban: string }>({ nakit: '', kart: '', iban: '' });
 
   const kismiBaslat = (p: KapanisRaporPersonel) => {
     setKismiPid(p.id);
-    setKismiVals({ nakit: String(p.nakitTL || 0), kart: String(p.krediTL || 0), iban: String(p.ibanTL || 0) });
+    setKismiAlan((p.nakitTL || 0) > 0 ? 'nakit' : (p.krediTL || 0) > 0 ? 'kart' : 'iban');
+    setKismiVals({
+      nakit: (p.nakitTL || 0).toLocaleString('tr-TR'),
+      kart: (p.krediTL || 0).toLocaleString('tr-TR'),
+      iban: (p.ibanTL || 0).toLocaleString('tr-TR'),
+    });
   };
   const kismiKaydet = (p: KapanisRaporPersonel) => {
     if (!onTeslim) return;
     onTeslim(p.id, 'teslim', {
-      nakit: Math.max(0, Math.round(Number(kismiVals.nakit) || 0)),
-      kart: Math.max(0, Math.round(Number(kismiVals.kart) || 0)),
-      iban: Math.max(0, Math.round(Number(kismiVals.iban) || 0)),
+      nakit: padParse(kismiVals.nakit),
+      kart: padParse(kismiVals.kart),
+      iban: padParse(kismiVals.iban),
     });
     setKismiPid(null);
   };
@@ -285,9 +303,9 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
         if (!p) return null;
         const beklenenK = { nakit: p.nakitTL || 0, kart: p.krediTL || 0, iban: p.ibanTL || 0 };
         const girilen = {
-          nakit: Math.max(0, Math.round(Number(kismiVals.nakit) || 0)),
-          kart: Math.max(0, Math.round(Number(kismiVals.kart) || 0)),
-          iban: Math.max(0, Math.round(Number(kismiVals.iban) || 0)),
+          nakit: padParse(kismiVals.nakit),
+          kart: padParse(kismiVals.kart),
+          iban: padParse(kismiVals.iban),
         };
         const fark = (beklenenK.nakit - girilen.nakit) + (beklenenK.kart - girilen.kart) + (beklenenK.iban - girilen.iban);
         const busy = islemde === p.id;
@@ -332,19 +350,39 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
                   {girilen[alan] === b
                     ? <b style={{ fontSize: 10, color: RENK.nakit, flexShrink: 0 }}>✓ tam</b>
                     : <b style={{ fontSize: 10, color: girilen[alan] < b ? '#f87171' : RENK.nakit, flexShrink: 0 }}>{girilen[alan] < b ? `−${fmtTL(b - girilen[alan])}` : `+${fmtTL(girilen[alan] - b)}`}</b>}
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    value={kismiVals[alan]}
-                    onChange={e => setKismiVals(v => ({ ...v, [alan]: e.target.value }))}
+                  <button
+                    onClick={() => setKismiAlan(alan)}
                     style={{
-                      width: 110, padding: '9px 10px', borderRadius: 10, textAlign: 'right',
-                      background: 'rgba(0,0,0,0.4)', border: '1.5px solid rgba(251,191,36,0.35)',
-                      color: '#fff', fontSize: 16, fontWeight: 800, outline: 'none', flexShrink: 0,
+                      width: 110, padding: '9px 10px', borderRadius: 10, textAlign: 'right', cursor: 'pointer',
+                      background: 'rgba(0,0,0,0.4)',
+                      border: kismiAlan === alan ? '2px solid rgba(251,191,36,0.9)' : '1.5px solid rgba(255,255,255,0.15)',
+                      boxShadow: kismiAlan === alan ? '0 0 12px rgba(251,191,36,0.3)' : 'none',
+                      color: '#fff', fontSize: 16, fontWeight: 800, flexShrink: 0,
                     }}
-                  />
+                  >
+                    {kismiVals[alan] || '0'}
+                  </button>
                 </div>
               ))}
+
+              {/* Numpad — kasadaki gibi, cihaz klavyesi yok */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, margin: '10px 0' }}>
+                {PAD_KEYS.map(k => (
+                  <button
+                    key={k}
+                    onClick={() => setKismiVals(v => ({ ...v, [kismiAlan]: padApply(v[kismiAlan], k) }))}
+                    style={{
+                      padding: '13px 0', borderRadius: 10, cursor: 'pointer',
+                      background: k === 'C' ? 'rgba(248,113,113,0.12)' : k === '⌫' ? 'rgba(251,191,36,0.1)' : 'rgba(255,255,255,0.07)',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      color: k === 'C' ? '#f87171' : k === '⌫' ? RENK.amber : '#fff',
+                      fontSize: 18, fontWeight: 800,
+                    }}
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
               <div style={{
                 fontSize: 13, fontWeight: 900, textAlign: 'center', padding: '8px 0', marginBottom: 8,
                 borderRadius: 10,
