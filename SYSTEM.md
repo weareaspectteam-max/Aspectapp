@@ -308,6 +308,12 @@ Yonetici menu girisini her zaman gorur; digerleri sadece config'de kayitliysa.
 - **"Elden alinacak" = sadece nakit** — kart + IBAN sirket hesabina gider, bilgi amacli gosterilir
 
 ### Teslim Sistemi (Faz 2)
+- Popup TAHSILAT ONCELIKLI: kisi + 3 kalem (nakit/kart/iban) + Teslim/Kismi dugmeleri direkt ustte;
+  urun dokumu + ciro ozeti "Rapor Detayi" acilir bolumunde
+- Popup'ta SADECE teslim bekleyenler listelenir (sadeceBekleyen prop) — biri teslim aldiginda
+  o kisi herkesin popup'indan duser; rapor tamamlaninca popup herkeste otomatik kapanir
+- Geri alma gecmis listesinden (Kapanis Bildirimleri sayfasi — tum isaretler orada gorunur)
+- Acik Takip'te kayit basina "✓ Odendi" (tek dokunus + 2 asamali onay, kalani kapatir) ve "Kismi" tahsil
 - Popup davranisi: her mekanin kapanisi kendi zamaninda duser, yeni kapanan ACIK gelir,
   teslimi bitmemis onceki mekanlar ayni popup'ta KAPALI kart (akordeon) olarak birikir
 - X / kucult → sag altta amber rozet ("N teslim · ₺X"); rozet tum nakit teslimleri bitene kadar kalir
