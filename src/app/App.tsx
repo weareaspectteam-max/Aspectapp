@@ -794,7 +794,8 @@ function MainApp() {
           />
         );
 
-      case 'kasa':
+      // Eski kasa — menüde yok, arşiv verisine bakmak gerekirse buradan açılır
+      case 'kasa-eski':
         return (
           <Kasa
             userName={userName}
@@ -805,6 +806,7 @@ function MainApp() {
           />
         );
 
+      case 'kasa':
       case 'kasa-yeni':
         return (
           <KasaYeni

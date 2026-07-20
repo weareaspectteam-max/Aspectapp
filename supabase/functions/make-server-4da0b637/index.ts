@@ -2792,6 +2792,78 @@ app.delete("/make-server-4da0b637/maliyetler/cariler/:id", async (c) => {
 // ──────────────────────────────────────────
 // İŞLETME GİDERLERİ: CRUD
 // ──────────────────────────────────────────
+// ── KASA v2 → İGD AYNA SENKRONU ──────────────────────────────────
+// Kasa (Yeni)'den elle girilen gider/gelirler (kasa_hareket kaynak='gider'/'gelir')
+// İGD defterine (isletme_gider_/gelir_ + operating_expenses/income) yansıtılır.
+// Tahakkuku İGD'de ZATEN otomatik olan kategoriler HARİÇ — yoksa çift sayım olur:
+//   kira (yearlyRent'ten hesaplanır), avans+maas (günlük oto maaş), hakedis (prim sistemi).
+//   duzeltme: sayım/bakiye düzeltmesi — gerçek harcama değil, P&L'e girmez (kasadan düşer).
+// Diğer otomatik akışlar (tedarikçi, hakediş ödemesi, maaş/kira ödemesi) kasa_hareket'te
+// farklı kaynak etiketi taşır ('tedarikci_odeme', 'hakedis', 'maas'...) → bu filtreye girmez.
+// Idempotent: ayna id = k2_<hareketId>. Geri alınan (iptal) hareketin aynası silinir.
+const KASA2_IGD_HARIC = new Set(["kira", "avans", "maas", "hakedis", "duzeltme"]);
+const K2_KAT_LABEL: Record<string, string> = { yakit: "Yakıt", market: "Market", malzeme: "Albüm/Malzeme", ekipman: "Ekipman", ribon: "Ribon", fatura: "Faturalar", lojman: "Lojman", diger: "Diğer" };
+const _aynaInFlight = new Map<string, Promise<void>>();
+const ensureKasa2IgdAyna = (companyId: string, ckv: any): Promise<void> => {
+  // Gider + gelir GET'leri paralel çağrılır — aynı şirket için tek senkron koşsun
+  const mevcut = _aynaInFlight.get(companyId);
+  if (mevcut) return mevcut;
+  const p = _ensureKasa2IgdAyna(companyId, ckv).finally(() => _aynaInFlight.delete(companyId));
+  _aynaInFlight.set(companyId, p);
+  return p;
+};
+const _ensureKasa2IgdAyna = async (companyId: string, ckv: any): Promise<void> => {
+  try {
+    const db = getAdminClient();
+    const { data: rows, error } = await db.from("kasa_hareket")
+      .select("id, tarih, yon, pot, tutar, kategori, aciklama, kaynak, iptal, olusturan, created_at")
+      .eq("company_id", companyId).in("kaynak", ["gider", "gelir"]);
+    if (error || !rows || rows.length === 0) return;
+
+    // Mevcut aynalar — hem KV hem SQL tarafında ayrı kontrol (ikisi de kendini onarır)
+    const [kvGider, kvGelir, sqlGider, sqlGelir] = await Promise.all([
+      ckv.getByPrefix("isletme_gider_k2_").catch(() => []),
+      ckv.getByPrefix("isletme_gelir_k2_").catch(() => []),
+      db.from("operating_expenses").select("id").eq("company_id", companyId).like("id", "k2_%").then((r: any) => r.data || []),
+      db.from("operating_income").select("id").eq("company_id", companyId).like("id", "k2_%").then((r: any) => r.data || []),
+    ]);
+    const kvVar = new Set([...(kvGider || []), ...(kvGelir || [])].map((r: any) => r.id));
+    const sqlVar = new Set([...sqlGider, ...sqlGelir].map((r: any) => r.id));
+
+    for (const h of rows) {
+      const isGider = h.kaynak === "gider";
+      if (isGider && KASA2_IGD_HARIC.has(h.kategori || "")) continue;
+      const aynaId = `k2_${h.id}`;
+      const kvKey = isGider ? `isletme_gider_${aynaId}` : `isletme_gelir_${aynaId}`;
+      const tablo = isGider ? "operating_expenses" : "operating_income";
+
+      if (h.iptal) {
+        if (kvVar.has(aynaId)) await ckv.del(kvKey);
+        if (sqlVar.has(aynaId)) await pgWrite(tablo, "delete", null, { id: aynaId, company_id: companyId });
+        continue;
+      }
+      if (kvVar.has(aynaId) && sqlVar.has(aynaId)) continue;
+
+      const rec: any = isGider
+        ? { id: aynaId, category: h.kategori || "diger", amount: Number(h.tutar) || 0, currency: "TRY",
+            description: h.aciklama || K2_KAT_LABEL[h.kategori || ""] || h.kategori || "Kasa gideri",
+            date: h.tarih, kasaHareketId: h.id, kasaPot: h.pot, kaynakKasa2: true,
+            created_at: h.created_at || new Date().toISOString(), created_by: h.olusturan || "kasa" }
+        : { id: aynaId, amount: Number(h.tutar) || 0, currency: "TRY",
+            description: h.aciklama || "Para girişi (Kasa)", source: "kasa2",
+            date: h.tarih, kasaHareketId: h.id, kasaPot: h.pot, kaynakKasa2: true,
+            created_at: h.created_at || new Date().toISOString(), created_by: h.olusturan || "kasa" };
+
+      if (!kvVar.has(aynaId)) await ckv.set(kvKey, rec);
+      if (!sqlVar.has(aynaId)) {
+        await pgWrite(tablo, "upsert", isGider
+          ? { id: aynaId, company_id: companyId, category: rec.category, description: rec.description, amount: rec.amount, currency: "TRY", date: rec.date, created_by: rec.created_by, extra_data: rec }
+          : { id: aynaId, company_id: companyId, description: rec.description, amount: rec.amount, currency: "TRY", date: rec.date, source: "kasa2", created_by: rec.created_by, extra_data: rec });
+      }
+    }
+  } catch (e) { console.log("[Kasa2→İGD ayna] hata:", e); }
+};
+
 app.get("/make-server-4da0b637/isletme/giderler", async (c) => {
   try {
     const user = await verifyToken(c);
@@ -2806,6 +2878,7 @@ app.get("/make-server-4da0b637/isletme/giderler", async (c) => {
 
     // SQL read geçici devre dışı — KV'den oku
     const ckv = companyKvFor(companyId);
+    await ensureKasa2IgdAyna(companyId, ckv);
     const tumGiderler: any[] = await getAllGiderler(companyId, ckv);
     const tedCarilerIGD = await ckv.getByPrefix("cost_cari_").catch(() => []) || [];
     const tedIsimSetIGD = new Set(tedCarilerIGD.map((c: any) => (c.name || "").trim().toLowerCase()).filter(Boolean));
@@ -2959,6 +3032,7 @@ app.get("/make-server-4da0b637/isletme/gelirler", async (c) => {
     const companyId = (isSA && reqCId) ? reqCId : getCompanyId(user);
 
     const ckv = companyKvFor(companyId);
+    await ensureKasa2IgdAyna(companyId, ckv);
     const tumGelirler: any[] = await getAllGelirler(companyId, ckv);
     const sirali = tumGelirler.sort((a: any, b: any) =>
       new Date(b.date).getTime() - new Date(a.date).getTime()
@@ -17864,7 +17938,7 @@ app.post("/make-server-4da0b637/kasa2/gider", async (c) => {
     const kategori = body.kategori || "diger";
     const notMetin = (body.aciklama || "").trim();
     // Kategori etiketi + bağlam (kime/neye) → ledger'da "Kira — Zoka", "Avans — Ayşe" gibi görünür
-    const _katLabel: Record<string, string> = { yakit: "Yakıt", market: "Market", malzeme: "Albüm", ekipman: "Ekipman", ribon: "Ribon", avans: "Avans", hakedis: "Hakediş", kira: "Mekan kirası", fatura: "Faturalar", lojman: "Lojman", maas: "Maaş", diger: "Diğer" };
+    const _katLabel: Record<string, string> = { yakit: "Yakıt", market: "Market", malzeme: "Albüm", ekipman: "Ekipman", ribon: "Ribon", avans: "Avans", hakedis: "Hakediş", kira: "Mekan kirası", fatura: "Faturalar", lojman: "Lojman", maas: "Maaş", duzeltme: "Düzeltme", diger: "Diğer" };
     const _ctx = kategori === "avans" && body.personelAdi ? ` — ${String(body.personelAdi).trim()}`
       : kategori === "kira" && body.mekanAdi ? ` — ${String(body.mekanAdi).trim()}` : "";
     const _label = (_katLabel[kategori] || kategori) + _ctx;

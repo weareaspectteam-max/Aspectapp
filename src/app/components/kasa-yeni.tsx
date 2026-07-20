@@ -32,7 +32,9 @@ const KATEGORILER = [
   { k: 'yakit', l: 'Yakıt' }, { k: 'market', l: 'Market' }, { k: 'malzeme', l: 'Albüm' },
   { k: 'ekipman', l: 'Ekipman' }, { k: 'ribon', l: 'Ribon' }, { k: 'avans', l: 'Avans' },
   { k: 'hakedis', l: 'Hakediş' }, { k: 'kira', l: 'Mekan kirası' }, { k: 'fatura', l: 'Faturalar' },
-  { k: 'lojman', l: 'Lojman' }, { k: 'maas', l: 'Maaş' }, { k: 'diger', l: 'Diğer' },
+  { k: 'lojman', l: 'Lojman' }, { k: 'maas', l: 'Maaş' },
+  // duzeltme: sayım/bakiye düzeltmesi — kasadan düşer ama İGD kâr/zararına GİRMEZ
+  { k: 'duzeltme', l: 'Düzeltme (sayım)' }, { k: 'diger', l: 'Diğer' },
 ];
 // Chip'ler alfabetik (tr sıralama); "Diğer" catch-all olarak en sonda sabit
 const KATEGORILER_SIRALI = [...KATEGORILER].sort((a, b) =>
@@ -750,8 +752,9 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
           </div>
         </>)}
 
-        <div style={{ textAlign: 'center', marginTop: 6 }}>
+        <div style={{ textAlign: 'center', marginTop: 6, display: 'flex', justifyContent: 'center', gap: 8 }}>
           <button className="geri" onClick={() => fetchData()} style={{ borderColor: 'var(--line)' }}>↻ Yenile</button>
+          {isYonetici && <button className="geri" onClick={() => onNavigate('kasa-eski')} style={{ borderColor: 'var(--line)', color: 'var(--mut2)' }}>🗄 Eski kasa (arşiv)</button>}
         </div>
       </div></div>
 

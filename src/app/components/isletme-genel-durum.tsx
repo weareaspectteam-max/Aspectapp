@@ -92,6 +92,12 @@ const categoryLabels = {
   diger: '📋 Diğer',
   kira: '🏠 Mekan Kiraları',
   tedarikci: '📦 Tedarikçiler',
+  // Kasa (Yeni) ayna kategorileri
+  yakit: '⛽ Yakıt',
+  market: '🛒 Market',
+  ribon: '🎞️ Ribon',
+  fatura: '🧾 Faturalar',
+  lojman: '🏘️ Lojman',
 } as Record<string, string>;
 
 const categoryColors = {
@@ -143,8 +149,10 @@ function formatDonem(donem?: string) {
 // ─── Component ────────────────────────────
 export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate }: IsletmeGenelDurumProps) {
   const currentRole = userRole || 'personel';
-  const canAddExpense = ['yonetici', 'ust-mudur', 'mudur', 'idari'].includes(currentRole);
-  const canDeleteExpense = ['yonetici', 'idari'].includes(currentRole);
+  // İGD SALT RAPOR (2026-07-20): gider/gelir girişi ve düzenleme SADECE Kasa'dan yapılır.
+  // Kayıtlar Kasa hareketlerinden (ayna senkron) + otomatik tahakkuklardan (maaş/kira/hakediş/tedarikçi) gelir.
+  const canAddExpense = false;
+  const canDeleteExpense = false;
 
   // ─── State ──────────────────────────────
   const [isLoading, setIsLoading] = useState(true);
@@ -1050,6 +1058,16 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
             </div>
           )}
 
+          {/* ── Salt rapor — giriş Kasa'dan ── */}
+          {['yonetici', 'ust-mudur'].includes(currentRole) && (
+            <button
+              onClick={() => onNavigate('kasa-yeni')}
+              className="w-full py-3 px-4 rounded-2xl flex items-center justify-center gap-2 font-semibold text-sm bg-white/5 border border-white/15 text-gray-300 hover:bg-white/10 transition-all active:scale-[0.98]"
+            >
+              💰 Gider ve gelir girişi artık Kasa'dan yapılır — Kasa'yı aç
+            </button>
+          )}
+
           {/* ── Yeni Gelir / Gider Butonları ── */}
           {canAddExpense && (
             <div className="grid grid-cols-2 gap-3">
@@ -1739,9 +1757,11 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                       {g.description && <div className="text-xs text-gray-400 mt-1">{g.description}</div>}
                     </div>
                     <div className="flex gap-1 shrink-0 ml-2">
-                      <button onClick={() => startGelirEdit(g)} className="p-1.5 bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg transition-colors">
-                        <Edit2 className="w-3.5 h-3.5 text-gray-400" />
-                      </button>
+                      {canAddExpense && (
+                        <button onClick={() => startGelirEdit(g)} className="p-1.5 bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg transition-colors">
+                          <Edit2 className="w-3.5 h-3.5 text-gray-400" />
+                        </button>
+                      )}
                       {canDeleteExpense && (
                         <button onClick={() => handleDeleteGelir(g.id)} className="p-1.5 bg-red-500/10 hover:bg-red-500/25 border border-red-500/20 rounded-lg transition-colors">
                           <Trash2 className="w-3.5 h-3.5 text-red-400" />
@@ -1971,9 +1991,9 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
               </div>
 
               <div className="border-t border-white/8 pt-3">
-                <h4 className="text-[13px] font-bold text-white mb-1.5">➕ Gelir & Gider Ekleme</h4>
-                <p>• <span className="text-emerald-400 font-semibold">+ Gelir Ekle</span>: Manuel gelir kaydı oluşturun (tutar, açıklama, mekan seçimi)</p>
-                <p>• <span className="text-ta font-semibold">+ Gider Ekle</span>: Gider kaydı oluşturun (kategori, tutar, personel detayı)</p>
+                <h4 className="text-[13px] font-bold text-white mb-1.5">➕ Gelir & Gider Girişi</h4>
+                <p>• Gider ve gelir girişleri <span className="text-emerald-400 font-semibold">Kasa</span> sayfasından yapılır; buraya otomatik yansır</p>
+                <p>• Bu sayfa salt rapordur: maaş, kira, hakediş ve tedarikçi giderleri de otomatik hesaplanır</p>
                 <p className="mt-1">• Personel ödemelerinde <span className="text-ta font-semibold">kişi seçimi</span>, dönem ve ödeme tipi belirtilir</p>
                 <p>• Var olan kayıtları düzenleyebilir veya silebilirsiniz</p>
               </div>
