@@ -11668,6 +11668,7 @@ app.post("/make-server-4da0b637/kapanis-bildirim/config", async (c) => {
         scope: k.scope === "all" ? "all" : k.scope.map(String),
         bildirim: k.bildirim === true,
         teslimYetkisi: k.teslimYetkisi === true,
+        gunKapatma: k.gunKapatma === true,
       }));
     await ckv.set("kapanis_bildirim_config", {
       kisiler: temiz,
@@ -11708,7 +11709,19 @@ app.get("/make-server-4da0b637/kapanis-bildirim/durum", async (c) => {
     }
     raporlar.sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
     const canDetay = ["yonetici", "ust-mudur"].includes(user.user_metadata?.role);
-    return c.json({ yetkili, canTeslim, canDetay, bekleyenler: canDetay ? raporlar : raporlar.map(kapanisRaporSadelestir) });
+
+    // Gün kapatma (mor): yetkiliyse açık günleri döndür — kapatılmadıkça gün gün birikir
+    const canGunKapatma = kisi?.gunKapatma === true;
+    let gunler: any[] = [];
+    if (canGunKapatma) {
+      const cutoffGun = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+      const tumGunler: any[] = await ckv.getByPrefix("gun_kapatma_").catch(() => []) || [];
+      gunler = tumGunler
+        .filter((g: any) => !g?.kapandi && String(g?.tarih || "") >= cutoffGun && Object.keys(g?.toplayicilar || {}).length > 0)
+        .sort((a: any, b: any) => String(a.tarih).localeCompare(String(b.tarih)));
+    }
+
+    return c.json({ yetkili, canTeslim, canDetay, canGunKapatma, gunler, bekleyenler: canDetay ? raporlar : raporlar.map(kapanisRaporSadelestir) });
   } catch (err) {
     console.log("GET kapanis-bildirim/durum error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -11811,6 +11824,10 @@ app.post("/make-server-4da0b637/kapanis-bildirim/teslim", async (c) => {
       : (rapor.personeller || []).filter((p: any) => p.id === personelId);
     if (hedefler.length === 0) return c.json({ error: "İşaretlenecek kişi bulunamadı." }, 400);
 
+    // Gün kapatma (mor) birikimi: toplayıcının üzerinde biriken fiili nakit
+    const gunBirikim: { pid: string; ad: string; tutar: number }[] = [];
+    const gunDusum: { alanId: string; personelId: string; tutar: number }[] = [];
+
     for (const p of hedefler) {
       if (islem === "teslim") {
         if ((p.nakitTL || 0) <= 0) continue;
@@ -11855,7 +11872,16 @@ app.post("/make-server-4da0b637/kapanis-bildirim/teslim", async (c) => {
         }
         teslim.kisiler[p.id] = kayitK;
         teslim.log.push({ islem, personelId: p.id, personelAd: p.ad, tutar: p.nakitTL || 0, kismi: !!kayitK.kismi, alinanToplam, acikToplam, yapanId: user.id, yapanAd, zaman: now });
+        gunBirikim.push({ pid: p.id, ad: p.ad, tutar: kayitK.kismi ? (kayitK.alinan?.nakit || 0) : (p.nakitTL || 0) });
       } else {
+        const eskiKayit: any = teslim.kisiler[p.id];
+        if (eskiKayit?.alindi) {
+          gunDusum.push({
+            alanId: eskiKayit.alanId,
+            personelId: p.id,
+            tutar: eskiKayit.kismi ? (eskiKayit.alinan?.nakit || 0) : (p.nakitTL || 0),
+          });
+        }
         delete teslim.kisiler[p.id];
         // Teslim geri alınınca açık kaydı da silinir (tutarlılık)
         await ckv.del(`kapanis_acik_${p.id}_${raporId}`).catch(() => {});
@@ -11863,6 +11889,36 @@ app.post("/make-server-4da0b637/kapanis-bildirim/teslim", async (c) => {
       }
     }
     await ckv.set(teslimKey, teslim);
+
+    // ── Gün Kapatma (mor) kaydını güncelle: toplayıcı bakiyeleri gün gün birikir ──
+    try {
+      if (gunBirikim.length > 0 || gunDusum.length > 0) {
+        const gunKey = `gun_kapatma_${rapor.tarih}`;
+        const gun: any = await ckv.get(gunKey) || { tarih: rapor.tarih, toplayicilar: {}, kapandi: false, log: [] };
+        for (const b of gunBirikim) {
+          if (b.tutar <= 0) continue;
+          const t = gun.toplayicilar[user.id] || { ad: yapanAd, toplanan: 0, detay: [] };
+          t.ad = yapanAd;
+          t.toplanan += b.tutar;
+          t.detay = [...(t.detay || []), { raporId, personelId: b.pid, personelAd: b.ad, mekanAdi: rapor.mekanAdi, mekanEmoji: rapor.mekanEmoji, tutar: b.tutar, zaman: now }];
+          gun.toplayicilar[user.id] = t;
+        }
+        for (const d of gunDusum) {
+          if (!d.alanId || d.tutar <= 0) continue;
+          const t = gun.toplayicilar[d.alanId];
+          if (!t) continue;
+          t.toplanan = Math.max(0, (t.toplanan || 0) - d.tutar);
+          t.detay = (t.detay || []).filter((x: any) => !(x.raporId === raporId && x.personelId === d.personelId));
+          if (t.toplanan <= 0 && !t.teslim) delete gun.toplayicilar[d.alanId];
+        }
+        // Kapanmış güne geç teslim düşerse gün yeniden açılır
+        if (gun.kapandi && gunBirikim.length > 0) {
+          gun.kapandi = false;
+          gun.log.push({ islem: "yeniden-acildi", yapanAd, zaman: now });
+        }
+        await ckv.set(gunKey, gun);
+      }
+    } catch (gunErr) { console.log("Gün kapatma birikim hatası (non-fatal):", gunErr); }
 
     const kalan = (rapor.personeller || []).filter((p: any) => (p.nakitTL || 0) > 0 && !teslim.kisiler[p.id]?.alindi);
     const tamamlandi = kalan.length === 0;
@@ -11875,6 +11931,99 @@ app.post("/make-server-4da0b637/kapanis-bildirim/teslim", async (c) => {
     return c.json({ ok: true, teslim, tamamlandi });
   } catch (err) {
     console.log("POST kapanis-bildirim/teslim error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /kapanis-bildirim/gun-teslim — Body: { tarih, toplayiciId, islem: 'teslim'|'geri', alinan? }
+// Gün kapatıcı, toplayıcıdan (mor) parayı teslim alır. alinan verilirse kısmi — fark açık/fazla yazılır.
+app.post("/make-server-4da0b637/kapanis-bildirim/gun-teslim", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const ckv = companyKvFor(getCompanyId(user));
+    const config: any = await ckv.get("kapanis_bildirim_config");
+    const kisi = (config?.kisiler || []).find((k: any) => k.userId === user.id);
+    if (!kisi || kisi.gunKapatma !== true) return c.json({ error: "Gün kapatma yetkiniz yok." }, 403);
+
+    const { tarih, toplayiciId, islem, alinan } = await c.req.json();
+    if (!tarih || !toplayiciId || !["teslim", "geri"].includes(islem)) {
+      return c.json({ error: "tarih, toplayiciId ve islem zorunludur." }, 400);
+    }
+    const gunKey = `gun_kapatma_${tarih}`;
+    const gun: any = await ckv.get(gunKey);
+    const t = gun?.toplayicilar?.[toplayiciId];
+    if (!t) return c.json({ error: "Toplayıcı kaydı bulunamadı." }, 404);
+
+    const now = new Date().toISOString();
+    const yapanAd = user.user_metadata?.full_name || user.email || "";
+    const acikKey = `kapanis_acik_${toplayiciId}_gun_${tarih}`;
+
+    if (islem === "teslim") {
+      const beklenen = Number(t.toplanan) || 0;
+      const alinanT = alinan != null ? Math.max(0, Math.round(Number(alinan) || 0)) : beklenen;
+      const acikT = beklenen - alinanT; // pozitif: açık, negatif: fazla
+      t.teslim = { alindi: true, alanId: user.id, alanAd: yapanAd, zaman: now, alinanTutar: alinanT, acikTutar: acikT };
+      gun.log.push({ islem: "teslim", toplayiciId, toplayiciAd: t.ad, beklenen, alinan: alinanT, acik: acikT, yapanId: user.id, yapanAd, zaman: now });
+      if (acikT !== 0) {
+        await ckv.set(acikKey, {
+          id: `${toplayiciId}_gun_${tarih}`,
+          personelId: toplayiciId, personelAd: t.ad,
+          raporId: `gun_${tarih}`, mekanId: "gun", mekanAdi: "Gün Kapatma", mekanEmoji: "🌙", tarih,
+          beklenen: { nakit: beklenen, kart: 0, iban: 0 },
+          alinan: { nakit: alinanT, kart: 0, iban: 0 },
+          acik: { nakit: acikT, kart: 0, iban: 0 },
+          acikToplam: acikT, kalanAcik: Math.max(0, acikT),
+          tahsilatlar: [], alanId: user.id, alanAd: yapanAd, zaman: now,
+        });
+      } else {
+        await ckv.del(acikKey).catch(() => {});
+      }
+    } else {
+      delete t.teslim;
+      await ckv.del(acikKey).catch(() => {});
+      gun.log.push({ islem: "geri", toplayiciId, toplayiciAd: t.ad, yapanId: user.id, yapanAd, zaman: now });
+    }
+    await ckv.set(gunKey, gun);
+    console.log(`Gün teslim: ${tarih} ${islem} ${toplayiciId} by ${yapanAd}`);
+    return c.json({ ok: true, gun });
+  } catch (err) {
+    console.log("POST kapanis-bildirim/gun-teslim error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /kapanis-bildirim/gun-kapat — Body: { tarih } — tüm toplayıcılar teslim edince günü kapatır
+app.post("/make-server-4da0b637/kapanis-bildirim/gun-kapat", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const ckv = companyKvFor(getCompanyId(user));
+    const config: any = await ckv.get("kapanis_bildirim_config");
+    const kisi = (config?.kisiler || []).find((k: any) => k.userId === user.id);
+    if (!kisi || kisi.gunKapatma !== true) return c.json({ error: "Gün kapatma yetkiniz yok." }, 403);
+
+    const { tarih } = await c.req.json();
+    if (!tarih) return c.json({ error: "tarih zorunludur." }, 400);
+    const gunKey = `gun_kapatma_${tarih}`;
+    const gun: any = await ckv.get(gunKey);
+    if (!gun) return c.json({ error: "Gün kaydı bulunamadı." }, 404);
+
+    const bekleyenler = Object.values(gun.toplayicilar || {}).filter((t: any) => (t.toplanan || 0) > 0 && !t.teslim?.alindi);
+    if (bekleyenler.length > 0) {
+      return c.json({ error: `${bekleyenler.length} toplayıcıdan henüz teslim alınmadı.` }, 400);
+    }
+    const now = new Date().toISOString();
+    gun.kapandi = true;
+    gun.kapatanId = user.id;
+    gun.kapatanAd = user.user_metadata?.full_name || user.email || "";
+    gun.kapatmaZamani = now;
+    gun.log.push({ islem: "gun-kapat", yapanId: user.id, yapanAd: gun.kapatanAd, zaman: now });
+    await ckv.set(gunKey, gun);
+    console.log(`Gün kapatıldı: ${tarih} by ${gun.kapatanAd}`);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("POST kapanis-bildirim/gun-kapat error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });

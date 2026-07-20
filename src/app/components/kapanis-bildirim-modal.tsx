@@ -78,6 +78,21 @@ export interface KapanisRapor {
   teslim?: TeslimKaydi | null;
 }
 
+export interface GunToplayici {
+  ad: string;
+  /** fiilen topladığı nakit (kısmi aldıysa aldığı kadar) — gün gün birikir */
+  toplanan: number;
+  detay: { raporId: string; personelId: string; personelAd: string; mekanAdi: string; mekanEmoji: string; tutar: number; zaman: string }[];
+  teslim?: { alindi: boolean; alanId: string; alanAd: string; zaman: string; alinanTutar: number; acikTutar: number };
+}
+
+export interface GunKaydi {
+  tarih: string;
+  toplayicilar: Record<string, GunToplayici>;
+  kapandi: boolean;
+  log: any[];
+}
+
 const fmtTL = (n: number) => `₺${(Number(n) || 0).toLocaleString('tr-TR')}`;
 const trDate = (t: string) => {
   const [y, m, d] = (t || '').split('-');
@@ -613,6 +628,14 @@ export function KapanisBildirimModal({ isLoggedIn }: Props) {
   const [minimized, setMinimized] = useState(true);
   const [acikRapor, setAcikRapor] = useState<string | null>(null);
   const [islemde, setIslemde] = useState<string | null>(null); // `${raporId}:${personelId|hepsi}`
+  /* ── Gün Kapatma (mor, sol rozet) ── */
+  const [canGunKapatma, setCanGunKapatma] = useState(false);
+  const [gunler, setGunler] = useState<GunKaydi[]>([]);
+  const [morOpen, setMorOpen] = useState(false);
+  const [morKismi, setMorKismi] = useState<{ tarih: string; tid: string; ad: string; beklenen: number } | null>(null);
+  const [morKismiVal, setMorKismiVal] = useState('');
+  const [morKismiOnay, setMorKismiOnay] = useState(false);
+  const [morKapatOnay, setMorKapatOnay] = useState<string | null>(null);
   const minimizedRef = useRef(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   minimizedRef.current = minimized;
@@ -633,6 +656,8 @@ export function KapanisBildirimModal({ isLoggedIn }: Props) {
       try { localStorage.setItem(YETKILI_LS_KEY, d.yetkili ? '1' : '0'); } catch {}
       setCanTeslim(!!d.canTeslim);
       setCanDetay(!!d.canDetay);
+      setCanGunKapatma(!!d.canGunKapatma);
+      setGunler(d.gunler || []);
       const gelen: KapanisRapor[] = d.bekleyenler || [];
 
       // Yeni (hiç gösterilmemiş) rapor var mı? → popup'ı aç, o kartı genişlet
@@ -702,14 +727,57 @@ export function KapanisBildirimModal({ isLoggedIn }: Props) {
     }
   };
 
-  if (raporlar.length === 0) return null;
+  const gunTeslim = async (tarih: string, toplayiciId: string, islem: 'teslim' | 'geri', alinanTutar?: number) => {
+    const key = `gun:${tarih}:${toplayiciId}`;
+    if (islemde) return;
+    setIslemde(key);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${SERVER}/kapanis-bildirim/gun-teslim${ghostParams()}`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tarih, toplayiciId, islem, alinan: alinanTutar }),
+      });
+      const d = await res.json();
+      if (res.ok && d.gun) {
+        setGunler(prev => prev.map(g => g.tarih === tarih ? d.gun : g));
+      }
+    } catch {} finally {
+      setIslemde(null);
+    }
+  };
+
+  const gunKapat = async (tarih: string) => {
+    if (islemde) return;
+    setIslemde(`gunkapat:${tarih}`);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${SERVER}/kapanis-bildirim/gun-kapat${ghostParams()}`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tarih }),
+      });
+      if (res.ok) {
+        setGunler(prev => prev.filter(g => g.tarih !== tarih));
+        setMorKapatOnay(null);
+      }
+    } catch {} finally {
+      setIslemde(null);
+    }
+  };
 
   const toplamBekleyenKisi = raporlar.reduce((s, r) => s + teslimBekleyenler(r).length, 0);
   const toplamKalanNakit = raporlar.reduce((s, r) => s + teslimBekleyenler(r).reduce((x, p) => x + (p.nakitTL || 0), 0), 0);
 
-  /* ── Küçültülmüş: sağ altta rozet ── */
-  if (minimized) {
-    return (
+  const gunBekleyenList = (g: GunKaydi) => Object.entries(g.toplayicilar || {}).filter(([, t]) => (t.toplanan || 0) > 0 && !t.teslim?.alindi);
+  const morToplamKisi = gunler.reduce((s, g) => s + gunBekleyenList(g).length, 0);
+  const morToplamTutar = gunler.reduce((s, g) => s + gunBekleyenList(g).reduce((x, [, t]) => x + (t.toplanan || 0), 0), 0);
+  const morGoster = canGunKapatma && gunler.length > 0;
+
+  if (raporlar.length === 0 && !morGoster) return null;
+
+  /* ── SARI (sağ): personelden toplama ── */
+  const amberEl = raporlar.length === 0 ? null : minimized ? (
       <button
         onClick={() => setMinimized(false)}
         style={{
@@ -725,11 +793,7 @@ export function KapanisBildirimModal({ isLoggedIn }: Props) {
           {toplamBekleyenKisi > 0 ? `${toplamBekleyenKisi} teslim · ${fmtTL(toplamKalanNakit)}` : '🔔'}
         </span>
       </button>
-    );
-  }
-
-  /* ── Açık popup ── */
-  return (
+  ) : (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 9998,
       background: 'rgba(15, 5, 30, 0.92)', backdropFilter: 'blur(16px)',
@@ -843,4 +907,342 @@ export function KapanisBildirimModal({ isLoggedIn }: Props) {
       </div>
     </div>
   );
+
+  /* ── MOR (sol): gün kapatma — toplayıcılardan teslim + günü kapat ── */
+  const morEl = !morGoster ? null : !morOpen ? (
+    <button
+      onClick={() => setMorOpen(true)}
+      style={{
+        position: 'fixed', left: 12, bottom: 96, zIndex: 9997,
+        padding: '10px 14px', borderRadius: 999, cursor: 'pointer',
+        background: 'rgba(20, 10, 40, 0.97)', border: '2px solid rgba(167,139,250,0.65)',
+        boxShadow: '0 6px 24px rgba(167,139,250,0.35)',
+        display: 'flex', alignItems: 'center', gap: 7,
+      }}
+    >
+      <span style={{ fontSize: 14 }}>🌙</span>
+      <span style={{ fontSize: 13, fontWeight: 900, color: '#c4b5fd' }}>
+        {morToplamKisi > 0 ? `${morToplamKisi} teslim · ${fmtTL(morToplamTutar)}` : '✓ Hazır'}
+      </span>
+    </button>
+  ) : (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9998,
+      background: 'rgba(15, 5, 30, 0.92)', backdropFilter: 'blur(16px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+    }}>
+      <div style={{
+        width: '100%', maxWidth: 440, maxHeight: '88vh',
+        background: 'rgba(24, 12, 44, 0.98)', border: '2px solid rgba(167,139,250,0.55)',
+        borderRadius: 20, boxShadow: '0 20px 80px rgba(167,139,250,0.25)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '14px 18px', borderBottom: '1px solid rgba(167,139,250,0.3)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: 'rgba(167,139,250,0.08)', flexShrink: 0,
+        }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#c4b5fd', letterSpacing: 0.5 }}>🌙 GÜN KAPATMA</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>
+              {morToplamKisi > 0
+                ? `${morToplamKisi} toplayıcıdan ${fmtTL(morToplamTutar)} teslim bekleniyor`
+                : 'Tüm teslimler hazır — günleri kapatabilirsin'}
+            </div>
+          </div>
+          <button
+            onClick={() => { setMorOpen(false); setMorKapatOnay(null); }}
+            style={{
+              background: 'rgba(255,255,255,0.08)', border: 'none', color: '#fff',
+              width: 30, height: 30, borderRadius: 8, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginLeft: 8,
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Body — açık günler, gün gün birikir */}
+        <div style={{ padding: '12px 14px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {gunler.map(g => {
+            const bekleyenT = gunBekleyenList(g);
+            const rows = Object.entries(g.toplayicilar || {}).filter(([, t]) => (t.toplanan || 0) > 0 || t.teslim);
+            const kapatOnayda = morKapatOnay === g.tarih;
+            return (
+              <div key={g.tarih} style={{ borderRadius: 14, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(167,139,250,0.25)', padding: '10px 12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>📅 {trDate(g.tarih)}</span>
+                  {bekleyenT.length > 0
+                    ? <span style={{ fontSize: 11, fontWeight: 800, color: '#c4b5fd' }}>💰 {fmtTL(bekleyenT.reduce((s, [, t]) => s + (t.toplanan || 0), 0))} bekliyor</span>
+                    : <span style={{ fontSize: 11, fontWeight: 800, color: RENK.nakit }}>✓ Hazır</span>}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {rows.map(([tid, t]) => {
+                    const alindi = !!t.teslim?.alindi;
+                    const acikT = t.teslim?.acikTutar || 0;
+                    const busy = islemde === `gun:${g.tarih}:${tid}`;
+                    return (
+                      <div key={tid} style={{
+                        padding: '8px 10px', borderRadius: 12,
+                        background: alindi ? 'rgba(168,230,207,0.07)' : 'rgba(255,255,255,0.05)',
+                        border: alindi
+                          ? (acikT > 0 ? '1px solid rgba(248,113,113,0.45)' : '1px solid rgba(168,230,207,0.4)')
+                          : '1px solid rgba(255,255,255,0.12)',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>👤 {t.ad}</span>
+                          <span style={{ fontSize: 15, fontWeight: 900, color: alindi ? RENK.nakit : '#c4b5fd' }}>{fmtTL(t.toplanan || 0)}</span>
+                        </div>
+                        {alindi ? (
+                          <button
+                            onClick={() => gunTeslim(g.tarih, tid, 'geri')}
+                            disabled={busy}
+                            title="Geri almak için dokun"
+                            style={{
+                              width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 9,
+                              background: acikT > 0 ? 'rgba(248,113,113,0.12)' : 'rgba(168,230,207,0.18)',
+                              border: 'none', color: acikT > 0 ? '#f87171' : RENK.nakit,
+                              fontWeight: 800, fontSize: 11.5, cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, flexWrap: 'wrap',
+                              opacity: busy ? 0.6 : 1,
+                            }}
+                          >
+                            {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} strokeWidth={3} />}
+                            Alındı{acikT > 0 ? ` · ⚠️ ${fmtTL(acikT)} açık` : acikT < 0 ? ` · +${fmtTL(-acikT)} fazla` : ''} · {t.teslim?.alanAd}{t.teslim?.zaman ? ` · ${fmtLogZaman(t.teslim.zaman)}` : ''}
+                          </button>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                            <button
+                              onClick={() => gunTeslim(g.tarih, tid, 'teslim')}
+                              disabled={busy}
+                              style={{
+                                flex: 2, padding: '9px 10px', borderRadius: 9,
+                                background: 'rgba(167,139,250,0.15)', border: '1.5px solid rgba(167,139,250,0.55)',
+                                color: '#c4b5fd', fontWeight: 800, fontSize: 12.5, cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                opacity: busy ? 0.6 : 1,
+                              }}
+                            >
+                              {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={3} />}
+                              Teslim Aldım
+                            </button>
+                            <button
+                              onClick={() => { setMorKismi({ tarih: g.tarih, tid, ad: t.ad, beklenen: t.toplanan || 0 }); setMorKismiVal((t.toplanan || 0).toLocaleString('tr-TR')); setMorKismiOnay(false); }}
+                              disabled={busy}
+                              style={{
+                                flex: 1, padding: '9px 8px', borderRadius: 9,
+                                background: 'rgba(248,113,113,0.08)', border: '1.5px solid rgba(248,113,113,0.4)',
+                                color: '#f87171', fontWeight: 800, fontSize: 12, cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              }}
+                            >
+                              ➗ Kısmi
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Günü Kapat */}
+                {kapatOnayda ? (
+                  <div style={{ marginTop: 8, padding: 12, borderRadius: 12, background: 'rgba(167,139,250,0.1)', border: '1.5px solid rgba(167,139,250,0.55)' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', textAlign: 'center', marginBottom: 10 }}>
+                      🌙 {trDate(g.tarih)} günü kapatılacak. Onaylıyor musun?
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={() => gunKapat(g.tarih)}
+                        disabled={islemde === `gunkapat:${g.tarih}`}
+                        style={{
+                          flex: 1, padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+                          background: 'rgba(167,139,250,0.25)', border: '1.5px solid rgba(167,139,250,0.6)',
+                          color: '#e9d5ff', fontWeight: 800, fontSize: 13,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                          opacity: islemde === `gunkapat:${g.tarih}` ? 0.6 : 1,
+                        }}
+                      >
+                        {islemde === `gunkapat:${g.tarih}` ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={3} />}
+                        Onayla ve Kapat
+                      </button>
+                      <button
+                        onClick={() => setMorKapatOnay(null)}
+                        style={{
+                          padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
+                          background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+                          color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 13,
+                        }}
+                      >
+                        Geri
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => bekleyenT.length === 0 && setMorKapatOnay(g.tarih)}
+                    disabled={bekleyenT.length > 0}
+                    style={{
+                      width: '100%', marginTop: 8, padding: '11px 12px', borderRadius: 12,
+                      cursor: bekleyenT.length > 0 ? 'default' : 'pointer',
+                      background: bekleyenT.length > 0 ? 'rgba(255,255,255,0.04)' : 'rgba(167,139,250,0.2)',
+                      border: bekleyenT.length > 0 ? '1px dashed rgba(255,255,255,0.15)' : '1.5px solid rgba(167,139,250,0.6)',
+                      color: bekleyenT.length > 0 ? 'rgba(255,255,255,0.35)' : '#e9d5ff',
+                      fontWeight: 800, fontSize: 13,
+                    }}
+                  >
+                    {bekleyenT.length > 0 ? `🌙 Günü Kapat — önce ${bekleyenT.length} teslim al` : '🌙 Günü Kapat'}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ── Mor kısmi teslim penceresi (numpad) ── */
+  const morKismiEl = !morKismi ? null : (() => {
+    const girilenM = padParse(morKismiVal);
+    const farkM = morKismi.beklenen - girilenM;
+    const busyM = islemde === `gun:${morKismi.tarih}:${morKismi.tid}`;
+    const morKismiKaydet = () => {
+      gunTeslim(morKismi.tarih, morKismi.tid, 'teslim', girilenM);
+      setMorKismi(null);
+    };
+    return createPortal(
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 10002,
+        background: 'rgba(15,5,30,0.88)', backdropFilter: 'blur(12px)',
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+        padding: '44px 16px 16px', overflowY: 'auto',
+      }}>
+        <div style={{
+          width: '100%', maxWidth: 370,
+          background: 'rgba(24,12,44,0.99)', border: '2px solid rgba(167,139,250,0.6)',
+          borderRadius: 18, padding: '14px 16px', boxShadow: '0 20px 60px rgba(0,0,0,0.55)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#c4b5fd', letterSpacing: 0.5 }}>➗ KISMİ TESLİM — 👤 {morKismi.ad}</span>
+            <button
+              onClick={() => setMorKismi(null)}
+              style={{
+                background: 'rgba(255,255,255,0.08)', border: 'none', color: '#fff',
+                width: 28, height: 28, borderRadius: 8, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}
+            >
+              <X size={13} />
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 0' }}>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', flex: 1 }}>
+              💵 Alınan
+              <span style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>teslim etmeli {fmtTL(morKismi.beklenen)}</span>
+            </span>
+            <div style={{
+              width: 130, padding: '9px 10px', borderRadius: 10, textAlign: 'right',
+              background: 'rgba(0,0,0,0.4)', border: '2px solid rgba(167,139,250,0.7)',
+              color: '#fff', fontSize: 16, fontWeight: 800,
+            }}>
+              {morKismiVal || '0'}
+            </div>
+          </div>
+          {!morKismiOnay && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, margin: '10px 0' }}>
+            {PAD_KEYS.map(k => (
+              <button
+                key={k}
+                onClick={() => setMorKismiVal(v => padApply(v, k))}
+                style={{
+                  padding: '13px 0', borderRadius: 10, cursor: 'pointer',
+                  background: k === 'C' ? 'rgba(248,113,113,0.12)' : k === '⌫' ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.07)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  color: k === 'C' ? '#f87171' : k === '⌫' ? '#c4b5fd' : '#fff',
+                  fontSize: 18, fontWeight: 800,
+                }}
+              >
+                {k}
+              </button>
+            ))}
+          </div>}
+          <div style={{
+            fontSize: 13, fontWeight: 900, textAlign: 'center', padding: '8px 0', marginBottom: 8, borderRadius: 10,
+            background: farkM > 0 ? 'rgba(248,113,113,0.1)' : farkM < 0 ? 'rgba(168,230,207,0.08)' : 'rgba(255,255,255,0.04)',
+            color: farkM > 0 ? '#f87171' : farkM < 0 ? RENK.nakit : 'rgba(255,255,255,0.5)',
+          }}>
+            {farkM > 0 ? `⚠️ Açık: ${fmtTL(farkM)}` : farkM < 0 ? `Fazla: ${fmtTL(-farkM)}` : 'Fark yok — tam teslim'}
+          </div>
+          {morKismiOnay ? (
+            <div style={{
+              padding: 12, borderRadius: 12,
+              background: farkM > 0 ? 'rgba(248,113,113,0.1)' : 'rgba(168,230,207,0.08)',
+              border: farkM > 0 ? '1.5px solid rgba(248,113,113,0.55)' : '1.5px solid rgba(168,230,207,0.5)',
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', textAlign: 'center', lineHeight: 1.6, marginBottom: 10 }}>
+                ⚠️ <b>{morKismi.ad}</b> için{' '}
+                {farkM > 0
+                  ? <b style={{ color: '#f87171' }}>{fmtTL(farkM)} AÇIK</b>
+                  : <b style={{ color: RENK.nakit }}>{fmtTL(-farkM)} FAZLA</b>}{' '}
+                kaydedilecek.
+                <br />Onaylıyor musun?
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={morKismiKaydet}
+                  disabled={busyM}
+                  style={{
+                    flex: 1, padding: '11px 12px', borderRadius: 10, cursor: 'pointer',
+                    background: 'rgba(168,230,207,0.2)', border: '1.5px solid rgba(168,230,207,0.55)',
+                    color: RENK.nakit, fontWeight: 800, fontSize: 13, opacity: busyM ? 0.6 : 1,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  }}
+                >
+                  <Check size={13} strokeWidth={3} /> Onayla ve Kaydet
+                </button>
+                <button
+                  onClick={() => setMorKismiOnay(false)}
+                  style={{
+                    padding: '11px 16px', borderRadius: 10, cursor: 'pointer',
+                    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+                    color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 13,
+                  }}
+                >
+                  Geri
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => (farkM !== 0 ? setMorKismiOnay(true) : morKismiKaydet())}
+                disabled={busyM}
+                style={{
+                  flex: 1, padding: '11px 12px', borderRadius: 10, cursor: 'pointer',
+                  background: 'rgba(168,230,207,0.18)', border: '1.5px solid rgba(168,230,207,0.5)',
+                  color: RENK.nakit, fontWeight: 800, fontSize: 13, opacity: busyM ? 0.6 : 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                }}
+              >
+                <Check size={13} strokeWidth={3} /> Kaydet
+              </button>
+              <button
+                onClick={() => setMorKismi(null)}
+                style={{
+                  padding: '11px 16px', borderRadius: 10, cursor: 'pointer',
+                  background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+                  color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 13,
+                }}
+              >
+                Vazgeç
+              </button>
+            </div>
+          )}
+        </div>
+      </div>,
+      document.body
+    );
+  })();
+
+  return (<>{amberEl}{morEl}{morKismiEl}</>);
 }

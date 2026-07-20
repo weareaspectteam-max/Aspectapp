@@ -25,7 +25,7 @@ const trDate = (t: string) => {
 
 interface Kullanici { id: string; ad: string; rol: string; email: string; }
 interface MekanItem { id: string; name: string; emoji: string; }
-interface ConfigKisi { userId: string; ad: string; rol: string; scope: 'all' | string[]; bildirim?: boolean; teslimYetkisi?: boolean; }
+interface ConfigKisi { userId: string; ad: string; rol: string; scope: 'all' | string[]; bildirim?: boolean; teslimYetkisi?: boolean; gunKapatma?: boolean; }
 
 interface Props {
   userName: string;
@@ -118,7 +118,7 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
     });
   };
 
-  const kisiAyarToggle = (userId: string, alan: 'bildirim' | 'teslimYetkisi') => {
+  const kisiAyarToggle = (userId: string, alan: 'bildirim' | 'teslimYetkisi' | 'gunKapatma') => {
     setKaydedildi(false);
     setKisiler(prev => prev.map(k => k.userId === userId ? { ...k, [alan]: !k[alan] } : k));
   };
@@ -358,7 +358,8 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
                         {([
                           ['bildirim', '🔔 Kapanışta popup bildirimi alır', '#9dd9ea'],
                           ['teslimYetkisi', '💰 "Teslim Aldım" işaretleyebilir', '#fbbf24'],
-                        ] as ['bildirim' | 'teslimYetkisi', string, string][]).map(([alan, etiket, renk]) => {
+                          ['gunKapatma', '🌙 Gün kapatma (mor rozet)', '#a78bfa'],
+                        ] as ['bildirim' | 'teslimYetkisi' | 'gunKapatma', string, string][]).map(([alan, etiket, renk]) => {
                           const aktif = !!kisi[alan];
                           return (
                             <button

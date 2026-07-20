@@ -343,9 +343,22 @@ Yonetici menu girisini her zaman gorur; digerleri sadece config'de kayitliysa.
 - Ortak satir bileseni: `AcikSatir` (acik-panel.tsx icinden export)
 - **Kapanis Bildirimleri sayfasi** (liste + yetki paneli): SADECE yonetici, YONETICI HIZLI ERISIM menusunde
 
+### Gun Kapatma (mor rozet, sol) — ikinci teslimat halkasi
+- Sari (sag) = personelden toplama; MOR (sol) = toplayicilardan gun kapaticiya teslim
+- Teslim isaretleyen kisi, FIILEN topladigi nakit kadar `gun_kapatma_{tarih}` kaydinda borclanir
+  (kismi aldiysa aldigi kadar — personelin acigi toplayiciya YUKLENMEZ); geri alma dusurur
+- Mor rozet config kisi.gunKapatma=true olanlarda cikar; acik gunler GUN GUN birikir (30 gune kadar),
+  kapatilmadikca listede kalir; rozet toplami tum acik gunlerin toplamidir
+- Gun kapatici toplayici basina "Teslim Aldim" / "Kismi" (numpad + acik onayi — acigi kim olursa olsun yazilir:
+  `kapanis_acik_{toplayiciId}_gun_{tarih}`, mekan "🌙 Gun Kapatma")
+- Tum toplayicilar teslim edince "Gunu Kapat" + onay → gun kapanir (kapandi=true, log); kapanmis gune
+  gec teslim dusersa gun otomatik yeniden acilir
+
 ### Endpoint'ler
 | Metod | Route | Aciklama |
 |-------|-------|----------|
+| POST | `/kapanis-bildirim/gun-teslim` | Body `{tarih, toplayiciId, islem, alinan?}` — gunKapatma yetkisi |
+| POST | `/kapanis-bildirim/gun-kapat` | Body `{tarih}` — tum teslimler tamamsa gunu kapatir |
 | GET | `/kapanis-bildirim/config` | Yetki matrisi oku (yonetici) |
 | POST | `/kapanis-bildirim/config` | Yetki matrisi kaydet (yonetici) — kisi: userId, ad, rol, scope, bildirim, teslimYetkisi |
 | GET | `/kapanis-bildirim/durum` | Popup poll: `{ yetkili, canTeslim, bekleyenler(+teslim) }` |
