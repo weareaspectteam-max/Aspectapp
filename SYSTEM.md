@@ -301,18 +301,35 @@ Amac: aksam tahsilatinda "kimden ne kadar nakit alinacak" karisikligini onlemek.
 - Ozet: toplamCiro, nakit/iban/kredi, iade, cikis, satilanFotograf, musteriSayisi
 - **"Elden alinacak" = sadece nakit** — kart + IBAN sirket hesabina gider, bilgi amacli gosterilir
 
+### Teslim Sistemi (Faz 2)
+- Popup davranisi: her mekanin kapanisi kendi zamaninda duser, yeni kapanan ACIK gelir,
+  teslimi bitmemis onceki mekanlar ayni popup'ta KAPALI kart (akordeon) olarak birikir
+- X / kucult → sag altta amber rozet ("N teslim · ₺X"); rozet tum nakit teslimleri bitene kadar kalir
+- Kisi basina "Teslim Aldim · ₺X" dugmesi (sadece nakit>0) + "Hepsini Teslim Aldim"
+- Tekrar basinca geri alinir; her islem log'a yazilir (kim, kimden, ne kadar, ne zaman)
+- Teslim durumu RAPORA bagli ve ortak — tum gorenler ayni isaretleri gorur
+- Teslim yetkisi ayri ayar: config kisi.teslimYetkisi (yetki panelinde "💰 Teslim Aldim isaretleyebilir" toggle)
+- Rapor tamamlaninca (nakitli herkes isaretli) TUM kullanicilarin bekleyen isaretleri silinir → rozetler duser
+- Nakitsiz/tamamlanmis rapor: kucultunce okundu cagrilir, listeden duser
+- Gecmis listede "n/m teslim" rozeti + liste basinda "Eksik teslimatlar" ozeti (30 gun)
+- KV: `kapanis_teslim_{raporId}` → `{ kisiler: {personelId: {alindi, alanId, alanAd, zaman}}, log: [] }`
+- Ileride: teslim log'u yeni kasa hareket defterine "teslimat girisi" olarak baglanabilir
+
 ### Endpoint'ler
 | Metod | Route | Aciklama |
 |-------|-------|----------|
 | GET | `/kapanis-bildirim/config` | Yetki matrisi oku (yonetici) |
-| POST | `/kapanis-bildirim/config` | Yetki matrisi kaydet (yonetici) |
-| GET | `/kapanis-bildirim/durum` | Popup poll: `{ yetkili, bekleyenler }` |
+| POST | `/kapanis-bildirim/config` | Yetki matrisi kaydet (yonetici) — kisi: userId, ad, rol, scope, teslimYetkisi |
+| GET | `/kapanis-bildirim/durum` | Popup poll: `{ yetkili, canTeslim, bekleyenler(+teslim) }` |
 | POST | `/kapanis-bildirim/okundu` | Body `{raporId}` — bekleyen isaretini sil |
-| GET | `/kapanis-bildirim/liste` | Son 30 gun raporlari (scope filtreli, yonetici hepsini gorur; 60+ gun lazy temizlik) |
+| POST | `/kapanis-bildirim/teslim` | Body `{raporId, personelId\|'hepsi', islem:'teslim'\|'geri'}` — teslimYetkisi gerekli |
+| GET | `/kapanis-bildirim/liste` | Son 30 gun raporlari + teslim durumu (scope filtreli; 60+ gun lazy temizlik) |
+| POST | `/kapanis-bildirim/test` | Yonetici: dunun kapanislarini kendine popup gonderir (X-Migration-Key alternatif auth) |
 
 ### Menu Gorunurlugu
 - Hamburger > GENEL > "Kapanis Bildirimleri": yonetici her zaman gorur; digerleri config'de kayitliysa gorur
 - Modal her poll'da `aspect_kapanis_bildirim_yetkili` localStorage bayragini gunceller, menu bu bayragi okur
+- `aspect_kapanis_seen` localStorage: daha once popup olarak gosterilen rapor ID'leri (yeniden tam ekran acilmaz)
 
 ---
 

@@ -4549,7 +4549,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
         const rapor = kapanisRaporOlustur(kayit, mekanObjBil, mekanId, tarih);
         await ckv.set(`kapanis_rapor_${rapor.id}`, rapor);
         for (const kisi of hedefKisiler) {
-          await ckv.set(`kapanis_bekleyen_${kisi.userId}_${rapor.id}`, { raporId: rapor.id, ts: rapor.createdAt });
+          await ckv.set(`kapanis_bekleyen_${kisi.userId}_${rapor.id}`, { raporId: rapor.id, userId: kisi.userId, ts: rapor.createdAt });
         }
         console.log(`Kapanış bildirimi üretildi: ${rapor.id} → ${hedefKisiler.length} kişi`);
       }
@@ -11648,6 +11648,7 @@ app.post("/make-server-4da0b637/kapanis-bildirim/config", async (c) => {
         ad: String(k.ad || ""),
         rol: String(k.rol || ""),
         scope: k.scope === "all" ? "all" : k.scope.map(String),
+        teslimYetkisi: k.teslimYetkisi === true,
       }));
     await ckv.set("kapanis_bildirim_config", {
       kisiler: temiz,
@@ -11671,18 +11672,23 @@ app.get("/make-server-4da0b637/kapanis-bildirim/durum", async (c) => {
     const config: any = await ckv.get("kapanis_bildirim_config");
     const kisi = (config?.kisiler || []).find((k: any) => k.userId === user.id);
     const yetkili = !!kisi || user.user_metadata?.role === "yonetici";
-    if (!kisi) return c.json({ yetkili, bekleyenler: [] });
+    const canTeslim = kisi?.teslimYetkisi === true;
+    if (!kisi) return c.json({ yetkili, canTeslim: false, bekleyenler: [] });
 
     const bekleyenKayitlar: any[] = await ckv.getByPrefix(`kapanis_bekleyen_${user.id}_`).catch(() => []) || [];
     const raporlar: any[] = [];
     for (const b of bekleyenKayitlar) {
       if (!b?.raporId) continue;
       const rapor: any = await ckv.get(`kapanis_rapor_${b.raporId}`).catch(() => null);
-      if (rapor) raporlar.push(rapor);
-      else await ckv.del(`kapanis_bekleyen_${user.id}_${b.raporId}`).catch(() => {}); // rapor silinmiş — işareti temizle
+      if (rapor) {
+        const teslim: any = await ckv.get(`kapanis_teslim_${b.raporId}`).catch(() => null);
+        raporlar.push({ ...rapor, teslim: teslim || null });
+      } else {
+        await ckv.del(`kapanis_bekleyen_${user.id}_${b.raporId}`).catch(() => {}); // rapor silinmiş — işareti temizle
+      }
     }
     raporlar.sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
-    return c.json({ yetkili, bekleyenler: raporlar });
+    return c.json({ yetkili, canTeslim, bekleyenler: raporlar });
   } catch (err) {
     console.log("GET kapanis-bildirim/durum error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -11737,9 +11743,71 @@ app.get("/make-server-4da0b637/kapanis-bildirim/liste", async (c) => {
       .sort((a: any, b: any) => String(b.createdAt || b.tarih || "").localeCompare(String(a.createdAt || a.tarih || "")))
       .slice(0, 60);
 
-    return c.json({ raporlar: gorunur });
+    const zengin = await Promise.all(gorunur.map(async (r: any) => ({
+      ...r,
+      teslim: await ckv.get(`kapanis_teslim_${r.id}`).catch(() => null) || null,
+    })));
+
+    return c.json({ raporlar: zengin, canTeslim: kisi?.teslimYetkisi === true });
   } catch (err) {
     console.log("GET kapanis-bildirim/liste error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /kapanis-bildirim/teslim — Body: { raporId, personelId | 'hepsi', islem: 'teslim' | 'geri' }
+// Teslim durumu rapora bağlı ve ortaktır (tüm görenlerde senkron). Her işlem log'a yazılır.
+// Rapor tamamlanınca (nakitli herkes işaretli) tüm bekleyen popup işaretleri temizlenir.
+app.post("/make-server-4da0b637/kapanis-bildirim/teslim", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const ckv = companyKvFor(getCompanyId(user));
+    const config: any = await ckv.get("kapanis_bildirim_config");
+    const kisi = (config?.kisiler || []).find((k: any) => k.userId === user.id);
+    if (!kisi || kisi.teslimYetkisi !== true) {
+      return c.json({ error: "Teslim işaretleme yetkiniz yok." }, 403);
+    }
+
+    const { raporId, personelId, islem } = await c.req.json();
+    if (!raporId || !personelId || !["teslim", "geri"].includes(islem)) {
+      return c.json({ error: "raporId, personelId ve islem (teslim/geri) zorunludur." }, 400);
+    }
+    const rapor: any = await ckv.get(`kapanis_rapor_${raporId}`);
+    if (!rapor) return c.json({ error: "Rapor bulunamadı." }, 404);
+
+    const teslimKey = `kapanis_teslim_${raporId}`;
+    const teslim: any = await ckv.get(teslimKey) || { raporId, kisiler: {}, log: [] };
+    const now = new Date().toISOString();
+    const yapanAd = user.user_metadata?.full_name || user.email || "";
+
+    const hedefler: any[] = personelId === "hepsi"
+      ? (rapor.personeller || []).filter((p: any) => (p.nakitTL || 0) > 0 && !teslim.kisiler[p.id]?.alindi)
+      : (rapor.personeller || []).filter((p: any) => p.id === personelId);
+    if (hedefler.length === 0) return c.json({ error: "İşaretlenecek kişi bulunamadı." }, 400);
+
+    for (const p of hedefler) {
+      if (islem === "teslim") {
+        if ((p.nakitTL || 0) <= 0) continue;
+        teslim.kisiler[p.id] = { alindi: true, alanId: user.id, alanAd: yapanAd, zaman: now };
+      } else {
+        delete teslim.kisiler[p.id];
+      }
+      teslim.log.push({ islem, personelId: p.id, personelAd: p.ad, tutar: p.nakitTL || 0, yapanId: user.id, yapanAd, zaman: now });
+    }
+    await ckv.set(teslimKey, teslim);
+
+    const kalan = (rapor.personeller || []).filter((p: any) => (p.nakitTL || 0) > 0 && !teslim.kisiler[p.id]?.alindi);
+    const tamamlandi = kalan.length === 0;
+    if (tamamlandi && islem === "teslim") {
+      for (const k of (config?.kisiler || [])) {
+        await ckv.del(`kapanis_bekleyen_${k.userId}_${raporId}`).catch(() => {});
+      }
+    }
+    console.log(`Kapanış teslim: ${raporId} ${islem} ${personelId} by ${yapanAd} | kalan: ${kalan.length}`);
+    return c.json({ ok: true, teslim, tamamlandi });
+  } catch (err) {
+    console.log("POST kapanis-bildirim/teslim error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
@@ -11749,11 +11817,34 @@ app.get("/make-server-4da0b637/kapanis-bildirim/liste", async (c) => {
 // Raporlar kalıcı yazılır — geçmiş listesi için backfill görevi de görür.
 app.post("/make-server-4da0b637/kapanis-bildirim/test", async (c) => {
   try {
-    const user = await verifyToken(c);
-    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
-    if (user.user_metadata?.role !== "yonetici") return c.json({ error: "Yetki yok." }, 403);
-    const ckv = companyKvFor(getCompanyId(user));
+    // Auth: yönetici token'ı YA DA migration key + body'de hedef userId/companyId
     const body = await c.req.json().catch(() => ({}));
+    const migKey = c.req.header("X-Migration-Key");
+    let hedefUserId = "";
+    let hedefAd = "";
+    let companyId = "";
+    if (migKey === "aspect-pg-migration-2026" && body?.userId) {
+      hedefUserId = String(body.userId);
+      hedefAd = String(body.ad || "");
+      companyId = String(body.companyId || "aspect").toLowerCase();
+    } else {
+      const user = await verifyToken(c);
+      if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+      if (user.user_metadata?.role !== "yonetici") return c.json({ error: "Yetki yok." }, 403);
+      hedefUserId = user.id;
+      hedefAd = user.user_metadata?.full_name || user.email || "";
+      companyId = getCompanyId(user);
+    }
+    const ckv = companyKvFor(companyId);
+
+    // Hedef kişi config'de yoksa scope 'all' ile ekle — popup poll'u config üyeliği ister
+    const testConfig: any = await ckv.get("kapanis_bildirim_config") || { kisiler: [] };
+    if (!(testConfig.kisiler || []).some((k: any) => k.userId === hedefUserId)) {
+      testConfig.kisiler = [...(testConfig.kisiler || []), { userId: hedefUserId, ad: hedefAd, rol: "yonetici", scope: "all", teslimYetkisi: true }];
+      await ckv.set("kapanis_bildirim_config", testConfig);
+      console.log(`Kapanış bildirim testi: ${hedefUserId} config'e eklendi (scope: all)`);
+    }
+
     let tarih: string = body?.tarih || "";
     if (!tarih) {
       const dun = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -11769,10 +11860,10 @@ app.post("/make-server-4da0b637/kapanis-bildirim/test", async (c) => {
       const mekanObj: any = await ckv.get(`mekan_${kayit.mekanId}`) || {};
       const rapor = kapanisRaporOlustur(kayit, mekanObj, kayit.mekanId, tarih);
       await ckv.set(`kapanis_rapor_${rapor.id}`, rapor);
-      await ckv.set(`kapanis_bekleyen_${user.id}_${rapor.id}`, { raporId: rapor.id, ts: rapor.createdAt });
+      await ckv.set(`kapanis_bekleyen_${hedefUserId}_${rapor.id}`, { raporId: rapor.id, ts: rapor.createdAt });
       mekanAdlari.push(rapor.mekanAdi);
     }
-    console.log(`Kapanış bildirim testi: ${tarih} → ${mekanAdlari.length} rapor → ${user.id}`);
+    console.log(`Kapanış bildirim testi: ${tarih} → ${mekanAdlari.length} rapor → ${hedefUserId}`);
     return c.json({ ok: true, tarih, adet: mekanAdlari.length, mekanlar: mekanAdlari });
   } catch (err) {
     console.log("POST kapanis-bildirim/test error:", err);

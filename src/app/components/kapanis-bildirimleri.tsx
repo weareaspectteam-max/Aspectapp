@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { projectId } from '../lib/supabase-info';
 import { authHeaders, appendGhostParam } from '../lib/api';
-import { KapanisRaporDetay, type KapanisRapor } from './kapanis-bildirim-modal';
+import { KapanisRaporDetay, teslimBekleyenler, type KapanisRapor } from './kapanis-bildirim-modal';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
 
@@ -25,7 +25,7 @@ const trDate = (t: string) => {
 
 interface Kullanici { id: string; ad: string; rol: string; email: string; }
 interface MekanItem { id: string; name: string; emoji: string; }
-interface ConfigKisi { userId: string; ad: string; rol: string; scope: 'all' | string[]; }
+interface ConfigKisi { userId: string; ad: string; rol: string; scope: 'all' | string[]; teslimYetkisi?: boolean; }
 
 interface Props {
   userName: string;
@@ -39,9 +39,11 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
 
   /* ── Rapor listesi ── */
   const [raporlar, setRaporlar] = useState<KapanisRapor[]>([]);
+  const [canTeslim, setCanTeslim] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [acikRapor, setAcikRapor] = useState<string | null>(null);
+  const [islemde, setIslemde] = useState<string | null>(null);
 
   /* ── Yetki paneli (yönetici) ── */
   const [panelAcik, setPanelAcik] = useState(false);
@@ -63,6 +65,7 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Raporlar yüklenemedi');
       setRaporlar(d.raporlar || []);
+      setCanTeslim(!!d.canTeslim);
     } catch (e: any) {
       setError(e.message || 'Ağ hatası');
     } finally {
@@ -110,6 +113,30 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
       if (varMi) return prev.filter(k => k.userId !== u.id);
       return [...prev, { userId: u.id, ad: u.ad, rol: u.rol, scope: 'all' as const }];
     });
+  };
+
+  const teslimYetkiToggle = (userId: string) => {
+    setKaydedildi(false);
+    setKisiler(prev => prev.map(k => k.userId === userId ? { ...k, teslimYetkisi: !k.teslimYetkisi } : k));
+  };
+
+  const teslimYap = async (raporId: string, personelId: string, islem: 'teslim' | 'geri') => {
+    if (islemde) return;
+    setIslemde(`${raporId}:${personelId}`);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(appendGhostParam(`${API_BASE}/kapanis-bildirim/teslim`), {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raporId, personelId, islem }),
+      });
+      const d = await res.json();
+      if (res.ok && d.teslim) {
+        setRaporlar(prev => prev.map(r => r.id === raporId ? { ...r, teslim: d.teslim } : r));
+      }
+    } catch {} finally {
+      setIslemde(null);
+    }
   };
 
   const scopeToggle = (userId: string, mekanId: string | 'all') => {
@@ -321,6 +348,29 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
                         )}
                       </div>
                     )}
+
+                    {secili && kisi && (
+                      <button
+                        onClick={() => teslimYetkiToggle(u.id)}
+                        style={{
+                          marginTop: 8, padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          background: kisi.teslimYetkisi ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.05)',
+                          border: kisi.teslimYetkisi ? '1px solid rgba(251,191,36,0.5)' : '1px solid rgba(255,255,255,0.12)',
+                          color: kisi.teslimYetkisi ? '#fbbf24' : 'rgba(255,255,255,0.5)',
+                        }}
+                      >
+                        <span style={{
+                          width: 14, height: 14, borderRadius: 4, flexShrink: 0,
+                          border: kisi.teslimYetkisi ? 'none' : '1.5px solid rgba(255,255,255,0.3)',
+                          background: kisi.teslimYetkisi ? '#fbbf24' : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          {kisi.teslimYetkisi && <Check size={10} color="#1a0a3c" strokeWidth={3} />}
+                        </span>
+                        💰 "Teslim Aldım" işaretleyebilir
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -361,11 +411,34 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
         </div>
       )}
 
+      {/* Eksik teslimat özeti */}
+      {(() => {
+        const eksikler = raporlar.filter(r => teslimBekleyenler(r).length > 0);
+        if (eksikler.length === 0) return null;
+        const eksikNakit = eksikler.reduce((s, r) => s + teslimBekleyenler(r).reduce((x, p) => x + (p.nakitTL || 0), 0), 0);
+        return (
+          <div style={{
+            padding: '12px 14px', borderRadius: 14, marginBottom: 12,
+            background: 'rgba(248,113,113,0.1)', border: '1.5px solid rgba(248,113,113,0.45)',
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#f87171' }}>
+              ⚠️ {eksikler.length} raporda eksik teslimat — toplam {fmtTL(eksikNakit)} nakit alınmadı
+            </div>
+            <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.55)', marginTop: 3 }}>
+              {eksikler.map(r => `${r.mekanEmoji} ${r.mekanAdi} (${trDate(r.tarih)})`).join(' · ')}
+            </div>
+          </div>
+        );
+      })()}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {raporlar.map(r => {
           const acik = acikRapor === r.id;
+          const nakitliler = (r.personeller || []).filter(p => (p.nakitTL || 0) > 0);
+          const bekleyen = teslimBekleyenler(r);
+          const alinanSayi = nakitliler.length - bekleyen.length;
           return (
-            <div key={r.id} style={{ ...glass, overflow: 'hidden' }}>
+            <div key={r.id} style={{ ...glass, overflow: 'hidden', ...(bekleyen.length > 0 ? { border: '1px solid rgba(251,191,36,0.35)' } : {}) }}>
               <button
                 onClick={() => setAcikRapor(acik ? null : r.id)}
                 style={{
@@ -377,6 +450,13 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {r.mekanEmoji} {r.mekanAdi}
+                      {nakitliler.length > 0 && (
+                        bekleyen.length === 0 ? (
+                          <span style={{ fontSize: 10, fontWeight: 800, color: '#a8e6cf', marginLeft: 6 }}>✓ Teslim tamam</span>
+                        ) : (
+                          <span style={{ fontSize: 10, fontWeight: 800, color: '#fbbf24', marginLeft: 6 }}>💰 {alinanSayi}/{nakitliler.length} teslim</span>
+                        )
+                      )}
                     </div>
                     <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
                       {trDate(r.tarih)}{r.kapanisSaat ? ` · ${r.kapanisSaat}` : ''}{r.kapanisYapanAd ? ` · ${r.kapanisYapanAd}` : ''}
@@ -393,7 +473,12 @@ export function KapanisBildirimleri({ userRole, onNavigate }: Props) {
               </button>
               {acik && (
                 <div style={{ padding: '0 14px 14px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 12 }}>
-                  <KapanisRaporDetay rapor={r} />
+                  <KapanisRaporDetay
+                    rapor={r}
+                    canTeslim={canTeslim}
+                    islemde={islemde?.startsWith(`${r.id}:`) ? islemde.split(':')[1] : null}
+                    onTeslim={(pid, islem) => teslimYap(r.id, pid, islem)}
+                  />
                 </div>
               )}
             </div>
