@@ -55,8 +55,19 @@ export function AcikSatir({ kayit, canTahsil, onTahsil, islemde }: {
 }) {
   const [tahsilAcik, setTahsilAcik] = useState(false);
   const [tutar, setTutar] = useState('');
+  const [odendiOnay, setOdendiOnay] = useState(false);
   const fazla = kayit.acikToplam < 0;
   const kapali = !fazla && kayit.kalanAcik <= 0;
+
+  const odendiTikla = () => {
+    if (!odendiOnay) {
+      setOdendiOnay(true);
+      setTimeout(() => setOdendiOnay(false), 4000); // 4 sn içinde ikinci dokunuş gelmezse sıfırla
+      return;
+    }
+    setOdendiOnay(false);
+    if (onTahsil) onTahsil(kayit.id, kayit.kalanAcik);
+  };
 
   // beklenen/alınan yoksa (personelin kendi görünümü) kalem kırılımı gösterilmez — sadece açık tutarı
   const kalemler = kayit.beklenen && kayit.alinan
@@ -160,17 +171,33 @@ export function AcikSatir({ kayit, canTahsil, onTahsil, islemde }: {
             </button>
           </div>
         ) : (
-          <button
-            onClick={() => setTahsilAcik(true)}
-            style={{
-              width: '100%', marginTop: 8, padding: '8px 10px', borderRadius: 10, cursor: 'pointer',
-              background: 'rgba(168,230,207,0.1)', border: '1px solid rgba(168,230,207,0.4)',
-              color: '#a8e6cf', fontWeight: 800, fontSize: 12,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            }}
-          >
-            <Banknote size={13} /> Tahsil Et
-          </button>
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            <button
+              onClick={odendiTikla}
+              disabled={islemde}
+              style={{
+                flex: 2, padding: '8px 10px', borderRadius: 10, cursor: 'pointer',
+                background: odendiOnay ? 'rgba(168,230,207,0.3)' : 'rgba(168,230,207,0.1)',
+                border: odendiOnay ? '1.5px solid rgba(168,230,207,0.8)' : '1px solid rgba(168,230,207,0.4)',
+                color: '#a8e6cf', fontWeight: 800, fontSize: 12, opacity: islemde ? 0.6 : 1,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}
+            >
+              {islemde ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={3} />}
+              {odendiOnay ? `Emin misin? ${fmtTL(kayit.kalanAcik)} ödendi → dokun` : `✓ Ödendi · ${fmtTL(kayit.kalanAcik)}`}
+            </button>
+            <button
+              onClick={() => { setOdendiOnay(false); setTahsilAcik(true); }}
+              style={{
+                flex: 1, padding: '8px 8px', borderRadius: 10, cursor: 'pointer',
+                background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)',
+                color: 'rgba(255,255,255,0.65)', fontWeight: 800, fontSize: 12,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+              }}
+            >
+              <Banknote size={12} /> Kısmi
+            </button>
+          </div>
         )
       )}
     </div>
