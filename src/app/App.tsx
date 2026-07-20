@@ -57,6 +57,8 @@ import { IndirimIstatistik } from './components/indirim-istatistik';
 import { BirthdayCalendar } from './components/birthday-calendar';
 import { BirthdayNotifications } from './components/birthday-notifications';
 import { UrgentMessageModal } from './components/urgent-message-modal';
+import { KapanisBildirimModal } from './components/kapanis-bildirim-modal';
+import { KapanisBildirimleri } from './components/kapanis-bildirimleri';
 import { Announcements } from './components/announcements';
 import { VardiyaRaporlari } from './components/vardiya-raporlari';
 import HedefTakip from './components/hedef-takip';
@@ -896,7 +898,17 @@ function MainApp() {
       
       case 'isletme-genel-durum':
         return (
-          <IsletmeGenelDurum 
+          <IsletmeGenelDurum
+            userName={userName}
+            userRole={userRole}
+            accessToken={accessToken}
+            onNavigate={handleNavigate}
+          />
+        );
+
+      case 'kapanis-bildirimleri':
+        return (
+          <KapanisBildirimleri
             userName={userName}
             userRole={userRole}
             accessToken={accessToken}
@@ -1270,6 +1282,7 @@ function MainApp() {
         {/* Birthday Notifications */}
         {isLoggedIn && <BirthdayNotifications />}
         <UrgentMessageModal isLoggedIn={isLoggedIn} />
+        <KapanisBildirimModal isLoggedIn={isLoggedIn} />
 
         {/* Global Satış İptal Onay Paneli — yöneticiler için, tüm ekranlarda */}
         {isLoggedIn && (

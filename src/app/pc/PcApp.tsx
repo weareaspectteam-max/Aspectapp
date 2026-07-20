@@ -6,6 +6,7 @@ import type { UserRole } from '../components/login';
 import { PcLayout } from './PcLayout';
 import { PcGuard } from './PcGuard';
 import { UrgentMessageModal } from '../components/urgent-message-modal';
+import { KapanisBildirimModal } from '../components/kapanis-bildirim-modal';
 import './pc.css';
 
 export type { PcScreen } from './pc-types';
@@ -182,6 +183,7 @@ export function PcApp() {
         />
       </PcGuard>
       <UrgentMessageModal isLoggedIn={auth.loggedIn} />
+      <KapanisBildirimModal isLoggedIn={auth.loggedIn} />
     </div>
   );
 }

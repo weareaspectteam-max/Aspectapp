@@ -94,6 +94,10 @@ function getSections(
 ): Section[] {
   const go = (tab: string) => { onNavigate(tab); close(); };
 
+  // Kapanış bildirim yetkisi — KapanisBildirimModal her poll'da bu bayrağı günceller
+  let kapanisBildirimYetkili = false;
+  try { kapanisBildirimYetkili = localStorage.getItem('aspect_kapanis_bildirim_yetkili') === '1'; } catch {}
+
   const all:  UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','personel','bekleyen','superadmin'];
   const withSupplier: UserRole[] = [...all, 'tedarikci'];
   const mgmt: UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','superadmin'];
@@ -117,6 +121,8 @@ function getSections(
         { icon: Target,        label: 'Hedef Takibi',         roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('hedef-takip')            },
         { icon: Wallet,        label: 'Kasa',                 roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('kasa-yeni')              },
         { icon: Package,       label: 'Tedarikçi Yönetimi', roles: ['yonetici','ust-mudur'] as UserRole[],                                      action: () => go('tedarikci-yonetimi')     },
+        // operasyon: aynı sayfa, parasal veri içermeyen teslimat onayı görünümü açılır
+        { icon: Package,       label: 'Teslimat Onayı',     roles: ['operasyon'] as UserRole[],                                                 action: () => go('tedarikci-yonetimi')     },
       ],
     },
     {
@@ -125,6 +131,7 @@ function getSections(
       items: [
         { icon: Home,          label: 'Dashboard',        roles: all,  action: () => go('dashboard')   },
         { icon: MessageCircle, label: 'Mesajlar',          roles: all,  action: () => go('messaging')   },
+        { icon: Wallet,        label: 'Kapanış Bildirimleri', roles: (kapanisBildirimYetkili ? all : ['yonetici','superadmin']) as UserRole[], action: () => go('kapanis-bildirimleri') },
         { icon: Trophy,        label: 'Liderlik Tablosu',  roles: all,  action: () => go('leaderboard') },
         { icon: Sparkles as IconComp, label: aiLabel, roles: nonBekleyen as UserRole[], action: () => go('aspect-ai') } as MenuItem,
         { icon: GraduationCap, label: 'Akademi',           roles: all,  action: () => go('academy')     },

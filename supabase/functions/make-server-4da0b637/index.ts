@@ -4062,6 +4062,75 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
 
 // ─────────────────────────────────��────────
 // STOK: Kapanış kaydet
+// Kapanış bildirim raporu snapshot'ı — /stok/kapanis tetikleyicisi ve
+// /kapanis-bildirim/test endpoint'i aynı üretimi kullanır.
+// Ödeme sınıflandırması /vardiya/raporlar ile aynı string matching.
+function kapanisRaporOlustur(kayit: any, mekanObj: any, mekanId: string, tarih: string): any {
+  const satislar: any[] = kayit.satislar || [];
+  const vardiyaToplam: any = kayit.vardiyaToplam || {};
+  const pMapBil: Record<string, any> = {};
+  let ciroBil = 0, nakitBil = 0, ibanBil = 0, krediBil = 0, iskontoBil = 0;
+  for (const satis of satislar) {
+    if (satis.iptal) continue;
+    const pid = satis.kaydedenId || satis.kaydeden || "bilinmeyen";
+    if (!pMapBil[pid]) pMapBil[pid] = { id: pid, ad: satis.kaydeden || "Bilinmiyor", nakitTL: 0, ibanTL: 0, krediTL: 0, iskontoTL: 0, urunler: {} };
+    const tutar = Number(satis.finalPrice) || 0;
+    ciroBil += tutar;
+    const pmStr = String(satis.paymentMethod || "").toLowerCase();
+    if (pmStr.includes("iban") || pmStr.includes("havale") || pmStr.includes("transfer")) { pMapBil[pid].ibanTL += tutar; ibanBil += tutar; }
+    else if (pmStr.includes("kredi") || pmStr.includes("kart") || pmStr.includes("card")) { pMapBil[pid].krediTL += tutar; krediBil += tutar; }
+    else { pMapBil[pid].nakitTL += tutar; nakitBil += tutar; }
+    let listeToplam = 0;
+    for (const item of (satis.items || [])) {
+      const ua = (item.dijital ? "📱 " : "") + (item.product || "Diğer");
+      const qty = Number(item.quantity) || 1;
+      const biTL = Number(item.unitPrice) || 0;
+      listeToplam += biTL * qty;
+      if (!pMapBil[pid].urunler[ua]) pMapBil[pid].urunler[ua] = { adet: 0, toplamTL: 0 };
+      pMapBil[pid].urunler[ua].adet += qty;
+      pMapBil[pid].urunler[ua].toplamTL += biTL * qty;
+    }
+    const satisIskonto = Math.max(0, listeToplam - tutar);
+    pMapBil[pid].iskontoTL += satisIskonto;
+    iskontoBil += satisIskonto;
+  }
+  const personellerBil = Object.values(pMapBil).map((p: any) => ({
+    id: p.id, ad: p.ad,
+    nakitTL: Math.round(p.nakitTL), ibanTL: Math.round(p.ibanTL), krediTL: Math.round(p.krediTL),
+    toplamTL: Math.round(p.nakitTL + p.ibanTL + p.krediTL),
+    iskontoTL: Math.round(p.iskontoTL),
+    satirlar: Object.entries(p.urunler)
+      .map(([urun, v]: [string, any]) => ({ urun, adet: v.adet, toplamTL: Math.round(v.toplamTL) }))
+      .sort((a: any, b: any) => b.toplamTL - a.toplamTL),
+  })).sort((a: any, b: any) => b.nakitTL - a.nakitTL);
+
+  const fmtSaatBil = (iso: string | undefined | null) =>
+    iso ? new Date(iso).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Istanbul" }) : null;
+
+  const raporId = `${mekanId}_${tarih}`;
+  return {
+    id: raporId,
+    mekanId,
+    mekanAdi: mekanObj?.name || mekanId,
+    mekanEmoji: mekanObj?.emoji || "🏪",
+    tarih,
+    acilisSaat: fmtSaatBil(kayit.acilisZamani),
+    kapanisSaat: fmtSaatBil(kayit.kapanisZamani),
+    kapanisYapanAd: kayit.kapanisYapanAd || "",
+    toplamCiro: Math.round(ciroBil),
+    nakitTL: Math.round(nakitBil),
+    ibanTL: Math.round(ibanBil),
+    krediTL: Math.round(krediBil),
+    toplamIskonto: Math.round(iskontoBil),
+    toplamIade: vardiyaToplam.toplamIadeFotograf || 0,
+    toplamCikis: vardiyaToplam.toplamCikisAdedi || 0,
+    satilanFotograf: vardiyaToplam["toplamSatılanFotograf"] || vardiyaToplam.toplamSatilanFotograf || 0,
+    musteriSayisi: Number(kayit.musteriSayisi) || 0,
+    personeller: personellerBil,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 // POST /stok/kapanis
 // Body: { mekanId, tarih, sayim, not? }
 // ──────────────────────────────────────────
@@ -4464,6 +4533,27 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
         }
       }
     } catch (autoCoErr) { console.log("Auto checkout error (non-fatal):", autoCoErr); }
+
+    // ── Kapanış Bildirimi: yetkili kişilere tahsilat raporu + popup ─────────
+    // KV: kapanis_bildirim_config → kimler hangi mekanları görür
+    //     kapanis_rapor_{mekanId}_{tarih} → rapor snapshot (re-close'da üzerine yazar, çift popup olmaz)
+    //     kapanis_bekleyen_{userId}_{raporId} → okunmamış popup işareti
+    try {
+      const bildirimConfig: any = await ckv.get("kapanis_bildirim_config");
+      const bilKisiler: any[] = bildirimConfig?.kisiler || [];
+      const hedefKisiler = bilKisiler.filter((k: any) =>
+        k?.userId && (k.scope === "all" || (Array.isArray(k.scope) && k.scope.includes(mekanId)))
+      );
+      if (hedefKisiler.length > 0) {
+        const mekanObjBil: any = mekan || await ckv.get(`mekan_${mekanId}`) || {};
+        const rapor = kapanisRaporOlustur(kayit, mekanObjBil, mekanId, tarih);
+        await ckv.set(`kapanis_rapor_${rapor.id}`, rapor);
+        for (const kisi of hedefKisiler) {
+          await ckv.set(`kapanis_bekleyen_${kisi.userId}_${rapor.id}`, { raporId: rapor.id, ts: rapor.createdAt });
+        }
+        console.log(`Kapanış bildirimi üretildi: ${rapor.id} → ${hedefKisiler.length} kişi`);
+      }
+    } catch (bildirimErr) { console.log("Kapanış bildirimi üretme hatası (non-fatal):", bildirimErr); }
 
     return c.json({ kayit, anomali, beklenen, kapanisYaziciAnomali });
   } catch (err) {
@@ -9046,6 +9136,8 @@ app.post("/make-server-4da0b637/personel/anomali-sifirla", async (c) => {
 
       const kvKey = `stok_gunluk_${kayit.mekanId}_${kayit.tarih}`;
       await ckv.set(kvKey, kayit);
+      // SQL de temizlenmeli — anomali-puanlar SQL-öncelikli okuyor (getAllDailyStock)
+      await pgWrite("daily_stock", "upsert", { id: `${kayit.mekanId}_${kayit.tarih}`, company_id: _apCompanyId, venue_id: kayit.mekanId, date: kayit.tarih, extra_data: kayit, updated_at: new Date().toISOString() });
       sifirlanenSayisi++;
     }
 
@@ -11515,6 +11607,175 @@ app.post("/make-server-4da0b637/mesajlar/acil/okundu", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     console.log("POST mesajlar/acil/okundu error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// KAPANIŞ BİLDİRİMLERİ
+// Vardiya kapanınca yetkili kişilere tahsilat raporu popup'ı.
+// Yetki matrisi kişi bazlı: yönetici kimin hangi mekan(lar)ı göreceğini seçer.
+// ──────────────────────────────────────────
+
+// GET /kapanis-bildirim/config — yetki matrisi (yönetici)
+app.get("/make-server-4da0b637/kapanis-bildirim/config", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (user.user_metadata?.role !== "yonetici") return c.json({ error: "Yetki yok." }, 403);
+    const ckv = companyKvFor(getCompanyId(user));
+    const config: any = await ckv.get("kapanis_bildirim_config") || { kisiler: [] };
+    return c.json({ config });
+  } catch (err) {
+    console.log("GET kapanis-bildirim/config error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /kapanis-bildirim/config — Body: { kisiler: [{userId, ad, rol, scope: 'all' | mekanId[]}] }
+app.post("/make-server-4da0b637/kapanis-bildirim/config", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (user.user_metadata?.role !== "yonetici") return c.json({ error: "Yetki yok." }, 403);
+    const ckv = companyKvFor(getCompanyId(user));
+    const { kisiler } = await c.req.json();
+    if (!Array.isArray(kisiler)) return c.json({ error: "kisiler listesi zorunludur." }, 400);
+    const temiz = kisiler
+      .filter((k: any) => k?.userId && (k.scope === "all" || Array.isArray(k.scope)))
+      .map((k: any) => ({
+        userId: String(k.userId),
+        ad: String(k.ad || ""),
+        rol: String(k.rol || ""),
+        scope: k.scope === "all" ? "all" : k.scope.map(String),
+      }));
+    await ckv.set("kapanis_bildirim_config", {
+      kisiler: temiz,
+      guncelleyen: user.id,
+      guncellemeTarihi: new Date().toISOString(),
+    });
+    console.log(`Kapanış bildirim config güncellendi: ${temiz.length} kişi by ${user.id}`);
+    return c.json({ ok: true, config: { kisiler: temiz } });
+  } catch (err) {
+    console.log("POST kapanis-bildirim/config error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// GET /kapanis-bildirim/durum — popup poll: { yetkili, bekleyenler: [rapor] }
+app.get("/make-server-4da0b637/kapanis-bildirim/durum", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const ckv = companyKvFor(getCompanyId(user));
+    const config: any = await ckv.get("kapanis_bildirim_config");
+    const kisi = (config?.kisiler || []).find((k: any) => k.userId === user.id);
+    const yetkili = !!kisi || user.user_metadata?.role === "yonetici";
+    if (!kisi) return c.json({ yetkili, bekleyenler: [] });
+
+    const bekleyenKayitlar: any[] = await ckv.getByPrefix(`kapanis_bekleyen_${user.id}_`).catch(() => []) || [];
+    const raporlar: any[] = [];
+    for (const b of bekleyenKayitlar) {
+      if (!b?.raporId) continue;
+      const rapor: any = await ckv.get(`kapanis_rapor_${b.raporId}`).catch(() => null);
+      if (rapor) raporlar.push(rapor);
+      else await ckv.del(`kapanis_bekleyen_${user.id}_${b.raporId}`).catch(() => {}); // rapor silinmiş — işareti temizle
+    }
+    raporlar.sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+    return c.json({ yetkili, bekleyenler: raporlar });
+  } catch (err) {
+    console.log("GET kapanis-bildirim/durum error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /kapanis-bildirim/okundu — Body: { raporId } — X'e basınca
+app.post("/make-server-4da0b637/kapanis-bildirim/okundu", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const ckv = companyKvFor(getCompanyId(user));
+    const { raporId } = await c.req.json();
+    if (!raporId) return c.json({ error: "raporId zorunludur." }, 400);
+    await ckv.del(`kapanis_bekleyen_${user.id}_${raporId}`);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("POST kapanis-bildirim/okundu error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// GET /kapanis-bildirim/liste — son 30 günün raporları (scope filtreli, yönetici hepsini görür)
+app.get("/make-server-4da0b637/kapanis-bildirim/liste", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const ckv = companyKvFor(getCompanyId(user));
+    const config: any = await ckv.get("kapanis_bildirim_config");
+    const kisi = (config?.kisiler || []).find((k: any) => k.userId === user.id);
+    const isYonetici = user.user_metadata?.role === "yonetici";
+    if (!kisi && !isYonetici) return c.json({ error: "Yetki yok." }, 403);
+
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const eskiCutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const tumRaporlar: any[] = await ckv.getByPrefix("kapanis_rapor_").catch(() => []) || [];
+
+    // 60 günden eski raporları temizle (lazy cleanup)
+    for (const r of tumRaporlar) {
+      if (r?.tarih && r.tarih < eskiCutoff && r?.id) {
+        await ckv.del(`kapanis_rapor_${r.id}`).catch(() => {});
+      }
+    }
+
+    const gorunur = tumRaporlar
+      .filter((r: any) => r?.tarih && r.tarih >= cutoff)
+      .filter((r: any) => {
+        if (isYonetici) return true;
+        if (kisi.scope === "all") return true;
+        return Array.isArray(kisi.scope) && kisi.scope.includes(r.mekanId);
+      })
+      .sort((a: any, b: any) => String(b.createdAt || b.tarih || "").localeCompare(String(a.createdAt || a.tarih || "")))
+      .slice(0, 60);
+
+    return c.json({ raporlar: gorunur });
+  } catch (err) {
+    console.log("GET kapanis-bildirim/liste error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// POST /kapanis-bildirim/test — Body: { tarih? } (varsayılan: dün)
+// Yönetici o günün kapanmış vardiyalarından rapor üretip KENDİNE popup gönderir.
+// Raporlar kalıcı yazılır — geçmiş listesi için backfill görevi de görür.
+app.post("/make-server-4da0b637/kapanis-bildirim/test", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (user.user_metadata?.role !== "yonetici") return c.json({ error: "Yetki yok." }, 403);
+    const ckv = companyKvFor(getCompanyId(user));
+    const body = await c.req.json().catch(() => ({}));
+    let tarih: string = body?.tarih || "";
+    if (!tarih) {
+      const dun = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      tarih = dun.toISOString().split("T")[0];
+    }
+    const tumKayitlar: any[] = await ckv.getByPrefix("stok_gunluk_").catch(() => []) || [];
+    const gunKayitlar = tumKayitlar.filter((k: any) => k?.tarih === tarih && k.kapanisYapildi);
+    if (gunKayitlar.length === 0) {
+      return c.json({ error: `${tarih} tarihinde kapanmış vardiya bulunamadı.` }, 404);
+    }
+    const mekanAdlari: string[] = [];
+    for (const kayit of gunKayitlar) {
+      const mekanObj: any = await ckv.get(`mekan_${kayit.mekanId}`) || {};
+      const rapor = kapanisRaporOlustur(kayit, mekanObj, kayit.mekanId, tarih);
+      await ckv.set(`kapanis_rapor_${rapor.id}`, rapor);
+      await ckv.set(`kapanis_bekleyen_${user.id}_${rapor.id}`, { raporId: rapor.id, ts: rapor.createdAt });
+      mekanAdlari.push(rapor.mekanAdi);
+    }
+    console.log(`Kapanış bildirim testi: ${tarih} → ${mekanAdlari.length} rapor → ${user.id}`);
+    return c.json({ ok: true, tarih, adet: mekanAdlari.length, mekanlar: mekanAdlari });
+  } catch (err) {
+    console.log("POST kapanis-bildirim/test error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
   }
 });
@@ -20602,13 +20863,15 @@ app.post("/make-server-4da0b637/tedarikci/siparisler", async (c) => {
     const id = `siparis_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const orderItems = items.map((it, idx) => ({ id: `item_${idx}_${Math.random().toString(36).slice(2, 6)}`, productName: it.productName || "", quantity: it.quantity || 0, unitPrice: it.unitPrice || 0, currency: it.currency || currency || "TRY", deliveredQuantity: 0, notes: it.notes || "" }));
     const totalAmount = orderItems.reduce((a, it) => a + ((it.productName || "").toLowerCase().includes("paspartu") ? (it.unitPrice || 0) : (it.quantity * it.unitPrice)), 0);
-    const siparis = { id, cariId, cariName: cari.name || "", status: "taslak", items: orderItems, totalAmount, currency: currency || "TRY", notes: notes || "", createdAt: now, createdBy: callerUser.user_metadata?.full_name || "", createdByUserId: callerUser.id, updatedAt: now,
+    // Sipariş oluşturulunca DOĞRUDAN gönderilir (taslak ara adımı kaldırıldı, 2026-07-20)
+    const siparis = { id, cariId, cariName: cari.name || "", status: "gonderildi", sentAt: now, items: orderItems, totalAmount, currency: currency || "TRY", notes: notes || "", createdAt: now, createdBy: callerUser.user_metadata?.full_name || "", createdByUserId: callerUser.id, updatedAt: now,
       teklifFiyat: teklifFiyat ? Number(teklifFiyat) : null,
       teklifler: teklifFiyat ? [{ taraf: "admin", fiyat: Number(teklifFiyat), tarih: now, kisi: callerUser.user_metadata?.full_name || "" }] : [],
       teklifDurum: teklifFiyat ? "teklif_verildi" : null,
-      loglar: [{ tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: teklifFiyat ? `Sipariş oluşturuldu, ₺${Number(teklifFiyat).toLocaleString("tr-TR")} teklif edildi` : `Sipariş oluşturuldu (₺${totalAmount.toLocaleString("tr-TR")})` }],
+      loglar: [{ tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: teklifFiyat ? `Sipariş oluşturuldu ve gönderildi, ₺${Number(teklifFiyat).toLocaleString("tr-TR")} teklif edildi` : `Sipariş oluşturuldu ve gönderildi (₺${totalAmount.toLocaleString("tr-TR")})` }],
     };
     await saveOrder(companyId, ckv, siparis);
+    if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "siparis_yeni", "Yeni Sipariş", `${orderItems.length} kalem, toplam ${totalAmount} ${currency || "TRY"}`, { siparisId: id.replace("siparis_", "") }, companyId);
     return c.json({ ok: true, siparis });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -20624,7 +20887,8 @@ app.put("/make-server-4da0b637/tedarikci/siparisler/:id/kalem-ekle", async (c) =
     const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
     const siparis = await getOrder(companyId, ckv, siparisId);
     if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
-    if (siparis.status !== "taslak") return c.json({ error: "Sadece taslak siparişlere kalem eklenebilir." }, 400);
+    // Taslak veya henüz tedarikçi onaylamamış (gonderildi) siparişe kalem eklenebilir
+    if (!["taslak", "gonderildi"].includes(siparis.status)) return c.json({ error: "Sadece tedarikçi onayı öncesi siparişlere kalem eklenebilir." }, 400);
     const { items, teklifFiyat } = await c.req.json();
     if (!items?.length) return c.json({ error: "En az 1 kalem zorunlu." }, 400);
     const now = new Date().toISOString();
@@ -20649,6 +20913,7 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/gonder", async (c) => {
     const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
     const siparis = await getOrder(companyId, ckv, siparisId);
     if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
+    if (siparis.status === "gonderildi") return c.json({ ok: true, siparis }); // yeni akışta oluşturma anında gönderilir — idempotent
     if (siparis.status !== "taslak") return c.json({ error: "Sadece taslak siparişler gönderilebilir." }, 400);
     siparis.status = "gonderildi"; siparis.sentAt = new Date().toISOString(); siparis.updatedAt = new Date().toISOString();
     siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: "Sipariş tedarikçiye gönderildi" }];
@@ -20673,13 +20938,8 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/onayla", async (c) => {
     siparis.status = "onaylandi"; siparis.confirmedAt = new Date().toISOString(); siparis.updatedAt = new Date().toISOString();
     siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "tedarikci", mesaj: "Sipariş onaylandı" }];
     await saveOrder(resolved.companyId, resolved.ckv, siparis);
-    // Kasada borç kaydı oluştur
-    const borcTutar = siparis.teklifFiyat ? siparis.teklifFiyat : siparis.totalAmount || 0;
-    if (borcTutar > 0) {
-      const giderId = `isletme_gider_tedarikci_${siparisId}`;
-      const gider = { id: giderId, amount: borcTutar, currency: siparis.currency || "TRY", description: `Tedarikçi sipariş: ${siparis.cariName || ""}`, category: "tedarikci", subcategory: "siparis", personelAdi: siparis.cariName || "", date: new Date().toISOString().slice(0, 10), createdAt: new Date().toISOString(), createdBy: "sistem", siparisId: `siparis_${siparisId}` };
-      await resolved.ckv.set(giderId, gider);
-    }
+    // NOT (2026-07-20): sipariş onayında GİDER YAZILMAZ. İGD gideri sadece ödeme anında oluşur
+    // (POST /tedarikci/odemeler), cari bakiye sipariş toplamı − ödemelerden türetilir. Çift sayım biter.
     return c.json({ ok: true, siparis });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -20735,7 +20995,8 @@ app.get("/make-server-4da0b637/tedarikci/teslimatlar", async (c) => {
   try {
     const callerUser = await verifyToken(c);
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
-    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
+    // operasyon: teslimat onayı için erişebilir — teslimat verisi fiyat İÇERMEZ (ürün × adet)
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur", "operasyon"])) return c.json({ error: "Yetki yok." }, 403);
     const _tesCompanyId = getCompanyId(callerUser);
     const ckv = companyKvFor(_tesCompanyId);
     const status = c.req.query("status");
@@ -20748,7 +21009,8 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
   try {
     const callerUser = await verifyToken(c);
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
-    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
+    // operasyon: parasal veri görmeden teslim onayı verebilir (kullanıcı kararı 2026-07-20)
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur", "operasyon"])) return c.json({ error: "Yetki yok." }, 403);
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
     const rawId = c.req.param("id");
@@ -20797,7 +21059,7 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/reddet", async (c) => {
   try {
     const callerUser = await verifyToken(c);
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
-    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur", "operasyon"])) return c.json({ error: "Yetki yok." }, 403);
     const ckv = companyKvFor(getCompanyId(callerUser));
     const rawId = c.req.param("id");
     const teslimatId = rawId.startsWith("teslimat_") ? rawId.replace("teslimat_", "") : rawId;

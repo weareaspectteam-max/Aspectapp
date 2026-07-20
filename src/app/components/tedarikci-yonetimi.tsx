@@ -46,7 +46,7 @@ const TABS: Array<{ key: TabKey; label: string; icon: any; color: string }> = [
   { key: 'odeme',     label: 'Ödemeler',     icon: Banknote, color: '#34d399' },
 ];
 
-export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, onNavigate }: TedarikciYonetimiProps) {
+function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onNavigate }: TedarikciYonetimiProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('tedarikci');
   const [selectedTedarikci, setSelectedTedarikci] = useState<any>(null); // seçili tedarikçi
   const [tedarikciTab, setTedarikciTab] = useState<'siparisler' | 'fiyatlar' | 'bakiye'>('siparisler');
@@ -154,8 +154,8 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
     setActionLoading('order');
     try {
       const items = orderItems.filter(i => i.productName && i.quantity > 0);
-      // Mevcut taslak varsa kalem ekle, yoksa yeni oluştur
-      const mevcutTaslak = siparisler.find((s: any) => s.cariId === orderCariId && s.status === 'taslak');
+      // Tedarikçi onayı öncesi açık sipariş (taslak/gönderildi) varsa kalem ekle, yoksa yeni oluştur
+      const mevcutTaslak = siparisler.find((s: any) => s.cariId === orderCariId && ['taslak', 'gonderildi'].includes(s.status));
       let siparisId: string;
       if (mevcutTaslak) {
         // Taslağa kalem ekle
@@ -258,7 +258,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <p className="text-white font-semibold text-sm truncate">{c.name}</p>
-                {c.supplierType && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">{c.supplierType === 'album' ? 'Albüm' : 'Ribon'}</span>}
+                {c.supplierType === 'album' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">Albüm</span>}
               </div>
               {c.linkedUserEmail && <p className="text-green-400 text-xs">✓ {c.linkedUserEmail}</p>}
               {!c.linkedUserId && <p className="text-white/30 text-xs">Hesap bağlı değil</p>}
@@ -1235,12 +1235,12 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
               className="w-full max-w-sm rounded-2xl p-5 space-y-4 max-h-[85vh] overflow-y-auto"
               style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.10)' }}>
               <div className="flex items-center justify-between">
-                <h2 className="text-white font-bold text-lg">{orderCariId && siparisler.some((s: any) => s.cariId === orderCariId && s.status === 'taslak') ? 'Taslağa Kalem Ekle' : 'Yeni Sipariş'}</h2>
+                <h2 className="text-white font-bold text-lg">{orderCariId && siparisler.some((s: any) => s.cariId === orderCariId && ['taslak', 'gonderildi'].includes(s.status)) ? 'Açık Siparişe Kalem Ekle' : 'Yeni Sipariş'}</h2>
                 <button onClick={() => setShowNewOrder(false)}><X className="w-5 h-5 text-white/40" /></button>
               </div>
-              {orderCariId && siparisler.some((s: any) => s.cariId === orderCariId && s.status === 'taslak') && (
+              {orderCariId && siparisler.some((s: any) => s.cariId === orderCariId && ['taslak', 'gonderildi'].includes(s.status)) && (
                 <div className="px-3 py-2 rounded-lg text-[11px] text-amber-400" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.15)' }}>
-                  Bu tedarikçinin mevcut taslak siparişi var. Kalemler taslağa eklenecek.
+                  Bu tedarikçinin onay bekleyen açık siparişi var. Kalemler o siparişe eklenecek.
                 </div>
               )}
               <select value={orderCariId} onChange={e => {
@@ -1259,16 +1259,13 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                   items.push({ productName: 'Paspartu', quantity: 0, unitPrice: 0 });
                   setOrderItems(items);
                   setOrderCurrency((albumler || [])[0]?.currency || 'TRY');
-                } else if (st === 'ribon') {
-                  setOrderItems((papers || []).map((p: any) => ({ productName: p.name || p.id, quantity: 0, unitPrice: p.boxPrice || 0 })));
-                  setOrderCurrency((papers || [])[0]?.currency || 'TRY');
                 } else {
                   setOrderItems([{ productName: '', quantity: 0, unitPrice: 0 }]);
                 }
               }} className={inputStyle + ' bg-white/10'}>
                 <option value="" className="bg-gray-900">Tedarikçi seç...</option>
-                {cariler.filter((c: any) => c.supplierType).map((c: any) => (
-                  <option key={c.id} value={c.id} className="bg-gray-900">{c.emoji || '🏢'} {c.name} ({c.supplierType === 'album' ? 'Albüm' : 'Ribon'})</option>
+                {cariler.filter((c: any) => c.supplierType === 'album').map((c: any) => (
+                  <option key={c.id} value={c.id} className="bg-gray-900">{c.emoji || '🏢'} {c.name}</option>
                 ))}
               </select>
 
@@ -1346,31 +1343,6 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                       </div>
                     );
                   })()}
-                  <div className="flex justify-between pt-2 border-t border-white/10">
-                    <span className="text-white/50 text-xs">Toplam:</span>
-                    <span className="text-white font-bold text-sm">₺{orderItems.reduce((a, i) => a + (i.productName === 'Paspartu' ? (i.unitPrice || 0) : (i.quantity * i.unitPrice)), 0).toLocaleString('tr-TR')}</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Ribon tipi */}
-              {orderCariId && supplierType === 'ribon' && (
-                <div className="space-y-1">
-                  <div className="flex text-[10px] text-white/30 font-semibold px-1">
-                    <span className="flex-1">Kağıt Tipi</span>
-                    <span className="w-16 text-center">Fiyat</span>
-                    <span className="w-16 text-center">Adet</span>
-                  </div>
-                  {orderItems.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-1 py-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                      <span className="flex-1 text-white text-xs truncate">{item.productName}</span>
-                      <span className="w-16 text-center text-[11px] text-white/40">{item.unitPrice > 0 ? `₺${item.unitPrice}` : '—'}</span>
-                      <input type="number" min={0} value={item.quantity || ''}
-                        onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p))}
-                        className="w-16 px-2 py-1.5 rounded-lg text-center text-white bg-white/10 border border-white/20 text-xs"
-                        placeholder="0" />
-                    </div>
-                  ))}
                   <div className="flex justify-between pt-2 border-t border-white/10">
                     <span className="text-white/50 text-xs">Toplam:</span>
                     <span className="text-white font-bold text-sm">₺{orderItems.reduce((a, i) => a + (i.productName === 'Paspartu' ? (i.unitPrice || 0) : (i.quantity * i.unitPrice)), 0).toLocaleString('tr-TR')}</span>
@@ -1601,7 +1573,7 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
                   <h4 className="text-[13px] font-bold text-white mb-1.5">👥 Tedarikçiler Sekmesi</h4>
                   <p>Kayıtlı tedarikçilerin listesi ve detayları:</p>
                   <p className="mt-1">• <span className="text-ta font-semibold">Tedarikçi Davet Et</span>: E-posta ile yeni tedarikçi davet edin</p>
-                  <p>• Her tedarikçi kartında <span className="text-ta font-semibold">kategori etiketi</span> (Ribon, Albüm vb.) görünür</p>
+                  <p>• Albüm tedarikçileri kartlarında <span className="text-ta font-semibold">Albüm etiketi</span> görünür</p>
                   <p>• <span className="text-emerald-400 font-semibold">Stok Açık</span> rozeti: Tedarikçinin stok kataloğu aktif</p>
                   <p>• Tedarikçiye tıklayarak sipariş geçmişi, fiyat listesi ve bakiye detayını görün</p>
                 </div>
@@ -1667,4 +1639,113 @@ export function TedarikciYonetimi({ userName, userRole, accessToken, onLogout, o
       </AnimatePresence>
     </div>
   );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   OPERASYON GÖRÜNÜMÜ — parasal veri İÇERMEZ (kullanıcı kararı 2026-07-20)
+   Rıdvan'ın bildirdiği teslimatları operasyon rolü onaylar/reddeder;
+   fiyat, tutar, bakiye, ödeme bilgisi bu ekranda YOKTUR.
+   ═══════════════════════════════════════════════════════════════ */
+function OperasyonTeslimatView({ userName, accessToken }: { userName: string; accessToken: string }) {
+  const [teslimatlar, setTeslimatlar] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teslimatlar`), { headers: buildHeaders(accessToken) });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Veri alınamadı');
+      setTeslimatlar((d.teslimatlar || []).sort((a: any, b: any) => (b.createdAt || '').localeCompare(a.createdAt || '')));
+      setErr('');
+    } catch (e: any) { setErr(e.message); } finally { setLoading(false); }
+  }, [accessToken]);
+  useEffect(() => { load(); }, [load]);
+
+  const islem = async (id: string, aksiyon: 'onayla' | 'reddet') => {
+    if (aksiyon === 'reddet' && !confirm('Bu teslimatı reddetmek istiyor musun?')) return;
+    setBusy(id + aksiyon);
+    try {
+      await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teslimatlar/${id}/${aksiyon}`), {
+        method: 'PUT', headers: buildHeaders(accessToken),
+        body: aksiyon === 'reddet' ? JSON.stringify({ reason: 'Operasyon reddetti' }) : undefined,
+      });
+      load();
+    } finally { setBusy(''); }
+  };
+
+  const bekleyen = teslimatlar.filter(t => t.status === 'beklemede');
+  const gecmis = teslimatlar.filter(t => t.status !== 'beklemede').slice(0, 10);
+
+  const kart = (t: any, aktif: boolean) => (
+    <div key={t.id} className="rounded-2xl p-4 space-y-2" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+      <div className="flex items-center justify-between">
+        <p className="text-white font-semibold text-sm">📦 {t.cariName || 'Tedarikçi'}</p>
+        <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ color: STATUS_CONFIG[t.status]?.color, background: STATUS_CONFIG[t.status]?.bg }}>{STATUS_CONFIG[t.status]?.label || t.status}</span>
+      </div>
+      <div className="space-y-1">
+        {(t.lines || []).map((l: any, i: number) => (
+          <div key={i} className="flex justify-between text-xs">
+            <span className="text-white/70">{l.productName}</span>
+            <span className="text-white font-bold">× {l.quantity}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center justify-between text-[10px] text-white/30">
+        <span>{t.deliveryDate}</span>
+        {t.deliveryNote && <span className="truncate ml-2">{t.deliveryNote}</span>}
+        {t.reviewedBy && <span>✓ {t.reviewedBy}</span>}
+      </div>
+      {aktif && (
+        <div className="flex gap-2 pt-1">
+          <button onClick={() => islem(t.id, 'onayla')} disabled={busy !== ''}
+            className="flex-1 py-2.5 rounded-xl text-white text-xs font-bold active:scale-95"
+            style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}>
+            {busy === t.id + 'onayla' ? '...' : '✓ Teslim Alındı — Onayla'}
+          </button>
+          <button onClick={() => islem(t.id, 'reddet')} disabled={busy !== ''}
+            className="px-4 py-2.5 rounded-xl text-red-400 text-xs font-bold active:scale-95"
+            style={{ background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.3)' }}>
+            Reddet
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen pb-28 px-4 pt-4 space-y-4" style={{ background: 'var(--app-bg, linear-gradient(135deg, #0a051e 0%, #1a0a3c 50%, #0d0a2e 100%))' }}>
+      <div>
+        <h1 className="text-2xl font-black text-white">Teslimat Onayı 📦</h1>
+        <p className="text-xs text-white/40">{userName} · Tedarikçi teslimatlarını kontrol edip onayla</p>
+      </div>
+      {err && <div className="px-3 py-2 rounded-lg text-xs text-red-400" style={{ background: 'rgba(248,113,113,0.1)' }}>{err}</div>}
+      {loading ? (
+        <div className="text-center text-white/40 text-sm py-12">Yükleniyor…</div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between">
+            <h2 className="text-white font-bold text-sm">Bekleyen Teslimatlar</h2>
+            <button onClick={load} className="text-white/40 text-xs">↻ Yenile</button>
+          </div>
+          {bekleyen.length === 0 && <div className="rounded-2xl p-6 text-center text-white/40 text-sm" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>Bekleyen teslimat yok 👍</div>}
+          {bekleyen.map(t => kart(t, true))}
+          {gecmis.length > 0 && (<>
+            <h2 className="text-white/60 font-bold text-sm pt-2">Son İşlenenler</h2>
+            {gecmis.map(t => kart(t, false))}
+          </>)}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* Rol dallandırma: operasyon → parasal-veri-siz teslimat onayı; diğer roller → tam yönetim paneli */
+export function TedarikciYonetimi(props: TedarikciYonetimiProps) {
+  if (props.userRole === 'operasyon') {
+    return <OperasyonTeslimatView userName={props.userName} accessToken={props.accessToken} />;
+  }
+  return <TedarikciYonetimiAdmin {...props} />;
 }

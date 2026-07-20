@@ -280,6 +280,42 @@ karZarar = toplamCiro - toplamMaliyet
 
 ---
 
+## Kapanis Bildirimleri (Tahsilat Popup)
+
+Vardiya kapaninca yonetici tarafindan secilmis kisilere tahsilat raporu popup'i duser.
+Amac: aksam tahsilatinda "kimden ne kadar nakit alinacak" karisikligini onlemek.
+
+**Frontend:** `kapanis-bildirim-modal.tsx` (popup + paylasilan `KapanisRaporDetay` bileseni), `kapanis-bildirimleri.tsx` (gecmis liste + yonetici yetki paneli)
+**Mount:** App.tsx ve PcApp.tsx (UrgentMessageModal yaninda), 20 sn poll
+
+### KV Yapisi
+| Key | Icerik |
+|-----|--------|
+| `kapanis_bildirim_config` | `{ kisiler: [{userId, ad, rol, scope: 'all' veya mekanId[]}] }` |
+| `kapanis_rapor_{mekanId}_{tarih}` | Rapor snapshot — re-close ayni ID'ye yazar (cift popup olmaz) |
+| `kapanis_bekleyen_{userId}_{raporId}` | Okunmamis popup isareti — X'e basinca silinir |
+
+### Uretim (`/stok/kapanis` icinde, non-fatal try)
+- Config'de mekani kapsayan kisi varsa rapor uretilir
+- Kisi bazli satis kirilimi: nakit/iban/kredi (odeme siniflandirmasi `/vardiya/raporlar` ile ayni string matching), urun satirlari, iskonto
+- Ozet: toplamCiro, nakit/iban/kredi, iade, cikis, satilanFotograf, musteriSayisi
+- **"Elden alinacak" = sadece nakit** — kart + IBAN sirket hesabina gider, bilgi amacli gosterilir
+
+### Endpoint'ler
+| Metod | Route | Aciklama |
+|-------|-------|----------|
+| GET | `/kapanis-bildirim/config` | Yetki matrisi oku (yonetici) |
+| POST | `/kapanis-bildirim/config` | Yetki matrisi kaydet (yonetici) |
+| GET | `/kapanis-bildirim/durum` | Popup poll: `{ yetkili, bekleyenler }` |
+| POST | `/kapanis-bildirim/okundu` | Body `{raporId}` — bekleyen isaretini sil |
+| GET | `/kapanis-bildirim/liste` | Son 30 gun raporlari (scope filtreli, yonetici hepsini gorur; 60+ gun lazy temizlik) |
+
+### Menu Gorunurlugu
+- Hamburger > GENEL > "Kapanis Bildirimleri": yonetici her zaman gorur; digerleri config'de kayitliysa gorur
+- Modal her poll'da `aspect_kapanis_bildirim_yetkili` localStorage bayragini gunceller, menu bu bayragi okur
+
+---
+
 ## Hakedis Sistemi
 
 **UI'da "Hakedis", backend key/route'larda "prim" olarak gecer.**
