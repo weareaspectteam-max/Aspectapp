@@ -341,6 +341,9 @@ Yonetici menu girisini her zaman gorur; digerleri sadece config'de kayitliysa.
 - **Acik Takip (personel)** (`acik-takip.tsx`, GENEL menusu — mudur/operasyon/idari/personel):
   herkes YALNIZCA kendini gorur, islem yapamaz (beklenen/alinan tutarlar sunucudan gonderilmez)
 - Ortak satir bileseni: `AcikSatir` (acik-panel.tsx icinden export)
+- **KASA ENTEGRASYONU:** kasa2 nakit bakiyesi hesaplanirken kalan acik dusulur, fazla eklenir
+  (milat sonrasi kapanis_acik_ kayitlari) — kasa fiilen eldeki parayi gosterir; tahsilat yapilinca
+  kalan duser, kasa kendiliginden yukselir. Nakit Kasa kartinda "Teslimat acigi −X" bilgi satiri.
 - **Kapanis Bildirimleri sayfasi** (liste + yetki paneli): SADECE yonetici, YONETICI HIZLI ERISIM menusunde
 
 ### Gun Kapatma (mor rozet, sol) — ikinci teslimat halkasi
