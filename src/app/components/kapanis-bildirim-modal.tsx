@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Minus, Wallet, ChevronDown, ChevronUp, Check, Loader2, History } from 'lucide-react';
+import { X, Minus, Wallet, ChevronDown, ChevronUp, Check, Loader2, History, FileText } from 'lucide-react';
 import { authHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
@@ -119,11 +119,19 @@ interface DetayProps {
   onTeslim?: (personelId: string, islem: 'teslim' | 'geri', kismi?: KismiGiris) => void;
   /** işlem sürerken personelId (buton spinner'ı) */
   islemde?: string | null;
+  /** Popup modu: teslim alınanlar listeden düşer, sadece bekleyenler görünür (geri alma geçmiş listesinden) */
+  sadeceBekleyen?: boolean;
 }
 
-/** Rapor detay gövdesi — popup ve geçmiş listesi aynı bileşeni kullanır */
-export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde = null }: DetayProps) {
+/**
+ * Rapor gövdesi — TAHSİLAT ÖNCELİKLİ düzen.
+ * Üstte: kimden ne alınacak + Teslim/Kısmi düğmeleri (gömülü değil, direkt görünür).
+ * Ürün dökümü, ciro özeti vb. "Rapor Detayı" bölümünde isteğe bağlı açılır.
+ * Popup ve geçmiş listesi aynı bileşeni kullanır.
+ */
+export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde = null, sadeceBekleyen = false }: DetayProps) {
   const [logAcik, setLogAcik] = useState(false);
+  const [raporDetayAcik, setRaporDetayAcik] = useState(false);
   const [kismiPid, setKismiPid] = useState<string | null>(null);
   const [kismiVals, setKismiVals] = useState<{ nakit: string; kart: string; iban: string }>({ nakit: '', kart: '', iban: '' });
 
@@ -140,180 +148,102 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
     });
     setKismiPid(null);
   };
+
   const teslim = rapor.teslim;
   const bekleyen = teslimBekleyenler(rapor);
   const kalanNakit = bekleyen.reduce((s, p) => s + (p.nakitTL || 0), 0);
-  const teslimVar = !!teslim && Object.keys(teslim.kisiler || {}).length > 0;
+  const nakitliler = (rapor.personeller || []).filter(p => (p.nakitTL || 0) > 0);
+  const tamamMi = nakitliler.length > 0 && bekleyen.length === 0;
 
   return (
     <div>
-      {/* Vardiya özeti */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-        <OzetChip label="Toplam Ciro" value={fmtTL(rapor.toplamCiro)} />
-        <OzetChip label="Satılan Foto" value={rapor.satilanFotograf} />
-        <OzetChip label="İade" value={rapor.toplamIade} />
-        <OzetChip label="Çıkış" value={rapor.toplamCikis} />
-        {rapor.musteriSayisi > 0 && <OzetChip label="Müşteri" value={rapor.musteriSayisi} />}
-        {rapor.toplamIskonto > 0 && <OzetChip label="İskonto" value={fmtTL(rapor.toplamIskonto)} />}
-      </div>
-
-      {/* Ödeme kırılımı */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-        {([
-          ['💵 Nakit', rapor.nakitTL, RENK.nakit],
-          ['💳 Kart', rapor.krediTL, RENK.kart],
-          ['🏦 IBAN', rapor.ibanTL, RENK.iban],
-        ] as [string, number, string][]).map(([label, tutar, renk]) => (
-          <div key={label} style={{
-            flex: 1, padding: '8px 10px', borderRadius: 10, textAlign: 'center',
-            background: 'rgba(255,255,255,0.04)', border: `1px solid ${renk}40`,
-          }}>
-            <div style={{ fontSize: 10, color: renk, fontWeight: 700 }}>{label}</div>
-            <div style={{ fontSize: 14, color: '#fff', fontWeight: 800 }}>{fmtTL(tutar)}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Elden alınacak banner — sadece nakit; kart ve IBAN bankaya gider */}
+      {/* ── 1. Elden alınacak banner ── */}
       <div style={{
-        padding: '12px 14px', borderRadius: 12, marginBottom: 12,
-        background: kalanNakit === 0 && rapor.nakitTL > 0 ? 'rgba(168,230,207,0.12)' : 'rgba(251,191,36,0.12)',
-        border: kalanNakit === 0 && rapor.nakitTL > 0 ? '1.5px solid rgba(168,230,207,0.5)' : '1.5px solid rgba(251,191,36,0.5)',
+        padding: '10px 14px', borderRadius: 12, marginBottom: 10,
+        background: tamamMi ? 'rgba(168,230,207,0.12)' : 'rgba(251,191,36,0.12)',
+        border: tamamMi ? '1.5px solid rgba(168,230,207,0.5)' : '1.5px solid rgba(251,191,36,0.5)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 12, fontWeight: 800, color: kalanNakit === 0 && rapor.nakitTL > 0 ? RENK.nakit : RENK.amber, letterSpacing: 0.5 }}>
-            {kalanNakit === 0 && rapor.nakitTL > 0 ? '✅ TÜM NAKİT TESLİM ALINDI' : '💰 ELDEN ALINACAK NAKİT'}
-          </span>
-          <span style={{ fontSize: 20, fontWeight: 900, color: kalanNakit === 0 && rapor.nakitTL > 0 ? RENK.nakit : RENK.amber }}>
-            {fmtTL(rapor.nakitTL)}
-          </span>
-        </div>
-        {teslimVar && kalanNakit > 0 && (
-          <div style={{ fontSize: 11, fontWeight: 700, color: RENK.amber, marginTop: 4, textAlign: 'right' }}>
-            Kalan: {fmtTL(kalanNakit)}
-          </div>
-        )}
+        <span style={{ fontSize: 11, fontWeight: 800, color: tamamMi ? RENK.nakit : RENK.amber, letterSpacing: 0.5 }}>
+          {tamamMi ? '✅ TÜM NAKİT TESLİM ALINDI' : nakitliler.length === 0 ? '💳 ELDEN ALINACAK NAKİT YOK' : '💰 ALINACAK NAKİT'}
+        </span>
+        <span style={{ fontSize: 19, fontWeight: 900, color: tamamMi ? RENK.nakit : RENK.amber }}>
+          {fmtTL(tamamMi ? rapor.nakitTL : kalanNakit)}
+        </span>
       </div>
 
-      {/* Kişi bazlı tahsilat */}
-      <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginBottom: 6, letterSpacing: 0.5 }}>
-        KİMDEN NE ALINACAK
-      </div>
-      {rapor.personeller.length === 0 && (
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', padding: 10, textAlign: 'center' }}>
-          Bu vardiyada satış kaydı yok.
-        </div>
-      )}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {rapor.personeller.map(p => {
+      {/* ── 2. Tahsilat listesi — kişi + para + düğmeler, direkt görünür ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {(sadeceBekleyen ? nakitliler.filter(p => !teslim?.kisiler?.[p.id]?.alindi) : nakitliler).map(p => {
           const kayit = teslim?.kisiler?.[p.id];
           const alindi = !!kayit?.alindi;
           const busy = islemde === p.id;
+          const acikT = kayit?.acik?.toplam || 0;
+
           return (
             <div key={p.id} style={{
-              padding: '10px 12px', borderRadius: 12,
-              background: alindi ? 'rgba(168,230,207,0.06)' : 'rgba(255,255,255,0.05)',
-              border: alindi ? '1px solid rgba(168,230,207,0.35)' : '1px solid rgba(255,255,255,0.1)',
+              padding: '8px 10px', borderRadius: 12,
+              background: alindi ? 'rgba(168,230,207,0.07)' : 'rgba(255,255,255,0.05)',
+              border: alindi
+                ? (acikT > 0 ? '1px solid rgba(248,113,113,0.45)' : '1px solid rgba(168,230,207,0.4)')
+                : '1px solid rgba(255,255,255,0.12)',
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>👤 {p.ad}</span>
-                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>Toplam satış: <b style={{ color: '#fff' }}>{fmtTL(p.toplamTL)}</b></span>
+              {/* Satır: isim + tutar */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#fff', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  👤 {p.ad}
+                </span>
+                <span style={{ fontSize: 15, fontWeight: 900, color: alindi ? RENK.nakit : RENK.amber, flexShrink: 0 }}>
+                  {fmtTL(p.nakitTL)}
+                </span>
               </div>
 
-              {/* Ürün satırları */}
-              {p.satirlar.length > 0 && (
-                <div style={{ marginBottom: 6 }}>
-                  {p.satirlar.map((s, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.6)', padding: '1px 0' }}>
-                      <span>{s.adet}× {s.urun}</span>
-                      <span>{fmtTL(s.toplamTL)}</span>
-                    </div>
-                  ))}
-                  {p.iskontoTL > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#f87171', padding: '1px 0' }}>
-                      <span>İskonto</span>
-                      <span>−{fmtTL(p.iskontoTL)}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Ödeme kırılımı — nakit vurgulu */}
-              <div style={{ display: 'flex', gap: 6 }}>
+              {/* Satır: durum / düğmeler */}
+              {alindi ? (
+                <button
+                  onClick={() => canTeslim && onTeslim && onTeslim(p.id, 'geri')}
+                  disabled={!canTeslim || busy}
+                  title={canTeslim ? 'Geri almak için tekrar dokun' : undefined}
+                  style={{
+                    width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 9,
+                    background: acikT > 0 ? 'rgba(248,113,113,0.12)' : 'rgba(168,230,207,0.18)',
+                    border: 'none',
+                    color: acikT > 0 ? '#f87171' : RENK.nakit, fontWeight: 800, fontSize: 11.5,
+                    cursor: canTeslim ? 'pointer' : 'default',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, flexWrap: 'wrap',
+                    opacity: busy ? 0.6 : 1,
+                  }}
+                >
+                  {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} strokeWidth={3} />}
+                  Alındı{acikT > 0 ? ` · ⚠️ ${fmtTL(acikT)} açık` : acikT < 0 ? ` · +${fmtTL(-acikT)} fazla` : ''} · {kayit?.alanAd}{kayit?.zaman ? ` · ${fmtLogZaman(kayit.zaman)}` : ''}
+                </button>
+              ) : !canTeslim ? (
                 <div style={{
-                  flex: 1.4, padding: '6px 8px', borderRadius: 8,
-                  background: p.nakitTL > 0 ? 'rgba(168,230,207,0.14)' : 'rgba(255,255,255,0.03)',
-                  border: p.nakitTL > 0 ? `1.5px solid ${RENK.nakit}70` : '1px solid rgba(255,255,255,0.08)',
+                  marginTop: 6, padding: '6px 10px', borderRadius: 9, textAlign: 'center',
+                  background: 'rgba(251,191,36,0.06)', border: '1px dashed rgba(251,191,36,0.35)',
+                  color: 'rgba(251,191,36,0.8)', fontWeight: 700, fontSize: 11,
                 }}>
-                  <div style={{ fontSize: 9, fontWeight: 800, color: p.nakitTL > 0 ? RENK.nakit : 'rgba(255,255,255,0.35)' }}>ELDEN ALINACAK</div>
-                  <div style={{ fontSize: 14, fontWeight: 900, color: p.nakitTL > 0 ? RENK.nakit : 'rgba(255,255,255,0.35)' }}>{fmtTL(p.nakitTL)}</div>
+                  ⏳ Teslim bekliyor
                 </div>
-                <div style={{ flex: 1, padding: '6px 8px', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: RENK.kart }}>💳 Kart</div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: p.krediTL > 0 ? '#fff' : 'rgba(255,255,255,0.35)' }}>{fmtTL(p.krediTL)}</div>
-                </div>
-                <div style={{ flex: 1, padding: '6px 8px', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: RENK.iban }}>🏦 IBAN</div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: p.ibanTL > 0 ? '#fff' : 'rgba(255,255,255,0.35)' }}>{fmtTL(p.ibanTL)}</div>
-                </div>
-              </div>
-
-              {/* Teslim durumu / düğmeleri — sadece nakiti olanlar */}
-              {p.nakitTL > 0 && (() => {
-                if (alindi) {
-                  const acikT = kayit?.acik?.toplam || 0;
-                  return (
-                    <button
-                      onClick={() => canTeslim && onTeslim && onTeslim(p.id, 'geri')}
-                      disabled={!canTeslim || busy}
-                      title={canTeslim ? 'Geri almak için tekrar dokun' : undefined}
-                      style={{
-                        width: '100%', marginTop: 8, padding: '9px 10px', borderRadius: 10,
-                        background: acikT > 0 ? 'rgba(248,113,113,0.12)' : 'rgba(168,230,207,0.2)',
-                        border: acikT > 0 ? '1.5px solid rgba(248,113,113,0.5)' : '1.5px solid rgba(168,230,207,0.55)',
-                        color: acikT > 0 ? '#f87171' : RENK.nakit, fontWeight: 800, fontSize: 12,
-                        cursor: canTeslim ? 'pointer' : 'default',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, flexWrap: 'wrap',
-                        opacity: busy ? 0.6 : 1,
-                      }}
-                    >
-                      {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={3} />}
-                      Teslim Alındı
-                      {acikT > 0 ? ` · ⚠️ ${fmtTL(acikT)} açık` : acikT < 0 ? ` · +${fmtTL(-acikT)} fazla` : ''}
-                      {' · '}{kayit?.alanAd}{kayit?.zaman ? ` · ${fmtLogZaman(kayit.zaman)}` : ''}
-                    </button>
-                  );
-                }
-                if (!canTeslim) {
-                  return (
-                    <div style={{
-                      marginTop: 8, padding: '7px 10px', borderRadius: 10, textAlign: 'center',
-                      background: 'rgba(251,191,36,0.06)', border: '1px dashed rgba(251,191,36,0.35)',
-                      color: 'rgba(251,191,36,0.8)', fontWeight: 700, fontSize: 11,
-                    }}>
-                      ⏳ Teslim bekliyor
-                    </div>
-                  );
-                }
-                if (kismiPid === p.id) {
-                  // Kısmi teslim: nakit/kart/iban ayrı ayrı alınan girilir
-                  const beklenen = { nakit: p.nakitTL || 0, kart: p.krediTL || 0, iban: p.ibanTL || 0 };
+              ) : kismiPid === p.id ? (
+                (() => {
+                  const beklenenK = { nakit: p.nakitTL || 0, kart: p.krediTL || 0, iban: p.ibanTL || 0 };
                   const girilen = {
                     nakit: Math.max(0, Math.round(Number(kismiVals.nakit) || 0)),
                     kart: Math.max(0, Math.round(Number(kismiVals.kart) || 0)),
                     iban: Math.max(0, Math.round(Number(kismiVals.iban) || 0)),
                   };
-                  const fark = (beklenen.nakit - girilen.nakit) + (beklenen.kart - girilen.kart) + (beklenen.iban - girilen.iban);
+                  const fark = (beklenenK.nakit - girilen.nakit) + (beklenenK.kart - girilen.kart) + (beklenenK.iban - girilen.iban);
                   return (
                     <div style={{
-                      marginTop: 8, padding: 10, borderRadius: 10,
+                      marginTop: 6, padding: 10, borderRadius: 10,
                       background: 'rgba(251,191,36,0.06)', border: '1.5px solid rgba(251,191,36,0.4)',
                     }}>
                       <div style={{ fontSize: 10, fontWeight: 800, color: RENK.amber, marginBottom: 6, letterSpacing: 0.5 }}>KISMİ TESLİM — NE KADAR ALDIN?</div>
                       {([
-                        ['nakit', '💵 Nakit', beklenen.nakit],
-                        ['kart', '💳 Kart', beklenen.kart],
-                        ['iban', '🏦 IBAN', beklenen.iban],
+                        ['nakit', '💵 Nakit', beklenenK.nakit],
+                        ['kart', '💳 Kart', beklenenK.kart],
+                        ['iban', '🏦 IBAN', beklenenK.iban],
                       ] as ['nakit' | 'kart' | 'iban', string, number][]).filter(([, , b]) => b > 0).map(([alan, etiket, b]) => (
                         <div key={alan} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', flex: 1 }}>{etiket} <span style={{ color: 'rgba(255,255,255,0.35)' }}>(beklenen {fmtTL(b)})</span></span>
@@ -362,51 +292,61 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
                       </div>
                     </div>
                   );
-                }
-                return (
-                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                    <button
-                      onClick={() => onTeslim && onTeslim(p.id, 'teslim')}
-                      disabled={busy}
-                      style={{
-                        flex: 2, padding: '9px 10px', borderRadius: 10,
-                        background: 'rgba(251,191,36,0.12)', border: '1.5px solid rgba(251,191,36,0.5)',
-                        color: RENK.amber, fontWeight: 800, fontSize: 12, cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        opacity: busy ? 0.6 : 1,
-                      }}
-                    >
-                      {busy ? <Loader2 size={13} className="animate-spin" /> : <Wallet size={13} />}
-                      Teslim Aldım · {fmtTL(p.nakitTL)}
-                    </button>
-                    <button
-                      onClick={() => kismiBaslat(p)}
-                      disabled={busy}
-                      title="Eksik/fazla aldıysan tutarları ayrı ayrı gir"
-                      style={{
-                        flex: 1, padding: '9px 8px', borderRadius: 10,
-                        background: 'rgba(248,113,113,0.08)', border: '1.5px solid rgba(248,113,113,0.4)',
-                        color: '#f87171', fontWeight: 800, fontSize: 12, cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}
-                    >
-                      ➗ Kısmi
-                    </button>
-                  </div>
-                );
-              })()}
+                })()
+              ) : (
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  <button
+                    onClick={() => onTeslim && onTeslim(p.id, 'teslim')}
+                    disabled={busy}
+                    style={{
+                      flex: 2, padding: '9px 10px', borderRadius: 9,
+                      background: 'rgba(251,191,36,0.15)', border: '1.5px solid rgba(251,191,36,0.55)',
+                      color: RENK.amber, fontWeight: 800, fontSize: 12.5, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      opacity: busy ? 0.6 : 1,
+                    }}
+                  >
+                    {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={3} />}
+                    Teslim Aldım
+                  </button>
+                  <button
+                    onClick={() => kismiBaslat(p)}
+                    disabled={busy}
+                    title="Eksik/fazla aldıysan tutarları ayrı ayrı gir"
+                    style={{
+                      flex: 1, padding: '9px 8px', borderRadius: 9,
+                      background: 'rgba(248,113,113,0.08)', border: '1.5px solid rgba(248,113,113,0.4)',
+                      color: '#f87171', fontWeight: 800, fontSize: 12, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    ➗ Kısmi
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* Hepsini teslim aldım */}
+      {nakitliler.length === 0 && rapor.personeller.length > 0 && (
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', padding: '6px 0', textAlign: 'center' }}>
+          Tüm satışlar kart/IBAN — elden tahsil edilecek nakit yok.
+        </div>
+      )}
+      {rapor.personeller.length === 0 && (
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', padding: 10, textAlign: 'center' }}>
+          Bu vardiyada satış kaydı yok.
+        </div>
+      )}
+
+      {/* ── 3. Hepsini teslim aldım ── */}
       {canTeslim && bekleyen.length > 1 && (
         <button
           onClick={() => onTeslim && onTeslim('hepsi', 'teslim')}
           disabled={islemde === 'hepsi'}
           style={{
-            width: '100%', marginTop: 10, padding: '11px 12px', borderRadius: 12, cursor: 'pointer',
+            width: '100%', marginTop: 8, padding: '11px 12px', borderRadius: 12, cursor: 'pointer',
             background: 'rgba(168,230,207,0.15)', border: '1.5px solid rgba(168,230,207,0.5)',
             color: RENK.nakit, fontWeight: 800, fontSize: 13,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -418,9 +358,82 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
         </button>
       )}
 
-      {/* Teslim geçmişi (log) */}
+      {/* ── 4. Rapor Detayı (isteğe bağlı): ciro özeti + ödeme kırılımı + ürün dökümü ── */}
+      <button
+        onClick={() => setRaporDetayAcik(a => !a)}
+        style={{
+          width: '100%', marginTop: 8, padding: '9px 10px', borderRadius: 10, cursor: 'pointer',
+          background: 'rgba(157,217,234,0.07)', border: '1px solid rgba(157,217,234,0.3)',
+          color: RENK.kart, fontWeight: 700, fontSize: 11.5,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+        }}
+      >
+        <FileText size={12} /> Rapor Detayı — ciro {fmtTL(rapor.toplamCiro)}
+        {raporDetayAcik ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+      </button>
+      {raporDetayAcik && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+            <OzetChip label="Toplam Ciro" value={fmtTL(rapor.toplamCiro)} />
+            <OzetChip label="Satılan Foto" value={rapor.satilanFotograf} />
+            <OzetChip label="İade" value={rapor.toplamIade} />
+            <OzetChip label="Çıkış" value={rapor.toplamCikis} />
+            {rapor.musteriSayisi > 0 && <OzetChip label="Müşteri" value={rapor.musteriSayisi} />}
+            {rapor.toplamIskonto > 0 && <OzetChip label="İskonto" value={fmtTL(rapor.toplamIskonto)} />}
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            {([
+              ['💵 Nakit', rapor.nakitTL, RENK.nakit],
+              ['💳 Kart', rapor.krediTL, RENK.kart],
+              ['🏦 IBAN', rapor.ibanTL, RENK.iban],
+            ] as [string, number, string][]).map(([label, tutar, renk]) => (
+              <div key={label} style={{
+                flex: 1, padding: '7px 8px', borderRadius: 10, textAlign: 'center',
+                background: 'rgba(255,255,255,0.04)', border: `1px solid ${renk}40`,
+              }}>
+                <div style={{ fontSize: 10, color: renk, fontWeight: 700 }}>{label}</div>
+                <div style={{ fontSize: 13, color: '#fff', fontWeight: 800 }}>{fmtTL(tutar)}</div>
+              </div>
+            ))}
+          </div>
+          {/* Kişi bazlı satış dökümü */}
+          {rapor.personeller.map(p => (
+            <div key={p.id} style={{
+              padding: '8px 10px', borderRadius: 10, marginBottom: 6,
+              background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>👤 {p.ad}</span>
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)' }}>{fmtTL(p.toplamTL)}</span>
+              </div>
+              {p.satirlar.map((s, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'rgba(255,255,255,0.55)', padding: '1px 0' }}>
+                  <span>{s.adet}× {s.urun}</span>
+                  <span>{fmtTL(s.toplamTL)}</span>
+                </div>
+              ))}
+              {p.iskontoTL > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#f87171', padding: '1px 0' }}>
+                  <span>İskonto</span>
+                  <span>−{fmtTL(p.iskontoTL)}</span>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, fontSize: 10, marginTop: 3 }}>
+                <span style={{ color: RENK.nakit, fontWeight: 700 }}>💵 {fmtTL(p.nakitTL)}</span>
+                <span style={{ color: RENK.kart, fontWeight: 700 }}>💳 {fmtTL(p.krediTL)}</span>
+                <span style={{ color: RENK.iban, fontWeight: 700 }}>🏦 {fmtTL(p.ibanTL)}</span>
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', lineHeight: 1.5 }}>
+            Kart ve IBAN ödemeleri şirket hesabına gider — bilgi amaçlıdır, elden tahsil edilmez.
+          </div>
+        </div>
+      )}
+
+      {/* ── 5. Teslim geçmişi (log) ── */}
       {(teslim?.log?.length || 0) > 0 && (
-        <div style={{ marginTop: 10 }}>
+        <div style={{ marginTop: 8 }}>
           <button
             onClick={() => setLogAcik(a => !a)}
             style={{
@@ -450,10 +463,6 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
           )}
         </div>
       )}
-
-      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 10, lineHeight: 1.5 }}>
-        Kart ve IBAN ödemeleri şirket hesabına gider — bilgi amaçlıdır, elden tahsil edilmez.
-      </div>
     </div>
   );
 }
@@ -505,14 +514,9 @@ export function KapanisBildirimModal({ isLoggedIn }: Props) {
         setAcikRapor(yeniler[yeniler.length - 1].id); // en son kapanan mekan açık gelir
       }
 
-      setRaporlar(prev => {
-        const gelenMap = new Map(gelen.map(r => [r.id, r]));
-        if (minimizedRef.current && yeniler.length === 0) return gelen; // küçükken tam senkron
-        // Popup açıkken: mevcutları güncelle (tamamlananlar görünür kalsın), yenileri ekle
-        const guncel = prev.map(r => gelenMap.get(r.id) || r);
-        const eklenecek = gelen.filter(r => !prev.some(p => p.id === r.id));
-        return [...guncel, ...eklenecek];
-      });
+      // Tam senkron: başka bir yetkili teslimleri tamamladıysa rapor sunucudan silinmiştir
+      // → buradaki popup'tan da düşer (herkes aynı anda görür)
+      setRaporlar(gelen);
     } catch {}
   }, []);
 
@@ -555,7 +559,12 @@ export function KapanisBildirimModal({ isLoggedIn }: Props) {
       });
       const d = await res.json();
       if (res.ok && d.teslim) {
-        setRaporlar(prev => prev.map(r => r.id === raporId ? { ...r, teslim: d.teslim } : r));
+        if (d.tamamlandi && islem === 'teslim') {
+          // Raporun tüm teslimleri bitti — popup'tan düşür (sunucu herkesin bekleyenini zaten sildi)
+          setRaporlar(prev => prev.filter(r => r.id !== raporId));
+        } else {
+          setRaporlar(prev => prev.map(r => r.id === raporId ? { ...r, teslim: d.teslim } : r));
+        }
       }
     } catch {} finally {
       setIslemde(null);
@@ -691,6 +700,7 @@ export function KapanisBildirimModal({ isLoggedIn }: Props) {
                       canTeslim={canTeslim}
                       islemde={islemde?.startsWith(`${r.id}:`) ? islemde.split(':')[1] : null}
                       onTeslim={(pid, islem, kismi) => teslimYap(r.id, pid, islem, kismi)}
+                      sadeceBekleyen
                     />
                   </div>
                 )}
