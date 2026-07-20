@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Minus, Wallet, ChevronDown, ChevronUp, Check, Loader2, History, FileText } from 'lucide-react';
 import { authHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
@@ -231,82 +232,6 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
                 }}>
                   ⏳ Teslim bekliyor
                 </div>
-              ) : kismiPid === p.id ? (
-                (() => {
-                  const beklenenK = { nakit: p.nakitTL || 0, kart: p.krediTL || 0, iban: p.ibanTL || 0 };
-                  const girilen = {
-                    nakit: Math.max(0, Math.round(Number(kismiVals.nakit) || 0)),
-                    kart: Math.max(0, Math.round(Number(kismiVals.kart) || 0)),
-                    iban: Math.max(0, Math.round(Number(kismiVals.iban) || 0)),
-                  };
-                  const fark = (beklenenK.nakit - girilen.nakit) + (beklenenK.kart - girilen.kart) + (beklenenK.iban - girilen.iban);
-                  return (
-                    <div style={{
-                      marginTop: 6, padding: 10, borderRadius: 10,
-                      background: 'rgba(251,191,36,0.06)', border: '1.5px solid rgba(251,191,36,0.4)',
-                    }}>
-                      <div style={{ fontSize: 10, fontWeight: 800, color: RENK.amber, marginBottom: 3, letterSpacing: 0.5 }}>KISMİ TESLİM — NE KADAR ALDIN?</div>
-                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', marginBottom: 7, lineHeight: 1.4 }}>
-                        Sadece eksik/fazla verilen kalemi değiştir — dokunmadığın kalem tam sayılır ✓
-                      </div>
-                      {([
-                        ['nakit', '💵 Nakit', beklenenK.nakit],
-                        ['kart', '💳 Kart', beklenenK.kart],
-                        ['iban', '🏦 IBAN', beklenenK.iban],
-                      ] as ['nakit' | 'kart' | 'iban', string, number][]).filter(([, , b]) => b > 0).map(([alan, etiket, b]) => (
-                        <div key={alan} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', flex: 1 }}>
-                            {etiket} <span style={{ color: 'rgba(255,255,255,0.35)' }}>(beklenen {fmtTL(b)})</span>
-                            {girilen[alan] === b
-                              ? <b style={{ color: RENK.nakit }}> ✓ tam</b>
-                              : <b style={{ color: girilen[alan] < b ? '#f87171' : RENK.nakit }}> {girilen[alan] < b ? `−${fmtTL(b - girilen[alan])}` : `+${fmtTL(girilen[alan] - b)}`}</b>}
-                          </span>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            value={kismiVals[alan]}
-                            onChange={e => setKismiVals(v => ({ ...v, [alan]: e.target.value }))}
-                            style={{
-                              width: 90, padding: '7px 8px', borderRadius: 8, textAlign: 'right',
-                              background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.2)',
-                              color: '#fff', fontSize: 14, fontWeight: 800, outline: 'none',
-                            }}
-                          />
-                        </div>
-                      ))}
-                      <div style={{
-                        fontSize: 12, fontWeight: 900, textAlign: 'center', padding: '6px 0', marginBottom: 6,
-                        color: fark > 0 ? '#f87171' : fark < 0 ? RENK.nakit : 'rgba(255,255,255,0.5)',
-                      }}>
-                        {fark > 0 ? `⚠️ Açık: ${fmtTL(fark)}` : fark < 0 ? `Fazla: ${fmtTL(-fark)}` : 'Fark yok — tam teslim'}
-                      </div>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button
-                          onClick={() => kismiKaydet(p)}
-                          disabled={busy}
-                          style={{
-                            flex: 1, padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                            background: 'rgba(168,230,207,0.18)', border: '1px solid rgba(168,230,207,0.5)',
-                            color: RENK.nakit, fontWeight: 800, fontSize: 12, opacity: busy ? 0.6 : 1,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                          }}
-                        >
-                          {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} strokeWidth={3} />} Kaydet
-                        </button>
-                        <button
-                          onClick={() => setKismiPid(null)}
-                          style={{
-                            padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
-                            background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
-                            color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 12,
-                          }}
-                        >
-                          Vazgeç
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })()
               ) : (
                 <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                   <button
@@ -353,6 +278,110 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
           Bu vardiyada satış kaydı yok.
         </div>
       )}
+
+      {/* ── Kısmi teslim penceresi — ekranın üstünde ayrı açılır (gömülmez, klavye kapatmaz) ── */}
+      {kismiPid && (() => {
+        const p = rapor.personeller.find(x => x.id === kismiPid);
+        if (!p) return null;
+        const beklenenK = { nakit: p.nakitTL || 0, kart: p.krediTL || 0, iban: p.ibanTL || 0 };
+        const girilen = {
+          nakit: Math.max(0, Math.round(Number(kismiVals.nakit) || 0)),
+          kart: Math.max(0, Math.round(Number(kismiVals.kart) || 0)),
+          iban: Math.max(0, Math.round(Number(kismiVals.iban) || 0)),
+        };
+        const fark = (beklenenK.nakit - girilen.nakit) + (beklenenK.kart - girilen.kart) + (beklenenK.iban - girilen.iban);
+        const busy = islemde === p.id;
+        return createPortal(
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 10002,
+            background: 'rgba(15,5,30,0.88)', backdropFilter: 'blur(12px)',
+            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+            padding: '44px 16px 16px', overflowY: 'auto',
+          }}>
+            <div style={{
+              width: '100%', maxWidth: 370,
+              background: 'rgba(30,10,40,0.99)', border: '2px solid rgba(251,191,36,0.55)',
+              borderRadius: 18, padding: '14px 16px', boxShadow: '0 20px 60px rgba(0,0,0,0.55)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: RENK.amber, letterSpacing: 0.5 }}>➗ KISMİ TESLİM — 👤 {p.ad}</span>
+                <button
+                  onClick={() => setKismiPid(null)}
+                  style={{
+                    background: 'rgba(255,255,255,0.08)', border: 'none', color: '#fff',
+                    width: 28, height: 28, borderRadius: 8, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  }}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 10, lineHeight: 1.4 }}>
+                Sadece eksik/fazla verilen kalemi değiştir — dokunmadığın kalem tam sayılır ✓
+              </div>
+              {([
+                ['nakit', '💵 Nakit', beklenenK.nakit],
+                ['kart', '💳 Kart', beklenenK.kart],
+                ['iban', '🏦 IBAN', beklenenK.iban],
+              ] as ['nakit' | 'kart' | 'iban', string, number][]).filter(([, , b]) => b > 0).map(([alan, etiket, b]) => (
+                <div key={alan} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', flex: 1, lineHeight: 1.3 }}>
+                    {etiket}
+                    <span style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>beklenen {fmtTL(b)}</span>
+                  </span>
+                  {girilen[alan] === b
+                    ? <b style={{ fontSize: 10, color: RENK.nakit, flexShrink: 0 }}>✓ tam</b>
+                    : <b style={{ fontSize: 10, color: girilen[alan] < b ? '#f87171' : RENK.nakit, flexShrink: 0 }}>{girilen[alan] < b ? `−${fmtTL(b - girilen[alan])}` : `+${fmtTL(girilen[alan] - b)}`}</b>}
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={kismiVals[alan]}
+                    onChange={e => setKismiVals(v => ({ ...v, [alan]: e.target.value }))}
+                    style={{
+                      width: 110, padding: '9px 10px', borderRadius: 10, textAlign: 'right',
+                      background: 'rgba(0,0,0,0.4)', border: '1.5px solid rgba(251,191,36,0.35)',
+                      color: '#fff', fontSize: 16, fontWeight: 800, outline: 'none', flexShrink: 0,
+                    }}
+                  />
+                </div>
+              ))}
+              <div style={{
+                fontSize: 13, fontWeight: 900, textAlign: 'center', padding: '8px 0', marginBottom: 8,
+                borderRadius: 10,
+                background: fark > 0 ? 'rgba(248,113,113,0.1)' : fark < 0 ? 'rgba(168,230,207,0.08)' : 'rgba(255,255,255,0.04)',
+                color: fark > 0 ? '#f87171' : fark < 0 ? RENK.nakit : 'rgba(255,255,255,0.5)',
+              }}>
+                {fark > 0 ? `⚠️ Açık: ${fmtTL(fark)}` : fark < 0 ? `Fazla: ${fmtTL(-fark)}` : 'Fark yok — tam teslim'}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => kismiKaydet(p)}
+                  disabled={busy}
+                  style={{
+                    flex: 1, padding: '11px 12px', borderRadius: 10, cursor: 'pointer',
+                    background: 'rgba(168,230,207,0.18)', border: '1.5px solid rgba(168,230,207,0.5)',
+                    color: RENK.nakit, fontWeight: 800, fontSize: 13, opacity: busy ? 0.6 : 1,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  }}
+                >
+                  {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={3} />} Kaydet
+                </button>
+                <button
+                  onClick={() => setKismiPid(null)}
+                  style={{
+                    padding: '11px 16px', borderRadius: 10, cursor: 'pointer',
+                    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+                    color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 13,
+                  }}
+                >
+                  Vazgeç
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
 
       {/* ── 3. Hepsini teslim aldım ── */}
       {canTeslim && bekleyen.length > 1 && (

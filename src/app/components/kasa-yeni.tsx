@@ -236,6 +236,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
   const [selAy, setSelAy] = useState<number | null>(null);
   const [metrik, setMetrik] = useState<'ciro' | 'gider' | 'kar'>('ciro');
   const [selGun, setSelGun] = useState<string | null>(null); // null = bugün (canlı takip); tarih = geçmiş gün
+  const [gecmisGunSayisi, setGecmisGunSayisi] = useState(1); // İşlem geçmişinde açık gün sayısı (+1 gün ile artar)
   const selGunRef = useRef<string | null>(null);
   selGunRef.current = selGun;
 
@@ -736,25 +737,52 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
           })}
         </div>
 
-        {(data.gecmis || []).length > 0 && (<>
-          <div className="lhead" style={{ marginTop: 10 }}><h2>İşlem geçmişi</h2><span className="n">son {(data.gecmis || []).length}</span></div>
-          <div className="card" style={{ overflow: 'hidden' }}>
-            {(data.gecmis || []).map((g: any) => (
-              <div key={g.id} className="item" style={{ paddingLeft: 15 }}>
-                <span className="k" style={{ background: g.yon === 'giris' ? 'var(--pos)' : 'var(--neg)' }} />
-                <div className="body">
-                  <div className="t">{g.baslik}</div>
-                  <div className="m"><span className="mono">{g.tarih}</span>{g.olusturan ? ` · ${g.olusturan}` : ''}{g.kasaHaric ? <span style={{ color: 'var(--mut2)' }}> · geçmiş (kasa dışı)</span> : ''}</div>
+        {(() => {
+          // İşlem geçmişi — gün gün: önce en yeni gün, "+1 gün" ile bir önceki gün açılır
+          const gecmis: any[] = data.gecmis || [];
+          if (gecmis.length === 0) return null;
+          const gunSira: string[] = [];
+          const gunGrup: Record<string, any[]> = {};
+          for (const g of gecmis) {
+            const t = g.tarih || '?';
+            if (!gunGrup[t]) { gunGrup[t] = []; gunSira.push(t); }
+            gunGrup[t].push(g);
+          }
+          const acikGunler = gunSira.slice(0, gecmisGunSayisi);
+          const kalanGun = gunSira.length - acikGunler.length;
+          const gunEtiketi = (t: string) => {
+            if (t === data.bugunTarih) return 'Bugün';
+            try { return new Date(t + 'T00:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' }); } catch { return t; }
+          };
+          return (<>
+            <div className="lhead" style={{ marginTop: 10 }}><h2>İşlem geçmişi</h2><span className="n">{acikGunler.length}/{gunSira.length} gün</span></div>
+            {acikGunler.map((t) => (
+              <div key={t}>
+                <div className="lhead" style={{ marginTop: 6 }}><h2 style={{ fontSize: 12.5, color: 'var(--mut)' }}>📅 {gunEtiketi(t)}</h2><span className="n">{gunGrup[t].length} işlem</span></div>
+                <div className="card" style={{ overflow: 'hidden' }}>
+                  {gunGrup[t].map((g: any) => (
+                    <div key={g.id} className="item" style={{ paddingLeft: 15 }}>
+                      <span className="k" style={{ background: g.yon === 'giris' ? 'var(--pos)' : 'var(--neg)' }} />
+                      <div className="body">
+                        <div className="t">{g.baslik}</div>
+                        <div className="m">{g.ts ? <span className="mono">{String(g.ts).slice(11, 16)}</span> : null}{g.olusturan ? ` · ${g.olusturan}` : ''}{g.kasaHaric ? <span style={{ color: 'var(--mut2)' }}> · geçmiş (kasa dışı)</span> : ''}</div>
+                      </div>
+                      <div className={`amt2 ${g.yon === 'giris' ? 'pos' : 'neg'}`}>{g.yon === 'giris' ? '+' : '−'}{fmt(g.tutar)}</div>
+                    </div>
+                  ))}
                 </div>
-                <div className={`amt2 ${g.yon === 'giris' ? 'pos' : 'neg'}`}>{g.yon === 'giris' ? '+' : '−'}{fmt(g.tutar)}</div>
               </div>
             ))}
-          </div>
-        </>)}
+            {kalanGun > 0 && (
+              <button className="subbtn" style={{ width: '100%', marginTop: 8 }} onClick={() => setGecmisGunSayisi((n) => n + 1)}>
+                +1 gün ({kalanGun} gün daha)
+              </button>
+            )}
+          </>);
+        })()}
 
-        <div style={{ textAlign: 'center', marginTop: 6, display: 'flex', justifyContent: 'center', gap: 8 }}>
+        <div style={{ textAlign: 'center', marginTop: 6 }}>
           <button className="geri" onClick={() => fetchData()} style={{ borderColor: 'var(--line)' }}>↻ Yenile</button>
-          {isYonetici && <button className="geri" onClick={() => onNavigate('kasa-eski')} style={{ borderColor: 'var(--line)', color: 'var(--mut2)' }}>🗄 Eski kasa (arşiv)</button>}
         </div>
       </div></div>
 
