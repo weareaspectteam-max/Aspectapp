@@ -66,9 +66,9 @@ export function AcikTakip({ onNavigate }: Props) {
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <AlertTriangle size={18} color="#fbbf24" /> Açıklarım
+            <AlertTriangle size={18} color="#fbbf24" /> Açık Takip
           </div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>Teslimat açıkların — gün gün</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>Teslimat açıkların — sadece kendi kayıtlarını görürsün</div>
         </div>
         <button
           onClick={yukle}

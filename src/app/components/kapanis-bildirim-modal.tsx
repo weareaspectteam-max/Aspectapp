@@ -148,9 +148,11 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
   const [kismiPid, setKismiPid] = useState<string | null>(null);
   const [kismiAlan, setKismiAlan] = useState<'nakit' | 'kart' | 'iban'>('nakit');
   const [kismiVals, setKismiVals] = useState<{ nakit: string; kart: string; iban: string }>({ nakit: '', kart: '', iban: '' });
+  const [kismiOnay, setKismiOnay] = useState(false);
 
   const kismiBaslat = (p: KapanisRaporPersonel) => {
     setKismiPid(p.id);
+    setKismiOnay(false);
     setKismiAlan((p.nakitTL || 0) > 0 ? 'nakit' : (p.krediTL || 0) > 0 ? 'kart' : 'iban');
     setKismiVals({
       nakit: (p.nakitTL || 0).toLocaleString('tr-TR'),
@@ -366,7 +368,7 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
               ))}
 
               {/* Numpad — kasadaki gibi, cihaz klavyesi yok */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, margin: '10px 0' }}>
+              {!kismiOnay && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, margin: '10px 0' }}>
                 {PAD_KEYS.map(k => (
                   <button
                     key={k}
@@ -382,7 +384,7 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
                     {k}
                   </button>
                 ))}
-              </div>
+              </div>}
               <div style={{
                 fontSize: 13, fontWeight: 900, textAlign: 'center', padding: '8px 0', marginBottom: 8,
                 borderRadius: 10,
@@ -391,30 +393,72 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
               }}>
                 {fark > 0 ? `⚠️ Açık: ${fmtTL(fark)}` : fark < 0 ? `Fazla: ${fmtTL(-fark)}` : 'Fark yok — tam teslim'}
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={() => kismiKaydet(p)}
-                  disabled={busy}
-                  style={{
-                    flex: 1, padding: '11px 12px', borderRadius: 10, cursor: 'pointer',
-                    background: 'rgba(168,230,207,0.18)', border: '1.5px solid rgba(168,230,207,0.5)',
-                    color: RENK.nakit, fontWeight: 800, fontSize: 13, opacity: busy ? 0.6 : 1,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  }}
-                >
-                  {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={3} />} Kaydet
-                </button>
-                <button
-                  onClick={() => setKismiPid(null)}
-                  style={{
-                    padding: '11px 16px', borderRadius: 10, cursor: 'pointer',
-                    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
-                    color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 13,
-                  }}
-                >
-                  Vazgeç
-                </button>
-              </div>
+              {kismiOnay ? (
+                /* Açık/fazla onayı — kaydetmeden önce son soru */
+                <div style={{
+                  padding: 12, borderRadius: 12,
+                  background: fark > 0 ? 'rgba(248,113,113,0.1)' : 'rgba(168,230,207,0.08)',
+                  border: fark > 0 ? '1.5px solid rgba(248,113,113,0.55)' : '1.5px solid rgba(168,230,207,0.5)',
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', textAlign: 'center', lineHeight: 1.6, marginBottom: 10 }}>
+                    ⚠️ <b>{p.ad}</b> için{' '}
+                    {fark > 0
+                      ? <b style={{ color: '#f87171' }}>{fmtTL(fark)} AÇIK</b>
+                      : <b style={{ color: RENK.nakit }}>{fmtTL(-fark)} FAZLA</b>}{' '}
+                    kaydedilecek.
+                    <br />Onaylıyor musun?
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={() => kismiKaydet(p)}
+                      disabled={busy}
+                      style={{
+                        flex: 1, padding: '11px 12px', borderRadius: 10, cursor: 'pointer',
+                        background: 'rgba(168,230,207,0.2)', border: '1.5px solid rgba(168,230,207,0.55)',
+                        color: RENK.nakit, fontWeight: 800, fontSize: 13, opacity: busy ? 0.6 : 1,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      }}
+                    >
+                      {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={3} />} Onayla ve Kaydet
+                    </button>
+                    <button
+                      onClick={() => setKismiOnay(false)}
+                      style={{
+                        padding: '11px 16px', borderRadius: 10, cursor: 'pointer',
+                        background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+                        color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 13,
+                      }}
+                    >
+                      Geri
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={() => (fark !== 0 ? setKismiOnay(true) : kismiKaydet(p))}
+                    disabled={busy}
+                    style={{
+                      flex: 1, padding: '11px 12px', borderRadius: 10, cursor: 'pointer',
+                      background: 'rgba(168,230,207,0.18)', border: '1.5px solid rgba(168,230,207,0.5)',
+                      color: RENK.nakit, fontWeight: 800, fontSize: 13, opacity: busy ? 0.6 : 1,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    }}
+                  >
+                    {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={3} />} Kaydet
+                  </button>
+                  <button
+                    onClick={() => setKismiPid(null)}
+                    style={{
+                      padding: '11px 16px', borderRadius: 10, cursor: 'pointer',
+                      background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+                      color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 13,
+                    }}
+                  >
+                    Vazgeç
+                  </button>
+                </div>
+              )}
             </div>
           </div>,
           document.body

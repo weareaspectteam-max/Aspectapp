@@ -11867,8 +11867,14 @@ app.get("/make-server-4da0b637/kapanis-bildirim/acik", async (c) => {
     if (!["yonetici", "ust-mudur"].includes(rol)) return c.json({ error: "Yetki yok." }, 403);
     const ckv = companyKvFor(getCompanyId(user));
     const tum: any[] = await ckv.getByPrefix("kapanis_acik_").catch(() => []) || [];
-    tum.sort((a: any, b: any) => String(b.tarih || "").localeCompare(String(a.tarih || "")));
-    return c.json({ acikler: tum });
+    // Kapanan (ödemesi biten) açıklar listelenmez; fazla kayıtları son 30 gün bilgi olarak görünür
+    const cutoffFazla = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const gorunur = tum.filter((k: any) =>
+      (Number(k.kalanAcik) || 0) > 0 ||
+      ((Number(k.acikToplam) || 0) < 0 && String(k.tarih || "") >= cutoffFazla)
+    );
+    gorunur.sort((a: any, b: any) => String(b.tarih || "").localeCompare(String(a.tarih || "")));
+    return c.json({ acikler: gorunur });
   } catch (err) {
     console.log("GET kapanis-bildirim/acik error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -11882,7 +11888,9 @@ app.get("/make-server-4da0b637/kapanis-bildirim/acigim", async (c) => {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     const ckv = companyKvFor(getCompanyId(user));
-    const tum: any[] = await ckv.getByPrefix(`kapanis_acik_${user.id}_`).catch(() => []) || [];
+    const tumAcigim: any[] = await ckv.getByPrefix(`kapanis_acik_${user.id}_`).catch(() => []) || [];
+    // Personel sadece ödenmemiş (açık kalan) borçlarını görür — kapananlar görünmez
+    const tum = tumAcigim.filter((k: any) => (Number(k.kalanAcik) || 0) > 0);
     tum.sort((a: any, b: any) => String(b.tarih || "").localeCompare(String(a.tarih || "")));
     const sade = tum.map((k: any) => ({
       id: k.id,

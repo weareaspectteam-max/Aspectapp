@@ -334,10 +334,14 @@ Yonetici menu girisini her zaman gorur; digerleri sadece config'de kayitliysa.
 - Acik kaydi: `kapanis_acik_{personelId}_{raporId}` → beklenen/alinan/acik (3 kalem), acikToplam, kalanAcik, tahsilatlar[]
 - Tam teslim veya geri alma → o kisinin acik kaydi silinir (tutarlilik)
 - Sonradan odeme: "Tahsil Et" (kismi/tam) → tahsilatlar[]'a eklenir, kalanAcik duser
-- **Acik Takip** sayfasi (`acik-panel.tsx`, YONETICI HIZLI ERISIM menusu): SADECE yonetici+ust-mudur,
-  tum personelin acik/eksik/fazlasi, personel bazli gruplu, tahsilat girisi
-- **Aciklarim** sayfasi (`acik-takip.tsx`, PERSONEL PANELI menusu): her personel YALNIZCA kendi kayitlarini gorur (salt goruntuleme)
+- Kismi teslimde numpad (kasa tarzi, cihaz klavyesi yok) + fark varsa "onayliyor musun?" onay adimi
+- KAPANAN acik gorunmez: /acik'ta kalanAcik>0 veya son 30 gun fazla; /acigim'da sadece kalanAcik>0 (kayitlar KV'de arsivde durur)
+- **Acik Takip (admin)** (`acik-panel.tsx`, YONETICI HIZLI ERISIM): SADECE yonetici+ust-mudur,
+  tum personelin acik/eksik/fazlasi, "✓ Odendi" + "Kismi" tahsilat
+- **Acik Takip (personel)** (`acik-takip.tsx`, GENEL menusu — mudur/operasyon/idari/personel):
+  herkes YALNIZCA kendini gorur, islem yapamaz (beklenen/alinan tutarlar sunucudan gonderilmez)
 - Ortak satir bileseni: `AcikSatir` (acik-panel.tsx icinden export)
+- **Kapanis Bildirimleri sayfasi** (liste + yetki paneli): SADECE yonetici, YONETICI HIZLI ERISIM menusunde
 
 ### Endpoint'ler
 | Metod | Route | Aciklama |
