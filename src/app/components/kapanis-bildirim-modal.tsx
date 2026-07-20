@@ -188,7 +188,7 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
                 ? (acikT > 0 ? '1px solid rgba(248,113,113,0.45)' : '1px solid rgba(168,230,207,0.4)')
                 : '1px solid rgba(255,255,255,0.12)',
             }}>
-              {/* Satır: isim + tutar */}
+              {/* Satır: isim + elden alınacak nakit */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 800, color: '#fff', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   👤 {p.ad}
@@ -196,6 +196,12 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
                 <span style={{ fontSize: 15, fontWeight: 900, color: alindi ? RENK.nakit : RENK.amber, flexShrink: 0 }}>
                   {fmtTL(p.nakitTL)}
                 </span>
+              </div>
+              {/* Üç kalem de görünür — teslim öncesi tam tablo */}
+              <div style={{ display: 'flex', gap: 10, fontSize: 10, marginTop: 3 }}>
+                <span style={{ color: RENK.nakit, fontWeight: 700 }}>💵 {fmtTL(p.nakitTL)}</span>
+                <span style={{ color: p.krediTL > 0 ? RENK.kart : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>💳 {fmtTL(p.krediTL)}</span>
+                <span style={{ color: p.ibanTL > 0 ? RENK.iban : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>🏦 {fmtTL(p.ibanTL)}</span>
               </div>
 
               {/* Satır: durum / düğmeler */}
@@ -239,14 +245,22 @@ export function KapanisRaporDetay({ rapor, canTeslim = false, onTeslim, islemde 
                       marginTop: 6, padding: 10, borderRadius: 10,
                       background: 'rgba(251,191,36,0.06)', border: '1.5px solid rgba(251,191,36,0.4)',
                     }}>
-                      <div style={{ fontSize: 10, fontWeight: 800, color: RENK.amber, marginBottom: 6, letterSpacing: 0.5 }}>KISMİ TESLİM — NE KADAR ALDIN?</div>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: RENK.amber, marginBottom: 3, letterSpacing: 0.5 }}>KISMİ TESLİM — NE KADAR ALDIN?</div>
+                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', marginBottom: 7, lineHeight: 1.4 }}>
+                        Sadece eksik/fazla verilen kalemi değiştir — dokunmadığın kalem tam sayılır ✓
+                      </div>
                       {([
                         ['nakit', '💵 Nakit', beklenenK.nakit],
                         ['kart', '💳 Kart', beklenenK.kart],
                         ['iban', '🏦 IBAN', beklenenK.iban],
                       ] as ['nakit' | 'kart' | 'iban', string, number][]).filter(([, , b]) => b > 0).map(([alan, etiket, b]) => (
                         <div key={alan} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', flex: 1 }}>{etiket} <span style={{ color: 'rgba(255,255,255,0.35)' }}>(beklenen {fmtTL(b)})</span></span>
+                          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', flex: 1 }}>
+                            {etiket} <span style={{ color: 'rgba(255,255,255,0.35)' }}>(beklenen {fmtTL(b)})</span>
+                            {girilen[alan] === b
+                              ? <b style={{ color: RENK.nakit }}> ✓ tam</b>
+                              : <b style={{ color: girilen[alan] < b ? '#f87171' : RENK.nakit }}> {girilen[alan] < b ? `−${fmtTL(b - girilen[alan])}` : `+${fmtTL(girilen[alan] - b)}`}</b>}
+                          </span>
                           <input
                             type="number"
                             inputMode="numeric"
