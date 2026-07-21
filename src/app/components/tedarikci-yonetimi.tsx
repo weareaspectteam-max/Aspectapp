@@ -1276,56 +1276,55 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
 
               {/* Ürün listesi — albüm tipi */}
               {orderCariId && supplierType === 'album' && (
-                <div className="space-y-0">
-                  {/* Başlık satırı */}
-                  <div className="flex items-center px-1 pb-1 gap-1">
-                    <span className="w-16"></span>
-                    <div className="flex-1 flex items-center justify-center gap-0.5">
-                      <span className="text-[8px] text-white/30 w-7 text-center">Depo</span>
-                      <span className="text-[8px] text-[#9dd9ea] font-bold w-8 text-center">▣ Tam</span>
-                    </div>
-                    <div className="flex-1 flex items-center justify-center gap-0.5">
-                      <span className="text-[8px] text-white/30 w-7 text-center">Depo</span>
-                      <span className="text-[8px] text-white/30 w-8 text-center">Fiyat</span>
-                      <span className="text-[8px] text-[#ffd4a3] font-bold w-9 text-center">▨ Yarım</span>
-                    </div>
-                  </div>
+                <div className="space-y-1.5">
                   {[3,5,7,9,11,13,15].map(size => {
                     const tamIdx = orderItems.findIndex(i => i.productName === `${size} Kare Tam`);
                     const yarimIdx = orderItems.findIndex(i => i.productName === `${size} Kare Yarım`);
                     if (tamIdx < 0 && yarimIdx < 0) return null;
                     const emojis: Record<number,string> = {3:'📘',5:'📗',7:'📙',9:'📕',11:'📔',13:'📒',15:'📓'};
                     const anlasmItems = (cariFiyat?.items || []);
+                    const fiyatOf = (idx: number) => {
+                      if (idx < 0) return 0;
+                      const it = orderItems[idx];
+                      const anlasma = anlasmItems.find((f: any) => f.productName === it.productName)?.fiyat;
+                      return anlasma !== undefined ? anlasma : (it.unitPrice || 0);
+                    };
+                    const setQty = (idx: number, raw: string) => {
+                      const q = parseInt(raw.replace(/\D/g, '')) || 0;
+                      setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, quantity: q } : p));
+                    };
+                    const tamQty = tamIdx >= 0 ? orderItems[tamIdx].quantity : 0;
+                    const yarimQty = yarimIdx >= 0 ? orderItems[yarimIdx].quantity : 0;
                     return (
-                      <div key={size} className="flex items-center py-1.5 px-1 gap-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <div className="w-16 flex items-center gap-1 shrink-0">
-                          <span className="text-sm">{emojis[size]}</span>
-                          <span className="text-white text-[11px] font-semibold">{size} Kare</span>
+                      <div key={size} className="flex items-center gap-2 py-1.5 px-2 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div className="w-[70px] flex items-center gap-1.5 shrink-0">
+                          <span className="text-base">{emojis[size]}</span>
+                          <span className="text-white text-xs font-bold">{size} Kare</span>
                         </div>
-                        {/* Tam tarafı: Depo + Adet */}
-                        <div className="flex-1 flex items-center justify-center gap-0.5">
-                          <span className="text-center text-[9px] text-amber-400 font-bold w-7">{depoStok[`album${size}_tam`] || 0}</span>
-                          <input type="number" inputMode="numeric" min={0} value={tamIdx >= 0 ? (orderItems[tamIdx].quantity || '') : ''}
-                            onChange={e => { if (tamIdx >= 0) setOrderItems(prev => prev.map((p, i) => i === tamIdx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p)); }}
-                            className="w-8 px-0.5 py-1 rounded text-center text-white text-[10px] border bg-[#9dd9ea]/10 border-[#9dd9ea]/20"
+                        {/* Tam */}
+                        <div className="flex-1 flex items-center justify-end gap-1.5">
+                          <div className="text-right leading-tight">
+                            <div className="text-[10px] font-bold text-[#9dd9ea]">▣ Tam {fiyatOf(tamIdx) > 0 ? `₺${fiyatOf(tamIdx)}` : ''}</div>
+                            <div className="text-[9px] text-white/35">depo {depoStok[`album${size}_tam`] || 0}</div>
+                          </div>
+                          <input type="text" inputMode="numeric" value={tamQty || ''}
+                            onChange={e => setQty(tamIdx, e.target.value)}
+                            className={`w-12 h-10 rounded-lg text-center text-white font-extrabold border ${tamQty > 0 ? 'bg-[#9dd9ea]/25 border-[#9dd9ea]' : 'bg-[#9dd9ea]/10 border-[#9dd9ea]/25'}`}
+                            style={{ fontSize: 16 }}
                             placeholder="0" />
                         </div>
-                        {/* Yarım tarafı: Depo + Fiyat + Adet */}
-                        {(() => {
-                          const yarimItem = yarimIdx >= 0 ? orderItems[yarimIdx] : null;
-                          const anlasma = yarimItem ? anlasmItems.find((f: any) => f.productName === yarimItem.productName)?.fiyat : undefined;
-                          const fiyat = anlasma !== undefined ? anlasma : (yarimItem?.unitPrice || 0);
-                          return (
-                            <div className="flex-1 flex items-center justify-center gap-0.5">
-                              <span className="text-center text-[9px] text-amber-400 font-bold w-7">{depoStok[`album${size}_yarim`] || 0}</span>
-                              <span className="text-center text-[9px] text-[#ffd4a3] font-bold w-8">{fiyat > 0 ? `₺${fiyat}` : '—'}</span>
-                              <input type="number" inputMode="numeric" min={0} value={yarimIdx >= 0 ? (orderItems[yarimIdx].quantity || '') : ''}
-                                onChange={e => { if (yarimIdx >= 0) setOrderItems(prev => prev.map((p, i) => i === yarimIdx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p)); }}
-                                className="w-9 px-0.5 py-1 rounded text-center text-white text-[10px] border bg-[#ffd4a3]/10 border-[#ffd4a3]/20"
-                                placeholder="0" />
-                            </div>
-                          );
-                        })()}
+                        {/* Yarım */}
+                        <div className="flex-1 flex items-center justify-end gap-1.5">
+                          <div className="text-right leading-tight">
+                            <div className="text-[10px] font-bold text-[#ffd4a3]">▨ Yarım {fiyatOf(yarimIdx) > 0 ? `₺${fiyatOf(yarimIdx)}` : ''}</div>
+                            <div className="text-[9px] text-white/35">depo {depoStok[`album${size}_yarim`] || 0}</div>
+                          </div>
+                          <input type="text" inputMode="numeric" value={yarimQty || ''}
+                            onChange={e => setQty(yarimIdx, e.target.value)}
+                            className={`w-12 h-10 rounded-lg text-center text-white font-extrabold border ${yarimQty > 0 ? 'bg-[#ffd4a3]/25 border-[#ffd4a3]' : 'bg-[#ffd4a3]/10 border-[#ffd4a3]/25'}`}
+                            style={{ fontSize: 16 }}
+                            placeholder="0" />
+                        </div>
                       </div>
                     );
                   })}
@@ -1333,24 +1332,37 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                   {(() => {
                     const pasIdx = orderItems.findIndex(i => i.productName === 'Paspartu');
                     if (pasIdx < 0) return null;
+                    const pas = orderItems[pasIdx];
                     return (
-                      <div className="flex items-center gap-2 py-1.5 px-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <span className="text-sm">🖼️</span>
-                        <span className="text-white text-[11px] font-semibold flex-1">Paspartu</span>
-                        <input type="number" min={0} value={orderItems[pasIdx].unitPrice || ''}
-                          onChange={e => setOrderItems(prev => prev.map((p, i) => i === pasIdx ? { ...p, unitPrice: parseFloat(e.target.value) || 0 } : p))}
-                          className="w-16 px-1 py-1 rounded text-center text-green-400 bg-white/10 border border-white/20 text-[10px]"
-                          placeholder="₺" />
-                        <input type="number" min={0} value={orderItems[pasIdx].quantity || ''}
-                          onChange={e => setOrderItems(prev => prev.map((p, i) => i === pasIdx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p))}
-                          className="w-12 px-1 py-1 rounded text-center text-white bg-white/10 border border-white/20 text-[10px]"
-                          placeholder="Adet" />
+                      <div className="flex items-center gap-2 py-1.5 px-2 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div className="w-[70px] flex items-center gap-1.5 shrink-0">
+                          <span className="text-base">🖼️</span>
+                          <span className="text-white text-xs font-bold">Paspartu</span>
+                        </div>
+                        <div className="flex-1 flex items-center justify-end gap-1.5">
+                          <span className="text-[10px] text-white/40 font-bold">Toplam ₺</span>
+                          <input type="text" inputMode="numeric" value={pas.unitPrice || ''}
+                            onChange={e => setOrderItems(prev => prev.map((p, i) => i === pasIdx ? { ...p, unitPrice: parseInt(e.target.value.replace(/\D/g, '')) || 0 } : p))}
+                            className={`w-20 h-10 rounded-lg text-center font-extrabold border ${pas.unitPrice > 0 ? 'text-green-300 bg-green-500/20 border-green-400/60' : 'text-white bg-white/5 border-white/20'}`}
+                            style={{ fontSize: 16 }}
+                            placeholder="0" />
+                          <span className="text-[10px] text-white/40 font-bold">Adet</span>
+                          <input type="text" inputMode="numeric" value={pas.quantity || ''}
+                            onChange={e => setOrderItems(prev => prev.map((p, i) => i === pasIdx ? { ...p, quantity: parseInt(e.target.value.replace(/\D/g, '')) || 0 } : p))}
+                            className={`w-14 h-10 rounded-lg text-center text-white font-extrabold border ${pas.quantity > 0 ? 'bg-white/20 border-white/50' : 'bg-white/5 border-white/20'}`}
+                            style={{ fontSize: 16 }}
+                            placeholder="0" />
+                        </div>
                       </div>
                     );
                   })()}
-                  <div className="flex justify-between pt-2 border-t border-white/10">
-                    <span className="text-white/50 text-xs">Toplam:</span>
-                    <span className="text-white font-bold text-sm">₺{orderItems.reduce((a, i) => a + (i.productName === 'Paspartu' ? (i.unitPrice || 0) : (i.quantity * i.unitPrice)), 0).toLocaleString('tr-TR')}</span>
+                  {/* Toplam */}
+                  <div className="flex justify-between items-center pt-2 px-1 border-t border-white/10">
+                    <span className="text-white/50 text-xs font-semibold">
+                      Toplam
+                      {(() => { const adet = orderItems.reduce((a, i) => a + (i.productName === 'Paspartu' ? 0 : i.quantity), 0); return adet > 0 ? ` · ${adet} albüm` : ''; })()}
+                    </span>
+                    <span className="text-amber-300 font-extrabold text-lg">₺{orderItems.reduce((a, i) => a + (i.productName === 'Paspartu' ? (i.unitPrice || 0) : (i.quantity * i.unitPrice)), 0).toLocaleString('tr-TR')}</span>
                   </div>
                 </div>
               )}
