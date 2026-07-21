@@ -21735,6 +21735,101 @@ app.post("/make-server-4da0b637/tedarikci/odemeler", async (c) => {
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
+// POST /tedarikci/odeme-genel — Body: { cariId, amount, paymentMethod: 'nakit'|'havale'|'kart', aciklama? }
+// Ödeme FIFO işler: en eski açık siparişin borcunu kapatır, artan sonrakine geçer;
+// tüm borçlar kapanırsa kalan ÖN ÖDEME (alacak) olur. Kasa2'ye TEK çıkış, İGD'ye TEK gider.
+app.post("/make-server-4da0b637/tedarikci/odeme-genel", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
+    const companyId = getCompanyId(callerUser);
+    const ckv = companyKvFor(companyId);
+    const { cariId, amount, aciklama } = await c.req.json();
+    const tutar = Math.round(Number(amount) || 0);
+    if (!cariId || tutar <= 0) return c.json({ error: "cariId ve pozitif tutar zorunlu." }, 400);
+    const cari = await ckv.get(`cost_cari_${cariId}`);
+    const cariName = cari?.name || cariId;
+    const now = new Date().toISOString();
+    const payDate = now.slice(0, 10);
+    const yapan = callerUser.user_metadata?.full_name || "";
+
+    // Kasa potu OTOMATİK seçilir (kullanıcı kuralı 2026-07-21): önce BANKA, yetmezse kalan NAKİT
+    let bankaPay = tutar, nakitPay = 0;
+    try {
+      const milatRecOG = await _kasa2GetMilat(companyId);
+      if (milatRecOG?.tarih) {
+        const dbOG = getAdminClient();
+        const [hareketResOG, salesOG] = await Promise.all([
+          dbOG.from("kasa_hareket").select("*").eq("company_id", companyId).eq("iptal", false),
+          _kasa2Sales(companyId, ckv, milatRecOG.tarih),
+        ]);
+        let bankaBak = salesOG.totBanka;
+        for (const h of ((hareketResOG as any).data || [])) {
+          if (h.extra_data?.kasaHaric) continue;
+          if (h.pot === "banka") bankaBak += h.yon === "giris" ? Number(h.tutar) : -Number(h.tutar);
+        }
+        bankaPay = Math.max(0, Math.min(tutar, Math.round(bankaBak)));
+        nakitPay = tutar - bankaPay;
+      }
+    } catch (e) { console.log("[odeme-genel pot hesabı]", e); }
+    const pm = bankaPay > 0 && nakitPay > 0 ? "banka+nakit" : nakitPay > 0 ? "nakit" : "havale";
+
+    // Açık borçlu siparişler (en eski önce) + sipariş başına şimdiye kadar ödenen
+    const [tumSipOG, tumOdemeOG] = await Promise.all([getOrders(companyId, ckv), getSupplierPayments(companyId, ckv)]);
+    const paidMap: Record<string, number> = {};
+    for (const o of (tumOdemeOG || [])) {
+      if (!o.siparisId || o.status === "reddedildi" || o.status === "iptal") continue;
+      paidMap[o.siparisId] = (paidMap[o.siparisId] || 0) + (Number(o.amount) || 0);
+    }
+    const acikSipler = (tumSipOG || [])
+      .filter((s: any) => s.cariId === cariId && !["taslak", "iptal"].includes(s.status))
+      .sort((a: any, b: any) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+
+    let kalanTutar = tutar;
+    const dagilim: { siparisId: string | null; tutar: number }[] = [];
+    for (const sip of acikSipler) {
+      if (kalanTutar <= 0) break;
+      const beklenen = Number(sip.teklifFiyat || sip.totalAmount) || 0;
+      const borc = beklenen - (paidMap[sip.id] || 0);
+      if (borc <= 0) continue;
+      const pay = Math.min(borc, kalanTutar);
+      const odemeIdF = `tedarikci_odeme_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await saveSupplierPayment(companyId, ckv, { id: odemeIdF, siparisId: sip.id, cariId, cariName, amount: pay, currency: "TRY", paymentMethod: pm, paymentDate: payDate, status: "beklemede", supplierConfirmed: false, createdAt: now, createdBy: yapan, tip: "fifo" });
+      sip.loglar = [...(sip.loglar || []), { tarih: now, kisi: yapan, taraf: "admin", mesaj: `₺${pay.toLocaleString("tr-TR")} ödeme işlendi (genel ödemeden — en eski sipariş önce kuralı)` }];
+      sip.updatedAt = now;
+      await saveOrder(companyId, ckv, sip);
+      dagilim.push({ siparisId: sip.id, tutar: pay });
+      kalanTutar -= pay;
+    }
+    if (kalanTutar > 0) {
+      const odemeIdO = `tedarikci_odeme_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await saveSupplierPayment(companyId, ckv, { id: odemeIdO, siparisId: null, cariId, cariName, amount: kalanTutar, currency: "TRY", paymentMethod: pm, paymentDate: payDate, status: "beklemede", supplierConfirmed: false, createdAt: now, createdBy: yapan, tip: "on_odeme", aciklama: "Borçlar kapandı — kalan ön ödeme/alacak" });
+      dagilim.push({ siparisId: null, tutar: kalanTutar });
+    }
+
+    // TEK İGD gideri + TEK kasa2 çıkışı (toplam tutar — çift kayıt yok)
+    const giderIdOG = `isletme_gider_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    await ckv.set(giderIdOG, { id: giderIdOG.replace("isletme_gider_", ""), personelAdi: cariName, category: "tedarikci", amount: tutar, currency: "TRY", date: payDate, description: aciklama || `Tedarikçi ödemesi: ${cariName}`, created_at: now, created_by: yapan, odemeTipi: "genel", cariId });
+    try {
+      if (bankaPay > 0) await kasaHareketYaz(companyId, { tarih: payDate, yon: "cikis", pot: "banka", tutar: bankaPay, kategori: "tedarikci", kaynak: "tedarikci_odeme", kaynak_id: giderIdOG, aciklama: aciklama || `Tedarikçi ödemesi — ${cariName}`, olusturan: yapan, olusturan_id: callerUser.id });
+      if (nakitPay > 0) await kasaHareketYaz(companyId, { tarih: payDate, yon: "cikis", pot: "nakit", tutar: nakitPay, kategori: "tedarikci", kaynak: "tedarikci_odeme", kaynak_id: giderIdOG, aciklama: (aciklama || `Tedarikçi ödemesi — ${cariName}`) + (bankaPay > 0 ? " · banka yetmedi, kalan nakitten" : ""), olusturan: yapan, olusturan_id: callerUser.id });
+    } catch (e) { console.log("[kasa2 tedarikci odeme-genel]", e); }
+
+    // Tedarikçiye açıklayıcı bildirim
+    if (cari?.linkedUserId) {
+      const sipSayisi = dagilim.filter((d) => d.siparisId).length;
+      const onKalan = dagilim.find((d) => !d.siparisId);
+      let msj = `₺${tutar.toLocaleString("tr-TR")} ödeme yapıldı (${pm}).`;
+      if (sipSayisi > 0) msj += ` ${sipSayisi} siparişinizin borcuna işlendi (en eski önce).`;
+      if (onKalan) msj += ` ₺${onKalan.tutar.toLocaleString("tr-TR")} ön ödeme/alacak olarak kaydedildi.`;
+      await createNotification(cari.linkedUserId, "odeme_yapildi", "Ödeme Yapıldı", msj, { cariId }, companyId);
+    }
+    console.log(`[Tedarikci] Genel FIFO ödeme: ${cariName} ₺${tutar} (${pm}) → ${dagilim.length} parça`);
+    return c.json({ ok: true, dagilim });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
 app.get("/make-server-4da0b637/tedarikci/odemeler", async (c) => {
   try {
     const callerUser = await verifyToken(c);

@@ -545,12 +545,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
               </div>
             )}
 
-            {!kisitli && ['teslim_edildi', 'kismen_teslim', 'onaylandi', 'tamamlandi'].includes(s.status) && (
-              <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setShowPayment(s.id); setPayCurrency(s.currency || 'TRY'); }}
-                className="w-full py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg, #34d399, #10b981)' }}>
-                <Banknote className="w-3 h-3 inline mr-1" /> Ödeme Yap
-              </motion.button>
-            )}
+            {/* Sipariş bazlı ödeme kaldırıldı (2026-07-21) — ödeme TEK YERDEN: Bakiye sekmesindeki "Ödeme Yap" (FIFO) */}
 
             {!kisitli && !['taslak', 'tamamlandi', 'iptal'].includes(s.status) && (
               <button onClick={() => { cancelOrder(s.id); setSelectedSiparis(null); }}
@@ -1204,18 +1199,22 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                       </div>
                     </div>
 
-                    {/* Ön Ödeme */}
+                    {/* Ödeme Yap — TEK ödeme noktası: FIFO en eski borçtan düşer, kasadan otomatik (önce banka, yetmezse nakit) */}
                     {!showOnOdeme ? (
                       <motion.button whileTap={{ scale: 0.97 }} onClick={() => setShowOnOdeme(true)}
                         className="w-full py-3 rounded-xl font-semibold text-white flex items-center justify-center gap-2"
                         style={{ background: 'linear-gradient(135deg, #34d399, #10b981)' }}>
-                        💳 Ön Ödeme Yap
+                        💳 Ödeme Yap
                       </motion.button>
                     ) : (
                       <div className="p-4 rounded-2xl space-y-3" style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.20)' }}>
-                        <p className="text-green-400 text-xs font-semibold">💳 Ön Ödeme</p>
+                        <p className="text-green-400 text-xs font-semibold">💳 Ödeme Yap</p>
+                        <p className="text-white/40 text-[10px] leading-relaxed">
+                          Borç varsa <b className="text-white/70">en eski siparişten başlayarak</b> kapatır; borç yoksa/artarsa <b className="text-white/70">ön ödeme (alacağımız)</b> yazılır.
+                          Kasadan otomatik düşer: <b className="text-white/70">önce banka, yetmezse nakit.</b> Tedarikçi ödemeyi kendi panelinden onaylar.
+                        </p>
                         <input type="number" min={0} value={onOdemeTutar} onChange={e => setOnOdemeTutar(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg text-white bg-white/10 border border-white/20 text-sm text-center" placeholder="Tutar (₺)" />
+                          className="w-full px-3 py-2 rounded-lg text-white bg-white/10 border border-white/20 text-center font-bold" style={{ fontSize: 16 }} placeholder="Tutar (₺)" />
                         <input type="text" value={onOdemeAciklama} onChange={e => setOnOdemeAciklama(e.target.value)}
                           className="w-full px-3 py-2 rounded-lg text-white bg-white/10 border border-white/20 text-sm" placeholder="Açıklama (opsiyonel)" />
                         <div className="flex gap-2">
@@ -1225,12 +1224,12 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                             if (!onOdemeTutar) return;
                             setActionLoading('onodeme');
                             try {
-                              // Sipariş olmadan ödeme — kasadan düşer
-                              const _onRes = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/odemeler`), {
+                              const _onRes = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/odeme-genel`), {
                                 method: 'POST', headers: getHeaders(),
-                                body: JSON.stringify({ siparisId: `on_odeme_${Date.now()}`, cariId: selectedTedarikci.id, amount: parseFloat(onOdemeTutar), currency: 'TRY', paymentMethod: 'havale', paymentDate: new Date().toISOString().slice(0, 10), aciklama: onOdemeAciklama || '' }),
+                                body: JSON.stringify({ cariId: selectedTedarikci.id, amount: parseFloat(onOdemeTutar), aciklama: onOdemeAciklama || '' }),
                               });
-                              if (!_onRes.ok) { const _d = await _onRes.json().catch(() => ({})); alert(_d.error || 'Ödeme kaydedilemedi'); return; }
+                              const _d = await _onRes.json().catch(() => ({}));
+                              if (!_onRes.ok) { alert(_d.error || 'Ödeme kaydedilemedi'); return; }
                               setShowOnOdeme(false); setOnOdemeTutar(''); setOnOdemeAciklama('');
                               fetchData();
                             } catch (e: any) { alert(e.message); } finally { setActionLoading(''); }
