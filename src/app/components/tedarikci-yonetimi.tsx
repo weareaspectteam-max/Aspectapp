@@ -230,10 +230,19 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
     } finally { setActionLoading(''); }
   };
 
-  const approveDelivery = async (id: string) => {
+  /* Sipariş dışı kalem onayı: backend fazlaOnayGerekli dönerse dialog açılır, karar ile tekrar çağrılır */
+  const [fazlaDialog, setFazlaDialog] = useState<{ teslimatId: string; kalemler: Array<{ productName: string; adet: number; birimFiyat: number }> } | null>(null);
+
+  const approveDelivery = async (id: string, fazlaKarar?: 'kabul' | 'haric') => {
     setActionLoading(id);
     try {
-      await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teslimatlar/${id}/onayla`), { method: 'PUT', headers: getHeaders() });
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teslimatlar/${id}/onayla`), {
+        method: 'PUT', headers: getHeaders(), body: JSON.stringify(fazlaKarar ? { fazlaKarar } : {}),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (d.fazlaOnayGerekli) { setFazlaDialog({ teslimatId: id, kalemler: d.fazlaKalemler || [] }); return; }
+      if (!res.ok && d.error) setError(d.error);
+      setFazlaDialog(null);
       fetchData();
     } finally { setActionLoading(''); }
   };
@@ -994,6 +1003,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                       className="w-full p-3 rounded-2xl text-left space-y-1" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
                       <div className="flex items-center justify-between">
                         <p className="text-white text-sm font-medium truncate flex-1">{s.items?.map((i: any) => `${i.productName} ×${i.quantity}`).join(', ')}</p>
+                        {s.siparisDisi && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold ml-1" style={{ background: 'rgba(251,191,36,0.15)', color: '#fbbf24' }}>SİPARİŞ DIŞI</span>}
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-medium ml-2" style={{ background: sc.bg, color: sc.color }}>{sc.label}</span>
                       </div>
                       {totalQty > 0 && ['onaylandi', 'kismen_teslim', 'teslim_edildi', 'tamamlandi'].includes(s.status) && (
@@ -1598,6 +1608,52 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
           </motion.div>
         )}
       </AnimatePresence>
+      {/* Sipariş dışı ürün onayı — teslimatta hiçbir siparişe düşmeyen kalemler */}
+      <AnimatePresence>
+        {fazlaDialog && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-5">
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              className="w-full max-w-sm rounded-2xl p-5 space-y-3"
+              style={{ background: '#1a1a2e', border: '1.5px solid rgba(251,191,36,0.4)' }}>
+              <h2 className="text-amber-400 font-bold text-base">⚠️ Sipariş Dışı Ürün</h2>
+              <p className="text-white/50 text-[11px] leading-relaxed">
+                Bu kalemler hiçbir açık siparişte yok (ya da sipariş toplamını aşıyor).
+                <b className="text-white/80"> Kabul edersen</b> depoya girer ve tutarı tedarikçinin bakiyesine borç yazılır;
+                <b className="text-white/80"> hariç tutarsan</b> hiç işlenmez.
+              </p>
+              <div className="rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                {fazlaDialog.kalemler.map((k, i) => (
+                  <div key={i} className="px-3 py-2 flex justify-between items-center border-b border-white/5">
+                    <span className="text-white text-xs font-semibold">{k.adet}× {k.productName}</span>
+                    <span className="text-white/50 text-xs">₺{(k.birimFiyat || 0).toLocaleString('tr-TR')} → <b className="text-amber-300">₺{((k.birimFiyat || 0) * k.adet).toLocaleString('tr-TR')}</b></span>
+                  </div>
+                ))}
+                <div className="px-3 py-2 flex justify-between items-center">
+                  <span className="text-white/50 text-xs font-bold">Toplam (bakiyeye eklenecek)</span>
+                  <span className="text-amber-300 font-bold text-sm">₺{fazlaDialog.kalemler.reduce((a, k) => a + (k.birimFiyat || 0) * k.adet, 0).toLocaleString('tr-TR')}</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <button onClick={() => approveDelivery(fazlaDialog.teslimatId, 'kabul')}
+                  disabled={!!actionLoading}
+                  className="w-full py-3 rounded-xl font-bold text-sm text-white disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg, #34d399, #10b981)' }}>
+                  ✓ Kabul Et — depoya gir + bakiyeye borç yaz
+                </button>
+                <button onClick={() => approveDelivery(fazlaDialog.teslimatId, 'haric')}
+                  disabled={!!actionLoading}
+                  className="w-full py-2.5 rounded-xl font-bold text-xs text-red-400 bg-red-500/10 border border-red-500/20 disabled:opacity-50">
+                  ✗ Hariç Tut — bu kalemler işlenmesin
+                </button>
+                <button onClick={() => setFazlaDialog(null)}
+                  className="w-full py-2 rounded-xl text-xs text-white/40">Vazgeç (teslimat beklemede kalır)</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Kimler görebilir — kişi bazlı panel yetkisi (yönetici) */}
       <AnimatePresence>
         {showYetki && (

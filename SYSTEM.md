@@ -616,10 +616,21 @@ taslak → gonderildi → onaylandi → kismen_teslim → teslim_edildi → tama
 Herhangi asamada → iptal (admin)
 ```
 
-### Teslimat Akisi
+### Teslimat Akisi (FIFO dagitim — 2026-07-21)
 1. Tedarikci "Teslimat Bildir" → `teslimat_` kaydi (status: beklemede)
-2. Admin "Onayla" → deliveredQuantity guncellenir, siparis status degisir
-3. Admin "Reddet" → sebep yazilir, tedarikci bilgilendirilir
+2. Admin "Onayla" → her kalem EN ESKI acik siparisten (gonderildi/onaylandi/kismen_teslim, createdAt sirali)
+   FIFO duser; artan sonraki siparise gecer. Teslimatin hangi siparise bildirildigi onemsiz.
+   - Tam dolan siparis → "tamamlandi" (odeme beklenmez, cari bakiyede ayri takip)
+   - Dagitim `teslimat.dagitim`'a yazilir; dokunulan her siparise ACIKLAYICI log
+     ("bu siparisten dusen: 15× 7 Kare Yarim — en eski siparis once kurali") → iki taraf da gorur
+3. **Siparis disi kalem** (hicbir sipariste yok / toplami asiyor): backend `fazlaOnayGerekli` doner,
+   admin dialog'da karar verir (sadece yonetici/ust-mudur/mudur karar verebilir):
+   - `fazlaKarar: 'kabul'` → otomatik "Siparis Disi Teslimat" kaydi (siparisDisi: true, status tamamlandi,
+     fiyat: anlasma listesi > cost_albums kur cevrili — `tedarikciUrunFiyat` helper) → depoya girer + bakiyeye borc
+   - `fazlaKarar: 'haric'` → o kalemler islenmez, depoya da girmez
+4. Depo girisi: dagitilan + kabul edilen kalemler (paspartu haric); haric tutulan girmez
+5. Tedarikciye aciklayici bildirim: dagitim ozeti + siparis disi karari
+6. Admin "Reddet" → sebep yazilir, tedarikci bilgilendirilir
 
 ### Odeme-Kasa Entegrasyonu
 Odeme kaydedildiginde:

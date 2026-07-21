@@ -21487,55 +21487,164 @@ app.get("/make-server-4da0b637/tedarikci/teslimatlar", async (c) => {
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
+// Ürün TL fiyatı: önce anlaşma fiyat listesi, yoksa cost_albums (kur çevrili). Bilinmeyen → 0.
+const tedarikciUrunFiyat = async (ckv: any, cariId: string, productName: string): Promise<number> => {
+  try {
+    const rates: any = await ckv.get("cost_exchange_rates").catch(() => null) || { EUR: 38, USD: 33, GBP: 41.2 };
+    const toTL = (v: number, cur: string) => {
+      const cc = (cur || "TRY").toUpperCase();
+      return cc === "EUR" ? v * (Number(rates.EUR) || 38) : cc === "USD" ? v * (Number(rates.USD) || 33) : cc === "GBP" ? v * (Number(rates.GBP) || 41.2) : v;
+    };
+    const fl: any = await ckv.get(`tedarikci_fiyat_${cariId}`).catch(() => null);
+    const anl = (fl?.items || []).find((f: any) => f.productName === productName);
+    if (anl && Number(anl.fiyat) > 0) return Math.round(toTL(Number(anl.fiyat), anl.currency || "TRY"));
+    const m = String(productName).match(/^(\d+)/);
+    if (!m) return 0;
+    const albums: any[] = (await ckv.get("cost_albums").catch(() => null)) || [];
+    const a = (albums || []).find((al: any) => String(al.size) === m[1]);
+    if (!a) return 0;
+    const raw = Number(String(productName).toLowerCase().includes("tam") ? a.tamBoy : a.yarimBoy) || 0;
+    return Math.round(toTL(raw, a.currency || "TRY"));
+  } catch { return 0; }
+};
+
+// Teslimat onayı — FIFO dağıtım: her ürün EN ESKİ açık siparişten düşer, artan sonrakine geçer.
+// Hiçbir siparişte karşılığı olmayan (veya sipariş toplamını aşan) kalemler "sipariş dışı"dır:
+// karar sorulur (fazlaKarar: 'kabul' → otomatik kayıt + bakiyeye borç; 'haric' → işlenmez, depoya girmez).
 app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
   try {
     const callerUser = await verifyToken(c);
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
     // operasyon: parasal veri görmeden teslim onayı verebilir (kullanıcı kararı 2026-07-20)
-    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur", "operasyon"]) && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
+    const tamYetkiTes = hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"]);
+    if (!tamYetkiTes && getEffectiveRole(callerUser) !== "operasyon" && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
     const rawId = c.req.param("id");
     const teslimatId = rawId.startsWith("teslimat_") ? rawId.replace("teslimat_", "") : rawId;
+    const body: any = await c.req.json().catch(() => ({}));
+    const fazlaKarar: string | undefined = body?.fazlaKarar; // 'kabul' | 'haric'
     const teslimat = await getDelivery(companyId, ckv, teslimatId);
     if (!teslimat) return c.json({ error: "Teslimat bulunamadı." }, 404);
     if (teslimat.status !== "beklemede") return c.json({ error: "Bu teslimat zaten işlenmiş." }, 400);
-    teslimat.status = "onaylandi"; teslimat.reviewedAt = new Date().toISOString(); teslimat.reviewedBy = callerUser.user_metadata?.full_name || "";
-    await saveDelivery(companyId, ckv, teslimat);
-    const siparis = await getOrder(companyId, ckv, teslimat.siparisId);
-    if (siparis) {
-      for (const line of teslimat.lines) { const item = siparis.items?.find((i) => i.id === line.itemId); if (item) item.deliveredQuantity = (item.deliveredQuantity || 0) + (line.quantity || 0); }
-      const allDelivered = siparis.items.every((i) => (i.deliveredQuantity || 0) >= i.quantity);
-      const anyDelivered = siparis.items.some((i) => (i.deliveredQuantity || 0) > 0);
-      // Tam teslim = sipariş TAMAMLANDI (ödeme sipariş durumundan bağımsız — cari bakiyede +/− takip edilir)
-      if (allDelivered) { siparis.status = "tamamlandi"; siparis.completedAt = new Date().toISOString(); }
-      else if (anyDelivered) siparis.status = "kismen_teslim";
-      siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: `Teslimat onaylandı${allDelivered ? " — tümü teslim edildi" : ""}` }];
-      siparis.updatedAt = new Date().toISOString();
-      await saveOrder(companyId, ckv, siparis);
-    }
-    // Depo stok girişi — teslimat kalemlerini depoya ekle (tam/yarım ayrımıyla)
-    const depoStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
-    for (const line of teslimat.lines) {
-      const name = (line.productName || "").toLowerCase();
-      if (name.includes("paspartu")) {
-        // Paspartu depoya eklenmez
-      } else {
-        const sizeMatch = name.match(/(\d+)/);
-        if (sizeMatch) {
-          const isTam = name.includes("tam");
-          const suffix = isTam ? "_tam" : "_yarim";
-          const key = `album${sizeMatch[1]}${suffix}`;
-          depoStok[key] = (depoStok[key] || 0) + (line.quantity || 0);
-        }
+    const now = new Date().toISOString();
+    const yapanAdTes = callerUser.user_metadata?.full_name || "";
+
+    // ── FIFO dağıtım hesabı (henüz kaydetmeden) ──
+    const tumSiparislerTes = await getOrders(companyId, ckv);
+    const acikSiparisler = (tumSiparislerTes || [])
+      .filter((s: any) => s.cariId === teslimat.cariId && ["gonderildi", "onaylandi", "kismen_teslim"].includes(s.status))
+      .sort((a: any, b: any) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+
+    const dagitim: { siparisId: string; productName: string; adet: number }[] = [];
+    const fazlaKalemler: { productName: string; adet: number }[] = [];
+    for (const line of (teslimat.lines || [])) {
+      let kalanAdet = Number(line.quantity) || 0;
+      if (kalanAdet <= 0) continue;
+      for (const sip of acikSiparisler) {
+        if (kalanAdet <= 0) break;
+        const item = (sip.items || []).find((i: any) =>
+          i.productName === line.productName && (Number(i.quantity) || 0) - (Number(i.deliveredQuantity) || 0) > 0);
+        if (!item) continue;
+        const acik = (Number(item.quantity) || 0) - (Number(item.deliveredQuantity) || 0);
+        const dus = Math.min(acik, kalanAdet);
+        item.deliveredQuantity = (Number(item.deliveredQuantity) || 0) + dus;
+        kalanAdet -= dus;
+        dagitim.push({ siparisId: sip.id, productName: line.productName, adet: dus });
       }
+      if (kalanAdet > 0) fazlaKalemler.push({ productName: line.productName, adet: kalanAdet });
+    }
+
+    // ── Sipariş dışı kalem varsa: karar verilmeden hiçbir şey kaydedilmez ──
+    if (fazlaKalemler.length > 0 && fazlaKarar !== "kabul" && fazlaKarar !== "haric") {
+      if (!tamYetkiTes) return c.json({ error: "Sipariş dışı kalemler var — kabul/hariç kararını yönetici vermeli." }, 403);
+      const fazlaFiyatli = await Promise.all(fazlaKalemler.map(async (f) => ({
+        ...f, birimFiyat: await tedarikciUrunFiyat(ckv, teslimat.cariId, f.productName),
+      })));
+      return c.json({ fazlaOnayGerekli: true, fazlaKalemler: fazlaFiyatli });
+    }
+    if (fazlaKalemler.length > 0 && !tamYetkiTes) {
+      return c.json({ error: "Sipariş dışı kalemler var — kabul/hariç kararını yönetici vermeli." }, 403);
+    }
+
+    // ── Commit: teslimat ──
+    teslimat.status = "onaylandi"; teslimat.reviewedAt = now; teslimat.reviewedBy = yapanAdTes;
+    teslimat.dagitim = dagitim;
+    if (fazlaKalemler.length > 0) teslimat.siparisDisi = { karar: fazlaKarar, kalemler: fazlaKalemler };
+    await saveDelivery(companyId, ckv, teslimat);
+
+    // ── Dokunulan siparişler: durum + AÇIKLAYICI log (iki taraf da görür) ──
+    const dokunulanIds = [...new Set(dagitim.map((d) => d.siparisId))];
+    for (const sipId of dokunulanIds) {
+      const sip = acikSiparisler.find((s: any) => s.id === sipId);
+      if (!sip) continue;
+      const ozet = dagitim.filter((d) => d.siparisId === sipId).map((d) => `${d.adet}× ${d.productName}`).join(", ");
+      const allDelivered = (sip.items || []).every((i: any) => (Number(i.deliveredQuantity) || 0) >= (Number(i.quantity) || 0));
+      const anyDelivered = (sip.items || []).some((i: any) => (Number(i.deliveredQuantity) || 0) > 0);
+      if (allDelivered) { sip.status = "tamamlandi"; sip.completedAt = now; }
+      else if (anyDelivered) sip.status = "kismen_teslim";
+      sip.loglar = [...(sip.loglar || []), {
+        tarih: now, kisi: yapanAdTes, taraf: "admin",
+        mesaj: `Teslimat onaylandı — bu siparişten düşen: ${ozet} (en eski sipariş önce kuralı)${allDelivered ? " · sipariş TAMAMLANDI" : ""}`,
+      }];
+      sip.updatedAt = now;
+      await saveOrder(companyId, ckv, sip);
+    }
+
+    // ── Sipariş dışı kabul → otomatik kayıt: depo + bakiyeye borç ──
+    const cari = await ckv.get(`cost_cari_${teslimat.cariId}`);
+    let fazlaSiparis: any = null;
+    if (fazlaKalemler.length > 0 && fazlaKarar === "kabul") {
+      const sdItems = await Promise.all(fazlaKalemler.map(async (f, i) => ({
+        id: `sd_${Date.now()}_${i}`, productName: f.productName, quantity: f.adet, deliveredQuantity: f.adet,
+        unitPrice: await tedarikciUrunFiyat(ckv, teslimat.cariId, f.productName),
+      })));
+      const sdToplam = sdItems.reduce((a, i) => a + i.quantity * i.unitPrice, 0);
+      fazlaSiparis = {
+        id: `${Date.now()}_sd_${Math.random().toString(36).slice(2, 6)}`,
+        cariId: teslimat.cariId, cariName: cari?.name || "",
+        items: sdItems, currency: "TRY", totalAmount: sdToplam,
+        status: "tamamlandi", completedAt: now, createdAt: now, updatedAt: now,
+        siparisDisi: true,
+        notes: "Sipariş dışı teslimat — onayda kabul edildi, otomatik kayıt",
+        loglar: [{
+          tarih: now, kisi: yapanAdTes, taraf: "admin",
+          mesaj: `Sipariş dışı teslimat kabul edildi: ${sdItems.map((i) => `${i.quantity}× ${i.productName}`).join(", ")} — ₺${Math.round(sdToplam).toLocaleString("tr-TR")} cari bakiyeye borç olarak eklendi`,
+        }],
+      };
+      await saveOrder(companyId, ckv, fazlaSiparis);
+    }
+
+    // ── Depo girişi: dağıtılan + kabul edilen kalemler; HARİÇ tutulanlar girmez ──
+    const depoGirisler: Record<string, number> = {};
+    for (const d of dagitim) depoGirisler[d.productName] = (depoGirisler[d.productName] || 0) + d.adet;
+    if (fazlaKarar === "kabul") for (const f of fazlaKalemler) depoGirisler[f.productName] = (depoGirisler[f.productName] || 0) + f.adet;
+    const depoStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
+    for (const [pName, adet] of Object.entries(depoGirisler)) {
+      const name = pName.toLowerCase();
+      if (name.includes("paspartu")) continue; // Paspartu depoya eklenmez
+      const sizeMatch = name.match(/(\d+)/);
+      if (!sizeMatch) continue;
+      const key = `album${sizeMatch[1]}${name.includes("tam") ? "_tam" : "_yarim"}`;
+      depoStok[key] = (depoStok[key] || 0) + adet;
     }
     await ckv.set("depo_stok", depoStok);
-    console.log(`[Tedarikci] Teslimat onaylandı → depo_stok güncellendi: ${teslimatId}`);
+    console.log(`[Tedarikci] Teslimat onaylandı (FIFO): ${teslimatId} | dağıtım: ${dagitim.length} kalem | sipariş dışı: ${fazlaKalemler.length} (${fazlaKarar || "-"})`);
 
-    const cari = await ckv.get(`cost_cari_${teslimat.cariId}`);
-    if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "teslimat_onaylandi", "Teslimat Onaylandı", "Teslimatınız onaylandı.", { siparisId: teslimat.siparisId, teslimatId }, companyId);
-    return c.json({ ok: true, teslimat, siparis });
+    // ── Tedarikçiye açıklayıcı bildirim ──
+    if (cari?.linkedUserId) {
+      let msj = "Teslimatınız onaylandı.";
+      const dagOzet = dagitim.map((d) => `${d.adet}× ${d.productName}`).join(", ");
+      if (dagOzet) msj += ` Siparişlerinize işlendi: ${dagOzet}.`;
+      if (fazlaKalemler.length > 0) {
+        const fOzet = fazlaKalemler.map((f) => `${f.adet}× ${f.productName}`).join(", ");
+        msj += fazlaKarar === "kabul"
+          ? ` Sipariş dışı kalemler kabul edildi: ${fOzet} (cari bakiyenize eklendi).`
+          : ` Sipariş dışı kalemler hariç tutuldu: ${fOzet}.`;
+      }
+      await createNotification(cari.linkedUserId, "teslimat_onaylandi", "Teslimat Onaylandı", msj, { siparisId: teslimat.siparisId, teslimatId }, companyId);
+    }
+    return c.json({ ok: true, teslimat, dagitim, fazlaSiparis });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
