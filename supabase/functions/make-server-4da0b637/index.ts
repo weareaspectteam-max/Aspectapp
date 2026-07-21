@@ -21583,9 +21583,7 @@ app.post("/make-server-4da0b637/tedarikci/odemeler", async (c) => {
       await saveSupplierPayment(companyId, ckv, odeme);
       const giderId = `isletme_gider_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       await ckv.set(giderId, { id: giderId.replace("isletme_gider_", ""), personelAdi: cariName, category: "tedarikci", amount, currency: currency || "TRY", date: payDate, description: aciklama || `Ön ödeme: ${cariName}`, created_at: now, created_by: callerUser.user_metadata?.full_name || "", odemeTipi: "on_odeme", cariId: directCariId });
-      const _onOdemeKasaData = { giderId: giderId.replace("isletme_gider_", ""), odpiendi: true, odpienenTutar: amount, odemeler: [{ tutar: amount, tarih: payDate, aciklama: aciklama || `Ön ödeme: ${cariName}` }] };
-      await ckv.set(`kasa_odeme_${giderId.replace("isletme_gider_", "")}`, _onOdemeKasaData);
-      setKasaRecord(companyId, `kasa_odeme_${giderId.replace("isletme_gider_", "")}`, "odeme", _onOdemeKasaData);
+      // Eski kasa (kasa_odeme_) yazımı kaldırıldı — sistem kasa2 kullanıyor (2026-07-21)
       // Yeni kasa (kasa2) — TL'ye çevrilmiş çıkış
       try { await kasaHareketYaz(companyId, { tarih: payDate, yon: "cikis", pot: _tedPot(paymentMethod), tutar: Math.round(_tedToTL(Number(amount) || 0, currency || "TRY")), kategori: "tedarikci", kaynak: "tedarikci_odeme", kaynak_id: odemeId, aciklama: aciklama || `Ön ödeme — ${cariName}`, olusturan: callerUser.user_metadata?.full_name || "", olusturan_id: callerUser.id }); } catch (e) { console.log("[kasa2 tedarikci onodeme]", e); }
       if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "odeme_bildirimi", "Ödeme Kaydedildi", `₺${amount.toLocaleString("tr-TR")} ön ödeme kaydedildi`, { cariId: directCariId }, companyId);
@@ -21599,9 +21597,7 @@ app.post("/make-server-4da0b637/tedarikci/odemeler", async (c) => {
     await saveSupplierPayment(companyId, ckv, odeme);
     const giderId = `isletme_gider_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     await ckv.set(giderId, { id: giderId.replace("isletme_gider_", ""), personelAdi: siparis.cariName, category: "tedarikci", amount, currency: currency || siparis.currency || "TRY", date: payDate, description: aciklama || `Sipariş ödemesi: ${siparis.cariName}`, created_at: now, created_by: callerUser.user_metadata?.full_name || "", odemeTipi: "normal", cariId: siparis.cariId, siparisId });
-    const _sipOdemeKasaData = { giderId: giderId.replace("isletme_gider_", ""), odpiendi: true, odpienenTutar: amount, odemeler: [{ tutar: amount, tarih: payDate, aciklama: `Tedarikçi ödemesi: ${siparis.cariName}` }] };
-    await ckv.set(`kasa_odeme_${giderId.replace("isletme_gider_", "")}`, _sipOdemeKasaData);
-    setKasaRecord(companyId, `kasa_odeme_${giderId.replace("isletme_gider_", "")}`, "odeme", _sipOdemeKasaData);
+    // Eski kasa (kasa_odeme_) yazımı kaldırıldı — sistem kasa2 kullanıyor (2026-07-21)
     // Yeni kasa (kasa2) — TL'ye çevrilmiş çıkış
     try { await kasaHareketYaz(companyId, { tarih: payDate, yon: "cikis", pot: _tedPot(paymentMethod), tutar: Math.round(_tedToTL(Number(amount) || 0, currency || siparis.currency || "TRY")), kategori: "tedarikci", kaynak: "tedarikci_odeme", kaynak_id: odemeId, aciklama: `Tedarikçi ödemesi — ${siparis.cariName}`, olusturan: callerUser.user_metadata?.full_name || "", olusturan_id: callerUser.id }); } catch (e) { console.log("[kasa2 tedarikci odeme]", e); }
     const allOdeme = await getSupplierPayments(companyId, ckv, { orderId: siparisId });
