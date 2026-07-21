@@ -21507,7 +21507,9 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
       for (const line of teslimat.lines) { const item = siparis.items?.find((i) => i.id === line.itemId); if (item) item.deliveredQuantity = (item.deliveredQuantity || 0) + (line.quantity || 0); }
       const allDelivered = siparis.items.every((i) => (i.deliveredQuantity || 0) >= i.quantity);
       const anyDelivered = siparis.items.some((i) => (i.deliveredQuantity || 0) > 0);
-      if (allDelivered) siparis.status = "teslim_edildi"; else if (anyDelivered) siparis.status = "kismen_teslim";
+      // Tam teslim = sipariş TAMAMLANDI (ödeme sipariş durumundan bağımsız — cari bakiyede +/− takip edilir)
+      if (allDelivered) { siparis.status = "tamamlandi"; siparis.completedAt = new Date().toISOString(); }
+      else if (anyDelivered) siparis.status = "kismen_teslim";
       siparis.loglar = [...(siparis.loglar || []), { tarih: new Date().toISOString(), kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: `Teslimat onaylandı${allDelivered ? " — tümü teslim edildi" : ""}` }];
       siparis.updatedAt = new Date().toISOString();
       await saveOrder(companyId, ckv, siparis);

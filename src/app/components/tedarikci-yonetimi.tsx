@@ -536,7 +536,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
               </div>
             )}
 
-            {!kisitli && ['teslim_edildi', 'kismen_teslim', 'onaylandi'].includes(s.status) && (
+            {!kisitli && ['teslim_edildi', 'kismen_teslim', 'onaylandi', 'tamamlandi'].includes(s.status) && (
               <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setShowPayment(s.id); setPayCurrency(s.currency || 'TRY'); }}
                 className="w-full py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg, #34d399, #10b981)' }}>
                 <Banknote className="w-3 h-3 inline mr-1" /> Ödeme Yap
@@ -1119,8 +1119,19 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                   <>
                     {/* Bakiye kartı */}
                     <div className="p-5 rounded-2xl text-center" style={{ background: kalan > 0 ? 'rgba(251,191,36,0.08)' : 'rgba(52,211,153,0.08)', border: `1px solid ${kalan > 0 ? 'rgba(251,191,36,0.20)' : 'rgba(52,211,153,0.20)'}` }}>
-                      <p className="text-white/40 text-xs mb-1">Kalan Borç</p>
-                      <p className={`text-3xl font-bold ${kalan > 0 ? 'text-amber-400' : 'text-green-400'}`}>₺{Math.abs(kalan).toLocaleString('tr-TR')}</p>
+                      <p className="text-white/40 text-xs mb-1">{kalan > 0 ? 'Kalan Borcumuz' : kalan < 0 ? 'Alacağımız (önden/fazla ödenen)' : 'Bakiye'}</p>
+                      <p className={`text-3xl font-bold ${kalan > 0 ? 'text-amber-400' : 'text-green-400'}`}>{kalan < 0 ? '+' : ''}₺{Math.abs(kalan).toLocaleString('tr-TR')}</p>
+                      {toplam > 0 && (
+                        <div className="mt-3">
+                          <div className="flex justify-between text-[10px] mb-1">
+                            <span className="text-emerald-400 font-bold">Ödenen ₺{odenen.toLocaleString('tr-TR')}</span>
+                            <span className="text-white/40">Sipariş toplamı ₺{toplam.toLocaleString('tr-TR')}</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                            <div className="h-full rounded-full bg-gradient-to-r from-green-500 to-emerald-400" style={{ width: `${Math.min(100, Math.round((odenen / toplam) * 100))}%` }} />
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Dönem özet kartları */}
