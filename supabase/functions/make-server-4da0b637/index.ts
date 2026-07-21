@@ -11693,7 +11693,10 @@ app.get("/make-server-4da0b637/kapanis-bildirim/durum", async (c) => {
     const kisi = (config?.kisiler || []).find((k: any) => k.userId === user.id);
     const yetkili = !!kisi || user.user_metadata?.role === "yonetici";
     const canTeslim = kisi?.teslimYetkisi === true;
-    if (!kisi) return c.json({ yetkili, canTeslim: false, bekleyenler: [] });
+    // Menü görünürlüğü: tedarikçi paneli kişi bazlı yetki bayrağı (poll'a bindirilmiş)
+    let tedarikciYetkili = false;
+    try { const ty: any = await ckv.get("tedarikci_yetkili"); tedarikciYetkili = Array.isArray(ty?.userIds) && ty.userIds.includes(user.id); } catch {}
+    if (!kisi) return c.json({ yetkili, canTeslim: false, tedarikciYetkili, bekleyenler: [] });
 
     const bekleyenKayitlar: any[] = await ckv.getByPrefix(`kapanis_bekleyen_${user.id}_`).catch(() => []) || [];
     const raporlar: any[] = [];
@@ -11721,7 +11724,7 @@ app.get("/make-server-4da0b637/kapanis-bildirim/durum", async (c) => {
         .sort((a: any, b: any) => String(a.tarih).localeCompare(String(b.tarih)));
     }
 
-    return c.json({ yetkili, canTeslim, canDetay, canGunKapatma, gunler, bekleyenler: canDetay ? raporlar : raporlar.map(kapanisRaporSadelestir) });
+    return c.json({ yetkili, canTeslim, canDetay, canGunKapatma, gunler, tedarikciYetkili, bekleyenler: canDetay ? raporlar : raporlar.map(kapanisRaporSadelestir) });
   } catch (err) {
     console.log("GET kapanis-bildirim/durum error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);
@@ -21183,12 +21186,49 @@ app.get("/make-server-4da0b637/tedarikci/portal", async (c) => {
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
+// ── Tedarikçi paneli kişi bazlı yetki (yönetici seçer) ──────────────────────
+// Listedeki kişi: siparişleri görür/verir + teslimat onaylar; ÖDEME göremez/yapamaz.
+const tedarikciYetkiliMi = async (user: any): Promise<boolean> => {
+  try {
+    const ckvY = companyKvFor(getCompanyId(user));
+    const y: any = await ckvY.get("tedarikci_yetkili");
+    return Array.isArray(y?.userIds) && y.userIds.includes(user.id);
+  } catch { return false; }
+};
+
+// GET /tedarikci/yetki — kişi bazlı panel yetkisi listesi (yönetici)
+app.get("/make-server-4da0b637/tedarikci/yetki", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (user.user_metadata?.role !== "yonetici") return c.json({ error: "Yetki yok." }, 403);
+    const ckv = companyKvFor(getCompanyId(user));
+    const y: any = await ckv.get("tedarikci_yetkili") || { userIds: [] };
+    return c.json({ userIds: y.userIds || [] });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// POST /tedarikci/yetki — Body: { userIds: string[] } (yönetici)
+app.post("/make-server-4da0b637/tedarikci/yetki", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (user.user_metadata?.role !== "yonetici") return c.json({ error: "Yetki yok." }, 403);
+    const ckv = companyKvFor(getCompanyId(user));
+    const { userIds } = await c.req.json();
+    if (!Array.isArray(userIds)) return c.json({ error: "userIds listesi zorunludur." }, 400);
+    await ckv.set("tedarikci_yetkili", { userIds: userIds.map(String), guncelleyen: user.id, guncellemeTarihi: new Date().toISOString() });
+    console.log(`Tedarikçi yetki listesi güncellendi: ${userIds.length} kişi by ${user.id}`);
+    return c.json({ ok: true, userIds: userIds.map(String) });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
 app.get("/make-server-4da0b637/tedarikci/ozet", async (c) => {
   try {
     const callerUser = await verifyToken(c);
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
     const callerRole = getEffectiveRole(callerUser);
-    if (!hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
+    if (!hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"]) && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
     const [cariler, siparisler, teslimatlar, odemeler, albumler, depoStok, papers, tumStoklar, fiyatListeleri, exRatesTed] = await Promise.all([
@@ -21223,13 +21263,16 @@ app.get("/make-server-4da0b637/tedarikci/ozet", async (c) => {
     const fiyatMap = {};
     for (const fl of (fiyatListeleri || [])) { if (fl.cariId) fiyatMap[fl.cariId] = fl; }
 
+    // Kişi bazlı yetkili (rol değil liste ile gelen): ödemeleri ve fiyat listelerini GÖRMEZ
+    const tamYetkiOzet = hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"]);
     return c.json({ ok: true, cariler: cariler || [], siparisler: (siparisler || []).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
       teslimatlar: (teslimatlar || []).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
-      odemeler: (odemeler || []).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
+      odemeler: tamYetkiOzet ? (odemeler || []).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")) : [],
       linkedCariler: (cariler || []).filter((cr) => cr.linkedUserId).length,
       bekleyenTeslimat: (teslimatlar || []).filter((t) => t.status === "beklemede").length,
-      albumler: albumler || [], depoStok: ds, genelStok, papers: papers || [], fiyatMap,
+      albumler: albumler || [], depoStok: ds, genelStok, papers: papers || [], fiyatMap: tamYetkiOzet ? fiyatMap : {},
       exchangeRates: exRatesTed || { EUR: 38, USD: 33, GBP: 41.2 },
+      kisitli: !tamYetkiOzet,
     });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -21246,7 +21289,7 @@ app.get("/make-server-4da0b637/tedarikci/siparisler", async (c) => {
       if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
       const all = await getOrders(resolved.companyId, resolved.ckv, { vendorId: resolved.cariId });
       siparisler = (all || []).filter((s) => s.status !== "taslak");
-    } else if (hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) {
+    } else if (hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"]) || (await tedarikciYetkiliMi(callerUser))) {
       const companyId = getCompanyId(callerUser);
       const ckv = companyKvFor(companyId);
       siparisler = await getOrders(companyId, ckv);
@@ -21270,6 +21313,14 @@ app.get("/make-server-4da0b637/tedarikci/siparisler/:id", async (c) => {
     } else if (hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"])) {
       sCompanyId = getCompanyId(callerUser);
       sckv = companyKvFor(sCompanyId);
+    } else if (await tedarikciYetkiliMi(callerUser)) {
+      sCompanyId = getCompanyId(callerUser);
+      sckv = companyKvFor(sCompanyId);
+      // Kişi bazlı yetkili: ödemeleri GÖREMEZ
+      const siparisK = await getOrder(sCompanyId, sckv, siparisId);
+      if (!siparisK) return c.json({ error: "Sipariş bulunamadı." }, 404);
+      const allTK = await getDeliveries(sCompanyId, sckv, { orderId: siparisId });
+      return c.json({ ok: true, siparis: siparisK, teslimatlar: allTK || [], odemeler: [] });
     } else { return c.json({ error: "Yetki yok." }, 403); }
     const siparis = await getOrder(sCompanyId, sckv, siparisId);
     if (!siparis) return c.json({ error: "Sipariş bulunamadı." }, 404);
@@ -21283,7 +21334,7 @@ app.post("/make-server-4da0b637/tedarikci/siparisler", async (c) => {
   try {
     const callerUser = await verifyToken(c);
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
-    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"]) && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
     const { cariId, items, currency, notes, teklifFiyat } = await c.req.json();
@@ -21312,7 +21363,7 @@ app.put("/make-server-4da0b637/tedarikci/siparisler/:id/kalem-ekle", async (c) =
   try {
     const callerUser = await verifyToken(c);
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
-    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"]) && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
     const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
@@ -21338,7 +21389,7 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/gonder", async (c) => {
   try {
     const callerUser = await verifyToken(c);
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
-    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"])) return c.json({ error: "Yetki yok." }, 403);
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"]) && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
     const rawSipId = c.req.param("id"); const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
@@ -21427,7 +21478,7 @@ app.get("/make-server-4da0b637/tedarikci/teslimatlar", async (c) => {
     const callerUser = await verifyToken(c);
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
     // operasyon: teslimat onayı için erişebilir — teslimat verisi fiyat İÇERMEZ (ürün × adet)
-    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur", "operasyon"])) return c.json({ error: "Yetki yok." }, 403);
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur", "operasyon"]) && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
     const _tesCompanyId = getCompanyId(callerUser);
     const ckv = companyKvFor(_tesCompanyId);
     const status = c.req.query("status");
@@ -21441,7 +21492,7 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
     const callerUser = await verifyToken(c);
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
     // operasyon: parasal veri görmeden teslim onayı verebilir (kullanıcı kararı 2026-07-20)
-    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur", "operasyon"])) return c.json({ error: "Yetki yok." }, 403);
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur", "operasyon"]) && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
     const rawId = c.req.param("id");
@@ -21490,7 +21541,7 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/reddet", async (c) => {
   try {
     const callerUser = await verifyToken(c);
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
-    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur", "operasyon"])) return c.json({ error: "Yetki yok." }, 403);
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur", "operasyon"]) && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
     const ckv = companyKvFor(getCompanyId(callerUser));
     const rawId = c.req.param("id");
     const teslimatId = rawId.startsWith("teslimat_") ? rawId.replace("teslimat_", "") : rawId;

@@ -46,10 +46,16 @@ const TABS: Array<{ key: TabKey; label: string; icon: any; color: string }> = [
   { key: 'odeme',     label: 'Ödemeler',     icon: Banknote, color: '#34d399' },
 ];
 
-function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onNavigate }: TedarikciYonetimiProps) {
+function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onNavigate, kisitli = false }: TedarikciYonetimiProps & { kisitli?: boolean }) {
   const [activeTab, setActiveTab] = useState<TabKey>('tedarikci');
   const [selectedTedarikci, setSelectedTedarikci] = useState<any>(null); // seçili tedarikçi
   const [tedarikciTab, setTedarikciTab] = useState<'siparisler' | 'fiyatlar' | 'bakiye'>('siparisler');
+
+  /* Kişi bazlı panel yetkisi (yönetici): sipariş + teslimat verilir, ödeme görünmez */
+  const [showYetki, setShowYetki] = useState(false);
+  const [yetkiUsers, setYetkiUsers] = useState<Array<{ id: string; ad: string; rol: string }>>([]);
+  const [yetkiIds, setYetkiIds] = useState<string[]>([]);
+  const [yetkiSaving, setYetkiSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState('');
@@ -530,14 +536,14 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
               </div>
             )}
 
-            {['teslim_edildi', 'kismen_teslim', 'onaylandi'].includes(s.status) && (
+            {!kisitli && ['teslim_edildi', 'kismen_teslim', 'onaylandi'].includes(s.status) && (
               <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setShowPayment(s.id); setPayCurrency(s.currency || 'TRY'); }}
                 className="w-full py-2.5 rounded-xl text-xs font-bold text-white" style={{ background: 'linear-gradient(135deg, #34d399, #10b981)' }}>
                 <Banknote className="w-3 h-3 inline mr-1" /> Ödeme Yap
               </motion.button>
             )}
 
-            {!['taslak', 'tamamlandi', 'iptal'].includes(s.status) && (
+            {!kisitli && !['taslak', 'tamamlandi', 'iptal'].includes(s.status) && (
               <button onClick={() => { cancelOrder(s.id); setSelectedSiparis(null); }}
                 className="w-full py-2 rounded-xl text-xs text-red-400/60 bg-red-500/5 border border-red-500/10">İptal Et</button>
             )}
@@ -834,6 +840,26 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold text-white">Tedarikçi Yönetimi</h1>
         <div className="flex items-center gap-2">
+          {userRole === 'yonetici' && !kisitli && (
+            <button
+              onClick={async () => {
+                setShowYetki(true);
+                try {
+                  const [uRes, yRes] = await Promise.all([
+                    fetch(appendGhostParam(`${SERVER_URL}/auth/kullanicilar`), { headers: getHeaders() }),
+                    fetch(appendGhostParam(`${SERVER_URL}/tedarikci/yetki`), { headers: getHeaders() }),
+                  ]);
+                  if (uRes.ok) { const d = await uRes.json(); setYetkiUsers((d.kullanicilar || []).filter((u: any) => !['yonetici', 'ust-mudur'].includes(u.rol))); }
+                  if (yRes.ok) { const d = await yRes.json(); setYetkiIds(d.userIds || []); }
+                } catch {}
+              }}
+              className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition-all"
+              style={{ background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.4)' }}
+              title="Kimler görebilir"
+            >
+              <span className="text-xs">🔒</span>
+            </button>
+          )}
           <button
             onClick={() => setShowTedGuide(true)}
             className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition-all"
@@ -856,7 +882,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
 
       {/* Tab Bar */}
       <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1 -mx-1 px-1">
-        {TABS.map(t => {
+        {TABS.filter(t => !kisitli || t.key !== 'odeme').map(t => {
           const active = activeTab === t.key;
           const count = t.key === 'teslimat' ? (data?.bekleyenTeslimat || 0) : 0;
           return (
@@ -938,7 +964,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
               { key: 'siparisler' as const, label: '📦 Siparişler', color: '#60a5fa' },
               { key: 'fiyatlar' as const, label: '💰 Fiyatlar', color: '#fbbf24' },
               { key: 'bakiye' as const, label: '💳 Bakiye', color: '#34d399' },
-            ]).map(t => (
+            ]).filter(t => !kisitli || t.key === 'siparisler').map(t => (
               <button key={t.key} onClick={() => setTedarikciTab(t.key)}
                 className="flex-1 py-2 rounded-xl text-[11px] font-bold transition-all"
                 style={{ background: tedarikciTab === t.key ? `${t.color}20` : glassBg, border: `1px solid ${tedarikciTab === t.key ? `${t.color}50` : glassBorder}`, color: tedarikciTab === t.key ? t.color : 'rgba(255,255,255,0.4)' }}>
@@ -1561,6 +1587,67 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
           </motion.div>
         )}
       </AnimatePresence>
+      {/* Kimler görebilir — kişi bazlı panel yetkisi (yönetici) */}
+      <AnimatePresence>
+        {showYetki && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-5"
+            onClick={() => setShowYetki(false)}>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              onClick={e => e.stopPropagation()}
+              className="w-full max-w-sm rounded-2xl p-5 space-y-3 max-h-[80vh] overflow-y-auto"
+              style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.10)' }}>
+              <div className="flex items-center justify-between">
+                <h2 className="text-white font-bold text-lg">🔒 Kimler Görebilir</h2>
+                <button onClick={() => setShowYetki(false)}><X className="w-5 h-5 text-white/40" /></button>
+              </div>
+              <p className="text-white/40 text-[11px] leading-relaxed">
+                Seçtiğin kişiler tedarikçi panelini <b className="text-white/70">kısıtlı</b> görür:
+                sipariş verebilir ve teslimat onaylayabilir — <b className="text-red-400">ödeme, bakiye ve fiyat listelerini göremez.</b>
+                Sen, üst müdürler ve müdürler her zaman tam yetkilidir.
+              </p>
+              <div className="space-y-1.5">
+                {yetkiUsers.length === 0 && <p className="text-white/30 text-xs text-center py-3">Yükleniyor...</p>}
+                {yetkiUsers.map(u => {
+                  const secili = yetkiIds.includes(u.id);
+                  return (
+                    <button key={u.id}
+                      onClick={() => setYetkiIds(prev => secili ? prev.filter(id => id !== u.id) : [...prev, u.id])}
+                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-left"
+                      style={{
+                        background: secili ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.04)',
+                        border: secili ? '1px solid rgba(167,139,250,0.45)' : '1px solid rgba(255,255,255,0.08)',
+                      }}>
+                      <span className="w-[18px] h-[18px] rounded-md flex items-center justify-center shrink-0"
+                        style={{ background: secili ? '#a78bfa' : 'transparent', border: secili ? 'none' : '1.5px solid rgba(255,255,255,0.3)' }}>
+                        {secili && <span className="text-[11px] font-black" style={{ color: '#1a1a2e' }}>✓</span>}
+                      </span>
+                      <span className="text-white text-sm font-semibold flex-1">{u.ad}</span>
+                      <span className="text-white/30 text-[10px]">{u.rol}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                onClick={async () => {
+                  setYetkiSaving(true);
+                  try {
+                    const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/yetki`), {
+                      method: 'POST', headers: getHeaders(), body: JSON.stringify({ userIds: yetkiIds }),
+                    });
+                    if (res.ok) setShowYetki(false);
+                  } catch {} finally { setYetkiSaving(false); }
+                }}
+                disabled={yetkiSaving}
+                className="w-full py-3 rounded-xl font-bold text-sm text-white disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg, #a78bfa, #8b5cf6)' }}>
+                {yetkiSaving ? 'Kaydediliyor...' : 'Yetkileri Kaydet'}
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Tedarikçi Yönetimi Rehber Modalı */}
       <AnimatePresence>
         {showTedGuide && (
@@ -1759,10 +1846,12 @@ function OperasyonTeslimatView({ userName, accessToken }: { userName: string; ac
   );
 }
 
-/* Rol dallandırma: operasyon → parasal-veri-siz teslimat onayı; diğer roller → tam yönetim paneli */
+/* Rol dallandırma: operasyon → parasal-veri-siz teslimat onayı; yonetici/ust-mudur/mudur → tam panel;
+   diğerleri (yönetici tarafından kişi bazlı yetki verilenler) → KISITLI panel: sipariş + teslimat var, ödeme/bakiye/fiyat YOK */
 export function TedarikciYonetimi(props: TedarikciYonetimiProps) {
   if (props.userRole === 'operasyon') {
     return <OperasyonTeslimatView userName={props.userName} accessToken={props.accessToken} />;
   }
-  return <TedarikciYonetimiAdmin {...props} />;
+  const tamYetki = ['yonetici', 'ust-mudur', 'mudur'].includes(props.userRole);
+  return <TedarikciYonetimiAdmin {...props} kisitli={!tamYetki} />;
 }

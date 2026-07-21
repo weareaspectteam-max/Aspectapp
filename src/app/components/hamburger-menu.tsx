@@ -94,6 +94,10 @@ function getSections(
 ): Section[] {
   const go = (tab: string) => { onNavigate(tab); close(); };
 
+  // Tedarikçi paneli kişi bazlı yetki — KapanisBildirimModal poll'u bu bayrağı günceller
+  let tedarikciPanelYetkili = false;
+  try { tedarikciPanelYetkili = localStorage.getItem('aspect_tedarikci_yetkili') === '1'; } catch {}
+
   const all:  UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','personel','bekleyen','superadmin'];
   const withSupplier: UserRole[] = [...all, 'tedarikci'];
   const mgmt: UserRole[] = ['yonetici','ust-mudur','mudur','operasyon','idari','superadmin'];
@@ -130,6 +134,7 @@ function getSections(
         { icon: Home,          label: 'Dashboard',        roles: all,  action: () => go('dashboard')   },
         { icon: MessageCircle, label: 'Mesajlar',          roles: all,  action: () => go('messaging')   },
         { icon: AlertTriangle, label: 'Açık Takip',        roles: ['mudur','operasyon','idari','personel'] as UserRole[], action: () => go('acik-takip') },
+        { icon: Package,       label: 'Tedarikçi Yönetimi', roles: (tedarikciPanelYetkili ? ['mudur','idari','personel'] : []) as UserRole[], action: () => go('tedarikci-yonetimi') },
         { icon: Trophy,        label: 'Liderlik Tablosu',  roles: all,  action: () => go('leaderboard') },
         { icon: Sparkles as IconComp, label: aiLabel, roles: nonBekleyen as UserRole[], action: () => go('aspect-ai') } as MenuItem,
         { icon: GraduationCap, label: 'Akademi',           roles: all,  action: () => go('academy')     },

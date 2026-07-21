@@ -591,6 +591,13 @@ Tedarikci (albumcu, malzeme saglayici vb.) kendi sifresiyle giris yapar, siparis
 ### Roller
 - `tedarikci` rolu: hierarchy 0.5 (personel altinda)
 - Admin rolleri (yonetici, ust-mudur, mudur): siparis/teslimat/odeme yonetimi
+- operasyon: parasal-veri-siz teslimat onayi gorunumu (OperasyonTeslimatView)
+- **Kisi bazli yetki** (`tedarikci_yetkili` KV, yonetici panel basligindaki 🔒 dugmesiyle secer):
+  listedeki kisi KISITLI panel gorur — siparis verir + teslimat onaylar/reddeder;
+  Odemeler/Bakiye/Fiyatlar sekmeleri ve Odeme Yap/Iptal butonlari YOK, sunucu da
+  odemeler/fiyatMap gondermez (ozet + siparis detayinda bos). Menu girisi GENEL'de,
+  `aspect_tedarikci_yetkili` localStorage bayragi ile (kapanis-bildirim durum poll'u yazar).
+  Endpoint'ler: GET/POST `/tedarikci/yetki` (yonetici)
 
 ### KV Yapisi
 | Key | Icerik |

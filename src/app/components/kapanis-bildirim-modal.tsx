@@ -654,6 +654,7 @@ export function KapanisBildirimModal({ isLoggedIn }: Props) {
       if (!res.ok) return;
       const d = await res.json();
       try { localStorage.setItem(YETKILI_LS_KEY, d.yetkili ? '1' : '0'); } catch {}
+      try { localStorage.setItem('aspect_tedarikci_yetkili', d.tedarikciYetkili ? '1' : '0'); } catch {}
       setCanTeslim(!!d.canTeslim);
       setCanDetay(!!d.canDetay);
       setCanGunKapatma(!!d.canGunKapatma);
