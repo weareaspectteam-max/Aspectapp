@@ -293,17 +293,21 @@ export function CostManagement({ userName, userRole, accessToken, onLogout, onNa
   };
 
   // ─── Kur güncelle ───────────────────────────────
+  // Dış API'ye tarayıcıdan gidilmez (CORS + operatör engeli) — kendi sunucumuz çeker (/doviz/canli, 10 dk cache + fallback)
   const fetchExchangeRates = async () => {
     try {
-      const response = await fetch('https://api.exchangerate-api.com/v4/latest/TRY');
+      const token = await getToken();
+      const response = await fetch(`${API_BASE}/doviz/canli`, { headers: buildHeaders(token) });
       const data = await response.json();
+      if (!response.ok || !data.rates) throw new Error(data.error || 'Kur alınamadı');
+      const r = data.rates;
       const newRates: ExchangeRates = {
-        EUR: 1 / data.rates.EUR,
-        USD: 1 / data.rates.USD,
-        GBP: 1 / data.rates.GBP,
-        BGN: 1 / data.rates.BGN,
-        RUB: 1 / data.rates.RUB,
-        SAR: 1 / data.rates.SAR,
+        EUR: Number(r.EUR) || exchangeRates.EUR,
+        USD: Number(r.USD) || exchangeRates.USD,
+        GBP: Number(r.GBP) || exchangeRates.GBP,
+        BGN: Number(r.BGN) || exchangeRates.BGN,
+        RUB: Number(r.RUB) || exchangeRates.RUB,
+        SAR: Number(r.SAR) || exchangeRates.SAR,
       };
       saveExchangeRates(newRates, true);
       alert('Kurlar başarıyla güncellendi!');
