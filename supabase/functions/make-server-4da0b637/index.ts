@@ -21454,21 +21454,29 @@ app.post("/make-server-4da0b637/tedarikci/teslimat", async (c) => {
     if (callerUser.user_metadata?.role !== "tedarikci") return c.json({ error: "Yetki yok." }, 403);
     const resolved = await resolveSupplierCompany(c, callerUser);
     if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
+    // Teslimat SİPARİŞE BAĞLANMAZ (2026-07-21): tedarikçi sadece ne gönderdiğini bildirir,
+    // onayda FIFO ile en eski açık siparişlere dağıtılır.
     const { siparisId: rawSipId, lines, deliveryNote, deliveryDate } = await c.req.json();
-    if (!rawSipId || !lines?.length) return c.json({ error: "SiparisId ve en az 1 kalem zorunlu." }, 400);
-    const siparisId = rawSipId.startsWith("siparis_") ? rawSipId.replace("siparis_", "") : rawSipId;
-    const siparis = await getOrder(resolved.companyId, resolved.ckv, siparisId);
-    if (!siparis || siparis.cariId !== resolved.cariId) return c.json({ error: "Sipariş bulunamadı." }, 404);
-    if (!["onaylandi","kismen_teslim"].includes(siparis.status)) return c.json({ error: "Bu sipariş için teslimat bildirilemez." }, 400);
+    if (!lines?.length) return c.json({ error: "En az 1 kalem zorunlu." }, 400);
+    // Geriye uyum: eski istemci itemId ile gönderirse ürün adını siparişten çöz
+    const itemAdMap: Record<string, string> = {};
+    if (rawSipId) {
+      const sidEski = String(rawSipId).startsWith("siparis_") ? String(rawSipId).replace("siparis_", "") : rawSipId;
+      const sipEski = await getOrder(resolved.companyId, resolved.ckv, sidEski).catch(() => null);
+      for (const i of (sipEski?.items || [])) itemAdMap[i.id] = i.productName;
+    }
+    const temizLines = (lines || [])
+      .map((l: any) => ({ productName: String(l.productName || itemAdMap[l.itemId] || ""), quantity: Math.max(0, Math.round(Number(l.quantity) || 0)) }))
+      .filter((l: any) => l.productName && l.quantity > 0);
+    if (!temizLines.length) return c.json({ error: "Geçerli kalem yok." }, 400);
+    const cariRecTes = await resolved.ckv.get(`cost_cari_${resolved.cariId}`).catch(() => null);
     const now = new Date().toISOString();
     const id = `teslimat_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    const teslimat = { id, siparisId, cariId: resolved.cariId, cariName: siparis.cariName || "", status: "beklemede",
-      lines: lines.map((l) => ({ itemId: l.itemId, productName: l.productName || siparis.items?.find((i) => i.id === l.itemId)?.productName || "", quantity: l.quantity || 0 })),
+    const teslimat = { id, siparisId: null, cariId: resolved.cariId, cariName: cariRecTes?.name || "", status: "beklemede",
+      lines: temizLines,
       deliveryDate: deliveryDate || now.slice(0, 10), deliveryNote: deliveryNote || "", createdAt: now, createdBy: callerUser.user_metadata?.full_name || "", createdByUserId: callerUser.id };
     await saveDelivery(resolved.companyId, resolved.ckv, teslimat);
-    // Siparişe log ekle
-    siparis.loglar = [...(siparis.loglar || []), { tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "tedarikci", mesaj: `Teslimat bildirildi: ${teslimat.lines.map(l => l.productName + " ×" + l.quantity).join(", ")}` }];
-    await saveOrder(resolved.companyId, resolved.ckv, siparis);
+    console.log(`[Tedarikci] Genel teslimat bildirildi: ${id} — ${temizLines.map((l) => l.productName + " ×" + l.quantity).join(", ")}`);
     return c.json({ ok: true, teslimat });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });

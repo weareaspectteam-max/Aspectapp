@@ -59,7 +59,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
   const [orderDetail, setOrderDetail] = useState<any>(null);
   const [showDeliveryForm, setShowDeliveryForm] = useState(false);
-  const [deliveryLines, setDeliveryLines] = useState<Array<{ itemId: string; quantity: number }>>([]);
+  const [deliveryLines, setDeliveryLines] = useState<Array<{ productName: string; quantity: number }>>([]);
   const [deliveryNote, setDeliveryNote] = useState('');
   const [actionLoading, setActionLoading] = useState('');
   const [activePortalTab, setActivePortalTab] = useState<'siparisler' | 'fiyatlar' | 'bakiye'>('siparisler');
@@ -124,7 +124,8 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
     } finally { setActionLoading(''); }
   };
 
-  const submitDelivery = async (orderId: string) => {
+  /* Teslimat siparişe bağlanmaz — sadece ne gönderildiği bildirilir, onayda en eski siparişlere dağıtılır */
+  const submitDelivery = async () => {
     const validLines = deliveryLines.filter(l => l.quantity > 0);
     if (!validLines.length) return;
     setActionLoading('delivery');
@@ -132,14 +133,13 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
       const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teslimat`), {
         method: 'POST',
         headers: headers(),
-        body: JSON.stringify({ siparisId: orderId, lines: validLines, deliveryNote }),
+        body: JSON.stringify({ lines: validLines, deliveryNote }),
       });
       if (res.ok) {
         setShowDeliveryForm(false);
         setDeliveryLines([]);
         setDeliveryNote('');
         fetchPortal();
-        if (selectedOrder === orderId) fetchOrderDetail(orderId);
       } else {
         const data = await res.json().catch(() => ({}));
         alert(data.error || 'Teslimat bildirilemedi');
@@ -415,68 +415,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
           </div>
         )}
 
-        {['onaylandi', 'kismen_teslim'].includes(s.status) && !showDeliveryForm && (
-          <motion.button whileTap={{ scale: 0.97 }} onClick={() => {
-            setShowDeliveryForm(true);
-            setDeliveryLines(s.items.filter(i => i.quantity > (i.deliveredQuantity || 0)).map(i => ({ itemId: i.id, quantity: 0 })));
-          }}
-            className="w-full py-3 rounded-xl font-semibold text-white"
-            style={{ background: 'linear-gradient(135deg, #60a5fa, #3b82f6)' }}>
-            <Truck className="w-4 h-4 inline mr-2" />Teslimat Bildir
-          </motion.button>
-        )}
-
-        {/* Teslimat Formu */}
-        <AnimatePresence>
-          {showDeliveryForm && (
-            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-              className="rounded-2xl overflow-hidden" style={{ background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.20)' }}>
-              <div className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-white font-semibold text-sm">Teslimat Miktarları</p>
-                  <button onClick={() => {
-                    const remaining = s.items.filter(i => i.quantity > (i.deliveredQuantity || 0));
-                    setDeliveryLines(remaining.map(i => ({ itemId: i.id, quantity: i.quantity - (i.deliveredQuantity || 0) })));
-                  }} className="px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/25">Tümünü Doldur</button>
-                </div>
-                {s.items.filter(i => i.quantity > (i.deliveredQuantity || 0)).map((item, idx) => {
-                  const max = item.quantity - (item.deliveredQuantity || 0);
-                  return (
-                    <div key={item.id || idx} className="flex items-center gap-3">
-                      <span className="text-white/60 text-sm flex-1">{item.productName} (kalan: {max})</span>
-                      <input
-                        type="number" inputMode="numeric" min={0} max={max}
-                        value={deliveryLines[idx]?.quantity ?? ''}
-                        onChange={e => {
-                          const v = Math.min(max, Math.max(0, parseInt(e.target.value) || 0));
-                          setDeliveryLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: v } : l));
-                        }}
-                        placeholder="0"
-                        className="w-20 px-3 py-2 rounded-lg text-center text-white bg-white/10 border border-white/20 text-sm"
-                      />
-                    </div>
-                  );
-                })}
-                <textarea
-                  placeholder="Not (opsiyonel)"
-                  value={deliveryNote}
-                  onChange={e => setDeliveryNote(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-white bg-white/10 border border-white/20 text-sm resize-none"
-                  rows={2}
-                />
-                <div className="flex gap-2">
-                  <button onClick={() => setShowDeliveryForm(false)} className="flex-1 py-2 rounded-lg text-white/60 bg-white/5 text-sm">İptal</button>
-                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => submitDelivery(s.id)}
-                    disabled={actionLoading === 'delivery' || deliveryLines.every(l => l.quantity === 0)}
-                    className="flex-1 py-2 rounded-lg font-semibold text-white text-sm disabled:opacity-40"
-                    style={{ background: 'linear-gradient(135deg, #60a5fa, #3b82f6)' }}>
-                    {actionLoading === 'delivery' ? 'Gönderiliyor...' : 'Bildir'}
-                  </motion.button>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Teslimat bildirimi artık siparişe bağlı değil — ana ekrandaki "🚚 Teslimat Bildir" kullanılır */}
 
         {/* Aktivite Logu */}
         {(s.loglar || []).length > 0 && (
@@ -672,6 +611,71 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                 style={{ background: 'linear-gradient(135deg, #fbbf24, #d97706)' }}>
                 💰 Teklif / Sipariş Oluştur
               </motion.button>
+
+              {/* Genel teslimat — siparişe bağlı değil, ne gönderdiysen onu bildir */}
+              {!showDeliveryForm && (
+                <motion.button whileTap={{ scale: 0.97 }} onClick={() => {
+                  const items: Array<{ productName: string; quantity: number }> = [];
+                  for (const sz of [3, 5, 7, 9, 11, 13, 15]) {
+                    items.push({ productName: `${sz} Kare Tam`, quantity: 0 });
+                    items.push({ productName: `${sz} Kare Yarım`, quantity: 0 });
+                  }
+                  items.push({ productName: 'Paspartu', quantity: 0 });
+                  setDeliveryLines(items); setDeliveryNote(''); setShowDeliveryForm(true);
+                }}
+                  className="w-full py-3 rounded-2xl font-semibold text-white flex items-center justify-center gap-2"
+                  style={{ background: 'linear-gradient(135deg, #60a5fa, #3b82f6)' }}>
+                  🚚 Teslimat Bildir
+                </motion.button>
+              )}
+
+              <AnimatePresence>
+                {showDeliveryForm && (
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                    className="rounded-2xl overflow-hidden" style={{ background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.20)' }}>
+                    <div className="p-4 space-y-3">
+                      <p className="text-white font-semibold text-sm">🚚 Teslimat Bildir — ne gönderdin?</p>
+                      <p className="text-white/40 text-[11px] leading-relaxed">
+                        Sipariş seçmene gerek yok — gönderdiğin adetleri gir, onaylandığında sistem otomatik olarak en eski siparişlerine işler.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {deliveryLines.map((l, idx) => (
+                          <div key={l.productName} className="flex items-center gap-2 px-2 py-1.5 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                            <span className="text-white/60 text-[11px] font-semibold flex-1 leading-tight">{l.productName}</span>
+                            <input
+                              type="number" inputMode="numeric" min={0}
+                              value={l.quantity || ''}
+                              onChange={e => {
+                                const v = Math.max(0, parseInt(e.target.value) || 0);
+                                setDeliveryLines(prev => prev.map((x, i) => i === idx ? { ...x, quantity: v } : x));
+                              }}
+                              placeholder="0"
+                              className={`w-14 h-9 rounded-lg text-center text-white font-bold border ${l.quantity > 0 ? 'bg-blue-500/25 border-blue-400' : 'bg-white/5 border-white/15'}`}
+                              style={{ fontSize: 16 }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <textarea
+                        placeholder="Not (opsiyonel)"
+                        value={deliveryNote}
+                        onChange={e => setDeliveryNote(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg text-white bg-white/10 border border-white/20 text-sm resize-none"
+                        rows={2}
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={() => setShowDeliveryForm(false)} className="flex-1 py-2 rounded-lg text-white/60 bg-white/5 text-sm">İptal</button>
+                        <motion.button whileTap={{ scale: 0.97 }} onClick={() => submitDelivery()}
+                          disabled={actionLoading === 'delivery' || deliveryLines.every(l => l.quantity === 0)}
+                          className="flex-1 py-2 rounded-lg font-semibold text-white text-sm disabled:opacity-40"
+                          style={{ background: 'linear-gradient(135deg, #60a5fa, #3b82f6)' }}>
+                          {actionLoading === 'delivery' ? 'Gönderiliyor...' : 'Bildir'}
+                        </motion.button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {(() => {
                 const isTeklif = (s: PurchaseOrder) => ['karsi_teklif', 'tedarikci_teklifi', 'teklif_verildi'].includes(s.teklifDurum || '') && s.status !== 'iptal' && s.status !== 'tamamlandi';
