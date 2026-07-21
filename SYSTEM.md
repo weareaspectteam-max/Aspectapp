@@ -632,11 +632,16 @@ Herhangi asamada → iptal (admin)
 5. Tedarikciye aciklayici bildirim: dagitim ozeti + siparis disi karari
 6. Admin "Reddet" → sebep yazilir, tedarikci bilgilendirilir
 
-### Odeme-Kasa Entegrasyonu
-Odeme kaydedildiginde:
-1. `isletme_gider_{id}` olusur (category: "tedarikci")
-2. `kasa_odeme_{giderId}` olusur (odendi isareti)
-3. Kasa → Cariler tabinda otomatik gorulur
+### Odeme-Kasa Entegrasyonu (TEK NOKTA + FIFO — 2026-07-21)
+- Odeme SADECE Bakiye sekmesindeki "Odeme Yap" ile yapilir (siparis karti odemesi kaldirildi,
+  eski "On Odeme Yap" bu dugmeye donustu). Endpoint: POST `/tedarikci/odeme-genel` {cariId, amount, aciklama}
+- FIFO: en eski acik siparisin borcunu kapatir (tedarikci_odeme_ kaydi siparis basina bolunur, tip:"fifo"),
+  artan tum borclar kapaninca ON ODEME/alacak olur (tip:"on_odeme", siparisId:null)
+- Odeme tipi SORULMAZ — kasa2'den otomatik: ONCE BANKA, yetmezse kalan NAKIT (pot bazli 2 hareket)
+- Tek `isletme_gider_` (toplam) + kasa2 cikis hareketleri; eski kasa (kasa_odeme_) YAZILMAZ
+- Teklif kabulunde de gider YAZILMAZ (cift gider fixi) — gider yalnizca odeme aninda
+- Dokunulan siparislere log; tedarikciye aciklayici bildirim; tedarikci odemeyi panelinden onaylar
+- Siparis tamamlanmasi odemeden bagimsizdir (teslimatla tamamlanir); bakiye = siparis toplami − odemeler (+/−)
 
 ### API Endpoint'leri
 | Metod | Route | Aciklama |
