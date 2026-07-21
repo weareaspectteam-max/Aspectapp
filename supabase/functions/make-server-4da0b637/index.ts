@@ -21963,20 +21963,9 @@ app.post("/make-server-4da0b637/tedarikci/siparisler/:id/teklif", async (c) => {
       siparis.teklifler = [...(siparis.teklifler || []), { taraf, fiyat: siparis.teklifFiyat, tarih: now, kisi: callerUser.user_metadata?.full_name || "", aksiyon: "kabul" }];
       if (siparis.status === "gonderildi" || siparis.status === "taslak") siparis.status = "onaylandi";
       siparis.confirmedAt = now;
-      // Teklif kabul → kasada borç oluştur veya güncelle
-      const borcTutar = siparis.teklifFiyat || siparis.totalAmount || 0;
-      if (borcTutar > 0) {
-        const giderId = `isletme_gider_tedarikci_${siparisId}`;
-        const mevcutGider = await ckv.get(giderId);
-        if (!mevcutGider) {
-          await ckv.set(giderId, { id: giderId, amount: borcTutar, currency: siparis.currency || "TRY", description: `Tedarikçi sipariş: ${siparis.cariName || ""}`, category: "tedarikci", subcategory: "siparis", personelAdi: siparis.cariName || "", date: now.slice(0, 10), createdAt: now, createdBy: "sistem", siparisId: `siparis_${siparisId}` });
-        } else {
-          // Teklif fiyatı değişmiş olabilir — güncelle
-          mevcutGider.amount = borcTutar;
-          mevcutGider.description = `Tedarikçi sipariş: ${siparis.cariName || ""}`;
-          await ckv.set(giderId, mevcutGider);
-        }
-      }
+      // NOT (2026-07-21): teklif kabulünde GİDER YAZILMAZ — 2026-07-20 kararıyla uyumlu:
+      // İGD gideri sadece ödeme anında oluşur, cari bakiye sipariş toplamı − ödemelerden türetilir.
+      // (Eski isletme_gider_tedarikci_{siparisId} yazımı çift gider yaratıyordu — kaldırıldı.)
     } else if (aksiyon === "red") {
       siparis.teklifDurum = "reddedildi";
       siparis.status = "iptal";
