@@ -156,6 +156,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
   const genelStok: any = data?.genelStok || {};
   const papers: any[] = data?.papers || [];
   const fiyatMap: any = data?.fiyatMap || {};
+  const fiyatTalepMap: any = data?.fiyatTalepMap || {};
   const cariFiyat: any = fiyatMap[orderCariId] || {};
 
   // ── Actions ──
@@ -972,7 +973,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
               <button key={t.key} onClick={() => setTedarikciTab(t.key)}
                 className="flex-1 py-2 rounded-xl text-[11px] font-bold transition-all"
                 style={{ background: tedarikciTab === t.key ? `${t.color}20` : glassBg, border: `1px solid ${tedarikciTab === t.key ? `${t.color}50` : glassBorder}`, color: tedarikciTab === t.key ? t.color : 'rgba(255,255,255,0.4)' }}>
-                {t.label}
+                {t.label}{t.key === 'fiyatlar' && fiyatTalepMap[selectedTedarikci.id] ? ' 🔔' : ''}
               </button>
             ))}
           </div>
@@ -1019,7 +1020,63 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
           })()}
 
           {/* Fiyatlar */}
-          {tedarikciTab === 'fiyatlar' && (
+          {tedarikciTab === 'fiyatlar' && (<>
+            {/* Bekleyen fiyat güncelleme talebi — tedarikçiden geldi, kabul/red bekliyor */}
+            {(() => {
+              const talep = fiyatTalepMap[selectedTedarikci.id];
+              if (!talep) return null;
+              const degisenler = (talep.items || []).filter((it: any) => (it.yeniFiyat || 0) !== (it.eskiFiyat || 0));
+              return (
+                <div className="rounded-2xl overflow-hidden mb-3" style={{ background: 'rgba(251,191,36,0.06)', border: '1.5px solid rgba(251,191,36,0.4)' }}>
+                  <div className="px-4 py-3 border-b border-white/5">
+                    <p className="text-amber-400 font-bold text-sm">🔔 Fiyat Güncelleme Talebi</p>
+                    <p className="text-white/40 text-[10px] mt-0.5">
+                      {talep.gonderenKisi || 'Tedarikçi'} · {talep.tarih ? new Date(talep.tarih).toLocaleDateString('tr-TR') : ''} — kabul edersen anlaşma fiyatları ve maliyet listesi güncellenir
+                    </p>
+                  </div>
+                  {degisenler.length === 0 && (
+                    <p className="px-4 py-3 text-white/40 text-xs">Fiyat değişikliği içermiyor.</p>
+                  )}
+                  {degisenler.map((it: any, i: number) => (
+                    <div key={i} className="px-4 py-2 flex items-center justify-between border-b border-white/5">
+                      <span className="text-white text-xs font-semibold">{it.productName}</span>
+                      <span className="text-xs">
+                        <span className="text-white/40">₺{(it.eskiFiyat || 0).toLocaleString('tr-TR')}</span>
+                        <span className="text-white/30"> → </span>
+                        <b style={{ color: (it.yeniFiyat || 0) > (it.eskiFiyat || 0) ? '#f87171' : '#34d399' }}>₺{(it.yeniFiyat || 0).toLocaleString('tr-TR')}</b>
+                      </span>
+                    </div>
+                  ))}
+                  <div className="p-3 flex gap-2">
+                    <button
+                      onClick={async () => {
+                        setActionLoading('fiyattalep');
+                        try {
+                          await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/fiyat-talep/${selectedTedarikci.id}/kabul`), { method: 'POST', headers: getHeaders(), body: JSON.stringify({}) });
+                          fetchData();
+                        } finally { setActionLoading(''); }
+                      }}
+                      disabled={actionLoading === 'fiyattalep'}
+                      className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-50"
+                      style={{ background: 'linear-gradient(135deg, #34d399, #10b981)' }}>
+                      ✓ Kabul Et
+                    </button>
+                    <button
+                      onClick={async () => {
+                        setActionLoading('fiyattalep');
+                        try {
+                          await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/fiyat-talep/${selectedTedarikci.id}/red`), { method: 'POST', headers: getHeaders(), body: JSON.stringify({}) });
+                          fetchData();
+                        } finally { setActionLoading(''); }
+                      }}
+                      disabled={actionLoading === 'fiyattalep'}
+                      className="flex-1 py-2.5 rounded-xl text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/20 disabled:opacity-50">
+                      ✗ Reddet
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
             <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
               <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: glassBorder }}>
                 <p className="text-white font-semibold text-sm">💰 Anlaşma Fiyatları</p>
@@ -1063,7 +1120,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                 );
               })}
             </div>
-          )}
+          </>)}
 
           {/* Bakiye */}
           {tedarikciTab === 'bakiye' && (

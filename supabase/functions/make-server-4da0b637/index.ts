@@ -21260,8 +21260,18 @@ app.get("/make-server-4da0b637/tedarikci/ozet", async (c) => {
       genelStok.paspartu += Number(sayim.paspartu) || 0;
     }
     // Fiyat listeleri map
+    // DİKKAT: getByPrefix("tedarikci_fiyat_") hem fiyat listelerini HEM talep kayıtlarını döndürür
+    // (tedarikci_fiyat_talep_* aynı öneke düşer) — durum/gonderen alanıyla ayrıştırılır.
     const fiyatMap = {};
-    for (const fl of (fiyatListeleri || [])) { if (fl.cariId) fiyatMap[fl.cariId] = fl; }
+    const fiyatTalepMap = {};
+    for (const fl of (fiyatListeleri || [])) {
+      if (!fl?.cariId) continue;
+      if (fl.durum !== undefined || fl.gonderen !== undefined) {
+        if (fl.durum === "beklemede") fiyatTalepMap[fl.cariId] = fl;
+      } else {
+        fiyatMap[fl.cariId] = fl;
+      }
+    }
 
     // Kişi bazlı yetkili (rol değil liste ile gelen): ödemeleri ve fiyat listelerini GÖRMEZ
     const tamYetkiOzet = hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"]);
@@ -21271,6 +21281,7 @@ app.get("/make-server-4da0b637/tedarikci/ozet", async (c) => {
       linkedCariler: (cariler || []).filter((cr) => cr.linkedUserId).length,
       bekleyenTeslimat: (teslimatlar || []).filter((t) => t.status === "beklemede").length,
       albumler: albumler || [], depoStok: ds, genelStok, papers: papers || [], fiyatMap: tamYetkiOzet ? fiyatMap : {},
+      fiyatTalepMap: tamYetkiOzet ? fiyatTalepMap : {},
       exchangeRates: exRatesTed || { EUR: 38, USD: 33, GBP: 41.2 },
       kisitli: !tamYetkiOzet,
     });
