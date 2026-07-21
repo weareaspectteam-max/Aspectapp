@@ -1052,7 +1052,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                       onClick={async () => {
                         setActionLoading('fiyattalep');
                         try {
-                          await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/fiyat-talep/${selectedTedarikci.id}/kabul`), { method: 'POST', headers: getHeaders(), body: JSON.stringify({}) });
+                          await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/fiyat-talep/${selectedTedarikci.id}/kabul`), { method: 'POST', headers: getHeaders(), body: JSON.stringify({ maliyetYansit: true }) });
                           fetchData();
                         } finally { setActionLoading(''); }
                       }}
@@ -1649,7 +1649,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                   try {
                     await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/fiyat/${showPriceList}`), {
                       method: 'PUT', headers: getHeaders(),
-                      body: JSON.stringify({ items: priceListItems }),
+                      body: JSON.stringify({ items: priceListItems, maliyetYansit: true }),
                     });
                     fetchData();
                     setShowPriceList(null);

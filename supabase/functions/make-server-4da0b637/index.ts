@@ -21976,16 +21976,19 @@ app.post("/make-server-4da0b637/tedarikci/fiyat-talep/:cariId/kabul", async (c) 
     // Fiyat listesini güncelle
     const yeniFiyatlar = { cariId, items: (talep.items || []).map((it) => ({ productName: it.productName, fiyat: it.yeniFiyat, currency: it.currency || "TRY" })), updatedAt: new Date().toISOString(), updatedBy: callerUser.user_metadata?.full_name || "" };
     await ckv.set(`tedarikci_fiyat_${cariId}`, yeniFiyatlar);
-    // Maliyet yönetimine yansıt
+    // Maliyet yönetimine yansıt — Tam→tamBoy, Yarım/eski format→yarimBoy (paspartu hariç)
     if (maliyetYansit) {
       const albums = await ckv.get("cost_albums") || [];
       for (const it of talep.items) {
-        const sizeMatch = it.productName.match(/(\d+)/);
-        if (sizeMatch) {
-          const size = parseInt(sizeMatch[1]);
-          const album = albums.find((a) => a.size === size || a.size === String(size));
-          if (album) { album.yarimBoy = it.yeniFiyat; }
-        }
+        const pName = String(it.productName || "").toLowerCase();
+        if (pName.includes("paspartu")) continue;
+        const sizeMatch = pName.match(/(\d+)/);
+        if (!sizeMatch) continue;
+        const size = parseInt(sizeMatch[1]);
+        const album = albums.find((a) => a.size === size || a.size === String(size));
+        if (!album) continue;
+        if (pName.includes("tam")) album.tamBoy = it.yeniFiyat;
+        else album.yarimBoy = it.yeniFiyat;
       }
       await ckv.set("cost_albums", albums);
     }
@@ -22178,9 +22181,27 @@ app.put("/make-server-4da0b637/tedarikci/fiyat/:cariId", async (c) => {
       ckv = companyKvFor(getCompanyId(callerUser));
     } else { return c.json({ error: "Yetki yok." }, 403); }
     const cariId = c.req.param("cariId");
-    const { items } = await c.req.json();
+    const { items, maliyetYansit } = await c.req.json();
     const fiyat = { cariId, items: items || [], updatedAt: new Date().toISOString(), updatedBy: callerUser.user_metadata?.full_name || callerUser.email || "" };
     await ckv.set(`tedarikci_fiyat_${cariId}`, fiyat);
+    // Maliyet yönetimine yansıt (sadece admin) — Tam→tamBoy, Yarım/eski→yarimBoy, paspartu hariç
+    if (maliyetYansit && role !== "tedarikci") {
+      const albums = await ckv.get("cost_albums") || [];
+      for (const it of (items || [])) {
+        const pName = String(it.productName || "").toLowerCase();
+        if (pName.includes("paspartu")) continue;
+        const sizeMatch = pName.match(/(\d+)/);
+        if (!sizeMatch) continue;
+        const size = parseInt(sizeMatch[1]);
+        const album = albums.find((a) => a.size === size || a.size === String(size));
+        if (!album) continue;
+        const yeni = Number(it.fiyat) || 0;
+        if (yeni <= 0) continue;
+        if (pName.includes("tam")) album.tamBoy = yeni;
+        else album.yarimBoy = yeni;
+      }
+      await ckv.set("cost_albums", albums);
+    }
     return c.json({ ok: true, fiyat });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
