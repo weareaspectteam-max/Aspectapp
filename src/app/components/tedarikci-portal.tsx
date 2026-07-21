@@ -677,6 +677,37 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                 )}
               </AnimatePresence>
 
+              {/* Teslimatlarım — bildirdiğim teslimatların durumu */}
+              {teslimatlar.length > 0 && (
+                <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div className="px-4 py-2 border-b border-white/5">
+                    <p className="text-white font-semibold text-sm">🚚 Teslimatlarım</p>
+                  </div>
+                  {[...teslimatlar].sort((a: any, b: any) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 10).map((t: any) => {
+                    const renk = t.status === 'onaylandi' ? '#34d399' : t.status === 'reddedildi' ? '#f87171' : '#fbbf24';
+                    const label = t.status === 'onaylandi' ? 'Onaylandı' : t.status === 'reddedildi' ? 'Reddedildi' : 'Beklemede';
+                    return (
+                      <div key={t.id} className="px-4 py-2.5 border-b border-white/5">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-white/40 text-[10px]">{t.deliveryDate}</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: `${renk}20`, color: renk }}>{label}</span>
+                        </div>
+                        <p className="text-white/70 text-xs">{(t.lines || []).map((l: any) => `${l.quantity}× ${l.productName}`).join(', ')}</p>
+                        {t.status === 'onaylandi' && (t.dagitim || []).length > 0 && (
+                          <p className="text-emerald-400/70 text-[10px] mt-0.5">✓ Siparişlerinize işlendi: {(t.dagitim || []).map((d: any) => `${d.adet}× ${d.productName}`).join(', ')}</p>
+                        )}
+                        {t.siparisDisi?.kalemler?.length > 0 && (
+                          <p className="text-[10px] mt-0.5" style={{ color: t.siparisDisi.karar === 'kabul' ? '#fbbf24' : '#f87171' }}>
+                            Sipariş dışı ({t.siparisDisi.karar === 'kabul' ? 'kabul edildi — bakiyenize eklendi' : 'hariç tutuldu'}): {t.siparisDisi.kalemler.map((k: any) => `${k.adet}× ${k.productName}`).join(', ')}
+                          </p>
+                        )}
+                        {t.rejectionReason && <p className="text-red-400 text-[10px] mt-0.5">Sebep: {t.rejectionReason}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               {(() => {
                 const isTeklif = (s: PurchaseOrder) => ['karsi_teklif', 'tedarikci_teklifi', 'teklif_verildi'].includes(s.teklifDurum || '') && s.status !== 'iptal' && s.status !== 'tamamlandi';
                 const isAktif = (s: PurchaseOrder) => ['onaylandi', 'kismen_teslim', 'teslim_edildi'].includes(s.status) && !isTeklif(s);
