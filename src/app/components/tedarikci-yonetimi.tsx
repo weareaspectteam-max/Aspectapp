@@ -85,6 +85,27 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
   const [orderCurrency, setOrderCurrency] = useState('TRY');
   const [orderNotes, setOrderNotes] = useState('');
   const [orderItems, setOrderItems] = useState<Array<{ productName: string; quantity: number; unitPrice: number }>>([]);
+
+  // Sipariş formu ürün listesini tedarikçi tipine göre kur — hem select onChange hem
+  // tedarikçi ekranından (cari hazır seçili) açılışta çağrılır
+  const buildOrderItemsFor = (cariId: string) => {
+    const cari = cariler.find((c: any) => c.id === cariId);
+    const st = cari?.supplierType || '';
+    if (st === 'album') {
+      const items: Array<{ productName: string; quantity: number; unitPrice: number }> = [];
+      const sizes = [3, 5, 7, 9, 11, 13, 15];
+      for (const s of sizes) {
+        const a = (albumler || []).find((al: any) => al.size === s || al.size === String(s));
+        items.push({ productName: `${s} Kare Tam`, quantity: 0, unitPrice: a?.tamBoy || 0 });
+        items.push({ productName: `${s} Kare Yarım`, quantity: 0, unitPrice: a?.yarimBoy || 0 });
+      }
+      items.push({ productName: 'Paspartu', quantity: 0, unitPrice: 0 });
+      setOrderItems(items);
+      setOrderCurrency((albumler || [])[0]?.currency || 'TRY');
+    } else {
+      setOrderItems([{ productName: '', quantity: 0, unitPrice: 0 }]);
+    }
+  };
   const [orderTeklifFiyat, setOrderTeklifFiyat] = useState('');
 
   // Payment form
@@ -932,7 +953,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
             if (selectedSiparis) return renderSiparisTab(); // detay görünümü kullan
             return (
               <div className="space-y-3">
-                <motion.button whileTap={{ scale: 0.97 }} onClick={() => { setOrderCariId(selectedTedarikci.id); setShowNewOrder(true); }}
+                <motion.button whileTap={{ scale: 0.97 }} onClick={() => { setOrderCariId(selectedTedarikci.id); buildOrderItemsFor(selectedTedarikci.id); setOrderNotes(''); setOrderTeklifFiyat(''); setShowNewOrder(true); }}
                   className="w-full py-3 rounded-xl font-semibold text-white flex items-center justify-center gap-2"
                   style={{ background: 'linear-gradient(135deg, #60a5fa, #3b82f6)' }}>
                   <Plus className="w-4 h-4" /> Yeni Sipariş
@@ -1245,23 +1266,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
               )}
               <select value={orderCariId} onChange={e => {
                 setOrderCariId(e.target.value);
-                // Tedarikçi seçilince ürün listesini otomatik oluştur
-                const cari = cariler.find((c: any) => c.id === e.target.value);
-                const st = cari?.supplierType || '';
-                if (st === 'album') {
-                  const items: Array<{ productName: string; quantity: number; unitPrice: number }> = [];
-                  const sizes = [3, 5, 7, 9, 11, 13, 15];
-                  for (const s of sizes) {
-                    const a = (albumler || []).find((al: any) => al.size === s || al.size === String(s));
-                    items.push({ productName: `${s} Kare Tam`, quantity: 0, unitPrice: a?.tamBoy || 0 });
-                    items.push({ productName: `${s} Kare Yarım`, quantity: 0, unitPrice: a?.yarimBoy || 0 });
-                  }
-                  items.push({ productName: 'Paspartu', quantity: 0, unitPrice: 0 });
-                  setOrderItems(items);
-                  setOrderCurrency((albumler || [])[0]?.currency || 'TRY');
-                } else {
-                  setOrderItems([{ productName: '', quantity: 0, unitPrice: 0 }]);
-                }
+                buildOrderItemsFor(e.target.value);
               }} className={inputStyle + ' bg-white/10'}>
                 <option value="" className="bg-gray-900">Tedarikçi seç...</option>
                 {cariler.filter((c: any) => c.supplierType === 'album').map((c: any) => (
