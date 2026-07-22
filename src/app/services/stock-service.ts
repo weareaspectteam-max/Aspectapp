@@ -125,6 +125,8 @@ export interface GunlukStokResponse {
   eklemeler: StokEkleme[];
   bekleyenAktarimlar: Aktarim[];
   mekanYazicilari?: MekanYazici[];
+  // Mekanda ayrılmış (imha/iade bekleyen) bozuk albüm bakiyesi — sayıma dahil edilmemeli
+  mekanBozuk?: Record<string, number>;
 }
 
 // Ekipman kaydındaki yazıcı (GET /stok/gunluk cevabında gelir)
@@ -175,13 +177,14 @@ export const postAcilis = async (
     serialNumber?: string;
     startCounter: number;
   }>,
-  photo?: string | null
+  photo?: string | null,
+  anomaliNeden?: string
 ): Promise<{ kayit: StokGunluk; anomali: Partial<StokSayim>; printerAnomali?: any[] } | null> => {
   try {
     const res = await fetch(`${API_BASE}/stok/acilis`, {
       method: 'POST',
       headers: await authHeaders(),
-      body: JSON.stringify({ mekanId, tarih, sayim, not, printerData: printerData || [], photo: photo || undefined }),
+      body: JSON.stringify({ mekanId, tarih, sayim, not, printerData: printerData || [], photo: photo || undefined, anomaliNeden: anomaliNeden || undefined }),
     });
     if (!res.ok) {
       console.error('postAcilis error:', res.status, await res.text());
@@ -216,13 +219,14 @@ export const postKapanis = async (
   not?: string,
   printerData?: PrinterKapanis[],
   photo?: string | null,
-  bozuk?: Record<string, number>
+  bozuk?: Record<string, number>,
+  anomaliNeden?: string
 ): Promise<{ kayit: StokGunluk; anomali: Partial<StokSayim>; beklenen: StokSayim } | { __hata: string } | null> => {
   try {
     const res = await fetch(`${API_BASE}/stok/kapanis`, {
       method: 'POST',
       headers: await authHeaders(),
-      body: JSON.stringify({ mekanId, tarih, sayim, not, printerData: printerData || [], photo: photo || undefined, bozuk: bozuk || undefined }),
+      body: JSON.stringify({ mekanId, tarih, sayim, not, printerData: printerData || [], photo: photo || undefined, bozuk: bozuk || undefined, anomaliNeden: anomaliNeden || undefined }),
     });
     if (!res.ok) {
       let errMsg = `HTTP ${res.status}`;

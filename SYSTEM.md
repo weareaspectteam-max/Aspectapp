@@ -149,8 +149,12 @@ vardiyaToplam.paperName = "Kagit A, Kagit B" (virgul ile)
 ### Anomali Tespiti
 - **Stok anomalisi:** acilis sayimi vs onceki gun kapanis farki (album3-15, paspartu, ribon tip bazli)
   - Ribon anomali key'leri: `ribonlar.{kagitTipiId}` — raporda kagit tipi adina cevrilir (orn: "Ribon (Citizen): +2")
-- **Yazici sayac anomalisi:** girilen acilis vs beklenen (ribonMevcut) farki
-- **Kapanis yazici anomalisi:** net satilan fotograf vs satis kayitlari farki (±2 tolerans)
+- **Yazici sayac anomalisi:** girilen acilis vs beklenen (ribonMevcut) farki (±2 tolerans — test baskisi/servis kaymalari sayilmaz)
+- **Kapanis yazici anomalisi:** net satilan fotograf vs satis kayitlari farki (±2 tolerans). Dijital satislar (item.dijital) fiziksel baski olmadigi icin hesaba KATILMAZ (2026-07-22 fix — sahte anomali kaynagiydi)
+- **Anomali gerekce:** acilis/kapanis payload'inda `anomaliNeden` → `acilisAnomaliNeden` / `kapanisAnomaliNeden` olarak kaydedilir (max 500 kr). Anomali panosu detaylarinda, anomali-raporu ve operasyon dashboard anomali listelerinde `neden` alaninda gosterilir
+- **Tek anomali tanimi:** tum ekranlar (manager dashboard, liderlik, mekan anomali listesi, pano, raporlar) stok + yazici anomalilerini birlikte sayar
+- **acilis-sifirla:** yazici anomali alanlari dahil tum anomali alanlarini temizler + SQL'e (daily_stock) senkron yazar (yazilmazsa raporlarda hayalet anomali kaliyordu)
+- **Ekstra is:** urun eslestirme bastaki sayi ile TAM eslesir (includes() "13'lu"→album3 sahte anomali yaratiyordu), dijital atlanir. Mekan kaynak/iade stoku suffix'li (album{n}_tam/_yarim) alanlara yazilir; acilista alinan tipler `tipDusum` olarak kaydedilir, iade ayni tiplere doner
 
 ---
 
@@ -172,6 +176,7 @@ Bozulan/hasarli albumler satilabilir stoktan dusulup ayri "bozuk" kutusunda **bi
 - `kayit.kapanisBozuk` kaydedilir (denetim + idempotency baseline)
 - `mekan_bozuk_{mekanId}` idempotent guncellenir: `delta = yeni - eski(kayittan)`, re-close'da cift saymaz
 - `/stok/acilis-sifirla`: `kapanisBozuk` katkisi geri alinir (reverse)
+- `GET /stok/gunluk` yaniti `mekanBozuk` doner (album* alanlari, >0 olanlar) — acilis ekraninda "bozuklari sayima KATMAYIN" uyarisi gosterilir (bozuklar fiziksel mekanda kaldigi icin sabah sayilirsa sahte +anomali cikiyordu)
 
 ### Endpoint'ler (roller: yonetici/ust-mudur/mudur/operasyon)
 | Metod | Route | Aciklama |

@@ -3873,12 +3873,22 @@ app.get("/make-server-4da0b637/stok/gunluk/:mekanId/:tarih", async (c) => {
       }
     }
 
+    // ── Mekan bozuk birikimli bakiyesi — açılış ekranında "sayıma katmayın" uyarısı için ──
+    const mekanBozukKayit: any = await ckv.get(`mekan_bozuk_${mekanId}`).catch(() => null);
+    const mekanBozuk: Record<string, number> = {};
+    if (mekanBozukKayit && typeof mekanBozukKayit === "object") {
+      for (const [bk, bv] of Object.entries(mekanBozukKayit)) {
+        if (bk.startsWith("album") && Number(bv) > 0) mekanBozuk[bk] = Number(bv);
+      }
+    }
+
     return c.json({
       bugun: bugun || null,
       dunKapanis: dun?.kapanish || null,
       eklemeler,
       bekleyenAktarimlar,
       mekanYazicilari: mekanYazicilariRaw,
+      mekanBozuk,
     });
   } catch (err) {
     console.log("Get stok gunluk error (kur düzeltmesi dahil):", err);
@@ -3930,7 +3940,7 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
     const companyId = getCompanyId(user);
     const ckv = companyKvFor(companyId);
 
-    const { mekanId, tarih, sayim, not: acilisNot, printerData, photo: acilisPhoto } = await c.req.json();
+    const { mekanId, tarih, sayim, not: acilisNot, printerData, photo: acilisPhoto, anomaliNeden: acilisAnomaliNedenBody } = await c.req.json();
     if (!mekanId || !tarih || !sayim) {
       return c.json({ error: "mekanId, tarih ve sayim zorunludur." }, 400);
     }
@@ -3980,7 +3990,8 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
         const beklenen = (ekipman?.ribonMevcut !== undefined && ekipman?.ribonMevcut !== null)
           ? Number(ekipman.ribonMevcut)
           : null;
-        if (beklenen !== null && startCounter !== beklenen) {
+        // ±2 tolerans — kapanış bitiş sayacıyla aynı kural (test baskısı/servis kaymaları anomali sayılmaz)
+        if (beklenen !== null && Math.abs(startCounter - beklenen) > 2) {
           printerAnomali.push({
             ekipmanId: pr.ekipmanId,
             label: pr.label || `${pr.brand || ''} ${pr.model || ''}`.trim(),
@@ -4005,6 +4016,8 @@ app.post("/make-server-4da0b637/stok/acilis", async (c) => {
       acilisYapanId: user.id,
       acilisYapanAd: user.user_metadata?.full_name || user.email,
       acilisAnomali: anomali,
+      // Personelin anomali açıklaması — raporlarda anomaliyle yan yana gösterilir
+      acilisAnomaliNeden: String(acilisAnomaliNedenBody || "").slice(0, 500),
       // Yazıcı açılış verileri (ekipmanId bağlantılı)
       acilisYazicilar: printerData || [],
       acilisYaziciAnomali: printerAnomali,
@@ -4158,7 +4171,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     const companyId = getCompanyId(user);
     const ckv = companyKvFor(companyId);
 
-    const { mekanId, tarih, sayim, not: kapanisNot, printerData, photo: kapanisPhoto, bozuk } = await c.req.json();
+    const { mekanId, tarih, sayim, not: kapanisNot, printerData, photo: kapanisPhoto, bozuk, anomaliNeden: kapanisAnomaliNedenBody } = await c.req.json();
     if (!mekanId || !tarih || !sayim) {
       return c.json({ error: "mekanId, tarih ve sayim zorunludur." }, 400);
     }
@@ -4439,6 +4452,8 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
       kapanisYapanId: user.id,
       kapanisYapanAd: user.user_metadata?.full_name || user.email,
       kapanisAnomali: anomali,
+      // Personelin anomali açıklaması — raporlarda anomaliyle yan yana gösterilir
+      kapanisAnomaliNeden: String(kapanisAnomaliNedenBody || "").slice(0, 500),
       kapanisBeklenen: beklenen,
       kapanisBeklenenRibonlar: beklenenRibonlar,
       // Yazıcı verileri — hesaplamalar dahil
@@ -4617,6 +4632,9 @@ app.post("/make-server-4da0b637/stok/acilis-sifirla", async (c) => {
       acilisYapanId: _ayi,
       acilisYapanAd: _aya,
       acilisAnomali: _aano,
+      acilisAnomaliNeden: _aanoN,
+      acilisYazicilar: _ayz,
+      acilisYaziciAnomali: _ayza,
       kapanish: _k,
       kapanisNot: _kn,
       kapanisYapildi: _ky,
@@ -4624,10 +4642,16 @@ app.post("/make-server-4da0b637/stok/acilis-sifirla", async (c) => {
       kapanisYapanId: _kyi,
       kapanisYapanAd: _kya,
       kapanisAnomali: _kano,
+      kapanisAnomaliNeden: _kanoN,
+      kapanisYaziciAnomali: _kyza,
       kapanisBeklenen: _kb,
+      kapanisBeklenenRibonlar: _kbr,
       kapanisBozuk: _kbz,
+      satisAlbumDusum: _sad,
+      farkliTipKullanim: _ftk,
       printerData: _pd,
       toplamRibonDegisim: _tr,
+      ribonDegisimByTip: _rdt,
       vardiyaToplam: _vt,
       yoneticiGuncelleme: _yg,
       yoneticiSifirlama: _ys,
@@ -4642,6 +4666,8 @@ app.post("/make-server-4da0b637/stok/acilis-sifirla", async (c) => {
     };
 
     await ckv.set(kvKey, yeniKayit);
+    // SQL senkron — raporlar/anomali panosu SQL-öncelikli okuyor; yazılmazsa hayalet anomali kalıyordu
+    pgWrite("daily_stock", "upsert", { id: `${mekanId}_${tarih}`, company_id: companyId, venue_id: mekanId, date: tarih, extra_data: yeniKayit, updated_at: new Date().toISOString() });
 
     // ── Bozuk albümler: bu kapanışın mekan birikimine katkısını geri al (reverse) ──
     try {
@@ -5070,7 +5096,10 @@ app.get("/make-server-4da0b637/manager/dashboard-summary", async (c) => {
 
       const acilisAnomali = kayit.acilisAnomali && Object.keys(kayit.acilisAnomali).length > 0;
       const kapanisAnomali = kayit.kapanisAnomali && Object.keys(kayit.kapanisAnomali).length > 0;
-      if (acilisAnomali || kapanisAnomali) anomaliSayisi++;
+      // Yazıcı anomalileri de sayılır — anomali panosu/raporlarla aynı tanım
+      const yaziciAnomaliVarMd = (Array.isArray(kayit.acilisYaziciAnomali) && kayit.acilisYaziciAnomali.length > 0)
+        || (kayit.kapanisYaziciAnomali && kayit.kapanisYaziciAnomali.fark !== undefined);
+      if (acilisAnomali || kapanisAnomali || yaziciAnomaliVarMd) anomaliSayisi++;
 
       const kareKayitlari = kayit.kareKayitlari || [];
       const mekanKare = kareKayitlari.reduce((s: number, k: any) => s + (k.frameCount || 0), 0);
@@ -6498,7 +6527,10 @@ app.get("/make-server-4da0b637/stok/anomali/:mekanId", async (c) => {
       .filter((k: any) => {
         const acilisVar = k.acilisAnomali && Object.keys(k.acilisAnomali).length > 0;
         const kapanisVar = k.kapanisAnomali && Object.keys(k.kapanisAnomali).length > 0;
-        return acilisVar || kapanisVar;
+        // Yazıcı anomalileri de dahil — tüm ekranlarda aynı anomali tanımı
+        const yaziciVar = (Array.isArray(k.acilisYaziciAnomali) && k.acilisYaziciAnomali.length > 0)
+          || (k.kapanisYaziciAnomali && k.kapanisYaziciAnomali.fark !== undefined);
+        return acilisVar || kapanisVar || yaziciVar;
       })
       .sort((a: any, b: any) => b.tarih.localeCompare(a.tarih));
 
@@ -6559,6 +6591,7 @@ app.get("/make-server-4da0b637/stok/anomali-raporu", async (c) => {
           type: "acilis",
           detailStr: fmtDetail(kayit.acilisAnomali),
           detail: kayit.acilisAnomali,
+          neden: kayit.acilisAnomaliNeden || "",
         });
         stokAnomali++;
       }
@@ -6570,6 +6603,7 @@ app.get("/make-server-4da0b637/stok/anomali-raporu", async (c) => {
           type: "kapanis",
           detailStr: fmtDetail(kayit.kapanisAnomali),
           detail: kayit.kapanisAnomali,
+          neden: kayit.kapanisAnomaliNeden || "",
         });
         stokAnomali++;
       }
@@ -7884,6 +7918,10 @@ app.post("/make-server-4da0b637/ekstra-is/acilis", async (c) => {
 
     const albumAlanlari = ["album3","album5","album7","album9","album11","album13","album15"];
 
+    // Hangi tipten (tam/yarım) kaç adet alındığını izle — kapanış iadesinde aynı tipe geri döner.
+    // Bu olmadan iade hep _yarim'a yazılıyordu; _tam alınan albümlerde tip sayımları kayıp sahte anomali doğuruyordu.
+    const tipDusum: Record<string, number> = {};
+
     // Kaynak stoktan düş
     if (kaynakId === "depo") {
       const depoStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
@@ -7901,9 +7939,12 @@ app.post("/make-server-4da0b637/ekstra-is/acilis", async (c) => {
         }
         if (yarimMevcut >= istenen) {
           depoStok[yarimKey] = yarimMevcut - istenen;
+          tipDusum[yarimKey] = (tipDusum[yarimKey] || 0) + istenen;
         } else {
           depoStok[yarimKey] = 0;
           depoStok[tamKey] = tamMevcut - (istenen - yarimMevcut);
+          if (yarimMevcut > 0) tipDusum[yarimKey] = (tipDusum[yarimKey] || 0) + yarimMevcut;
+          tipDusum[tamKey] = (tipDusum[tamKey] || 0) + (istenen - yarimMevcut);
         }
       }
       depoStok.guncellenmeTarihi = new Date().toISOString();
@@ -7925,25 +7966,42 @@ app.post("/make-server-4da0b637/ekstra-is/acilis", async (c) => {
       if (!mekanKayit) {
         return c.json({ error: `${kaynakAdi} için stok kaydı bulunamadı (son 14 gün).` }, 400);
       }
+      // Mekan stokları tam/yarım formatında (album3_tam / album3_yarim) — suffix'siz yazım
+      // ölü `album3` anahtarına gidiyor, gerçek stok azalmıyor ve mekanda sahte anomali doğuyordu.
       const aktifField = mekanKayit.kapanish ? "kapanish" : "acilis";
-      const aktifStok: any = { ...(mekanKayit[aktifField] || {}) };
-      // Önce yeterliliği kontrol et
+      const aktifStok: any = migrateMekanStok({ ...(mekanKayit[aktifField] || {}) });
+      // Önce yeterliliği kontrol et (yarım + tam toplamı)
       for (const alan of albumAlanlari) {
         const istenen = Number(acilis[alan]) || 0;
         if (istenen <= 0) continue;
-        const mevcutStok = Number(aktifStok[alan]) || 0;
-        if (mevcutStok < istenen) {
-          return c.json({ error: `${kaynakAdi} ${alan} stoğu yetersiz. Mevcut: ${mevcutStok}, İstenen: ${istenen}` }, 400);
+        const yarimMevcut = Number(aktifStok[`${alan}_yarim`]) || 0;
+        const tamMevcut = Number(aktifStok[`${alan}_tam`]) || 0;
+        if (yarimMevcut + tamMevcut < istenen) {
+          return c.json({ error: `${kaynakAdi} ${alan} stoğu yetersiz. Mevcut: ${yarimMevcut + tamMevcut}, İstenen: ${istenen}` }, 400);
         }
       }
-      // Düş
+      // Düş — depo ile aynı kural: önce yarımdan, yetmezse tamdan
       for (const alan of albumAlanlari) {
         const istenen = Number(acilis[alan]) || 0;
         if (istenen <= 0) continue;
-        aktifStok[alan] = (Number(aktifStok[alan]) || 0) - istenen;
+        const yarimKey = `${alan}_yarim`;
+        const tamKey = `${alan}_tam`;
+        const yarimMevcut = Number(aktifStok[yarimKey]) || 0;
+        if (yarimMevcut >= istenen) {
+          aktifStok[yarimKey] = yarimMevcut - istenen;
+          tipDusum[yarimKey] = (tipDusum[yarimKey] || 0) + istenen;
+        } else {
+          aktifStok[yarimKey] = 0;
+          aktifStok[tamKey] = (Number(aktifStok[tamKey]) || 0) - (istenen - yarimMevcut);
+          if (yarimMevcut > 0) tipDusum[yarimKey] = (tipDusum[yarimKey] || 0) + yarimMevcut;
+          tipDusum[tamKey] = (tipDusum[tamKey] || 0) + (istenen - yarimMevcut);
+        }
       }
       const guncelKayit: any = { ...mekanKayit, [aktifField]: aktifStok, stokTransferGuncelleme: new Date().toISOString() };
       await ckv.set(stokKayitAnahtari, guncelKayit);
+      // SQL senkron — raporlar SQL-öncelikli okuyor (getAllDailyStock)
+      const dusumTarih = guncelKayit.tarih || tarih;
+      pgWrite("daily_stock", "upsert", { id: `${kaynakId}_${dusumTarih}`, company_id: getCompanyId(user), venue_id: kaynakId, date: dusumTarih, extra_data: guncelKayit, updated_at: new Date().toISOString() });
     }
 
     // ── Yazıcı sayaç anomali tespiti (açılıştaki startCounter vs önceki endCounter) ──
@@ -7990,6 +8048,8 @@ app.post("/make-server-4da0b637/ekstra-is/acilis", async (c) => {
       kapanisYapildi: false,
       kareKayitlari: [],
       satislar: [],
+      // Kaynaktan tam/yarım hangi tipten kaç adet alındı — iade aynı tipe döner
+      tipDusum,
       // Yazıcı verisi (opsiyonel)
       yaziciData: yaziciData || null,
       yaziciAnomali: yaziciAnomali || null,
@@ -8066,24 +8126,23 @@ app.post("/make-server-4da0b637/ekstra-is/kapalis", async (c) => {
     const { acilis, satislar = [] } = mevcut;
 
     // Beklenen iade = acilis - satışlarda albüm düşümü
+    // Ürün eşleştirme /stok/kapanis ile aynı: addaki BAŞTAKİ sayı tam eşleşir ("13'lü" sadece album13).
+    // includes() kullanılmaz — "13'lü".includes("3") album3'ü de düşürüp sahte anomali yaratıyordu.
     const beklenen: Record<string, number> = {};
-    const albumItemMap: Record<string, string> = {
-      album3: "3", album5: "5", album7: "7", album9: "9",
-      album11: "11", album13: "13", album15: "15"
-    };
-    for (const alan of albumAlanlari) {
-      let toplam = Number(acilis[alan]) || 0;
-      const kareNo = albumItemMap[alan];
-      for (const satis of satislar) {
-        if (!satis.iptal) {
-          for (const item of (satis.items || [])) {
-            if (item.product?.includes(kareNo) || item.product?.toLowerCase().includes(alan)) {
-              toplam -= Number(item.quantity) || 0;
-            }
-          }
-        }
+    const satisDusumEkstra: Record<string, number> = {};
+    for (const satis of satislar) {
+      if (satis.iptal) continue;
+      for (const item of (satis.items || [])) {
+        if (item.dijital) continue; // Dijital satışlar stoktan düşülmez
+        const match = String(item.product || '').match(/^(\d+)/);
+        if (!match) continue;
+        const alan = `album${match[1]}`;
+        if (!albumAlanlari.includes(alan)) continue;
+        satisDusumEkstra[alan] = (satisDusumEkstra[alan] || 0) + (Number(item.quantity) || 0);
       }
-      beklenen[alan] = Math.max(0, toplam);
+    }
+    for (const alan of albumAlanlari) {
+      beklenen[alan] = Math.max(0, (Number(acilis[alan]) || 0) - (satisDusumEkstra[alan] || 0));
     }
 
     // Anomali hesapla
@@ -8094,14 +8153,27 @@ app.post("/make-server-4da0b637/ekstra-is/kapalis", async (c) => {
     }
 
     // İade stokunu seçilen hedefe aktar (depo veya mekan)
+    // İade tip dağılımı: açılışta hangi tipten (tam/yarım) alındıysa önce o tipe döner;
+    // tip bilgisi yoksa (eski kayıtlar) _yarim varsayılır. Suffix'siz yazım mekanlarda
+    // ölü anahtara gidip sahte anomali doğuruyordu.
+    const tipDusumKap: Record<string, number> = mevcut.tipDusum || {};
+    const iadeDagit = (alan: string, iade: number): { yarim: number; tam: number } => {
+      let kalan = iade;
+      const yarimdanAlinan = Math.min(kalan, Number(tipDusumKap[`${alan}_yarim`]) || 0);
+      kalan -= yarimdanAlinan;
+      const tamdanAlinan = Math.min(kalan, Number(tipDusumKap[`${alan}_tam`]) || 0);
+      kalan -= tamdanAlinan;
+      // Artan (beklenenden fazla iade) → yarıma
+      return { yarim: yarimdanAlinan + kalan, tam: tamdanAlinan };
+    };
     if (iadeHedefId === "depo") {
       const depoStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
-      // kapalis eski formatta (album3 vb.) — depoya _yarim olarak iade et (varsayılan)
       for (const alan of albumAlanlari) {
         const iade = Number(kapalis[alan]) || 0;
         if (iade <= 0) continue;
-        const yarimKey = `${alan}_yarim`;
-        depoStok[yarimKey] = (Number(depoStok[yarimKey]) || 0) + iade;
+        const dagilim = iadeDagit(alan, iade);
+        if (dagilim.yarim > 0) depoStok[`${alan}_yarim`] = (Number(depoStok[`${alan}_yarim`]) || 0) + dagilim.yarim;
+        if (dagilim.tam > 0) depoStok[`${alan}_tam`] = (Number(depoStok[`${alan}_tam`]) || 0) + dagilim.tam;
       }
       depoStok.guncellenmeTarihi = new Date().toISOString();
       await ckv.set("depo_stok", depoStok);
@@ -8121,14 +8193,19 @@ app.post("/make-server-4da0b637/ekstra-is/kapalis", async (c) => {
       }
       if (mekanKayit) {
         const aktifField = mekanKayit.kapanish ? "kapanish" : "acilis";
-        const guncelStok: any = { ...(mekanKayit[aktifField] || {}) };
+        const guncelStok: any = migrateMekanStok({ ...(mekanKayit[aktifField] || {}) });
         for (const alan of albumAlanlari) {
           const iade = Number(kapalis[alan]) || 0;
           if (iade <= 0) continue;
-          guncelStok[alan] = (Number(guncelStok[alan]) || 0) + iade;
+          const dagilim = iadeDagit(alan, iade);
+          if (dagilim.yarim > 0) guncelStok[`${alan}_yarim`] = (Number(guncelStok[`${alan}_yarim`]) || 0) + dagilim.yarim;
+          if (dagilim.tam > 0) guncelStok[`${alan}_tam`] = (Number(guncelStok[`${alan}_tam`]) || 0) + dagilim.tam;
         }
         const guncelKayit: any = { ...mekanKayit, [aktifField]: guncelStok, stokTransferGuncelleme: new Date().toISOString() };
         await ckv.set(iadeKayitAnahtari, guncelKayit);
+        // SQL senkron — raporlar SQL-öncelikli okuyor (getAllDailyStock)
+        const iadeTarih = guncelKayit.tarih || tarih;
+        pgWrite("daily_stock", "upsert", { id: `${iadeHedefId}_${iadeTarih}`, company_id: getCompanyId(user), venue_id: iadeHedefId, date: iadeTarih, extra_data: guncelKayit, updated_at: new Date().toISOString() });
       } else {
         console.log(`Iade hedefi ${iadeHedefAdi} için stok kaydı bulunamadı, iade yapılamadı.`);
       }
@@ -8372,6 +8449,7 @@ app.get("/make-server-4da0b637/ai/ozet", async (c) => {
           type: "acilis",
           detail: kayit.acilisAnomali,
           detailStr: formatAnomaliDetail(kayit.acilisAnomali),
+          neden: kayit.acilisAnomaliNeden || "",
           tarih: kayit.tarih,
         });
       }
@@ -8382,6 +8460,7 @@ app.get("/make-server-4da0b637/ai/ozet", async (c) => {
           type: "kapanis",
           detail: kayit.kapanisAnomali,
           detailStr: formatAnomaliDetail(kayit.kapanisAnomali),
+          neden: kayit.kapanisAnomaliNeden || "",
           tarih: kayit.tarih,
         });
       }
@@ -9000,7 +9079,8 @@ app.get("/make-server-4da0b637/personel/anomali-puanlar", async (c) => {
       tarih: string,
       mekanId: string,
       tip: "acilis" | "kapanis",
-      farklar: Record<string, number>
+      farklar: Record<string, number>,
+      neden?: string
     ) => {
       const mekan = mekanById[mekanId] || { name: mekanId, emoji: "📍" };
       for (const p of personList) {
@@ -9022,6 +9102,7 @@ app.get("/make-server-4da0b637/personel/anomali-puanlar", async (c) => {
           mekanEmoji: mekan.emoji || "📍",
           tip,
           farklar,
+          neden: neden || "",
         });
       }
     };
@@ -9034,14 +9115,14 @@ app.get("/make-server-4da0b637/personel/anomali-puanlar", async (c) => {
       if (kayit.acilisAnomali && Object.keys(kayit.acilisAnomali).length > 0) {
         const taskKey    = `${prevDay(kayit.tarih)}__${mekanAdi}`;
         const personList = taskMap[taskKey] || [];
-        addPuan(personList, kayit.tarih, kayit.mekanId, "acilis", kayit.acilisAnomali);
+        addPuan(personList, kayit.tarih, kayit.mekanId, "acilis", kayit.acilisAnomali, kayit.acilisAnomaliNeden);
       }
 
       // Kapanış anomalisi → aynı günün personeli
       if (kayit.kapanisAnomali && Object.keys(kayit.kapanisAnomali).length > 0) {
         const taskKey    = `${kayit.tarih}__${mekanAdi}`;
         const personList = taskMap[taskKey] || [];
-        addPuan(personList, kayit.tarih, kayit.mekanId, "kapanis", kayit.kapanisAnomali);
+        addPuan(personList, kayit.tarih, kayit.mekanId, "kapanis", kayit.kapanisAnomali, kayit.kapanisAnomaliNeden);
       }
 
       // Yazıcı sayaç anomalisi → önceki günün personeli (her yanlış yazıcı +1 puan)
@@ -12364,6 +12445,24 @@ app.get("/make-server-4da0b637/leaderboard/performans", async (c) => {
       }
 
       if (kayit.kapanisAnomali && Object.keys(kayit.kapanisAnomali).length > 0) {
+        const taskKey = `${kayit.tarih}__${mekanAdi}`;
+        for (const p of (taskMap[taskKey] || [])) {
+          if (!personAnomalSet[p.id]) personAnomalSet[p.id] = new Set();
+          personAnomalSet[p.id].add(`${kayit.tarih}__kapanis__${kayit.mekanId}`);
+        }
+      }
+
+      // Yazıcı anomalileri — anomali panosuyla aynı tanım ve atama kuralı
+      // (açılış yazıcı → önceki günün ekibi, kapanış yazıcı → aynı günün ekibi)
+      if (Array.isArray(kayit.acilisYaziciAnomali) && kayit.acilisYaziciAnomali.length > 0) {
+        const taskKey = `${prevDay(kayit.tarih)}__${mekanAdi}`;
+        for (const p of (taskMap[taskKey] || [])) {
+          if (!personAnomalSet[p.id]) personAnomalSet[p.id] = new Set();
+          personAnomalSet[p.id].add(`${kayit.tarih}__acilis__${kayit.mekanId}`);
+        }
+      }
+
+      if (kayit.kapanisYaziciAnomali && kayit.kapanisYaziciAnomali.fark !== undefined) {
         const taskKey = `${kayit.tarih}__${mekanAdi}`;
         for (const p of (taskMap[taskKey] || [])) {
           if (!personAnomalSet[p.id]) personAnomalSet[p.id] = new Set();

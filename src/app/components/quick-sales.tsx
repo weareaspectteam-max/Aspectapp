@@ -206,6 +206,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const [stokYukleniyor, setStokYukleniyor] = useState(false);
   const [stokKaydediliyor, setStokKaydediliyor] = useState(false);
   const [stokEklemeler, setStokEklemeler] = useState<StokEkleme[]>([]);
+  // Mekanda ayrılmış (imha/iade bekleyen) bozuk albüm bakiyesi — sayıma dahil edilmemeli
+  const [mekanBozukBakiye, setMekanBozukBakiye] = useState<Record<string, number>>({});
   const [showAcilisAnomaliUyari, setShowAcilisAnomaliUyari] = useState(false);
   const [showKapanisAnomaliUyari, setShowKapanisAnomaliUyari] = useState(false);
   const [kapanisPhotoHata, setKapanisPhotoHata] = useState(false);
@@ -722,6 +724,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
       setStokGunluk(stokData.bugun);
       setDunKapanis(stokData.dunKapanis);
       setStokEklemeler(stokData.eklemeler || []);
+      setMekanBozukBakiye(stokData.mekanBozuk || {});
 
       // ── Yazıcı listesi: ekipman kaydından otomatik yükle ──
       const yaziciHelper = (yazicilar: any[]) =>
@@ -1605,7 +1608,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
         startCounter: Number(pr.startCounter) || 0,
       }));
     const resizedPhoto = teamPhotoPreview ? await resizePhoto(teamPhotoPreview) : null;
-    const result = await postAcilis(mekanId, tarih, acilisSayim, acilisNot, acilisYazicilar, resizedPhoto);
+    const result = await postAcilis(mekanId, tarih, acilisSayim, acilisNot, acilisYazicilar, resizedPhoto, acilisAnomaliNeden.trim() || undefined);
     setStokKaydediliyor(false);
     if (result) {
       setStokGunluk(result.kayit);
@@ -1668,7 +1671,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
 
     const mekanId = resolvedMekanId || selectedProject.id;
     const resizedVenuePhoto = venuePhotoPreview ? await resizePhoto(venuePhotoPreview) : null;
-    const result = await postKapanis(mekanId, tarih, finalKapanisSayim, kapanisNot, printerData, resizedVenuePhoto, kapanisBozuk);
+    const result = await postKapanis(mekanId, tarih, finalKapanisSayim, kapanisNot, printerData, resizedVenuePhoto, kapanisBozuk, kapanisAnomaliNeden.trim() || undefined);
     setStokKaydediliyor(false);
     if (result && !('__hata' in result)) {
       setKapanisAnomali((result as any).anomali || {});
@@ -2028,6 +2031,23 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     <div className="mb-3 bg-[#9dd9ea]/10 border border-[#9dd9ea]/25 rounded-xl px-3 py-2 flex items-center gap-2">
                       <span className="text-sm">📋</span>
                       <p className="text-xs text-[#9dd9ea]">Dünün kapanışından otomatik yüklendi. Fiziksel sayımı yapıp fark varsa düzeltin.</p>
+                    </div>
+                  )}
+                  {/* Bozuk bakiye uyarısı — bozuklar sayılırsa sahte açılış anomalisi çıkar */}
+                  {!stokGunluk?.acilisYapildi && Object.keys(mekanBozukBakiye).length > 0 && (
+                    <div className="mb-3 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2.5">
+                      <div className="flex items-center gap-2 mb-1">
+                        <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                        <p className="text-xs font-semibold text-red-200">Bu mekanda ayrılmış bozuk albüm var — sayıma KATMAYIN</p>
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-6">
+                        {Object.entries(mekanBozukBakiye).map(([alan, adet]) => (
+                          <span key={`bzk_${alan}`} className="text-[11px] text-red-300">
+                            {stokAlanEmoji[alan] || '📕'} {stokAlanAdi[alan] || alan}: {adet}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-gray-400 mt-1 pl-6">Bozuklar ayrı takip edilir; raftaki sağlam albümleri sayın.</p>
                     </div>
                   )}
                   <div className="space-y-2">
@@ -3715,6 +3735,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                                   {showBozukGiris && (
                                     <div className="px-4 pb-4 space-y-2">
                                       <p className="text-[11px] text-gray-400">Bozulan albümleri girin — satılabilir stoktan düşülür, eksik/anomali olarak görünmez.</p>
+                                      <p className="text-[11px] font-semibold text-red-300">⚠️ Bozuk albümleri kapanış sayımına DAHİL ETMEYİN — bozukları ayırın, sadece sağlamları sayın.</p>
                                       {bozukAlanlar.map(alan => (
                                         <div key={`bozuk_${alan}`} className="flex items-center justify-between bg-black/30 border border-white/10 rounded-xl px-4 py-2">
                                           <div className="flex items-center gap-2">
@@ -4012,6 +4033,14 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                   </div>
                 ))}
               </div>
+              <textarea
+                value={acilisAnomaliNeden}
+                onChange={e => setAcilisAnomaliNeden(e.target.value)}
+                placeholder="Farkın nedenini yazın (örn: müşteri albümü düşürdü, dün sayım hatası...) — yöneticiye iletilir"
+                rows={2}
+                maxLength={500}
+                className="w-full mb-4 px-3 py-2.5 bg-white/10 border border-white/20 rounded-2xl text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-400/50 resize-none"
+              />
               <p className="text-xs text-gray-400 mb-5 text-center">
                 Sayımı tekrar kontrol edebilir ya da yine de gönderebilirsiniz.
               </p>
@@ -4071,6 +4100,14 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                   </div>
                 ))}
               </div>
+              <textarea
+                value={kapanisAnomaliNeden}
+                onChange={e => setKapanisAnomaliNeden(e.target.value)}
+                placeholder="Farkın nedenini yazın (örn: albüm bozuldu, iade karışıklığı...) — yöneticiye iletilir"
+                rows={2}
+                maxLength={500}
+                className="w-full mb-4 px-3 py-2.5 bg-white/10 border border-white/20 rounded-2xl text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-400/50 resize-none"
+              />
               <p className="text-xs text-gray-400 mb-5 text-center">
                 Sayımı tekrar kontrol edebilir ya da yine de gönderebilirsiniz.
               </p>

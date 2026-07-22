@@ -82,6 +82,7 @@ interface AnomalDetay {
   mekanEmoji: string;
   tip: 'acilis' | 'kapanis';
   farklar: Record<string, number>;
+  neden?: string; // personelin anomali açıklaması
 }
 
 interface PersonelPuan {
@@ -496,6 +497,12 @@ export function AnomaliPanosu({ userName, userRole, accessToken, onLogout, onNav
                               </span>
                             ))}
                           </div>
+                          {/* Personelin açıklaması */}
+                          {d.neden && (
+                            <p className="mt-2 text-[11px] text-amber-200/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1.5">
+                              💬 {d.neden}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>
