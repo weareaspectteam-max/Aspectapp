@@ -1382,18 +1382,18 @@ function MekanBozukCikarModal({ mekan, onClose, onSuccess }: {
   const [miktar, setMiktar] = useState('');
   const [yukleniyor, setYukleniyor] = useState(false);
   const [hata, setHata] = useState('');
-  const [basarili, setBasarili] = useState('');
+  const [tamamlandi, setTamamlandi] = useState<string>(''); // başarı ekranı — kullanıcı nereye gittiğini görsün
 
   const aktar = async (kalemler: Array<{ alan: string; miktar: number }>) => {
     if (kalemler.length === 0) { setHata('Aktarılacak bozuk albüm yok.'); return; }
-    setYukleniyor(true); setHata(''); setBasarili('');
+    setYukleniyor(true); setHata('');
     try {
       const headers = await authHeaders();
       const res = await fetch(`${API_BASE}/bozuk/depoya-tasi`, { method: 'POST', headers, body: JSON.stringify({ mekanId: mekan.id, kalemler }) });
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
       const toplam = kalemler.reduce((s, k) => s + k.miktar, 0);
-      setBasarili(`✓ ${toplam} adet bozuk albüm depoya aktarıldı.`);
+      setTamamlandi(`${toplam} adet bozuk albüm depoya aktarıldı`);
       setMiktar('');
       onSuccess();
     } catch (err: any) {
@@ -1430,7 +1430,21 @@ function MekanBozukCikarModal({ mekan, onClose, onSuccess }: {
           </button>
         </div>
         <div className="p-5 space-y-4">
-          {alanlar.length === 0 ? (
+          {tamamlandi ? (
+            /* Başarı ekranı — aktarımın nereye gittiğini açıkça söyle */
+            <div className="space-y-4 text-center py-4">
+              <div className="text-4xl">✅</div>
+              <p className="text-sm font-bold text-emerald-300">{tamamlandi}</p>
+              <div className="rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-left space-y-1.5">
+                <p className="text-xs text-white/60">📍 Aktarılanlar artık bu listenin <span className="text-white font-semibold">en üstündeki 🏪 Depo satırında</span> görünüyor.</p>
+                <p className="text-xs text-white/60">🔄 Tedarikçiye iade, o satırdaki <span className="text-white font-semibold">"Tedarikçiye İade"</span> butonundan yapılır.</p>
+              </div>
+              <button onClick={onClose}
+                className="w-full h-12 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500/80 to-green-500/80 text-white active:scale-95 transition-all">
+                Tamam
+              </button>
+            </div>
+          ) : alanlar.length === 0 ? (
             <p className="text-sm text-white/40 text-center py-6">Bu mekanda bozuk albüm yok.</p>
           ) : (
             <>
@@ -1454,7 +1468,6 @@ function MekanBozukCikarModal({ mekan, onClose, onSuccess }: {
                   className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-red-400/50 transition-colors placeholder-white/20" />
               </div>
               {hata && <div className="rounded-xl bg-red-500/12 border border-red-500/20 px-4 py-3 text-xs text-red-300">{hata}</div>}
-              {basarili && <div className="rounded-xl bg-emerald-500/12 border border-emerald-500/20 px-4 py-3 text-xs text-emerald-300">{basarili}</div>}
               <button onClick={tekAktar} disabled={yukleniyor || !miktar}
                 className="w-full h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 bg-gradient-to-r from-amber-500/80 to-orange-500/80 text-white">
                 {yukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpFromLine className="w-4 h-4" />} Depoya Aktar
@@ -2379,12 +2392,12 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
         />
       )}
 
-      {/* Mekan Bozuk → Depoya Aktar Modalı */}
+      {/* Mekan Bozuk → Depoya Aktar Modalı — başarıda kapanmaz, yönlendirme ekranı gösterir */}
       {mekanBozukHedef && (
         <MekanBozukCikarModal
           mekan={mekanBozukHedef}
           onClose={() => setMekanBozukHedef(null)}
-          onSuccess={() => { setMekanBozukHedef(null); yukle(); }}
+          onSuccess={() => yukle()}
         />
       )}
 
