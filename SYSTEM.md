@@ -646,6 +646,24 @@ Herhangi asamada → iptal (admin)
 5. Tedarikciye aciklayici bildirim: dagitim ozeti + siparis disi karari
 6. Admin "Reddet" → sebep yazilir, tedarikci bilgilendirilir
 
+### Sayim Duzeltme Akisi (2026-07-22)
+- Alici (yonetici/mudur/operasyon/yetkili) beklemedeki teslimatta "Sayim Farkli" der → gercek alinan
+  adetleri girer (+not) → PUT `/teslimatlar/:id/duzelt` → status: `duzeltme_bekliyor`, `teslimat.duzeltme` kaydi,
+  tedarikciye bildirim. Bu durumda onay/red kilitli.
+- Tedarikci portalda kabul/red: POST `/teslimatlar/:id/duzeltme-yanit` {karar}
+  - **kabul** → `orijinalLines` saklanir, `lines` = duzeltilmis; teslimat OTOMATIK islenir (`teslimatCommit`
+    helper — onayla ile ayni FIFO+depo mantigi). Siparis disi kalem cikarsa otomatik islenmez,
+    duzeltilmis adetlerle "beklemede"ye doner (fazlaKarar'i yonetici panelden verir)
+  - **red** → status "beklemede"ye doner (orijinal adetler), `duzeltmeRed` kaydi; alici orijinalle karar verir
+- `teslimatCommit` helper: FIFO dagitim + siparis guncelleme + siparis disi + depo girisi + bildirim tek fonksiyon;
+  PUT onayla ve duzeltme-kabul ayni kodu kullanir
+
+### Operasyon Parasiz Siparis (2026-07-22)
+- POST `/tedarikci/siparisler` operasyon rolune acildi: istemciden gelen fiyat/teklif YOK SAYILIR,
+  birim fiyatlar backend'de `tedarikciUrunFiyat` ile doldurulur (kayitta gercek fiyat durur),
+  operasyon yanitinda parasal alanlar sifirlanir
+- UI: OperasyonTeslimatView'a "Yeni Siparis Olustur" bolumu — tedarikci sec + urun adetleri (fiyat gorunmez)
+
 ### Odeme-Kasa Entegrasyonu (TEK NOKTA + FIFO — 2026-07-21)
 - Odeme SADECE Bakiye sekmesindeki "Odeme Yap" ile yapilir (siparis karti odemesi kaldirildi,
   eski "On Odeme Yap" bu dugmeye donustu). Endpoint: POST `/tedarikci/odeme-genel` {cariId, amount, aciklama}
@@ -674,6 +692,10 @@ Herhangi asamada → iptal (admin)
 | GET | `/tedarikci/teslimatlar` | Admin: tum teslimatlar |
 | PUT | `/tedarikci/teslimatlar/:id/onayla` | Admin: onayla |
 | PUT | `/tedarikci/teslimatlar/:id/reddet` | Admin: reddet |
+| PUT | `/tedarikci/teslimatlar/:id/duzelt` | Alici: sayim duzeltmesi oner (tedarikci onayina) |
+| POST | `/tedarikci/teslimatlar/:id/duzeltme-yanit` | Tedarikci: duzeltme kabul/red |
+| POST | `/tedarikci/iade` | Bozuk iade → 0 TL degisim siparisi |
+| GET | `/tedarikci/iadeler` | Iade listesi + telafi durumu |
 | POST | `/tedarikci/odemeler` | Admin: odeme kaydet |
 | GET | `/tedarikci/odemeler` | Listele |
 | POST | `/tedarikci/odemeler/:id/onayla` | Tedarikci: odemeyi onayladi |

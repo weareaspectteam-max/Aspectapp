@@ -34,6 +34,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
   iptal:          { label: 'İptal',            color: '#f87171', bg: 'rgba(248,113,113,0.15)' },
   beklemede:      { label: 'Beklemede',        color: '#fbbf24', bg: 'rgba(251,191,36,0.15)' },
   reddedildi:     { label: 'Reddedildi',       color: '#f87171', bg: 'rgba(248,113,113,0.15)' },
+  duzeltme_bekliyor: { label: 'Düzeltme — Tedarikçi Onayında', color: '#fb923c', bg: 'rgba(251,146,60,0.15)' },
 };
 
 const glassBg = 'rgba(255,255,255,0.04)';
@@ -57,6 +58,11 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
   // Bozuk albüm iadeleri (depo → tedarikçi) + telafi durumu
   const [iadeler, setIadeler] = useState<any[]>([]);
   const [iadelerLoading, setIadelerLoading] = useState(false);
+
+  // Teslimat sayım düzeltme formu (Sayım Farklı)
+  const [duzeltHedefId, setDuzeltHedefId] = useState<string>('');
+  const [duzeltAdetler, setDuzeltAdetler] = useState<Record<string, string>>({});
+  const [duzeltNot, setDuzeltNot] = useState('');
 
   /* Kişi bazlı panel yetkisi (yönetici): sipariş + teslimat verilir, ödeme görünmez */
   const [showYetki, setShowYetki] = useState(false);
@@ -279,6 +285,30 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
       await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teslimatlar/${id}/reddet`), {
         method: 'PUT', headers: getHeaders(), body: JSON.stringify({ reason }),
       });
+      fetchData();
+    } finally { setActionLoading(''); }
+  };
+
+  // Sayım düzeltme: formu aç (bildirilen adetlerle doldur)
+  const duzeltmeFormAc = (t: any) => {
+    setDuzeltHedefId(t.id);
+    const a: Record<string, string> = {};
+    for (const l of (t.lines || [])) a[l.productName] = String(l.quantity);
+    setDuzeltAdetler(a);
+    setDuzeltNot('');
+  };
+
+  // Sayım düzeltme: tedarikçi onayına gönder
+  const duzeltmeGonderAdmin = async (t: any) => {
+    setActionLoading(t.id + 'dz');
+    try {
+      const lines = (t.lines || []).map((l: any) => ({ productName: l.productName, quantity: Number(duzeltAdetler[l.productName]) || 0 }));
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teslimatlar/${t.id}/duzelt`), {
+        method: 'PUT', headers: getHeaders(), body: JSON.stringify({ lines, not: duzeltNot }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || d.error) { alert(d.error || 'Düzeltme gönderilemedi'); return; }
+      setDuzeltHedefId('');
       fetchData();
     } finally { setActionLoading(''); }
   };
@@ -790,8 +820,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
   };
 
   const renderTeslimatTab = () => {
-    const bekleyen = teslimatlar.filter((t: any) => t.status === 'beklemede');
-    const diger = teslimatlar.filter((t: any) => t.status !== 'beklemede');
+    const bekleyen = teslimatlar.filter((t: any) => ['beklemede', 'duzeltme_bekliyor'].includes(t.status));
     return (
       <div className="space-y-3">
         {bekleyen.length > 0 && (
@@ -814,7 +843,23 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                 {t.lines?.map((l: any) => `${l.productName}: ${l.quantity}`).join(', ')}
               </div>
               {t.deliveryNote && <p className="text-white/30 text-xs italic">{t.deliveryNote}</p>}
-              {t.status === 'beklemede' && (
+              {/* Düzeltme tedarikçi onayında */}
+              {t.status === 'duzeltme_bekliyor' && t.duzeltme && (
+                <div className="rounded-xl px-3 py-2 text-[11px]" style={{ background: 'rgba(251,146,60,0.08)', border: '1px solid rgba(251,146,60,0.25)' }}>
+                  <p className="text-orange-300 font-semibold">⏳ Sayım düzeltmesi tedarikçi onayında ({t.duzeltme.talepEden})</p>
+                  <p className="text-white/50 mt-0.5">{(t.duzeltme.lines || []).filter((l: any) => (t.lines || []).find((o: any) => o.productName === l.productName)?.quantity !== l.quantity).map((l: any) => `${l.productName}: ${(t.lines || []).find((o: any) => o.productName === l.productName)?.quantity} → ${l.quantity}`).join(', ')}</p>
+                  {t.duzeltme.not && <p className="text-white/40 mt-0.5">💬 {t.duzeltme.not}</p>}
+                </div>
+              )}
+              {/* Tedarikçi düzeltmeyi reddetti */}
+              {t.status === 'beklemede' && t.duzeltmeRed && (
+                <p className="text-red-400 text-[11px]">⚠️ Tedarikçi sayım düzeltmesini kabul etmedi — orijinal adetlerle karar verin.</p>
+              )}
+              {/* Düzeltme kabul edilip işlendi */}
+              {t.duzeltmeKarar?.karar === 'kabul' && t.orijinalLines && (
+                <p className="text-emerald-400/70 text-[11px]">✓ Sayım düzeltmesi tedarikçi tarafından kabul edildi (bildirilen: {t.orijinalLines.map((l: any) => `${l.productName} ×${l.quantity}`).join(', ')})</p>
+              )}
+              {t.status === 'beklemede' && duzeltHedefId !== t.id && (
                 <div className="flex gap-2 pt-1">
                   <motion.button whileTap={{ scale: 0.95 }} onClick={() => approveDelivery(t.id)}
                     disabled={actionLoading === t.id}
@@ -822,10 +867,40 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                     style={{ background: 'linear-gradient(135deg, #34d399, #10b981)' }}>
                     {actionLoading === t.id ? '...' : '✓ Onayla'}
                   </motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => duzeltmeFormAc(t)}
+                    className="py-2 px-3 rounded-lg text-xs font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/20">
+                    ✏️ Sayım Farklı
+                  </motion.button>
                   <motion.button whileTap={{ scale: 0.95 }} onClick={() => rejectDelivery(t.id)}
-                    className="flex-1 py-2 rounded-lg text-xs font-semibold text-red-400 bg-red-500/10 border border-red-500/20">
+                    className="py-2 px-3 rounded-lg text-xs font-semibold text-red-400 bg-red-500/10 border border-red-500/20">
                     ✗ Reddet
                   </motion.button>
+                </div>
+              )}
+              {/* Sayım düzeltme formu */}
+              {t.status === 'beklemede' && duzeltHedefId === t.id && (
+                <div className="rounded-xl p-3 space-y-2" style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.25)' }}>
+                  <p className="text-amber-300 text-[11px] font-semibold">Gerçekte kaç adet teslim alındı?</p>
+                  {(t.lines || []).map((l: any) => (
+                    <div key={l.productName} className="flex items-center justify-between gap-2">
+                      <span className="text-white/70 text-xs flex-1">{l.productName} <span className="text-white/30">(bildirilen: {l.quantity})</span></span>
+                      <input type="number" inputMode="numeric" min={0}
+                        value={duzeltAdetler[l.productName] ?? ''}
+                        onChange={e => setDuzeltAdetler(p => ({ ...p, [l.productName]: e.target.value }))}
+                        className="w-16 h-9 rounded-lg text-white text-sm text-center outline-none bg-white/10 border border-white/20" />
+                    </div>
+                  ))}
+                  <input type="text" value={duzeltNot} onChange={e => setDuzeltNot(e.target.value)} placeholder="Not (örn: 1 koli eksik geldi)"
+                    className="w-full h-9 rounded-lg text-white text-xs px-3 outline-none bg-white/10 border border-white/20" />
+                  <div className="flex gap-2">
+                    <motion.button whileTap={{ scale: 0.95 }} onClick={() => duzeltmeGonderAdmin(t)} disabled={actionLoading === t.id + 'dz'}
+                      className="flex-1 py-2 rounded-lg text-xs font-bold text-white"
+                      style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>
+                      {actionLoading === t.id + 'dz' ? '...' : 'Tedarikçi Onayına Gönder'}
+                    </motion.button>
+                    <button onClick={() => setDuzeltHedefId('')} className="px-3 py-2 rounded-lg text-white/50 text-xs">Vazgeç</button>
+                  </div>
+                  <p className="text-[10px] text-white/30">Tedarikçi kabul ederse teslimat düzeltilmiş adetlerle otomatik işlenir; reddederse buraya geri döner.</p>
                 </div>
               )}
               {t.rejectionReason && <p className="text-red-400 text-xs">Sebep: {t.rejectionReason}</p>}
@@ -1996,6 +2071,19 @@ function OperasyonTeslimatView({ userName, accessToken }: { userName: string; ac
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState('');
 
+  // Sayım düzeltme formu
+  const [duzeltId, setDuzeltId] = useState<string>('');
+  const [duzeltAdetler, setDuzeltAdetler] = useState<Record<string, string>>({});
+  const [duzeltNot, setDuzeltNot] = useState('');
+
+  // Parasız yeni sipariş formu
+  const [sipAcik, setSipAcik] = useState(false);
+  const [opCariler, setOpCariler] = useState<any[]>([]);
+  const [sipCariId, setSipCariId] = useState('');
+  const [sipAdetler, setSipAdetler] = useState<Record<string, string>>({});
+  const [sipMesaj, setSipMesaj] = useState('');
+  const SIP_URUNLER = [3, 5, 7, 9, 11, 13, 15].flatMap(s => [`${s} Kare Tam`, `${s} Kare Yarım`]).concat(['Paspartu']);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -2007,6 +2095,19 @@ function OperasyonTeslimatView({ userName, accessToken }: { userName: string; ac
     } catch (e: any) { setErr(e.message); } finally { setLoading(false); }
   }, [accessToken]);
   useEffect(() => { load(); }, [load]);
+
+  // Tedarikçi listesi (sipariş formu için) — sadece ad/emoji kullanılır, parasal veri gösterilmez
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(appendGhostParam(`${SERVER_URL}/maliyetler`), { headers: buildHeaders(accessToken) });
+        const d = await res.json().catch(() => ({}));
+        const cs = (d.cariler || []).sort((a: any, b: any) => (a.supplierType === 'album' ? 0 : 1) - (b.supplierType === 'album' ? 0 : 1));
+        setOpCariler(cs);
+        if (cs[0]?.id) setSipCariId(cs[0].id);
+      } catch { /* liste boş kalır */ }
+    })();
+  }, [accessToken]);
 
   const islem = async (id: string, aksiyon: 'onayla' | 'reddet') => {
     if (aksiyon === 'reddet' && !confirm('Bu teslimatı reddetmek istiyor musun?')) return;
@@ -2020,8 +2121,48 @@ function OperasyonTeslimatView({ userName, accessToken }: { userName: string; ac
     } finally { setBusy(''); }
   };
 
-  const bekleyen = teslimatlar.filter(t => t.status === 'beklemede');
-  const gecmis = teslimatlar.filter(t => t.status !== 'beklemede').slice(0, 10);
+  const duzeltmeAc = (t: any) => {
+    setDuzeltId(t.id);
+    const a: Record<string, string> = {};
+    for (const l of (t.lines || [])) a[l.productName] = String(l.quantity);
+    setDuzeltAdetler(a);
+    setDuzeltNot('');
+  };
+
+  const duzeltmeGonder = async (t: any) => {
+    setBusy(t.id + 'duzelt');
+    try {
+      const lines = (t.lines || []).map((l: any) => ({ productName: l.productName, quantity: Number(duzeltAdetler[l.productName]) || 0 }));
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teslimatlar/${t.id}/duzelt`), {
+        method: 'PUT', headers: buildHeaders(accessToken),
+        body: JSON.stringify({ lines, not: duzeltNot }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || d.error) { alert(d.error || 'Düzeltme gönderilemedi'); return; }
+      setDuzeltId('');
+      load();
+    } finally { setBusy(''); }
+  };
+
+  const siparisGonder = async () => {
+    const items = SIP_URUNLER.map(u => ({ productName: u, quantity: Number(sipAdetler[u]) || 0 })).filter(i => i.quantity > 0);
+    if (!sipCariId) { setSipMesaj('⚠️ Tedarikçi seçin.'); return; }
+    if (items.length === 0) { setSipMesaj('⚠️ En az bir ürün için adet girin.'); return; }
+    setBusy('siparis');
+    try {
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler`), {
+        method: 'POST', headers: buildHeaders(accessToken),
+        body: JSON.stringify({ cariId: sipCariId, items }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || d.error) { setSipMesaj(`⚠️ ${d.error || 'Sipariş oluşturulamadı'}`); return; }
+      setSipMesaj('✅ Sipariş tedarikçiye gönderildi.');
+      setSipAdetler({});
+    } finally { setBusy(''); }
+  };
+
+  const bekleyen = teslimatlar.filter(t => ['beklemede', 'duzeltme_bekliyor'].includes(t.status));
+  const gecmis = teslimatlar.filter(t => !['beklemede', 'duzeltme_bekliyor'].includes(t.status)).slice(0, 10);
 
   const kart = (t: any, aktif: boolean) => (
     <div key={t.id} className="rounded-2xl p-4 space-y-2" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
@@ -2042,18 +2183,62 @@ function OperasyonTeslimatView({ userName, accessToken }: { userName: string; ac
         {t.deliveryNote && <span className="truncate ml-2">{t.deliveryNote}</span>}
         {t.reviewedBy && <span>✓ {t.reviewedBy}</span>}
       </div>
-      {aktif && (
+      {/* Düzeltme tedarikçi onayında */}
+      {t.status === 'duzeltme_bekliyor' && t.duzeltme && (
+        <div className="rounded-xl px-3 py-2 text-[11px]" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)' }}>
+          <p className="text-amber-300 font-semibold">⏳ Sayım düzeltmesi tedarikçi onayında</p>
+          <p className="text-white/50 mt-0.5">{(t.duzeltme.lines || []).filter((l: any) => (t.lines || []).find((o: any) => o.productName === l.productName)?.quantity !== l.quantity).map((l: any) => `${l.productName}: ${(t.lines || []).find((o: any) => o.productName === l.productName)?.quantity} → ${l.quantity}`).join(', ')}</p>
+        </div>
+      )}
+      {/* Tedarikçi düzeltmeyi reddettiyse */}
+      {t.status === 'beklemede' && t.duzeltmeRed && (
+        <p className="text-[11px] text-red-300">⚠️ Tedarikçi sayım düzeltmesini kabul etmedi — orijinal adetlerle karar verin.</p>
+      )}
+      {aktif && t.status === 'beklemede' && duzeltId !== t.id && (
         <div className="flex gap-2 pt-1">
           <button onClick={() => islem(t.id, 'onayla')} disabled={busy !== ''}
             className="flex-1 py-2.5 rounded-xl text-white text-xs font-bold active:scale-95"
             style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}>
-            {busy === t.id + 'onayla' ? '...' : '✓ Teslim Alındı — Onayla'}
+            {busy === t.id + 'onayla' ? '...' : '✓ Teslim Alındı'}
+          </button>
+          <button onClick={() => duzeltmeAc(t)} disabled={busy !== ''}
+            className="px-3 py-2.5 rounded-xl text-amber-300 text-xs font-bold active:scale-95"
+            style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.3)' }}>
+            ✏️ Sayım Farklı
           </button>
           <button onClick={() => islem(t.id, 'reddet')} disabled={busy !== ''}
-            className="px-4 py-2.5 rounded-xl text-red-400 text-xs font-bold active:scale-95"
+            className="px-3 py-2.5 rounded-xl text-red-400 text-xs font-bold active:scale-95"
             style={{ background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.3)' }}>
             Reddet
           </button>
+        </div>
+      )}
+      {/* Sayım düzeltme formu */}
+      {aktif && duzeltId === t.id && (
+        <div className="rounded-xl p-3 space-y-2" style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.25)' }}>
+          <p className="text-amber-300 text-[11px] font-semibold">Gerçekte kaç adet teslim aldınız?</p>
+          {(t.lines || []).map((l: any) => (
+            <div key={l.productName} className="flex items-center justify-between gap-2">
+              <span className="text-white/70 text-xs flex-1">{l.productName} <span className="text-white/30">(bildirilen: {l.quantity})</span></span>
+              <input type="number" inputMode="numeric" min={0}
+                value={duzeltAdetler[l.productName] ?? ''}
+                onChange={e => setDuzeltAdetler(p => ({ ...p, [l.productName]: e.target.value }))}
+                className="w-16 h-9 rounded-lg text-white text-sm text-center outline-none"
+                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }} />
+            </div>
+          ))}
+          <input type="text" value={duzeltNot} onChange={e => setDuzeltNot(e.target.value)} placeholder="Not (örn: 1 koli eksik geldi)"
+            className="w-full h-9 rounded-lg text-white text-xs px-3 outline-none"
+            style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }} />
+          <div className="flex gap-2">
+            <button onClick={() => duzeltmeGonder(t)} disabled={busy !== ''}
+              className="flex-1 py-2 rounded-lg text-white text-xs font-bold active:scale-95"
+              style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>
+              {busy === t.id + 'duzelt' ? '...' : 'Tedarikçi Onayına Gönder'}
+            </button>
+            <button onClick={() => setDuzeltId('')} className="px-3 py-2 rounded-lg text-white/50 text-xs">Vazgeç</button>
+          </div>
+          <p className="text-[10px] text-white/30">Tedarikçi kabul ederse teslimat düzeltilmiş adetlerle otomatik işlenir.</p>
         </div>
       )}
     </div>
@@ -2066,6 +2251,46 @@ function OperasyonTeslimatView({ userName, accessToken }: { userName: string; ac
         <p className="text-xs text-white/40">{userName} · Tedarikçi teslimatlarını kontrol edip onayla</p>
       </div>
       {err && <div className="px-3 py-2 rounded-lg text-xs text-red-400" style={{ background: 'rgba(248,113,113,0.1)' }}>{err}</div>}
+
+      {/* ── Parasız Yeni Sipariş ── */}
+      <div className="rounded-2xl overflow-hidden" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+        <button onClick={() => setSipAcik(v => !v)} className="w-full px-4 py-3 flex items-center justify-between">
+          <span className="text-white font-bold text-sm">🛒 Yeni Sipariş Oluştur</span>
+          <span className="text-white/40 text-xs">{sipAcik ? '▲' : '▼'}</span>
+        </button>
+        {sipAcik && (
+          <div className="px-4 pb-4 space-y-3">
+            <p className="text-[10px] text-white/30">Adet bazlı sipariş — fiyatlar sistemdeki anlaşma listesinden otomatik işlenir.</p>
+            <select value={sipCariId} onChange={e => setSipCariId(e.target.value)}
+              className="w-full h-10 rounded-xl text-white text-sm px-3 outline-none"
+              style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}>
+              {opCariler.length === 0 && <option value="">Tedarikçi bulunamadı</option>}
+              {opCariler.map((cr: any) => (
+                <option key={cr.id} value={cr.id} style={{ background: '#0e0826' }}>{cr.emoji || '🏢'} {cr.name}{cr.supplierType === 'album' ? ' · Albüm' : ''}</option>
+              ))}
+            </select>
+            <div className="grid grid-cols-2 gap-1.5">
+              {SIP_URUNLER.map(u => (
+                <div key={u} className="flex items-center justify-between rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <span className="text-white/60 text-[11px]">{u}</span>
+                  <input type="number" inputMode="numeric" min={0} placeholder="0"
+                    value={sipAdetler[u] || ''}
+                    onChange={e => setSipAdetler(p => ({ ...p, [u]: e.target.value }))}
+                    className="w-14 h-8 rounded-md text-white text-xs text-center outline-none"
+                    style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }} />
+                </div>
+              ))}
+            </div>
+            {sipMesaj && <p className={`text-xs ${sipMesaj.startsWith('✅') ? 'text-emerald-300' : 'text-amber-300'}`}>{sipMesaj}</p>}
+            <button onClick={siparisGonder} disabled={busy === 'siparis'}
+              className="w-full py-2.5 rounded-xl text-white text-xs font-bold active:scale-95"
+              style={{ background: 'linear-gradient(135deg, #60a5fa, #3b82f6)' }}>
+              {busy === 'siparis' ? '...' : '📦 Siparişi Tedarikçiye Gönder'}
+            </button>
+          </div>
+        )}
+      </div>
+
       {loading ? (
         <div className="text-center text-white/40 text-sm py-12">Yükleniyor…</div>
       ) : (

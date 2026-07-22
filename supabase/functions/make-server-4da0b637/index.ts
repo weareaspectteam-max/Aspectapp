@@ -21575,16 +21575,29 @@ app.post("/make-server-4da0b637/tedarikci/siparisler", async (c) => {
   try {
     const callerUser = await verifyToken(c);
     if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
-    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"]) && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
+    // operasyon: parasal veri görmeden sipariş girebilir — fiyatlar fiyat listesinden otomatik doldurulur
+    const isOperasyonSip = getEffectiveRole(callerUser) === "operasyon";
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"]) && !isOperasyonSip && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
     const companyId = getCompanyId(callerUser);
     const ckv = companyKvFor(companyId);
-    const { cariId, items, currency, notes, teklifFiyat } = await c.req.json();
+    const { cariId, items, currency, notes, teklifFiyat: teklifFiyatRaw } = await c.req.json();
+    // operasyon fiyat/teklif gönderemez — yok sayılır
+    const teklifFiyat = isOperasyonSip ? null : teklifFiyatRaw;
     if (!cariId || !items?.length) return c.json({ error: "CariId ve en az 1 kalem zorunlu." }, 400);
     const cari = await ckv.get(`cost_cari_${cariId}`);
     if (!cari) return c.json({ error: "Cari bulunamadı." }, 404);
     const now = new Date().toISOString();
     const id = `siparis_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    const orderItems = items.map((it, idx) => ({ id: `item_${idx}_${Math.random().toString(36).slice(2, 6)}`, productName: it.productName || "", quantity: it.quantity || 0, unitPrice: it.unitPrice || 0, currency: it.currency || currency || "TRY", deliveredQuantity: 0, notes: it.notes || "" }));
+    const orderItems = await Promise.all(items.map(async (it, idx) => ({
+      id: `item_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+      productName: it.productName || "",
+      quantity: it.quantity || 0,
+      // operasyon: birim fiyat her zaman fiyat listesinden (istemciden gelen yok sayılır)
+      unitPrice: isOperasyonSip ? await tedarikciUrunFiyat(ckv, cariId, it.productName || "") : (it.unitPrice || 0),
+      currency: isOperasyonSip ? "TRY" : (it.currency || currency || "TRY"),
+      deliveredQuantity: 0,
+      notes: it.notes || "",
+    })));
     const totalAmount = orderItems.reduce((a, it) => a + ((it.productName || "").toLowerCase().includes("paspartu") ? (it.unitPrice || 0) : (it.quantity * it.unitPrice)), 0);
     // Sipariş oluşturulunca DOĞRUDAN gönderilir (taslak ara adımı kaldırıldı, 2026-07-20)
     const siparis = { id, cariId, cariName: cari.name || "", status: "gonderildi", sentAt: now, items: orderItems, totalAmount, currency: currency || "TRY", notes: notes || "", createdAt: now, createdBy: callerUser.user_metadata?.full_name || "", createdByUserId: callerUser.id, updatedAt: now,
@@ -21595,6 +21608,10 @@ app.post("/make-server-4da0b637/tedarikci/siparisler", async (c) => {
     };
     await saveOrder(companyId, ckv, siparis);
     if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "siparis_yeni", "Yeni Sipariş", `${orderItems.length} kalem, toplam ${totalAmount} ${currency || "TRY"}`, { siparisId: id.replace("siparis_", "") }, companyId);
+    // operasyon yanıtında parasal veri gizlenir (kayıtta gerçek fiyatlar durur)
+    if (isOperasyonSip) {
+      return c.json({ ok: true, siparis: { ...siparis, items: siparis.items.map((i: any) => ({ ...i, unitPrice: 0 })), totalAmount: 0, teklifFiyat: null, teklifler: [] } });
+    }
     return c.json({ ok: true, siparis });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
@@ -21760,24 +21777,15 @@ const tedarikciUrunFiyat = async (ckv: any, cariId: string, productName: string)
 // Teslimat onayı — FIFO dağıtım: her ürün EN ESKİ açık siparişten düşer, artan sonrakine geçer.
 // Hiçbir siparişte karşılığı olmayan (veya sipariş toplamını aşan) kalemler "sipariş dışı"dır:
 // karar sorulur (fazlaKarar: 'kabul' → otomatik kayıt + bakiyeye borç; 'haric' → işlenmez, depoya girmez).
-app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
-  try {
-    const callerUser = await verifyToken(c);
-    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
-    // operasyon: parasal veri görmeden teslim onayı verebilir (kullanıcı kararı 2026-07-20)
-    const tamYetkiTes = hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"]);
-    if (!tamYetkiTes && getEffectiveRole(callerUser) !== "operasyon" && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
-    const companyId = getCompanyId(callerUser);
-    const ckv = companyKvFor(companyId);
-    const rawId = c.req.param("id");
-    const teslimatId = rawId.startsWith("teslimat_") ? rawId.replace("teslimat_", "") : rawId;
-    const body: any = await c.req.json().catch(() => ({}));
-    const fazlaKarar: string | undefined = body?.fazlaKarar; // 'kabul' | 'haric'
-    const teslimat = await getDelivery(companyId, ckv, teslimatId);
-    if (!teslimat) return c.json({ error: "Teslimat bulunamadı." }, 404);
-    if (teslimat.status !== "beklemede") return c.json({ error: "Bu teslimat zaten işlenmiş." }, 400);
+// ── Teslimat commit yardımcısı ────────────────────────────────────────────
+// FIFO dağıtım + sipariş güncelleme + sipariş dışı karar + depo girişi + bildirim.
+// Hem PUT /teslimatlar/:id/onayla hem düzeltme-kabul akışı kullanır.
+// Dönüş: { fazlaOnayGerekli, fazlaKalemler } | { yetkiHatasi } | { ok, dagitim, fazlaSiparis }
+const teslimatCommit = async (
+  companyId: string, ckv: any, teslimat: any, teslimatId: string,
+  fazlaKarar: string | undefined, yapanAdTes: string, tamYetkiTes: boolean,
+): Promise<any> => {
     const now = new Date().toISOString();
-    const yapanAdTes = callerUser.user_metadata?.full_name || "";
 
     // ── FIFO dağıtım hesabı (henüz kaydetmeden) ──
     const tumSiparislerTes = await getOrders(companyId, ckv);
@@ -21806,14 +21814,14 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
 
     // ── Sipariş dışı kalem varsa: karar verilmeden hiçbir şey kaydedilmez ──
     if (fazlaKalemler.length > 0 && fazlaKarar !== "kabul" && fazlaKarar !== "haric") {
-      if (!tamYetkiTes) return c.json({ error: "Sipariş dışı kalemler var — kabul/hariç kararını yönetici vermeli." }, 403);
+      if (!tamYetkiTes) return { yetkiHatasi: true };
       const fazlaFiyatli = await Promise.all(fazlaKalemler.map(async (f) => ({
         ...f, birimFiyat: await tedarikciUrunFiyat(ckv, teslimat.cariId, f.productName),
       })));
-      return c.json({ fazlaOnayGerekli: true, fazlaKalemler: fazlaFiyatli });
+      return { fazlaOnayGerekli: true, fazlaKalemler: fazlaFiyatli };
     }
     if (fazlaKalemler.length > 0 && !tamYetkiTes) {
-      return c.json({ error: "Sipariş dışı kalemler var — kabul/hariç kararını yönetici vermeli." }, 403);
+      return { yetkiHatasi: true };
     }
 
     // ── Commit: teslimat ──
@@ -21893,7 +21901,31 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
       }
       await createNotification(cari.linkedUserId, "teslimat_onaylandi", "Teslimat Onaylandı", msj, { siparisId: teslimat.siparisId, teslimatId }, companyId);
     }
-    return c.json({ ok: true, teslimat, dagitim, fazlaSiparis });
+    return { ok: true, dagitim, fazlaSiparis };
+};
+
+app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/onayla", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    // operasyon: parasal veri görmeden teslim onayı verebilir (kullanıcı kararı 2026-07-20)
+    const tamYetkiTes = hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"]);
+    if (!tamYetkiTes && getEffectiveRole(callerUser) !== "operasyon" && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
+    const companyId = getCompanyId(callerUser);
+    const ckv = companyKvFor(companyId);
+    const rawId = c.req.param("id");
+    const teslimatId = rawId.startsWith("teslimat_") ? rawId.replace("teslimat_", "") : rawId;
+    const body: any = await c.req.json().catch(() => ({}));
+    const fazlaKarar: string | undefined = body?.fazlaKarar; // 'kabul' | 'haric'
+    const teslimat = await getDelivery(companyId, ckv, teslimatId);
+    if (!teslimat) return c.json({ error: "Teslimat bulunamadı." }, 404);
+    if (teslimat.status !== "beklemede") return c.json({ error: "Bu teslimat zaten işlenmiş." }, 400);
+    const yapanAdTes = callerUser.user_metadata?.full_name || "";
+
+    const sonuc = await teslimatCommit(companyId, ckv, teslimat, teslimatId, fazlaKarar, yapanAdTes, tamYetkiTes);
+    if (sonuc.yetkiHatasi) return c.json({ error: "Sipariş dışı kalemler var — kabul/hariç kararını yönetici vermeli." }, 403);
+    if (sonuc.fazlaOnayGerekli) return c.json({ fazlaOnayGerekli: true, fazlaKalemler: sonuc.fazlaKalemler });
+    return c.json({ ok: true, teslimat, dagitim: sonuc.dagitim, fazlaSiparis: sonuc.fazlaSiparis });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
@@ -21914,6 +21946,125 @@ app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/reddet", async (c) => {
     const cari = await ckv.get(`cost_cari_${teslimat.cariId}`);
     if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "teslimat_reddedildi", "Teslimat Reddedildi", reason || "Teslimatınız reddedildi.", { siparisId: teslimat.siparisId, teslimatId }, getCompanyId(callerUser));
     return c.json({ ok: true, teslimat });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// ──────────────────────────────────────────
+// TESLİMAT DÜZELTME: Alıcı sayımı farklı bildirir → tedarikçi onayına gider
+// PUT /tedarikci/teslimatlar/:id/duzelt
+// Body: { lines: [{ productName, quantity }], not?: string }
+// ──────────────────────────────────────────
+app.put("/make-server-4da0b637/tedarikci/teslimatlar/:id/duzelt", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    // Onay verebilen herkes düzeltme de önerebilir (operasyon dahil — parasal veri yok, sadece adet)
+    const tamYetkiDz = hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"]);
+    if (!tamYetkiDz && getEffectiveRole(callerUser) !== "operasyon" && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
+    const companyId = getCompanyId(callerUser);
+    const ckv = companyKvFor(companyId);
+    const rawId = c.req.param("id");
+    const teslimatId = rawId.startsWith("teslimat_") ? rawId.replace("teslimat_", "") : rawId;
+    const teslimat = await getDelivery(companyId, ckv, teslimatId);
+    if (!teslimat) return c.json({ error: "Teslimat bulunamadı." }, 404);
+    if (teslimat.status !== "beklemede") return c.json({ error: "Sadece bekleyen teslimatta sayım düzeltilebilir." }, 400);
+
+    const { lines, not: duzeltmeNot } = await c.req.json();
+    if (!Array.isArray(lines) || lines.length === 0) return c.json({ error: "En az bir kalem zorunlu." }, 400);
+    // Sadece bildirilen kalemler düzeltilebilir; adet 0 olabilir (hiç gelmedi), negatif olamaz
+    const orjMap: Record<string, number> = {};
+    for (const l of (teslimat.lines || [])) orjMap[l.productName] = Number(l.quantity) || 0;
+    const temiz: Array<{ productName: string; quantity: number }> = [];
+    for (const l of lines) {
+      const pn = String(l?.productName || "");
+      if (!(pn in orjMap)) return c.json({ error: `Bildirilmeyen kalem düzeltilemez: ${pn}` }, 400);
+      const q = Math.round(Number(l.quantity));
+      if (isNaN(q) || q < 0) return c.json({ error: `Geçersiz adet (${pn}).` }, 400);
+      temiz.push({ productName: pn, quantity: q });
+    }
+    // Eksik bırakılan kalemler orijinal adetle korunur
+    for (const [pn, q] of Object.entries(orjMap)) {
+      if (!temiz.some(t => t.productName === pn)) temiz.push({ productName: pn, quantity: q });
+    }
+    const degisenler = temiz.filter(t => t.quantity !== orjMap[t.productName]);
+    if (degisenler.length === 0) return c.json({ error: "Adetlerde değişiklik yok — normal onay kullanın." }, 400);
+
+    const now = new Date().toISOString();
+    teslimat.status = "duzeltme_bekliyor";
+    teslimat.duzeltme = {
+      lines: temiz,
+      not: String(duzeltmeNot || "").slice(0, 300),
+      talepEden: callerUser.user_metadata?.full_name || callerUser.email || "",
+      talepEdenId: callerUser.id,
+      tarih: now,
+    };
+    await saveDelivery(companyId, ckv, teslimat);
+
+    const cariDz = await ckv.get(`cost_cari_${teslimat.cariId}`);
+    if (cariDz?.linkedUserId) {
+      const farkOzet = degisenler.map(d => `${d.productName}: ${orjMap[d.productName]} → ${d.quantity}`).join(", ");
+      await createNotification(cariDz.linkedUserId, "teslimat_duzeltme", "Teslimat Sayımı Farklı",
+        `Alıcı teslim aldığı adetleri farklı bildirdi: ${farkOzet}. Onayınız bekleniyor.`,
+        { teslimatId }, companyId);
+    }
+    console.log(`[Tedarikci] Teslimat düzeltme önerildi: ${teslimatId} — ${degisenler.length} kalem farklı (${teslimat.duzeltme.talepEden})`);
+    return c.json({ ok: true, teslimat });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// ──────────────────────────────────────────
+// TESLİMAT DÜZELTME YANITI: tedarikçi kabul/red
+// POST /tedarikci/teslimatlar/:id/duzeltme-yanit
+// Body: { karar: 'kabul' | 'red' }
+// kabul → teslimat düzeltilmiş adetlerle otomatik işlenir (FIFO+depo);
+//         sipariş dışı kalem çıkarsa beklemede kalır, kararı yönetici panelden verir
+// red   → teslimat orijinal adetlerle beklemeye döner, alıcı karar verir
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/tedarikci/teslimatlar/:id/duzeltme-yanit", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (callerUser.user_metadata?.role !== "tedarikci") return c.json({ error: "Yetki yok." }, 403);
+    const resolved = await resolveSupplierCompany(c, callerUser);
+    if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
+    const rawId = c.req.param("id");
+    const teslimatId = rawId.startsWith("teslimat_") ? rawId.replace("teslimat_", "") : rawId;
+    const teslimat = await getDelivery(resolved.companyId, resolved.ckv, teslimatId);
+    if (!teslimat || teslimat.cariId !== resolved.cariId) return c.json({ error: "Teslimat bulunamadı." }, 404);
+    if (teslimat.status !== "duzeltme_bekliyor" || !teslimat.duzeltme) return c.json({ error: "Bu teslimatta bekleyen düzeltme yok." }, 400);
+
+    const { karar } = await c.req.json();
+    if (!["kabul", "red"].includes(karar)) return c.json({ error: "karar kabul veya red olmalı." }, 400);
+    const now = new Date().toISOString();
+    const tedarikciAd = callerUser.user_metadata?.full_name || callerUser.email || "";
+
+    if (karar === "red") {
+      teslimat.status = "beklemede";
+      teslimat.duzeltmeRed = { ...teslimat.duzeltme, redTarih: now, redEden: tedarikciAd };
+      delete teslimat.duzeltme;
+      await saveDelivery(resolved.companyId, resolved.ckv, teslimat);
+      console.log(`[Tedarikci] Düzeltme REDDEDİLDİ: ${teslimatId} (${tedarikciAd})`);
+      return c.json({ ok: true, teslimat });
+    }
+
+    // kabul — düzeltilmiş adetler geçerli olur, teslimat otomatik işlenir
+    teslimat.orijinalLines = teslimat.lines;
+    teslimat.lines = (teslimat.duzeltme.lines || []).filter((l: any) => Number(l.quantity) > 0);
+    teslimat.duzeltmeKarar = { karar: "kabul", tarih: now, kisi: tedarikciAd, duzeltme: teslimat.duzeltme };
+    delete teslimat.duzeltme;
+
+    // Düzeltmeyi öneren kişi commit'in sahibi sayılır; tamYetki=false → sipariş dışı çıkarsa beklemede kalır
+    const yapanAd = teslimat.duzeltmeKarar.duzeltme?.talepEden || "Alıcı";
+    const sonuc = await teslimatCommit(resolved.companyId, resolved.ckv, teslimat, teslimatId, undefined, yapanAd, false);
+    if (sonuc.yetkiHatasi || sonuc.fazlaOnayGerekli) {
+      // Sipariş dışı kalem — otomatik işlenemez, düzeltilmiş adetlerle beklemeye döner (yönetici panelden karar verir)
+      teslimat.status = "beklemede";
+      await saveDelivery(resolved.companyId, resolved.ckv, teslimat);
+      console.log(`[Tedarikci] Düzeltme kabul edildi ama sipariş dışı kalem var — beklemede: ${teslimatId}`);
+      return c.json({ ok: true, teslimat, beklemede: true, mesaj: "Düzeltme kabul edildi. Sipariş dışı kalem olduğu için alıcı onayı bekleniyor." });
+    }
+    console.log(`[Tedarikci] Düzeltme kabul + otomatik onay: ${teslimatId} (${tedarikciAd})`);
+    return c.json({ ok: true, teslimat, dagitim: sonuc.dagitim });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 

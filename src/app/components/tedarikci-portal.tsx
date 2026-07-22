@@ -158,6 +158,20 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
     } finally { setActionLoading(''); }
   };
 
+  // Alıcının sayım düzeltmesine yanıt: kabul → teslimat düzeltilmiş adetlerle işlenir; red → orijinal adetlerle alıcıya döner
+  const duzeltmeYanit = async (teslimatId: string, karar: 'kabul' | 'red') => {
+    if (karar === 'red' && !confirm('Düzeltmeyi reddetmek istiyor musunuz? Teslimat bildirdiğiniz adetlerle alıcıya geri döner.')) return;
+    setActionLoading(teslimatId + karar);
+    try {
+      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teslimatlar/${teslimatId}/duzeltme-yanit`), {
+        method: 'POST', headers: headers(), body: JSON.stringify({ karar }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || d.error) { alert(d.error || 'İşlem başarısız'); return; }
+      fetchPortal();
+    } finally { setActionLoading(''); }
+  };
+
   // ── Şirket Seçim Ekranı ──
   if (!activeCompanyId && linkedCompanies.length > 1) {
     return (
@@ -687,8 +701,8 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                     <p className="text-white font-semibold text-sm">🚚 Teslimatlarım</p>
                   </div>
                   {[...teslimatlar].sort((a: any, b: any) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 10).map((t: any) => {
-                    const renk = t.status === 'onaylandi' ? '#34d399' : t.status === 'reddedildi' ? '#f87171' : '#fbbf24';
-                    const label = t.status === 'onaylandi' ? 'Onaylandı' : t.status === 'reddedildi' ? 'Reddedildi' : 'Beklemede';
+                    const renk = t.status === 'onaylandi' ? '#34d399' : t.status === 'reddedildi' ? '#f87171' : t.status === 'duzeltme_bekliyor' ? '#fb923c' : '#fbbf24';
+                    const label = t.status === 'onaylandi' ? 'Onaylandı' : t.status === 'reddedildi' ? 'Reddedildi' : t.status === 'duzeltme_bekliyor' ? 'Sayım Onayınız Bekleniyor' : 'Beklemede';
                     return (
                       <div key={t.id} className="px-4 py-2.5 border-b border-white/5">
                         <div className="flex items-center justify-between mb-0.5">
@@ -696,6 +710,43 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: `${renk}20`, color: renk }}>{label}</span>
                         </div>
                         <p className="text-white/70 text-xs">{(t.lines || []).map((l: any) => `${l.quantity}× ${l.productName}`).join(', ')}</p>
+                        {/* Alıcı sayımı farklı bildirdi — kabul/red */}
+                        {t.status === 'duzeltme_bekliyor' && t.duzeltme && (
+                          <div className="mt-2 rounded-xl p-3 space-y-2" style={{ background: 'rgba(251,146,60,0.08)', border: '1px solid rgba(251,146,60,0.30)' }}>
+                            <p className="text-orange-300 text-[11px] font-bold">⚠️ Alıcı teslim aldığı adetleri farklı bildirdi:</p>
+                            <div className="space-y-0.5">
+                              {(t.duzeltme.lines || []).map((l: any) => {
+                                const orj = (t.lines || []).find((o: any) => o.productName === l.productName);
+                                const farkli = orj && Number(orj.quantity) !== Number(l.quantity);
+                                return (
+                                  <div key={l.productName} className="flex justify-between text-[11px]">
+                                    <span className="text-white/60">{l.productName}</span>
+                                    <span className={farkli ? 'text-orange-300 font-bold' : 'text-white/40'}>
+                                      {farkli ? `${orj?.quantity} → ${l.quantity}` : `${l.quantity}`}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {t.duzeltme.not && <p className="text-white/40 text-[10px]">💬 {t.duzeltme.not}</p>}
+                            <div className="flex gap-2 pt-1">
+                              <button onClick={() => duzeltmeYanit(t.id, 'kabul')} disabled={actionLoading !== ''}
+                                className="flex-1 py-2 rounded-lg text-white text-[11px] font-bold active:scale-95"
+                                style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}>
+                                {actionLoading === t.id + 'kabul' ? '...' : '✓ Kabul Et'}
+                              </button>
+                              <button onClick={() => duzeltmeYanit(t.id, 'red')} disabled={actionLoading !== ''}
+                                className="flex-1 py-2 rounded-lg text-red-300 text-[11px] font-bold active:scale-95"
+                                style={{ background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.3)' }}>
+                                {actionLoading === t.id + 'red' ? '...' : '✗ Reddet'}
+                              </button>
+                            </div>
+                            <p className="text-white/30 text-[9px]">Kabul ederseniz teslimat düzeltilmiş adetlerle işlenir.</p>
+                          </div>
+                        )}
+                        {t.duzeltmeKarar?.karar === 'kabul' && t.orijinalLines && (
+                          <p className="text-emerald-400/60 text-[10px] mt-0.5">✓ Sayım düzeltmesini kabul ettiniz (bildirdiğiniz: {(t.orijinalLines || []).map((l: any) => `${l.quantity}× ${l.productName}`).join(', ')})</p>
+                        )}
                         {t.status === 'onaylandi' && (t.dagitim || []).length > 0 && (
                           <p className="text-emerald-400/70 text-[10px] mt-0.5">✓ Siparişlerinize işlendi: {(t.dagitim || []).map((d: any) => `${d.adet}× ${d.productName}`).join(', ')}</p>
                         )}
