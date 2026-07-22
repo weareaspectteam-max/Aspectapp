@@ -940,7 +940,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
           return (
             <button
               key={t.key}
-              onClick={() => setActiveTab(t.key)}
+              onClick={() => { setActiveTab(t.key); setSelectedTedarikci(null); setSelectedSiparis(null); }}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition-all relative"
               style={{
                 background: active ? `${t.color}20` : glassBg,
