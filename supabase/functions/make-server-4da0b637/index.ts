@@ -4408,6 +4408,7 @@ app.post("/make-server-4da0b637/stok/kapanis", async (c) => {
     for (const satis of satislar) {
       if (satis.iptal) continue;
       for (const item of (satis.items || [])) {
+        if (item.dijital) continue; // Dijital satışta fiziksel baskı yok — sayaç karşılaştırmasına girmez
         const urun = String(item.product || '');
         let fotografSayisi = 0;
         if (urun === '1 Fotoğraf') {
@@ -18728,9 +18729,9 @@ const _kasa2Ortaklar = async (companyId: string) => {
     if (data?.value && Array.isArray(data.value) && data.value.length) return data.value;
   } catch { /* default */ }
   return [
-    { id: "ozgur", isim: "Özgür Demirbaş", yuzde: 47 },
+    { id: "ozgur", isim: "Özgür Demirbaş", yuzde: 40 },
+    { id: "eyup", isim: "Eyüp Aman", yuzde: 25 },
     { id: "fatih", isim: "Fatih Kayhan", yuzde: 25 },
-    { id: "eyup", isim: "Eyüp Aman", yuzde: 18 },
     { id: "busra", isim: "Büşra Kaya", yuzde: 10 },
   ];
 };
