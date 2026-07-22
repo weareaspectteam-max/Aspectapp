@@ -2892,7 +2892,26 @@ app.get("/make-server-4da0b637/isletme/giderler", async (c) => {
     const sirali = tumGiderler.sort((a: any, b: any) =>
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
-    return c.json({ giderler: sirali });
+    // Kasadan yapılan P&L-dışı çıkışlar (maaş/hakediş/avans/kira/düzeltme + borç ödeme) listede
+    // BİLGİ olarak görünsün — tahakkukları zaten ayrı kanaldan geldiği için hesaba KATILMAZ (plHaric).
+    // Ayrı alanda döner: eski frontend bu alanı bilmez → toplamları bozmaz.
+    let kasaBilgi: any[] = [];
+    try {
+      const dbB = getAdminClient();
+      const { data: khRows } = await dbB.from("kasa_hareket")
+        .select("id, tarih, pot, tutar, kategori, aciklama, kaynak, olusturan, created_at, extra_data")
+        .eq("company_id", companyId).eq("yon", "cikis").eq("iptal", false)
+        .in("kaynak", ["gider", "maas", "hakedis", "borc_odeme"]);
+      kasaBilgi = (khRows || [])
+        .filter((h: any) => h.kaynak !== "gider" || KASA2_IGD_HARIC.has(h.kategori || ""))
+        .map((h: any) => ({
+          id: `k2b_${h.id}`, category: h.kategori || "diger", amount: Number(h.tutar) || 0, currency: "TRY",
+          description: h.aciklama || "", date: h.tarih, personelAdi: h.extra_data?.personelAdi || "",
+          plHaric: true, kaynakKasa2: true, kasaPot: h.pot,
+          created_at: h.created_at || new Date().toISOString(), created_by: h.olusturan || "kasa",
+        }));
+    } catch (e) { console.log("[İGD kasa bilgi] hata:", e); }
+    return c.json({ giderler: sirali, kasaBilgi });
   } catch (err) {
     console.log("Get isletme giderler error:", err);
     return c.json({ error: `Sunucu hatası: ${err}` }, 500);

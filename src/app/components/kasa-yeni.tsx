@@ -256,6 +256,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
   const [gPersonel, setGPersonel] = useState<{ id: string; isim: string } | null>(null);
   const [gMekan, setGMekan] = useState<{ id: string; isim: string } | null>(null);
   const [gField, setGField] = useState<'tutar' | 'nakit' | 'banka'>('tutar'); // numpad hedefi
+  const [gEsle, setGEsle] = useState(true); // bekleyen maaş/hakediş kalemiyle eşleştir (ödendi işaretle)
 
   // gelir modal
   const [showGelir, setShowGelir] = useState(false);
@@ -296,6 +297,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
   const [gorunurList, setGorunurList] = useState<any[] | null>(null);
   const [gorunurSet, setGorunurSet] = useState<Set<string>>(new Set());
   const [ortakSet, setOrtakSet] = useState<Set<string>>(new Set());
+  const [islemSet, setIslemSet] = useState<Set<string>>(new Set());
 
   const fetchData = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -369,13 +371,16 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
         method: 'POST', headers: await authHeaders(),
         body: JSON.stringify({
           tutar, kategori: gKat, aciklama: gNot, odeme,
-          ...(gKat === 'avans' && gPersonel ? { personelId: gPersonel.id, personelAdi: gPersonel.isim } : {}),
+          ...(['avans', 'maas', 'hakedis'].includes(gKat) && gPersonel ? { ...(gPersonel.id ? { personelId: gPersonel.id } : {}), personelAdi: gPersonel.isim } : {}),
           ...(gKat === 'kira' && gMekan ? { mekanId: gMekan.id, mekanAdi: gMekan.isim } : {}),
+          ...(gKat === 'maas' && gEsle && gBekleyen ? { odemeKey: gBekleyen.key } : {}),
+          ...(gKat === 'hakedis' && gEsle && gBekleyen ? { odemeKeys: gBekleyen.keys } : {}),
         }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Hata'); }
-      setShowGider(false); setGTutar(''); setGNakit(''); setGBanka(''); setGNot(''); setGOdeme('nakit'); setGKat('yakit'); setGPersonel(null); setGMekan(null); setGField('tutar');
+      setShowGider(false); setGTutar(''); setGNakit(''); setGBanka(''); setGNot(''); setGOdeme('nakit'); setGKat('yakit'); setGPersonel(null); setGMekan(null); setGField('tutar'); setGEsle(true);
       await fetchData();
+      if (odemeData) reloadOdeme(); // bekleyen listesi açıksa/yüklüyse tazele
     } catch (e: any) { alert(e.message); } finally { setSaving(false); }
   };
 
@@ -500,27 +505,50 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
     } catch (e: any) { alert(e.message); } finally { setSaving(false); }
   };
 
+  // ── Gider modalı: bekleyen maaş/hakediş eşleştirme ──
+  // Seçili kişinin Ödemeler'de bekleyen kalemi (maaş: id ile, hakediş: adla eşleşir)
+  const gBekleyenBul = (kat: string, p: { id: string; isim: string } | null) => {
+    if (!p || !odemeData?.items) return null;
+    if (kat === 'maas') return odemeData.items.find((i: any) => i.tip === 'maas' && !i.odendi && (i.personelId ? i.personelId === p.id : i.baslik === `Maaş — ${p.isim}`)) || null;
+    if (kat === 'hakedis') return odemeData.items.find((i: any) => i.tip === 'hakedis' && !i.odendi && (i.personelAdi || '') === p.isim) || null;
+    return null;
+  };
+  const gBekleyen = showGider ? gBekleyenBul(gKat, gPersonel) : null;
+  // Maaş/hakediş seçilince bekleyen kalemleri getir (eşleştirme kutusu için)
+  useEffect(() => {
+    if (showGider && (gKat === 'maas' || gKat === 'hakedis') && !odemeData) reloadOdeme();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showGider, gKat]);
+
   // ── Görünürlük ──
   const openGorunur = async () => {
     setShowGorunur(true); setGorunurList(null);
     try {
       const r = await fetch(appendGhostParam(`${API_BASE}/kasa2/gorunurluk`), { headers: await authHeaders() });
-      if (r.ok) { const d = await r.json(); const ku = d.kullanicilar || []; setGorunurList(ku); setGorunurSet(new Set(ku.filter((u: any) => u.izinli).map((u: any) => u.id))); setOrtakSet(new Set(ku.filter((u: any) => u.ortakIzinli).map((u: any) => u.id))); }
+      if (r.ok) { const d = await r.json(); const ku = d.kullanicilar || []; setGorunurList(ku); setGorunurSet(new Set(ku.filter((u: any) => u.izinli).map((u: any) => u.id))); setOrtakSet(new Set(ku.filter((u: any) => u.ortakIzinli).map((u: any) => u.id))); setIslemSet(new Set(ku.filter((u: any) => u.islemIzinli).map((u: any) => u.id))); }
       else setGorunurList([]);
     } catch { setGorunurList([]); }
   };
   const toggleGorunur = (id: string) => { setGorunurSet(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; }); };
   const toggleOrtak = (id: string) => { setOrtakSet(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; }); };
+  const toggleIslem = (id: string) => {
+    const aciliyor = !islemSet.has(id);
+    setIslemSet(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+    if (aciliyor) setGorunurSet(prev => { const n = new Set(prev); n.add(id); return n; }); // işlem yapan kasayı görmeli
+  };
   const saveGorunur = async () => {
     setSaving(true);
     try {
-      await fetch(appendGhostParam(`${API_BASE}/kasa2/gorunurluk`), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ gorunur: Array.from(gorunurSet), ortakGorunur: Array.from(ortakSet) }) });
+      await fetch(appendGhostParam(`${API_BASE}/kasa2/gorunurluk`), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ gorunur: Array.from(gorunurSet), ortakGorunur: Array.from(ortakSet), islem: Array.from(islemSet) }) });
       setShowGorunur(false);
     } catch (e: any) { alert(e.message); } finally { setSaving(false); }
   };
 
   // Otomatik tazeleme sırasında modal/işlem açıksa dokunma
   busyRef.current = showGider || showGelir || showOrtak || showBorc || showOdeme || !!odemeFor || !!odemeItem || showGorunur || saving;
+
+  // İşlem yetkisi: gider/gelir ekleme, ödeme yapma, borç işlemleri (görüntülemeden ayrı)
+  const canIslem = isYonetici || (data ? data.islemYapabilir !== false : false);
 
   if (loading && !data) return (<div className="k2"><style>{CSS}</style><div className="wrap"><div className="empty" style={{ paddingTop: 80 }}>Yükleniyor…</div></div></div>);
 
@@ -697,11 +725,13 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
           </div>
         </div>
 
-        {/* ACTIONS */}
-        <div className="acts">
-          <button className="btn primary" onClick={() => setShowGider(true)}>− Gider ekle</button>
-          <button className="btn ghost" onClick={() => setShowGelir(true)}>+ Para girdi</button>
-        </div>
+        {/* ACTIONS — sadece işlem yetkisi olanlar */}
+        {canIslem && (
+          <div className="acts">
+            <button className="btn primary" onClick={() => setShowGider(true)}>− Gider ekle</button>
+            <button className="btn ghost" onClick={() => setShowGelir(true)}>+ Para girdi</button>
+          </div>
+        )}
         <button className="subbtn" onClick={openOdeme} style={{ width: '100%' }}>📅 Ödemeler — maaşlar</button>
         <div className="subacts">
           <button className="subbtn" onClick={openBorc}>⇄ Borç / Alacak</button>
@@ -812,14 +842,46 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
             <div className="fld"><span className="cap">Kategori</span>
               <div className="chips">{KATEGORILER_SIRALI.map((k) => (<span key={k.k} className={`ch ${gKat === k.k ? 'on' : ''}`} onClick={() => setGKat(k.k)}>{k.l}</span>))}</div>
             </div>
-            {gKat === 'avans' && (
-              <div className="fld"><span className="cap">Kime avans? (maaşından düşülür)</span>
-                <div className="chips">
-                  {(data.personeller || []).length === 0 && <span style={{ fontSize: 12, color: 'var(--mut2)' }}>Maaş tanımlı personel yok.</span>}
-                  {(data.personeller || []).map((p: any) => (<span key={p.id} className={`ch ${gPersonel?.id === p.id ? 'on' : ''}`} onClick={() => setGPersonel(p)}>{p.isim}</span>))}
+            {['avans', 'maas', 'hakedis'].includes(gKat) && (() => {
+              // hakedişte bekleyen kişiler maaş tanımı olmasa da seçilebilsin
+              const kisiler: any[] = [...(data.personeller || [])];
+              if (gKat === 'hakedis') {
+                for (const it of (odemeData?.items || [])) {
+                  if (it.tip !== 'hakedis' || it.odendi || !it.personelAdi) continue;
+                  if (!kisiler.some((p) => p.isim === it.personelAdi)) kisiler.push({ id: '', isim: it.personelAdi });
+                }
+              }
+              const secili = (p: any) => !!gPersonel && (gPersonel.id ? gPersonel.id === p.id : gPersonel.isim === p.isim);
+              const sec = (p: any) => {
+                setGPersonel(p);
+                const b = gBekleyenBul(gKat, p);
+                if (b && gOdeme !== 'karisik' && !parseNum(gTutar)) setGTutar(fmtIn(String(b.tutar || 0))); // bekleyen tutarı öner
+              };
+              return (
+                <div className="fld"><span className="cap">{gKat === 'avans' ? 'Kime avans? (maaşından düşülür)' : gKat === 'maas' ? 'Kime maaş?' : 'Kime hakediş?'}</span>
+                  <div className="chips">
+                    {kisiler.length === 0 && <span style={{ fontSize: 12, color: 'var(--mut2)' }}>Maaş tanımlı personel yok.</span>}
+                    {kisiler.map((p: any) => (<span key={p.id || p.isim} className={`ch ${secili(p) ? 'on' : ''}`} onClick={() => sec(p)}>{p.isim}</span>))}
+                  </div>
+                  {(gKat === 'maas' || gKat === 'hakedis') && gPersonel && (
+                    gBekleyen ? (
+                      <div style={{ marginTop: 10, background: 'var(--negBg)', borderRadius: 10, padding: '10px 12px', fontSize: 12, lineHeight: 1.55 }}>
+                        Ödemeler'de bekleyen {gKat === 'maas' ? 'maaş' : 'hakediş'}: <b className="tnum">{fmt(gBekleyen.tutar)} ₺</b>{gKat === 'hakedis' && gBekleyen.keys?.length > 0 ? ` · ${gBekleyen.keys.length} kalem` : ''}{gKat === 'maas' && gBekleyen.avans > 0 ? ` · avans düşülmüş (maaş ${fmt(gBekleyen.base)})` : ''}
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, cursor: 'pointer', color: gEsle ? 'var(--pos)' : 'var(--mut2)', fontWeight: 650 }}>
+                          <input type="checkbox" checked={gEsle} onChange={(e) => setGEsle(e.target.checked)} style={{ accentColor: 'var(--brand)' }} />
+                          Bu girişi o kaleme say — ödendi işaretlensin{gKat === 'hakedis' ? ' (Hakediş Takip dahil)' : ''}
+                        </label>
+                        {!gEsle && <div style={{ marginTop: 6, color: 'var(--neg)', fontWeight: 650 }}>⚠️ İşaretlemezsen kalem "bekliyor" kalır — çift ödeme riski.</div>}
+                      </div>
+                    ) : odemeData ? (
+                      <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--mut2)' }}>Bu ay Ödemeler'de bekleyen {gKat === 'maas' ? 'maaş' : 'hakediş'} kalemi yok — kayıt düz gider olarak yazılır.</div>
+                    ) : (
+                      <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--mut2)' }}>Bekleyen kalemler kontrol ediliyor…</div>
+                    )
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
             {gKat === 'kira' && (
               <div className="fld"><span className="cap">Hangi mekan?</span>
                 <div className="chips">
@@ -980,17 +1042,19 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
                 <div style={{ flex: 1, background: 'var(--posBg)', borderRadius: 10, padding: '10px 12px' }}><div className="cap">Alacak (bize borçlu)</div><div style={{ fontSize: 18, fontWeight: 750, color: 'var(--pos)' }} className="tnum">{fmt(borcData.toplamAlacak)} ₺</div></div>
                 <div style={{ flex: 1, background: 'var(--negBg)', borderRadius: 10, padding: '10px 12px' }}><div className="cap">Verecek (biz borçlu)</div><div style={{ fontSize: 18, fontWeight: 750, color: 'var(--neg)' }} className="tnum">{fmt(borcData.toplamVerecek)} ₺</div></div>
               </div>
-              <div className="fld">
-                <span className="cap">Yeni kayıt</span>
-                <input className="in" style={{ fontSize: 14, fontWeight: 400, marginTop: 8, marginBottom: 8 }} placeholder="Kişi / firma" value={bKisi} onChange={(e) => setBKisi(e.target.value)} />
-                <div className="seg" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: 8 }}>
-                  <div className={`s ${bYon === 'alacak' ? 'on' : ''}`} onClick={() => setBYon('alacak')}>Bize borçlu</div>
-                  <div className={`s ${bYon === 'verecek' ? 'on' : ''}`} onClick={() => setBYon('verecek')}>Biz borçluyuz</div>
+              {canIslem && (
+                <div className="fld">
+                  <span className="cap">Yeni kayıt</span>
+                  <input className="in" style={{ fontSize: 14, fontWeight: 400, marginTop: 8, marginBottom: 8 }} placeholder="Kişi / firma" value={bKisi} onChange={(e) => setBKisi(e.target.value)} />
+                  <div className="seg" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: 8 }}>
+                    <div className={`s ${bYon === 'alacak' ? 'on' : ''}`} onClick={() => setBYon('alacak')}>Bize borçlu</div>
+                    <div className={`s ${bYon === 'verecek' ? 'on' : ''}`} onClick={() => setBYon('verecek')}>Biz borçluyuz</div>
+                  </div>
+                  <input className="in tnum" inputMode="numeric" placeholder="Tutar" value={bTutar} onChange={(e) => setBTutar(fmtIn(e.target.value))} style={{ marginBottom: 8 }} />
+                  <input className="in" style={{ fontSize: 14, fontWeight: 400 }} placeholder="Açıklama (ops.)" value={bAciklama} onChange={(e) => setBAciklama(e.target.value)} />
+                  <button className="save" disabled={saving || !bKisi || parseNum(bTutar) <= 0} onClick={borcEkle} style={{ marginTop: 10 }}>Ekle</button>
                 </div>
-                <input className="in tnum" inputMode="numeric" placeholder="Tutar" value={bTutar} onChange={(e) => setBTutar(fmtIn(e.target.value))} style={{ marginBottom: 8 }} />
-                <input className="in" style={{ fontSize: 14, fontWeight: 400 }} placeholder="Açıklama (ops.)" value={bAciklama} onChange={(e) => setBAciklama(e.target.value)} />
-                <button className="save" disabled={saving || !bKisi || parseNum(bTutar) <= 0} onClick={borcEkle} style={{ marginTop: 10 }}>Ekle</button>
-              </div>
+              )}
               <div style={{ marginTop: 4 }}>
                 {(borcData.borclar || []).length === 0 && <div className="empty">Kayıt yok.</div>}
                 {(borcData.borclar || []).map((b: any) => (
@@ -1000,8 +1064,10 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
                       <div className="t">{b.kisi} <span className="potpill" style={{ color: b.yon === 'alacak' ? 'var(--pos)' : 'var(--neg)' }}>{b.yon === 'alacak' ? 'Alacak' : 'Verecek'}</span></div>
                       <div className="m">{b.aciklama || '—'} · kalan <b style={{ color: 'var(--ink)' }}>{fmt(b.kalan)} ₺</b></div>
                     </div>
-                    <button className="geri" onClick={() => { setOdemeFor(b); setOdemeTutar(String(b.kalan)); setOdemePot('nakit'); }}>{b.yon === 'alacak' ? 'Tahsil' : 'Öde'}</button>
-                    <button className="geri" onClick={() => borcSil(b.id)}>Sil</button>
+                    {canIslem && (<>
+                      <button className="geri" onClick={() => { setOdemeFor(b); setOdemeTutar(String(b.kalan)); setOdemePot('nakit'); }}>{b.yon === 'alacak' ? 'Tahsil' : 'Öde'}</button>
+                      <button className="geri" onClick={() => borcSil(b.id)}>Sil</button>
+                    </>)}
                   </div>
                 ))}
               </div>
@@ -1048,10 +1114,10 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
                   </div>
                   <div className="amt2" style={{ color: it.odendi ? 'var(--mut2)' : 'var(--ink)' }}>{fmt(it.tutar)} ₺</div>
                   {it.odendi ? <span style={{ fontSize: 11, color: 'var(--pos)', fontWeight: 650, marginLeft: 8 }}>ödendi ✓</span>
-                    : (<>
+                    : canIslem ? (<>
                         {it.tip === 'hakedis' && <button className="geri" onClick={() => hakedisSil(it)}>Sil</button>}
                         <button className="ode" onClick={() => { setOdemeItem(it); setOdemeItemPot(it.tip === 'hakedis' ? 'nakit' : 'banka'); setOdemeTutarStr(fmtIn(String(it.tutar || 0))); }}>Öde</button>
-                      </>)}
+                      </>) : null}
                 </div>
               ))}
               <div style={{ fontSize: 11, color: 'var(--mut2)', marginTop: 12, lineHeight: 1.5 }}>Maaşlar Maliyet Yönetimi'nden, <b style={{ color: 'var(--mut)' }}>hakedişler kota/rotasyondan</b> otomatik gelir; ödediğinde kasadan düşer, hakediş Hakediş Takip'te de <b style={{ color: 'var(--pos)' }}>ödendi</b> işaretlenir. <b style={{ color: 'var(--mut)' }}>Kiralar burada değil</b> — kirayı "Gider ekle" ile manuel girersin.</div>
@@ -1096,7 +1162,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
           <div className="k2sheet" style={{ maxHeight: '88vh', overflowY: 'auto' }}>
             <div className="sh"><h3>🔒 Kimler görebilir</h3><button className="close" onClick={() => setShowGorunur(false)}>×</button></div>
             {!gorunurList ? <div className="empty">Yükleniyor…</div> : (<>
-              <div style={{ fontSize: 12, color: 'var(--mut2)', marginBottom: 12, lineHeight: 1.5 }}>Her kişi için ayrı: <b style={{ color: 'var(--pos)' }}>Kasa</b> = ana kasa, <b style={{ color: '#c9b8ff' }}>Ortak</b> = ortaklar/pay dağıtımı. Sen (yönetici) her ikisini her zaman görürsün.</div>
+              <div style={{ fontSize: 12, color: 'var(--mut2)', marginBottom: 12, lineHeight: 1.5 }}>Her kişi için ayrı: <b style={{ color: 'var(--pos)' }}>Kasa</b> = görüntüleme, <b style={{ color: 'var(--amber)' }}>İşlem</b> = gider/gelir girme + ödeme yapma, <b style={{ color: '#c9b8ff' }}>Ortak</b> = ortaklar/pay dağıtımı. İşlem açılınca görüntüleme de açılır. Sen (yönetici) hepsini her zaman yaparsın.</div>
               {gorunurList.length === 0 && <div className="empty">Üst müdür / müdür / idari personel yok.</div>}
               {gorunurList.map((u: any) => (
                 <div key={u.id} className="partner">
@@ -1107,6 +1173,7 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button className="geri" style={gorunurSet.has(u.id) ? { color: 'var(--pos)', borderColor: 'var(--pos)' } : undefined} onClick={() => toggleGorunur(u.id)}>Kasa{gorunurSet.has(u.id) ? ' ✓' : ''}</button>
+                    <button className="geri" style={islemSet.has(u.id) ? { color: 'var(--amber)', borderColor: 'var(--amber)' } : undefined} onClick={() => toggleIslem(u.id)}>İşlem{islemSet.has(u.id) ? ' ✓' : ''}</button>
                     <button className="geri" style={ortakSet.has(u.id) ? { color: '#c9b8ff', borderColor: 'var(--brand)' } : undefined} onClick={() => toggleOrtak(u.id)}>Ortak{ortakSet.has(u.id) ? ' ✓' : ''}</button>
                   </div>
                 </div>

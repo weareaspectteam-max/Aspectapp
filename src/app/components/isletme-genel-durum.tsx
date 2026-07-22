@@ -98,6 +98,12 @@ const categoryLabels = {
   ribon: '🎞️ Ribon',
   fatura: '🧾 Faturalar',
   lojman: '🏘️ Lojman',
+  // Kasa P&L-dışı bilgi kategorileri (kasadan ödenen maaş/hakediş/avans vb.)
+  maas: '💼 Maaş',
+  hakedis: '🏆 Hakediş',
+  avans: '💳 Avans',
+  duzeltme: '🧮 Düzeltme',
+  borc: '⇄ Borç Ödeme',
 } as Record<string, string>;
 
 const categoryColors = {
@@ -161,6 +167,8 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   const [showIgdGuide, setShowIgdGuide] = useState(false);
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  // Kasadan yapılan P&L-dışı çıkışlar (maaş/hakediş/avans/kira ödemeleri vb.) — listede görünür, hesaba girmez
+  const [kasaBilgi, setKasaBilgi] = useState<any[]>([]);
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
   const [salaryDefs, setSalaryDefs] = useState<SalaryDef[]>([]);
 
@@ -267,6 +275,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
       if (giderRes.ok) {
         const d = await giderRes.json();
         setExpenses(d.giderler || []);
+        setKasaBilgi(d.kasaBilgi || []);
       } else {
         const e = await giderRes.json().catch(() => ({}));
         setApiError(e.error || `HTTP ${giderRes.status}`);
@@ -649,7 +658,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   };
 
   // ─── Filters ────────────────────────────
-  const getFilteredExpenses = () => {
+  const getFilteredExpenses = (list: Expense[] = expenses) => {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
     const startOfWeek = new Date(today);
@@ -660,7 +669,7 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
     const startOf6M = new Date(now.getFullYear(), now.getMonth() - 5, 1);
     const startOf1Y = new Date(now.getFullYear() - 1, now.getMonth(), 1);
 
-    return expenses.filter(exp => {
+    return list.filter(exp => {
       const d = new Date(exp.date);
       let dateMatch = true;
       switch (dateFilter) {
@@ -692,6 +701,11 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
   };
 
   const filteredExpenses = getFilteredExpenses();
+  // Bilgi kayıtları aynı tarih/kategori/arama filtresinden geçer ama HİÇBİR toplama katılmaz
+  const bilgiKayitlari = getFilteredExpenses(kasaBilgi as any);
+  // Görünen liste: P&L kayıtları + kasa bilgi kayıtları (rozetli) — tarihe göre karışık sıralı
+  const listeKayitlari: any[] = [...filteredExpenses, ...bilgiKayitlari]
+    .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
   // Döviz → TL çevirme
   const toTL = (amount: number, currency?: string) => {
     if (!currency || currency === 'TRY') return amount;
@@ -1636,18 +1650,17 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
           {/* ── Gider Listesi ── */}
           <div>
             <h3 className="font-bold text-white text-base mb-3">
-              📋 Gider Listesi <span className="text-gray-400 font-normal text-sm">({filteredExpenses.length} kayıt)</span>
+              📋 Gider Listesi <span className="text-gray-400 font-normal text-sm">({filteredExpenses.length} kayıt{bilgiKayitlari.length > 0 ? ` + ${bilgiKayitlari.length} kasa ödemesi` : ''})</span>
             </h3>
 
-            {filteredExpenses.length === 0 ? (
+            {listeKayitlari.length === 0 ? (
               <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-10 text-center">
                 <div className="text-4xl mb-3">📭</div>
                 <p className="text-gray-400">Bu dönemde kayıt bulunamadı</p>
               </div>
             ) : (
               <>
-                {filteredExpenses
-                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                {listeKayitlari
                   .slice(0, displayLimit)
                   .map(expense => (
                     <div key={expense.id} className="mb-2 backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-4 hover:bg-white/8 transition-all">
@@ -1679,10 +1692,13 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                               </div>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-2 mb-1">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
                               <span className={`text-xs font-semibold px-2 py-1 rounded-lg bg-gradient-to-r ${(categoryColors[expense.category] || categoryColors.diger).bg} border ${(categoryColors[expense.category] || categoryColors.diger).border} ${(categoryColors[expense.category] || categoryColors.diger).text}`}>
                                 {categoryLabels[expense.category] || `🏢 ${expense.category}`}
                               </span>
+                              {(expense as any).plHaric && (
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-300" title="Kasadan yapılan ödeme — gideri tahakkuk kanalından zaten sayıldığı için toplama katılmaz">💸 Kasa ödemesi · hesaba katılmaz</span>
+                              )}
                             </div>
                           )}
 
@@ -1726,12 +1742,12 @@ export function IsletmeGenelDurum({ userName, userRole, accessToken, onNavigate 
                     </div>
                   ))}
 
-                {filteredExpenses.length > displayLimit && (
+                {listeKayitlari.length > displayLimit && (
                   <button
                     onClick={() => setDisplayLimit(p => p + 15)}
                     className="w-full bg-white/5 border border-white/15 text-gray-300 font-semibold px-6 py-3 rounded-xl hover:bg-white/10 transition-colors text-sm"
                   >
-                    📄 Daha Fazla Yükle ({filteredExpenses.length - displayLimit} kayıt daha)
+                    📄 Daha Fazla Yükle ({listeKayitlari.length - displayLimit} kayıt daha)
                   </button>
                 )}
               </>
