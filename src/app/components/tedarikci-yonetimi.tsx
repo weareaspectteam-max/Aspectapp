@@ -838,29 +838,53 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
     );
   };
 
-  const renderOdemeTab = () => (
-    <div className="space-y-3">
-      {odemeler.map((o: any) => (
-        <div key={o.id} className="p-4 rounded-2xl" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-white font-semibold text-sm">{o.cariName}</p>
-            <p className="text-white font-bold text-sm">{(o.amount || 0).toLocaleString('tr-TR')} {o.currency}</p>
-          </div>
-          <div className="flex items-center justify-between">
-            <p className="text-white/40 text-xs">{o.paymentDate} · {o.paymentMethod}</p>
-            <div className="flex items-center gap-2">
-              {o.supplierConfirmed ? (
-                <span className="text-green-400 text-xs flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Tedarikçi Onayladı</span>
-              ) : (
-                <span className="text-amber-400 text-xs flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> Onay Bekliyor</span>
-              )}
+  const renderOdemeTab = () => {
+    // İptal edilen ödemeler listede GÖSTERİLMEZ (kayıt arşivde durur, bakiye/kasa zaten düzeltildi)
+    const gorunurOdemeler = odemeler.filter((o: any) => o.status !== 'iptal');
+    return (
+      <div className="space-y-3">
+        {gorunurOdemeler.map((o: any) => (
+          <div key={o.id} className="p-4 rounded-2xl" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-white font-semibold text-sm">{o.cariName}</p>
+              <p className="text-white font-bold text-sm">{(o.amount || 0).toLocaleString('tr-TR')} {o.currency}</p>
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-white/40 text-xs">{o.paymentDate} · {o.paymentMethod}</p>
+              <div className="flex items-center gap-2">
+                {o.supplierConfirmed ? (
+                  <span className="text-green-400 text-xs flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Onaylandı</span>
+                ) : o.status === 'reddedildi' ? (
+                  <span className="text-red-400 text-xs">Reddedildi</span>
+                ) : (
+                  <span className="text-amber-400 text-xs flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> Onay Bekliyor</span>
+                )}
+                {userRole === 'yonetici' && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`₺${(o.amount || 0).toLocaleString('tr-TR')} ödeme silinsin mi?\nBakiye, kasa ve İGD otomatik düzeltilir.`)) return;
+                      setActionLoading('odemesil');
+                      try {
+                        const r = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/odemeler/${o.id}/iptal`), { method: 'POST', headers: getHeaders(), body: JSON.stringify({}) });
+                        const d = await r.json().catch(() => ({}));
+                        if (!r.ok) alert(d.error || 'Silinemedi');
+                        fetchData();
+                      } finally { setActionLoading(''); }
+                    }}
+                    disabled={actionLoading === 'odemesil'}
+                    className="text-red-400/70 hover:text-red-400 text-sm px-1 disabled:opacity-40"
+                    title="Ödemeyi sil (sadece yönetici)">
+                    🗑
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      ))}
-      {odemeler.length === 0 && <p className="text-center text-white/30 py-8 text-sm">Henüz ödeme yok</p>}
-    </div>
-  );
+        ))}
+        {gorunurOdemeler.length === 0 && <p className="text-center text-white/30 py-8 text-sm">Henüz ödeme yok</p>}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen pb-28 px-4 pt-6">
