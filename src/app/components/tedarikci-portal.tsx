@@ -49,6 +49,9 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
   reddedildi:     { label: 'Reddedildi',       color: '#f87171', bg: 'rgba(248,113,113,0.15)' },
 };
 
+/* Türkçe tutar girişi: "30.000" = otuz bin (nokta binlik ayraç, ondalık DEĞİL). Tam TL. */
+const trTutar = (v: any) => parseInt(String(v ?? '').replace(/\D/g, '')) || 0;
+
 const glassBg = 'rgba(255,255,255,0.04)';
 const glassBorder = 'rgba(255,255,255,0.08)';
 
@@ -377,7 +380,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                   className="w-full px-2 py-1.5 rounded-lg text-center text-amber-400 bg-white/10 border border-amber-400/20 text-xs font-bold" placeholder="₺ Teklif fiyatı (opsiyonel)" />
                 <motion.button whileTap={{ scale: 0.95 }} onClick={async () => {
                   const items = karsiItems.filter(i => i.quantity > 0 && i.productName);
-                  const fiyat = karsiFiyat ? parseFloat(karsiFiyat) : items.reduce((a, i) => a + (i.quantity * i.unitPrice), 0);
+                  const fiyat = karsiFiyat ? trTutar(karsiFiyat) : items.reduce((a, i) => a + (i.quantity * i.unitPrice), 0);
                   setActionLoading('karsi');
                   await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`), { method: 'POST', headers: headers(), body: JSON.stringify({ fiyat, items }) });
                   setShowKarsiTeklif(false); setKarsiItems([]); setKarsiFiyat('');
@@ -849,13 +852,13 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                           <div className="flex items-center gap-1">
                             <span className="text-[10px] text-[#9dd9ea]">Tam</span>
                             <input type="number" min={0} value={tamIdx >= 0 ? (fiyatItems[tamIdx].yeniFiyat || '') : ''}
-                              onChange={e => { if (tamIdx >= 0) setFiyatItems(prev => prev.map((p, i) => i === tamIdx ? { ...p, yeniFiyat: parseFloat(e.target.value) || 0 } : p)); }}
+                              onChange={e => { if (tamIdx >= 0) setFiyatItems(prev => prev.map((p, i) => i === tamIdx ? { ...p, yeniFiyat: trTutar(e.target.value) } : p)); }}
                               className="w-14 px-1 py-1 rounded text-center text-[#9dd9ea] bg-[#9dd9ea]/10 border border-[#9dd9ea]/20 text-xs" placeholder="0" />
                           </div>
                           <div className="flex items-center gap-1">
                             <span className="text-[10px] text-[#ffd4a3]">Yarım</span>
                             <input type="number" min={0} value={yarimIdx >= 0 ? (fiyatItems[yarimIdx].yeniFiyat || '') : ''}
-                              onChange={e => { if (yarimIdx >= 0) setFiyatItems(prev => prev.map((p, i) => i === yarimIdx ? { ...p, yeniFiyat: parseFloat(e.target.value) || 0 } : p)); }}
+                              onChange={e => { if (yarimIdx >= 0) setFiyatItems(prev => prev.map((p, i) => i === yarimIdx ? { ...p, yeniFiyat: trTutar(e.target.value) } : p)); }}
                               className="w-14 px-1 py-1 rounded text-center text-[#ffd4a3] bg-[#ffd4a3]/10 border border-[#ffd4a3]/20 text-xs" placeholder="0" />
                           </div>
                         </div>
@@ -1112,7 +1115,7 @@ export function TedarikciPortal({ userName, userId, accessToken, linkedCompanies
                     try {
                       await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teklif`), {
                         method: 'POST', headers: headers(),
-                        body: JSON.stringify({ items, currency: 'TRY', notes: offerNotes, teklifFiyat: parseFloat(offerTeklifFiyat) }),
+                        body: JSON.stringify({ items, currency: 'TRY', notes: offerNotes, teklifFiyat: trTutar(offerTeklifFiyat) }),
                       });
                       setShowOfferForm(false); fetchPortal();
                     } finally { setActionLoading(''); }

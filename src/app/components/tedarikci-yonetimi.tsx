@@ -39,6 +39,9 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
 const glassBg = 'rgba(255,255,255,0.04)';
 const glassBorder = 'rgba(255,255,255,0.08)';
 
+/* Türkçe tutar girişi: "30.000" = otuz bin (nokta binlik ayraç, ondalık DEĞİL). Tam TL. */
+const trTutar = (v: any) => parseInt(String(v ?? '').replace(/\D/g, '')) || 0;
+
 const TABS: Array<{ key: TabKey; label: string; icon: any; color: string }> = [
   { key: 'tedarikci', label: 'Tedarikçiler', icon: Users,    color: '#f97316' },
   { key: 'siparis',   label: 'Siparişler',   icon: Package,  color: '#60a5fa' },
@@ -209,7 +212,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
         // Taslağa kalem ekle
         const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${mevcutTaslak.id}/kalem-ekle`), {
           method: 'PUT', headers: getHeaders(),
-          body: JSON.stringify({ items, teklifFiyat: orderTeklifFiyat ? parseFloat(orderTeklifFiyat) : null }),
+          body: JSON.stringify({ items, teklifFiyat: orderTeklifFiyat ? trTutar(orderTeklifFiyat) : null }),
         });
         const d = await res.json();
         if (!res.ok) { setError(d.error); return; }
@@ -217,7 +220,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
       } else {
         const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler`), {
           method: 'POST', headers: getHeaders(),
-          body: JSON.stringify({ cariId: orderCariId, items, currency: orderCurrency, notes: orderNotes, teklifFiyat: orderTeklifFiyat ? parseFloat(orderTeklifFiyat) : null }),
+          body: JSON.stringify({ cariId: orderCariId, items, currency: orderCurrency, notes: orderNotes, teklifFiyat: orderTeklifFiyat ? trTutar(orderTeklifFiyat) : null }),
         });
         const d = await res.json();
         if (!res.ok) { setError(d.error); return; }
@@ -531,7 +534,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                             <span className="text-white text-[10px]">{item.productName}</span>
                             <span className="text-center text-[9px] text-amber-400 font-bold">{depo}</span>
                             <span className="text-center text-[9px] text-cyan-400 font-bold">{genel}</span>
-                            <input type="number" min={0} value={item.unitPrice || ''} onChange={e => setKarsiTeklifItems(prev => prev.map((p, i) => i === idx ? { ...p, unitPrice: parseFloat(e.target.value) || 0 } : p))}
+                            <input type="number" min={0} value={item.unitPrice || ''} onChange={e => setKarsiTeklifItems(prev => prev.map((p, i) => i === idx ? { ...p, unitPrice: trTutar(e.target.value) } : p))}
                               className="w-full px-1 py-0.5 rounded text-center text-green-400 bg-white/10 border border-white/20 text-[9px]" placeholder="₺" />
                             <input type="number" min={0} value={item.quantity || ''} onChange={e => setKarsiTeklifItems(prev => prev.map((p, i) => i === idx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p))}
                               className="w-full px-1 py-0.5 rounded text-center text-white bg-white/10 border border-white/20 text-[10px]" placeholder="0" />
@@ -549,7 +552,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                       </div>
                       <motion.button whileTap={{ scale: 0.95 }} onClick={async () => {
                         const items = karsiTeklifItems.filter(i => i.quantity > 0 && i.productName);
-                        const fiyat = karsiTeklifFiyat ? parseFloat(karsiTeklifFiyat) : items.reduce((a, i) => a + (i.quantity * i.unitPrice), 0);
+                        const fiyat = karsiTeklifFiyat ? trTutar(karsiTeklifFiyat) : items.reduce((a, i) => a + (i.quantity * i.unitPrice), 0);
                         await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler/${s.id}/teklif`), { method: 'POST', headers: getHeaders(), body: JSON.stringify({ fiyat, items }) });
                         setKarsiTeklifItems([]); setKarsiTeklifFiyat('');
                         fetchData(); setSelectedSiparis(null);
@@ -1302,12 +1305,32 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                           <p className="text-white font-semibold text-sm">Ödeme Geçmişi</p>
                         </div>
                         {filtreliOdemeler.map((o: any, i: number) => (
-                          <div key={i} className="px-4 py-2 flex justify-between border-b" style={{ borderColor: glassBorder }}>
+                          <div key={i} className="px-4 py-2 flex justify-between items-center border-b" style={{ borderColor: glassBorder }}>
                             <div>
                               <span className="text-white/60 text-xs">{new Date(o.paymentDate || o.createdAt).toLocaleDateString('tr-TR')}</span>
                               {o.tip === 'on_odeme' && <span className="text-orange-400 text-[9px] ml-1">ön ödeme</span>}
                             </div>
-                            <span className="text-emerald-400 font-bold text-xs">₺{(o.amount || 0).toLocaleString('tr-TR')}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-emerald-400 font-bold text-xs">₺{(o.amount || 0).toLocaleString('tr-TR')}</span>
+                              {userRole === 'yonetici' && (
+                                <button
+                                  onClick={async () => {
+                                    if (!confirm(`₺${(o.amount || 0).toLocaleString('tr-TR')} ödeme silinsin mi?\nBakiye, kasa ve İGD otomatik düzeltilir.`)) return;
+                                    setActionLoading('odemesil');
+                                    try {
+                                      const r = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/odemeler/${o.id}/iptal`), { method: 'POST', headers: getHeaders(), body: JSON.stringify({}) });
+                                      const d = await r.json().catch(() => ({}));
+                                      if (!r.ok) alert(d.error || 'Silinemedi');
+                                      fetchData();
+                                    } finally { setActionLoading(''); }
+                                  }}
+                                  disabled={actionLoading === 'odemesil'}
+                                  className="text-red-400/70 hover:text-red-400 text-sm px-1 disabled:opacity-40"
+                                  title="Ödemeyi sil (sadece yönetici)">
+                                  🗑
+                                </button>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1353,7 +1376,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                             try {
                               const _onRes = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/odeme-genel`), {
                                 method: 'POST', headers: getHeaders(),
-                                body: JSON.stringify({ cariId: selectedTedarikci.id, amount: parseFloat(onOdemeTutar), aciklama: onOdemeAciklama || '' }),
+                                body: JSON.stringify({ cariId: selectedTedarikci.id, amount: trTutar(onOdemeTutar), aciklama: onOdemeAciklama || '' }),
                               });
                               const _d = await _onRes.json().catch(() => ({}));
                               if (!_onRes.ok) { alert(_d.error || 'Ödeme kaydedilemedi'); return; }
@@ -1555,7 +1578,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                         onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, quantity: parseInt(e.target.value) || 0 } : p))}
                         className={inputStyle + ' w-20 text-center'} />
                       <input type="number" placeholder="Fiyat" value={item.unitPrice || ''}
-                        onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, unitPrice: parseFloat(e.target.value) || 0 } : p))}
+                        onChange={e => setOrderItems(prev => prev.map((p, i) => i === idx ? { ...p, unitPrice: trTutar(e.target.value) } : p))}
                         className={inputStyle + ' w-24 text-center'} />
                     </div>
                   ))}
@@ -1615,7 +1638,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                 <h2 className="text-white font-bold text-lg">Ödeme Kaydet</h2>
                 <button onClick={() => setShowPayment(null)}><X className="w-5 h-5 text-white/40" /></button>
               </div>
-              <input type="number" placeholder="Tutar" value={payAmount || ''} onChange={e => setPayAmount(parseFloat(e.target.value) || 0)} className={inputStyle} />
+              <input type="number" placeholder="Tutar" value={payAmount || ''} onChange={e => setPayAmount(trTutar(e.target.value))} className={inputStyle} />
               <select value={payCurrency} onChange={e => setPayCurrency(e.target.value)} className={inputStyle + ' bg-white/10'}>
                 {['TRY', 'USD', 'EUR', 'GBP'].map(cur => <option key={cur} value={cur} className="bg-gray-900">{cur}</option>)}
               </select>
@@ -1681,7 +1704,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                         <span className="text-[10px] text-[#9dd9ea]">Tam</span>
                         <span className="text-white/30 text-[10px]">₺</span>
                         <input type="number" min={0} value={tamIdx >= 0 ? (priceListItems[tamIdx].fiyat || '') : ''}
-                          onChange={e => { if (tamIdx >= 0) setPriceListItems(prev => prev.map((p, i) => i === tamIdx ? { ...p, fiyat: parseFloat(e.target.value) || 0 } : p)); }}
+                          onChange={e => { if (tamIdx >= 0) setPriceListItems(prev => prev.map((p, i) => i === tamIdx ? { ...p, fiyat: trTutar(e.target.value) } : p)); }}
                           className="w-16 px-1.5 py-1 rounded-lg text-center text-[#9dd9ea] bg-[#9dd9ea]/10 border border-[#9dd9ea]/20 text-xs"
                           placeholder="0" />
                       </div>
@@ -1689,7 +1712,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                         <span className="text-[10px] text-[#ffd4a3]">Yarım</span>
                         <span className="text-white/30 text-[10px]">₺</span>
                         <input type="number" min={0} value={yarimIdx >= 0 ? (priceListItems[yarimIdx].fiyat || '') : ''}
-                          onChange={e => { if (yarimIdx >= 0) setPriceListItems(prev => prev.map((p, i) => i === yarimIdx ? { ...p, fiyat: parseFloat(e.target.value) || 0 } : p)); }}
+                          onChange={e => { if (yarimIdx >= 0) setPriceListItems(prev => prev.map((p, i) => i === yarimIdx ? { ...p, fiyat: trTutar(e.target.value) } : p)); }}
                           className="w-16 px-1.5 py-1 rounded-lg text-center text-[#ffd4a3] bg-[#ffd4a3]/10 border border-[#ffd4a3]/20 text-xs"
                           placeholder="0" />
                       </div>
@@ -1706,7 +1729,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
                       <span className="text-white text-xs font-semibold flex-1">Paspartu</span>
                       <span className="text-white/30 text-[10px]">₺</span>
                       <input type="number" min={0} value={priceListItems[pasIdx].fiyat || ''}
-                        onChange={e => setPriceListItems(prev => prev.map((p, i) => i === pasIdx ? { ...p, fiyat: parseFloat(e.target.value) || 0 } : p))}
+                        onChange={e => setPriceListItems(prev => prev.map((p, i) => i === pasIdx ? { ...p, fiyat: trTutar(e.target.value) } : p))}
                         className="w-20 px-2 py-1 rounded-lg text-center text-green-400 bg-white/10 border border-white/20 text-xs"
                         placeholder="0" />
                     </div>

@@ -18815,8 +18815,8 @@ app.post("/make-server-4da0b637/kasa2/gider", async (c) => {
     const notMetin = (body.aciklama || "").trim();
     // Kategori etiketi + bağlam (kime/neye) → ledger'da "Kira — Zoka", "Avans — Ayşe" gibi görünür
     const _katLabel: Record<string, string> = { yakit: "Yakıt", market: "Market", malzeme: "Albüm", ekipman: "Ekipman", ribon: "Ribon", avans: "Avans", hakedis: "Hakediş", kira: "Mekan kirası", fatura: "Faturalar", lojman: "Lojman", maas: "Maaş", duzeltme: "Düzeltme", diger: "Diğer" };
-    // Kişiye bağlanan kategoriler: avans/maaş/hakediş/lojman — kime ödendiği etikette + extra_data'da izlenir
-    const _kisiliKat = ["avans", "maas", "hakedis", "lojman"].includes(kategori);
+    // Kişiye bağlanan kategoriler: avans/maaş/hakediş — kime ödendiği etikette + extra_data'da izlenir
+    const _kisiliKat = ["avans", "maas", "hakedis"].includes(kategori);
     const _ctx = _kisiliKat && body.personelAdi ? ` — ${String(body.personelAdi).trim()}`
       : kategori === "kira" && body.mekanAdi ? ` — ${String(body.mekanAdi).trim()}` : "";
     const _label = (_katLabel[kategori] || kategori) + _ctx;
@@ -21954,6 +21954,49 @@ app.post("/make-server-4da0b637/tedarikci/odemeler", async (c) => {
     const cari = await ckv.get(`cost_cari_${siparis.cariId}`);
     if (cari?.linkedUserId) await createNotification(cari.linkedUserId, "odeme_yapildi", "Ödeme Kaydedildi", `${amount} ${currency || "TRY"} ödeme kaydedildi.`, { siparisId, odemeId }, companyId);
     return c.json({ ok: true, odeme });
+  } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// POST /tedarikci/odemeler/:id/iptal — SADECE YÖNETİCİ. Ödemeyi iptal eder (kayıt silinmez, iz kalır):
+// bakiye düzelir (iptal ödemeler sayılmaz), kasaya ters giriş yazılır, İGD'ye negatif düzeltme düşer.
+app.post("/make-server-4da0b637/tedarikci/odemeler/:id/iptal", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (callerUser.user_metadata?.role !== "yonetici") return c.json({ error: "Sadece yönetici ödeme silebilir." }, 403);
+    const companyId = getCompanyId(callerUser);
+    const ckv = companyKvFor(companyId);
+    const rawOdemeId = c.req.param("id");
+    const tumOdemeIpt = await getSupplierPayments(companyId, ckv);
+    const odeme = (tumOdemeIpt || []).find((o: any) => o.id === rawOdemeId || o.id === `tedarikci_odeme_${rawOdemeId}`);
+    if (!odeme) return c.json({ error: "Ödeme bulunamadı." }, 404);
+    if (odeme.status === "iptal") return c.json({ error: "Bu ödeme zaten iptal edilmiş." }, 400);
+    const now = new Date().toISOString();
+    const yapan = callerUser.user_metadata?.full_name || "";
+    const tutarIpt = Math.round(Number(odeme.amount) || 0);
+    odeme.status = "iptal";
+    odeme.iptalAt = now;
+    odeme.iptalBy = yapan;
+    await saveSupplierPayment(companyId, ckv, odeme);
+    // Kasaya ters giriş (ödeme hangi pottan çıktıysa oraya geri) — "banka+nakit" karışıksa bankaya
+    const potIpt = String(odeme.paymentMethod || "").toLowerCase() === "nakit" ? "nakit" : "banka";
+    try { await kasaHareketYaz(companyId, { tarih: now.slice(0, 10), yon: "giris", pot: potIpt, tutar: tutarIpt, kategori: "tedarikci", kaynak: "tedarikci_odeme_iptal", kaynak_id: odeme.id, aciklama: `Ödeme iptali — ${odeme.cariName || ""} (₺${tutarIpt.toLocaleString("tr-TR")} geri)`, olusturan: yapan, olusturan_id: callerUser.id }); } catch (e) { console.log("[kasa2 odeme iptal]", e); }
+    // İGD negatif düzeltme (kâr/zarar düzelir)
+    const duzeltmeId = `isletme_gider_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    await ckv.set(duzeltmeId, { id: duzeltmeId.replace("isletme_gider_", ""), personelAdi: odeme.cariName || "", category: "tedarikci", amount: -tutarIpt, currency: "TRY", date: now.slice(0, 10), description: `Ödeme iptali (düzeltme): ${odeme.cariName || ""}`, created_at: now, created_by: yapan, odemeTipi: "iptal_duzeltme", cariId: odeme.cariId });
+    // Sipariş loguna işle
+    if (odeme.siparisId) {
+      const sipIpt = await getOrder(companyId, ckv, odeme.siparisId).catch(() => null);
+      if (sipIpt) {
+        sipIpt.loglar = [...(sipIpt.loglar || []), { tarih: now, kisi: yapan, taraf: "admin", mesaj: `₺${tutarIpt.toLocaleString("tr-TR")} ödeme İPTAL edildi (yönetici)` }];
+        sipIpt.updatedAt = now;
+        await saveOrder(companyId, ckv, sipIpt);
+      }
+    }
+    const cariIpt = await ckv.get(`cost_cari_${odeme.cariId}`).catch(() => null);
+    if (cariIpt?.linkedUserId) await createNotification(cariIpt.linkedUserId, "odeme_iptal", "Ödeme İptal Edildi", `₺${tutarIpt.toLocaleString("tr-TR")} tutarındaki ödeme kaydı iptal edildi.`, { cariId: odeme.cariId }, companyId);
+    console.log(`[Tedarikci] Ödeme iptal: ${odeme.id} ₺${tutarIpt} by ${yapan}`);
+    return c.json({ ok: true });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
