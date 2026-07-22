@@ -21530,6 +21530,20 @@ app.get("/make-server-4da0b637/tedarikci/siparisler", async (c) => {
       if (!resolved) return c.json({ error: "Geçersiz şirket." }, 403);
       const all = await getOrders(resolved.companyId, resolved.ckv, { vendorId: resolved.cariId });
       siparisler = (all || []).filter((s) => s.status !== "taslak");
+    } else if (callerRole === "operasyon") {
+      // operasyon: sipariş listesini PARASIZ görür — adet/durum/teslimat ilerlemesi var, fiyat/teklif/log yok
+      const companyId = getCompanyId(callerUser);
+      const ckv = companyKvFor(companyId);
+      const all = await getOrders(companyId, ckv);
+      siparisler = (all || []).map((s: any) => ({
+        ...s,
+        items: (s.items || []).map((i: any) => ({ ...i, unitPrice: 0 })),
+        totalAmount: 0,
+        teklifFiyat: null,
+        teklifler: [],
+        teklifDurum: null,
+        loglar: [], // log mesajları tutar içerebilir — operasyona gönderilmez
+      }));
     } else if (hasPermission(callerRole, ["yonetici", "ust-mudur", "mudur"]) || (await tedarikciYetkiliMi(callerUser))) {
       const companyId = getCompanyId(callerUser);
       const ckv = companyKvFor(companyId);

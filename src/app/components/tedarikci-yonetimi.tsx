@@ -2084,13 +2084,23 @@ function OperasyonTeslimatView({ userName, accessToken }: { userName: string; ac
   const [sipMesaj, setSipMesaj] = useState('');
   const SIP_URUNLER = [3, 5, 7, 9, 11, 13, 15].flatMap(s => [`${s} Kare Tam`, `${s} Kare Yarım`]).concat(['Paspartu']);
 
+  // Sipariş listesi (parasız — backend operasyon için fiyat/teklif/log alanlarını soyar)
+  const [opSiparisler, setOpSiparisler] = useState<any[]>([]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teslimatlar`), { headers: buildHeaders(accessToken) });
+      const [res, sipRes] = await Promise.all([
+        fetch(appendGhostParam(`${SERVER_URL}/tedarikci/teslimatlar`), { headers: buildHeaders(accessToken) }),
+        fetch(appendGhostParam(`${SERVER_URL}/tedarikci/siparisler`), { headers: buildHeaders(accessToken) }).catch(() => null),
+      ]);
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Veri alınamadı');
       setTeslimatlar((d.teslimatlar || []).sort((a: any, b: any) => (b.createdAt || '').localeCompare(a.createdAt || '')));
+      if (sipRes?.ok) {
+        const sd = await sipRes.json().catch(() => ({}));
+        setOpSiparisler(sd.siparisler || []);
+      }
       setErr('');
     } catch (e: any) { setErr(e.message); } finally { setLoading(false); }
   }, [accessToken]);
@@ -2301,6 +2311,42 @@ function OperasyonTeslimatView({ userName, accessToken }: { userName: string; ac
           </div>
           {bekleyen.length === 0 && <div className="rounded-2xl p-6 text-center text-white/40 text-sm" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>Bekleyen teslimat yok 👍</div>}
           {bekleyen.map(t => kart(t, true))}
+
+          {/* ── Siparişler (parasız) — durum + teslimat ilerlemesi ── */}
+          {opSiparisler.length > 0 && (() => {
+            const aktifMi = (s: any) => ['gonderildi', 'onaylandi', 'kismen_teslim', 'teslim_edildi'].includes(s.status);
+            const sirali = [...opSiparisler].sort((a: any, b: any) =>
+              (aktifMi(a) ? 0 : 1) - (aktifMi(b) ? 0 : 1) || (b.createdAt || '').localeCompare(a.createdAt || '')
+            ).slice(0, 20);
+            return (
+              <>
+                <h2 className="text-white font-bold text-sm pt-2">📋 Siparişler</h2>
+                {sirali.map((s: any) => {
+                  const sc = STATUS_CONFIG[s.status] || STATUS_CONFIG.taslak;
+                  const totalQty = (s.items || []).reduce((a: number, i: any) => a + (i.quantity || 0), 0);
+                  const deliveredQty = (s.items || []).reduce((a: number, i: any) => a + (i.deliveredQuantity || 0), 0);
+                  const pct = totalQty > 0 ? Math.min(100, (deliveredQty / totalQty) * 100) : 0;
+                  return (
+                    <div key={s.id} className="rounded-2xl p-3 space-y-1.5" style={{ background: glassBg, border: `1px solid ${glassBorder}`, opacity: aktifMi(s) ? 1 : 0.6 }}>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-white text-xs font-semibold truncate flex-1">{s.cariName}</p>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0" style={{ background: sc.bg, color: sc.color }}>{sc.label}</span>
+                      </div>
+                      <p className="text-white/50 text-[11px]">{(s.items || []).filter((i: any) => i.quantity > 0).map((i: any) => `${i.productName} ×${i.quantity}`).join(', ')}</p>
+                      {totalQty > 0 && ['onaylandi', 'kismen_teslim', 'teslim_edildi', 'tamamlandi'].includes(s.status) && (
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-green-500 to-emerald-400" style={{ width: `${pct}%` }} /></div>
+                          <span className="text-[10px] text-white/40">{deliveredQty}/{totalQty}</span>
+                        </div>
+                      )}
+                      <p className="text-white/25 text-[10px]">{s.createdAt ? new Date(s.createdAt).toLocaleDateString('tr-TR') : ''}</p>
+                    </div>
+                  );
+                })}
+              </>
+            );
+          })()}
+
           {gecmis.length > 0 && (<>
             <h2 className="text-white/60 font-bold text-sm pt-2">Son İşlenenler</h2>
             {gecmis.map(t => kart(t, false))}
