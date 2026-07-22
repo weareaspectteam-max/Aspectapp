@@ -7353,6 +7353,73 @@ app.post("/make-server-4da0b637/bozuk/mekan-cikar", async (c) => {
 });
 
 // ──────────────────────────────────────────
+// BOZUK: Mekandan depoya taşı — bozuk boru hattının 2. adımı
+// POST /make-server-4da0b637/bozuk/depoya-tasi
+// Body: { mekanId: string, kalemler: [{ alan: string, miktar: number }], not?: string }
+// Mekan bozuk bakiyesinden düşer, depo bozuk kutusuna ekler (fiziksel toplama günü basılır)
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/bozuk/depoya-tasi", async (c) => {
+  try {
+    const user = await verifyToken(c);
+    if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+    const role = user.user_metadata?.role;
+    if (!["admin", "yonetici", "ust-mudur", "mudur", "operasyon"].includes(role)) return c.json({ error: "Yalnızca yönetici, müdür ve operasyon işlem yapabilir." }, 403);
+
+    const { mekanId, kalemler, not: notText } = await c.req.json();
+    if (!mekanId) return c.json({ error: "mekanId zorunludur." }, 400);
+    if (!Array.isArray(kalemler) || kalemler.length === 0) return c.json({ error: "En az bir kalem zorunludur." }, 400);
+    for (const k of kalemler) {
+      if (!k?.alan || !BOZUK_ALBUM_ALANLAR.includes(k.alan)) return c.json({ error: `Geçersiz albüm alanı: ${k?.alan}` }, 400);
+      if (!k.miktar || Number(k.miktar) <= 0) return c.json({ error: "Her kalem için pozitif miktar zorunludur." }, 400);
+    }
+
+    const ckv = companyKvFor(getCompanyId(user));
+    const bozukKey = `mekan_bozuk_${mekanId}`;
+    const cum: any = await ckv.get(bozukKey) || { mekanId };
+
+    // Önce tüm kalemlerin yeterliliğini kontrol et — kısmi işlem olmasın
+    for (const k of kalemler) {
+      const mevcut = Number(cum[k.alan]) || 0;
+      if (mevcut < Number(k.miktar)) return c.json({ error: `Yetersiz bozuk stok (${k.alan}). Mevcut: ${mevcut}, İstenen: ${k.miktar}` }, 400);
+    }
+
+    const depoStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
+    if (!depoStok.bozuk || typeof depoStok.bozuk !== "object") depoStok.bozuk = {};
+
+    const tasinan: Record<string, number> = {};
+    for (const k of kalemler) {
+      const miktar = Number(k.miktar);
+      cum[k.alan] = (Number(cum[k.alan]) || 0) - miktar;
+      depoStok.bozuk[k.alan] = (Number(depoStok.bozuk[k.alan]) || 0) + miktar;
+      tasinan[k.alan] = miktar;
+    }
+    cum.mekanId = mekanId;
+    cum.guncellenmeTarihi = new Date().toISOString();
+    depoStok.guncellenmeTarihi = new Date().toISOString();
+    await ckv.set(bozukKey, cum);
+    await ckv.set("depo_stok", depoStok);
+
+    const hareket = {
+      id: `bozuk_hareket_${Date.now()}`,
+      tip: "depoya_tasima",
+      mekanId,
+      kalemler: tasinan,
+      not: notText || "",
+      tarih: new Date().toISOString(),
+      kullaniciId: user.id,
+      kullaniciAdi: user.user_metadata?.full_name || user.email,
+    };
+    await ckv.set(hareket.id, hareket);
+
+    console.log(`Bozuk depoya taşındı: ${mekanId} → depo | ${JSON.stringify(tasinan)} (${hareket.kullaniciAdi})`);
+    return c.json({ basarili: true, mekanBozuk: cum, depoBozuk: depoStok.bozuk, hareket });
+  } catch (err) {
+    console.log("Bozuk depoya-tasi error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
 // STOK: Mekan / Depo stok güncelle (yönetici)
 // POST /make-server-4da0b637/stok/mekan/guncelle
 // Body: { mekanId: string, albumSayilari: Record<string,number>, ribonTakim: number }
@@ -18479,6 +18546,21 @@ const _kasa2OrtakYetki = async (user: any) => {
   const list = await _kasa2OrtakGorunur(getCompanyId(user));
   return Array.isArray(list) && list.includes(user.id);
 };
+// İşlem yetkisi (kim gider/gelir/ödeme girebilir). null = ayarlanmamış → eski davranış (tüm üst müdür).
+const _kasa2IslemList = async (companyId: string) => {
+  try {
+    const db = getAdminClient();
+    const { data } = await db.from("company_settings").select("value").eq("company_id", companyId).eq("key", "kasa2_islem").maybeSingle();
+    return data?.value ?? null;
+  } catch { return null; }
+};
+const _kasa2IslemYetki = async (user: any) => {
+  const role = user.user_metadata?.role || "personel";
+  if (role === "yonetici" || user.user_metadata?.originalRole === "superadmin") return true;
+  const list = await _kasa2IslemList(getCompanyId(user));
+  if (list === null || list === undefined) return role === "ust-mudur"; // ayarlanmamış → eski davranış
+  return Array.isArray(list) && list.includes(user.id);
+};
 
 // Satışları pot bazında topla (milat sonrası). Nakit=nakit, Banka=kart+iban.
 // refGun: "bugünün hareketleri" + giren/çıkan için hangi iş günü baz alınsın (varsayılan bugün).
@@ -18669,8 +18751,9 @@ app.get("/make-server-4da0b637/kasa2", async (c) => {
 
     const _ortakGorList = await _kasa2OrtakGorunur(companyId);
     const ortakGorebilir = role === "yonetici" || isSA || (Array.isArray(_ortakGorList) && _ortakGorList.includes(user.id));
+    const islemYapabilir = await _kasa2IslemYetki(user);
     return c.json({
-      kurulmadi: false, milat, ortakGorebilir,
+      kurulmadi: false, milat, ortakGorebilir, islemYapabilir,
       gun, bugunTarih: today, canPrev: gun > milat, canNext: gun < today,   // sol/sağ ok gezinme
       bakiye: { toplam: Math.round(nakit + banka), nakit: Math.round(nakit), banka: Math.round(banka) },
       teslimatAcigi: Math.round(teslimatAcigi),     // eksik teslim edilen nakit (kasadan düşüldü, tahsil edilince geri gelir)
@@ -18725,24 +18808,24 @@ app.post("/make-server-4da0b637/kasa2/gider", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
-    const role = user.user_metadata?.role || "personel";
-    if (!["yonetici", "ust-mudur"].includes(role) && user.user_metadata?.originalRole !== "superadmin")
-      return c.json({ error: "Yetkiniz yok." }, 403);
+    if (!(await _kasa2IslemYetki(user))) return c.json({ error: "Kasa işlem yetkin yok." }, 403);
     const companyId = getCompanyId(user);
     const body = await c.req.json();
     const kategori = body.kategori || "diger";
     const notMetin = (body.aciklama || "").trim();
     // Kategori etiketi + bağlam (kime/neye) → ledger'da "Kira — Zoka", "Avans — Ayşe" gibi görünür
     const _katLabel: Record<string, string> = { yakit: "Yakıt", market: "Market", malzeme: "Albüm", ekipman: "Ekipman", ribon: "Ribon", avans: "Avans", hakedis: "Hakediş", kira: "Mekan kirası", fatura: "Faturalar", lojman: "Lojman", maas: "Maaş", duzeltme: "Düzeltme", diger: "Diğer" };
-    const _ctx = kategori === "avans" && body.personelAdi ? ` — ${String(body.personelAdi).trim()}`
+    // Kişiye bağlanan kategoriler: avans/maaş/hakediş/lojman — kime ödendiği etikette + extra_data'da izlenir
+    const _kisiliKat = ["avans", "maas", "hakedis", "lojman"].includes(kategori);
+    const _ctx = _kisiliKat && body.personelAdi ? ` — ${String(body.personelAdi).trim()}`
       : kategori === "kira" && body.mekanAdi ? ` — ${String(body.mekanAdi).trim()}` : "";
     const _label = (_katLabel[kategori] || kategori) + _ctx;
     const aciklama = notMetin ? `${_label} · ${notMetin}` : _label;
-    const _extra = (kategori === "avans" && body.personelId) ? { personelId: body.personelId, personelAdi: body.personelAdi || "" }
+    const _extra = (_kisiliKat && (body.personelId || body.personelAdi)) ? { personelId: body.personelId || "", personelAdi: body.personelAdi || "" }
       : (kategori === "kira" && body.mekanId) ? { mekanId: body.mekanId, mekanAdi: body.mekanAdi || "" } : null;
     const tarih = body.tarih && /^\d{4}-\d{2}-\d{2}$/.test(body.tarih) ? body.tarih : bizDateTR();
     const by = user.user_metadata?.full_name || user.email || "";
-    const kaynakId = `gider_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    let kaynakId = `gider_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     const odeme = body.odeme || {};
     const parts: any[] = [];
@@ -18758,9 +18841,40 @@ app.post("/make-server-4da0b637/kasa2/gider", async (c) => {
     }
     if (parts.length === 0) return c.json({ error: "Geçerli tutar girin." }, 400);
 
+    // ── Ödemeler senkronu: manuel maaş/hakediş gideri bekleyen kalemi kapatır (çift ödeme önlenir) ──
+    // maas: kaynak_id = Ödemeler kalem key'i → kalem "ödendi" görünür (odeme-yap ile aynı iz).
+    // hakedis: kota kalemleri Hakediş Takip'te ödendi işaretlenir + tek kaynak_id (odeme-yap ile aynı).
+    let kaynak = "gider";
+    let extra: any = _extra;
+    const db = getAdminClient();
+    if (kategori === "maas" && typeof body.odemeKey === "string" && body.odemeKey.startsWith("maas_")) {
+      const { data: ex } = await db.from("kasa_hareket").select("id").eq("company_id", companyId).eq("kaynak_id", body.odemeKey).eq("iptal", false).limit(1);
+      if (ex && ex.length) return c.json({ error: "Bu maaş zaten ödenmiş görünüyor." }, 400);
+      kaynak = "maas"; kaynakId = body.odemeKey;
+    } else if (kategori === "hakedis" && Array.isArray(body.odemeKeys) && body.odemeKeys.length) {
+      const keys: any[] = body.odemeKeys;
+      const ad = String(body.personelAdi || keys[0]?.personelAdi || "").trim();
+      const kAy = String(keys[0]?.tarih || tarih).slice(0, 7);
+      const origSum = keys.reduce((s: number, d: any) => s + Math.round(Number(d.primMiktar) || 0), 0);
+      const kid = `hakedis_${encodeURIComponent(ad)}_${kAy}_${origSum}`;
+      const { data: kex } = await db.from("kasa_hareket").select("id").eq("company_id", companyId).eq("kaynak_id", kid).eq("iptal", false).limit(1);
+      if (kex && kex.length) return c.json({ error: "Bu hakediş zaten ödenmiş." }, 400);
+      const ckv = companyKvFor(companyId);
+      const now = new Date().toISOString();
+      const tumGiderler = await getAllGiderler(companyId, ckv).catch(() => []);
+      for (const d of keys) {
+        const k = d.key; if (!k) continue;
+        const amt = Math.round(Number(d.primMiktar) || 0);
+        await ckv.set(k, { key: k, odendi: true, odemeTarihi: now, odeyenKisi: user.email || user.id, personelAdi: d.personelAdi, mekanAdi: d.mekanAdi, primMiktar: amt });
+        const bg = (tumGiderler || []).find((g: any) => g.primOdemeKey === k);
+        if (bg) { bg.odemeTipi = "prim"; bg.description = `Hakediş Ödemesi ✅ ${d.personelAdi || ""} — ${d.mekanAdi || ""} ${d.tarih || tarih}`; await ckv.set(`isletme_gider_${bg.id}`, bg); }
+      }
+      kaynak = "hakedis"; kaynakId = kid; extra = { ...(_extra || {}), hakedisAy: kAy, personelAdi: ad };
+    }
+
     const yazilan = [];
     for (const p of parts) {
-      yazilan.push(await kasaHareketYaz(companyId, { tarih, yon: "cikis", pot: p.pot, tutar: p.tutar, kategori, aciklama, kaynak: "gider", kaynak_id: kaynakId, extra_data: _extra, olusturan: by, olusturan_id: user.id }));
+      yazilan.push(await kasaHareketYaz(companyId, { tarih, yon: "cikis", pot: p.pot, tutar: p.tutar, kategori, aciklama, kaynak, kaynak_id: kaynakId, extra_data: extra, olusturan: by, olusturan_id: user.id }));
     }
     return c.json({ ok: true, hareketler: yazilan });
   } catch (err) {
@@ -18774,9 +18888,7 @@ app.post("/make-server-4da0b637/kasa2/gelir", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
-    const role = user.user_metadata?.role || "personel";
-    if (!["yonetici", "ust-mudur"].includes(role) && user.user_metadata?.originalRole !== "superadmin")
-      return c.json({ error: "Yetkiniz yok." }, 403);
+    if (!(await _kasa2IslemYetki(user))) return c.json({ error: "Kasa işlem yetkin yok." }, 403);
     const companyId = getCompanyId(user);
     const body = await c.req.json();
     const pot = body.pot === "banka" ? "banka" : "nakit";
@@ -19012,8 +19124,7 @@ app.post("/make-server-4da0b637/kasa2/borclar", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
-    const role = user.user_metadata?.role || "personel";
-    if (!["yonetici", "ust-mudur"].includes(role) && user.user_metadata?.originalRole !== "superadmin") return c.json({ error: "Yetkiniz yok." }, 403);
+    if (!(await _kasa2IslemYetki(user))) return c.json({ error: "Kasa işlem yetkin yok." }, 403);
     const ckv = companyKvFor(getCompanyId(user));
     const { kisi, yon, tutar, aciklama } = await c.req.json();
     const t = Math.round(Number(tutar) || 0);
@@ -19029,8 +19140,7 @@ app.post("/make-server-4da0b637/kasa2/borclar/:id/odeme", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
-    const role = user.user_metadata?.role || "personel";
-    if (!["yonetici", "ust-mudur"].includes(role) && user.user_metadata?.originalRole !== "superadmin") return c.json({ error: "Yetkiniz yok." }, 403);
+    if (!(await _kasa2IslemYetki(user))) return c.json({ error: "Kasa işlem yetkin yok." }, 403);
     const companyId = getCompanyId(user);
     const ckv = companyKvFor(companyId);
     const { id } = c.req.param();
@@ -19054,8 +19164,7 @@ app.delete("/make-server-4da0b637/kasa2/borclar/:id", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
-    const role = user.user_metadata?.role || "personel";
-    if (!["yonetici", "ust-mudur"].includes(role) && user.user_metadata?.originalRole !== "superadmin") return c.json({ error: "Yetkiniz yok." }, 403);
+    if (!(await _kasa2IslemYetki(user))) return c.json({ error: "Kasa işlem yetkin yok." }, 403);
     const ckv = companyKvFor(getCompanyId(user));
     await ckv.del(`kasa2_borc_${c.req.param("id")}`);
     return c.json({ ok: true });
@@ -19112,7 +19221,7 @@ app.get("/make-server-4da0b637/kasa2/odemeler", async (c) => {
       const tutar = Math.max(0, base - avans);
       const key = `maas_${m.id || m.userId || m.name}_${ay}`;
       const odendi = paid.has(key);
-      items.push({ key, tip: "maas", baslik: `Maaş — ${m.name || "Personel"}`, tutar: odendi ? Math.round(paidTutar[key]) : tutar, base, avans, ay, odendi });
+      items.push({ key, tip: "maas", baslik: `Maaş — ${m.name || "Personel"}`, tutar: odendi ? Math.round(paidTutar[key]) : tutar, base, avans, ay, odendi, personelId: personId, personelAdi: m.name || "Personel" });
     }
     // ── Hakediş (prim) — kişi başı, Hakediş Takip'le AYNI hesaptan ──
     // Bekleyen = ödenmemiş kayıtların kişi bazlı toplamı; ödeyince Hakediş Takip'te de "ödendi" olur.
@@ -19163,8 +19272,7 @@ app.post("/make-server-4da0b637/kasa2/odeme-yap", async (c) => {
   try {
     const user = await verifyToken(c);
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
-    const role = user.user_metadata?.role || "personel";
-    if (!["yonetici", "ust-mudur"].includes(role) && user.user_metadata?.originalRole !== "superadmin") return c.json({ error: "Yetkiniz yok." }, 403);
+    if (!(await _kasa2IslemYetki(user))) return c.json({ error: "Kasa işlem yetkin yok." }, 403);
     const companyId = getCompanyId(user);
     const body = await c.req.json();
     const { key, tutar, pot, baslik, tip } = body;
@@ -19222,6 +19330,7 @@ app.get("/make-server-4da0b637/kasa2/gorunurluk", async (c) => {
     const companyId = getCompanyId(user);
     const gorunur = await _kasa2Gorunur(companyId);
     const ortakGorunur = await _kasa2OrtakGorunur(companyId);
+    const islemList = await _kasa2IslemList(companyId);
     const supabase = getAdminClient();
     const { data: usersData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
     const roller = ["ust-mudur", "mudur", "idari"];
@@ -19229,7 +19338,8 @@ app.get("/make-server-4da0b637/kasa2/gorunurluk", async (c) => {
       .filter((u: any) => (u.user_metadata?.company_id || "aspect") === companyId && roller.includes(u.user_metadata?.role))
       .map((u: any) => ({ id: u.id, isim: u.user_metadata?.full_name || u.email || "?", rol: u.user_metadata?.role,
         izinli: gorunur === null ? u.user_metadata?.role === "ust-mudur" : (Array.isArray(gorunur) && gorunur.includes(u.id)),
-        ortakIzinli: Array.isArray(ortakGorunur) && ortakGorunur.includes(u.id) }))
+        ortakIzinli: Array.isArray(ortakGorunur) && ortakGorunur.includes(u.id),
+        islemIzinli: islemList === null ? u.user_metadata?.role === "ust-mudur" : (Array.isArray(islemList) && islemList.includes(u.id)) }))
       .sort((a: any, b: any) => String(a.rol).localeCompare(String(b.rol)) || String(a.isim).localeCompare(String(b.isim)));
     return c.json({ kullanicilar: liste, ayarlandi: gorunur !== null });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
@@ -19242,12 +19352,13 @@ app.post("/make-server-4da0b637/kasa2/gorunurluk", async (c) => {
     if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
     if (!_kasa2YoneticiMi(user)) return c.json({ error: "Yetkiniz yok." }, 403);
     const companyId = getCompanyId(user);
-    const { gorunur, ortakGorunur } = await c.req.json();
+    const { gorunur, ortakGorunur, islem } = await c.req.json();
     if (!Array.isArray(gorunur)) return c.json({ error: "gorunur array olmalı." }, 400);
     const db = getAdminClient();
     await db.from("company_settings").upsert({ company_id: companyId, key: "kasa2_gorunur", value: gorunur, updated_at: new Date().toISOString() });
     if (Array.isArray(ortakGorunur)) await db.from("company_settings").upsert({ company_id: companyId, key: "kasa2_ortak_gorunur", value: ortakGorunur, updated_at: new Date().toISOString() });
-    return c.json({ ok: true, gorunur, ortakGorunur });
+    if (Array.isArray(islem)) await db.from("company_settings").upsert({ company_id: companyId, key: "kasa2_islem", value: islem, updated_at: new Date().toISOString() });
+    return c.json({ ok: true, gorunur, ortakGorunur, islem });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
 });
 
@@ -22304,6 +22415,153 @@ app.put("/make-server-4da0b637/tedarikci/fiyat/:cariId", async (c) => {
     }
     return c.json({ ok: true, fiyat });
   } catch (err) { return c.json({ error: `Sunucu hatası: ${err}` }, 500); }
+});
+
+// ──────────────────────────────────────────
+// TEDARİKÇİ: Bozuk albüm iadesi — depo bozuk kutusundan düş + 0₺ değişim siparişi aç
+// POST /make-server-4da0b637/tedarikci/iade
+// Body: { cariId: string, kalemler: [{ alan: string, adet: number }], not?: string }
+// Kalem adları tedarikçinin fiyat listesinden eşleştirilir (teslimat FIFO + depo girişi uyumu)
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/tedarikci/iade", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur"]) && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
+    const companyId = getCompanyId(callerUser);
+    const ckv = companyKvFor(companyId);
+
+    const { cariId, kalemler, not: notText } = await c.req.json();
+    if (!cariId) return c.json({ error: "cariId zorunludur." }, 400);
+    if (!Array.isArray(kalemler) || kalemler.length === 0) return c.json({ error: "En az bir kalem zorunludur." }, 400);
+    for (const k of kalemler) {
+      if (!k?.alan || !BOZUK_ALBUM_ALANLAR.includes(k.alan)) return c.json({ error: `Geçersiz albüm alanı: ${k?.alan}` }, 400);
+      if (!k.adet || Number(k.adet) <= 0) return c.json({ error: "Her kalem için pozitif adet zorunludur." }, 400);
+    }
+    const cari = await ckv.get(`cost_cari_${cariId}`);
+    if (!cari) return c.json({ error: "Cari bulunamadı." }, 404);
+
+    // Depo bozuk yeterlilik kontrolü — kısmi işlem olmasın
+    const depoStok: any = migrateDepoStok(await ckv.get("depo_stok") || {});
+    if (!depoStok.bozuk || typeof depoStok.bozuk !== "object") depoStok.bozuk = {};
+    for (const k of kalemler) {
+      const mevcut = Number(depoStok.bozuk[k.alan]) || 0;
+      if (mevcut < Number(k.adet)) return c.json({ error: `Yetersiz depo bozuk stoğu (${k.alan}). Mevcut: ${mevcut}, İstenen: ${k.adet}` }, 400);
+    }
+
+    // Alan → ürün adı: tedarikçinin fiyat listesindeki adı bul (boyut + tam/yarım eşleşmesi),
+    // yoksa standart ad — her iki durumda teslimat onayının depo-giriş parser'ı ile uyumlu
+    // (isim baştaki sayıdan boyutu, "tam" kelimesinden tipi çıkarır)
+    const fiyatListesi: any = await ckv.get(`tedarikci_fiyat_${cariId}`).catch(() => null);
+    const alanToProductName = (alan: string): string => {
+      const m = alan.match(/^album(\d+)_(tam|yarim)$/);
+      const sz = m ? m[1] : "";
+      const tip = m ? m[2] : "yarim";
+      const eslesen = (fiyatListesi?.items || []).find((it: any) => {
+        const p = String(it.productName || "").toLowerCase();
+        if (p.includes("paspartu")) return false;
+        const pm = p.match(/(\d+)/);
+        if (!pm || pm[1] !== sz) return false;
+        return tip === "tam" ? p.includes("tam") : !p.includes("tam");
+      });
+      if (eslesen) return eslesen.productName;
+      // Uygulama standardı ad formatı (sipariş formuyla aynı): "13 Kare Yarım"
+      return `${sz} Kare ${tip === "tam" ? "Tam" : "Yarım"}`;
+    };
+
+    const now = new Date().toISOString();
+    const iadeKalemler = kalemler.map((k: any) => ({ alan: k.alan, adet: Number(k.adet), productName: alanToProductName(k.alan) }));
+    const toplamAdet = iadeKalemler.reduce((s: number, k: any) => s + k.adet, 0);
+
+    // Depo bozuk kutusundan düş
+    for (const k of iadeKalemler) {
+      depoStok.bozuk[k.alan] = (Number(depoStok.bozuk[k.alan]) || 0) - k.adet;
+    }
+    depoStok.guncellenmeTarihi = now;
+    await ckv.set("depo_stok", depoStok);
+
+    // 0₺ değişim siparişi — borç/ödeme FIFO'suna karışmaz, teslimatla telafi edilir
+    const siparisId = `siparis_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const orderItems = iadeKalemler.map((k: any, idx: number) => ({
+      id: `item_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+      productName: k.productName, quantity: k.adet, unitPrice: 0, currency: "TRY",
+      deliveredQuantity: 0, notes: "Bozuk iade karşılığı bedelsiz değişim",
+    }));
+    const siparis = {
+      id: siparisId, cariId, cariName: cari.name || "", status: "gonderildi", sentAt: now,
+      items: orderItems, totalAmount: 0, currency: "TRY",
+      notes: `Bozuk albüm iadesi karşılığı bedelsiz değişim — ${toplamAdet} adet${notText ? " · " + notText : ""}`,
+      iadeKarsiligi: true,
+      createdAt: now, createdBy: callerUser.user_metadata?.full_name || "", createdByUserId: callerUser.id, updatedAt: now,
+      teklifFiyat: null, teklifler: [], teklifDurum: null,
+      loglar: [{ tarih: now, kisi: callerUser.user_metadata?.full_name || "", taraf: "admin", mesaj: `Bozuk iade karşılığı değişim siparişi: ${iadeKalemler.map((k: any) => `${k.adet}× ${k.productName}`).join(", ")} (0₺ — bedelsiz)` }],
+    };
+    await saveOrder(companyId, ckv, siparis);
+
+    // İade kaydı (kalıcı log)
+    const iadeId = `tedarikci_iade_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const iade = {
+      id: iadeId, cariId, cariName: cari.name || "",
+      kalemler: iadeKalemler, toplamAdet,
+      siparisId,
+      not: notText || "",
+      tarih: now,
+      yapanId: callerUser.id,
+      yapanAd: callerUser.user_metadata?.full_name || callerUser.email || "",
+    };
+    await ckv.set(iadeId, iade);
+
+    if (cari?.linkedUserId) {
+      await createNotification(cari.linkedUserId, "siparis_yeni", "Bozuk İade — Değişim Siparişi",
+        `${iadeKalemler.map((k: any) => `${k.adet}× ${k.productName}`).join(", ")} bozuk iade edildi. Bedelsiz değişim siparişi oluşturuldu.`,
+        { siparisId: siparisId.replace("siparis_", "") }, companyId);
+    }
+
+    console.log(`[Tedarikci] Bozuk iade: ${cari.name} ← ${toplamAdet} adet | sipariş: ${siparisId} (${iade.yapanAd})`);
+    return c.json({ ok: true, iade, siparis, depoBozuk: depoStok.bozuk });
+  } catch (err) {
+    console.log("Tedarikci iade error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ──────────────────────────────────────────
+// TEDARİKÇİ: İade listesi + telafi durumu
+// GET /make-server-4da0b637/tedarikci/iadeler?cariId=
+// Telafi = bağlı 0₺ değişim siparişinin teslim edilen adetleri
+// ──────────────────────────────────────────
+app.get("/make-server-4da0b637/tedarikci/iadeler", async (c) => {
+  try {
+    const callerUser = await verifyToken(c);
+    if (!callerUser) return c.json({ error: "Yetkisiz erişim." }, 401);
+    if (!hasPermission(getEffectiveRole(callerUser), ["yonetici", "ust-mudur", "mudur", "operasyon"]) && !(await tedarikciYetkiliMi(callerUser))) return c.json({ error: "Yetki yok." }, 403);
+    const companyId = getCompanyId(callerUser);
+    const ckv = companyKvFor(companyId);
+    const cariIdQ = c.req.query("cariId") || "";
+
+    const tumIadeler: any[] = await ckv.getByPrefix("tedarikci_iade_").catch(() => []) || [];
+    const filtreli = cariIdQ ? tumIadeler.filter((i: any) => i.cariId === cariIdQ) : tumIadeler;
+
+    const iadeler = await Promise.all(filtreli.map(async (i: any) => {
+      let telafiAdet = 0;
+      let siparisStatus = null;
+      if (i.siparisId) {
+        const sipIdNorm = String(i.siparisId).startsWith("siparis_") ? String(i.siparisId).replace("siparis_", "") : String(i.siparisId);
+        const sip: any = await getOrder(companyId, ckv, sipIdNorm).catch(() => null);
+        if (sip) {
+          telafiAdet = (sip.items || []).reduce((s: number, it: any) => s + (Number(it.deliveredQuantity) || 0), 0);
+          siparisStatus = sip.status;
+        }
+      }
+      return { ...i, telafiAdet, bekleyenAdet: Math.max(0, (Number(i.toplamAdet) || 0) - telafiAdet), siparisStatus };
+    }));
+
+    iadeler.sort((a: any, b: any) => String(b.tarih || "").localeCompare(String(a.tarih || "")));
+    return c.json({ iadeler });
+  } catch (err) {
+    console.log("Tedarikci iadeler error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
 });
 
 // ══════════════════════════════════════════

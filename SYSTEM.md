@@ -178,6 +178,15 @@ Bozulan/hasarli albumler satilabilir stoktan dusulup ayri "bozuk" kutusunda **bi
 - `/stok/acilis-sifirla`: `kapanisBozuk` katkisi geri alinir (reverse)
 - `GET /stok/gunluk` yaniti `mekanBozuk` doner (album* alanlari, >0 olanlar) — acilis ekraninda "bozuklari sayima KATMAYIN" uyarisi gosterilir (bozuklar fiziksel mekanda kaldigi icin sabah sayilirsa sahte +anomali cikiyordu)
 
+### Bozuk Boru Hatti (2026-07-22): Mekan → Depo → Tedarikci (imha yok)
+- UI'dan imha kaldirildi; akis tek yon. Fiziksel olayla eszamanli basilir: bozuldu→girildi, toplandi→aktarildi, gonderildi→iade edildi
+- **Adim 1:** Kapanista bozuk girilir → mekanda birikir (mevcut sistem)
+- **Adim 2:** `POST /bozuk/depoya-tasi` { mekanId, kalemler[] } — mekan bakiyesinden düser, `depo_stok.bozuk`a girer, `bozuk_hareket` (tip: depoya_tasima) loglanir. UI: Stok Dagilimi → Bozuk Albumler karti → mekan satiri "Depoya Aktar" (kismi veya tumu)
+- **Adim 3:** `POST /tedarikci/iade` { cariId, kalemler[] } — depo bozuktan düser, `tedarikci_iade_{id}` kaydi + **0 TL "iadeKarsiligi" degisim siparisi** (status: gonderildi) acilir, tedarikciye bildirim gider. Urun adi tedarikci fiyat listesinden eslesir (boyut + tam/yarim), fallback "13 Kare Yarim" formati. UI: ayni kartin Depo satiri "Tedarikciye Iade"
+- **Telafi:** normal teslimat FIFO akisi degisim siparisini doldurur → yeni albumler depo satilabilir stoga girer. totalAmount 0 → cari borc/odeme FIFO'su ETKILENMEZ (gider sadece odeme aninda kurali korunur)
+- `GET /tedarikci/iadeler?cariId=` → iade listesi + telafiAdet/bekleyenAdet (bagli siparisin deliveredQuantity toplami). UI: Tedarikci Yonetimi → tedarikci karti → "Iadeler" sekmesi
+- Anomali etkisi yok: tum boru hatti satilabilir stok disinda akar
+
 ### Endpoint'ler (roller: yonetici/ust-mudur/mudur/operasyon)
 | Metod | Route | Aciklama |
 |-------|-------|----------|

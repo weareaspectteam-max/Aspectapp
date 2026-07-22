@@ -1291,18 +1291,7 @@ function DepoModal({
                 {yukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4" />}
                 Bozuk İşaretle (stoktan düş)
               </button>
-
-              <div className="flex gap-2">
-                <button onClick={() => bozukIslem('imha')} disabled={yukleniyor || !bozukMiktar}
-                  className="flex-1 h-11 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 bg-white/6 border border-white/12 text-white/70">
-                  <Trash2 className="w-3.5 h-3.5" /> İmha Et
-                </button>
-                <button onClick={() => bozukIslem('iade')} disabled={yukleniyor || !bozukMiktar}
-                  className="flex-1 h-11 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 bg-white/6 border border-white/12 text-white/70">
-                  <ArrowUpFromLine className="w-3.5 h-3.5" /> İade Et
-                </button>
-              </div>
-              <p className="text-[10px] text-white/25 text-center">İmha/İade bozuk kutusundan düşer — satılabilire geri eklenmez.</p>
+              <p className="text-[10px] text-white/25 text-center">Depoda bozulan albümü buradan işaretleyin. Tedarikçiye iade, Bozuk Albümler kartındaki Depo satırından yapılır.</p>
             </div>
           )}
         </div>
@@ -1312,19 +1301,19 @@ function DepoModal({
 }
 
 // ─── Bozuk Albümler Kartı ────────────────────────────────────────────────────
-function BozukAlbumCard({ mekanlar, depo, isYonetici, onDepoIsle, onMekanIsle }: {
+function BozukAlbumCard({ mekanlar, depo, isYonetici, onDepoIade, onMekanIsle }: {
   mekanlar: MekanOzet[];
   depo: DepoOzet;
   isYonetici: boolean;
-  onDepoIsle: () => void;
+  onDepoIade: () => void;
   onMekanIsle: (m: MekanOzet) => void;
 }) {
   const [acik, setAcik] = useState(false);
   const sizes = [3, 5, 7, 9, 11, 13, 15];
   const toplamOf = (b?: Record<string, number>) => sizes.reduce((s, sz) => s + (Number(b?.[`album${sz}_tam`]) || 0) + (Number(b?.[`album${sz}_yarim`]) || 0), 0);
   const rows = [
-    { id: '__depo__', emoji: '🏪', name: 'Depo', bozuk: depo.bozuk, t: toplamOf(depo.bozuk), onIsle: onDepoIsle },
-    ...mekanlar.map(m => ({ id: m.id, emoji: m.emoji, name: m.name, bozuk: m.bozuk, t: toplamOf(m.bozuk), onIsle: () => onMekanIsle(m) })),
+    { id: '__depo__', emoji: '🏪', name: 'Depo', bozuk: depo.bozuk, t: toplamOf(depo.bozuk), islemEtiket: '🔄 Tedarikçiye İade', onIsle: onDepoIade },
+    ...mekanlar.map(m => ({ id: m.id, emoji: m.emoji, name: m.name, bozuk: m.bozuk, t: toplamOf(m.bozuk), islemEtiket: '📦 Depoya Aktar', onIsle: () => onMekanIsle(m) })),
   ].filter(r => r.t > 0);
   const genelToplam = rows.reduce((s, r) => s + r.t, 0);
 
@@ -1351,7 +1340,7 @@ function BozukAlbumCard({ mekanlar, depo, isYonetici, onDepoIsle, onMekanIsle }:
                   <span className="text-xs font-bold px-1.5 py-0.5 rounded-md bg-red-500/15 text-red-300">{r.t}</span>
                 </div>
                 {isYonetici && (
-                  <button onClick={r.onIsle} className="text-[10px] font-semibold px-2 py-1 rounded-lg bg-white/6 border border-white/12 text-white/60 active:scale-95">İmha/İade</button>
+                  <button onClick={r.onIsle} className="text-[10px] font-semibold px-2 py-1 rounded-lg bg-white/6 border border-white/12 text-white/60 active:scale-95">{r.islemEtiket}</button>
                 )}
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -1374,7 +1363,8 @@ function BozukAlbumCard({ mekanlar, depo, isYonetici, onDepoIsle, onMekanIsle }:
   );
 }
 
-// ─── Mekan Bozuk Çıkar (İmha/İade) Modalı ────────────────────────────────────
+// ─── Mekan Bozuk → Depoya Aktar Modalı ───────────────────────────────────────
+// Bozuk boru hattı adım 2: fiziksel toplama günü basılır — mekan bakiyesinden düşer, depo bozuk kutusuna girer
 function MekanBozukCikarModal({ mekan, onClose, onSuccess }: {
   mekan: MekanOzet;
   onClose: () => void;
@@ -1387,22 +1377,23 @@ function MekanBozukCikarModal({ mekan, onClose, onSuccess }: {
       if ((Number(mekan.bozuk?.[a]) || 0) > 0) alanlar.push(a);
     }
   }
+  const toplamBozuk = alanlar.reduce((s, a) => s + (Number(mekan.bozuk?.[a]) || 0), 0);
   const [alan, setAlan] = useState<string>(alanlar[0] || '');
   const [miktar, setMiktar] = useState('');
   const [yukleniyor, setYukleniyor] = useState(false);
   const [hata, setHata] = useState('');
   const [basarili, setBasarili] = useState('');
 
-  const islem = async (sebep: 'imha' | 'iade') => {
-    if (!alan) { setHata('Bu mekanda bozuk albüm yok.'); return; }
-    if (!miktar || isNaN(Number(miktar)) || Number(miktar) <= 0) { setHata('Geçerli bir miktar girin.'); return; }
+  const aktar = async (kalemler: Array<{ alan: string; miktar: number }>) => {
+    if (kalemler.length === 0) { setHata('Aktarılacak bozuk albüm yok.'); return; }
     setYukleniyor(true); setHata(''); setBasarili('');
     try {
       const headers = await authHeaders();
-      const res = await fetch(`${API_BASE}/bozuk/mekan-cikar`, { method: 'POST', headers, body: JSON.stringify({ mekanId: mekan.id, alan, miktar: Number(miktar), sebep }) });
+      const res = await fetch(`${API_BASE}/bozuk/depoya-tasi`, { method: 'POST', headers, body: JSON.stringify({ mekanId: mekan.id, kalemler }) });
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
-      setBasarili(`✓ ${miktar} adet ${ALAN_ETIKET[alan]} ${sebep === 'imha' ? 'imha edildi' : 'iade edildi'}.`);
+      const toplam = kalemler.reduce((s, k) => s + k.miktar, 0);
+      setBasarili(`✓ ${toplam} adet bozuk albüm depoya aktarıldı.`);
       setMiktar('');
       onSuccess();
     } catch (err: any) {
@@ -1410,6 +1401,16 @@ function MekanBozukCikarModal({ mekan, onClose, onSuccess }: {
     } finally {
       setYukleniyor(false);
     }
+  };
+
+  const tekAktar = () => {
+    if (!alan) { setHata('Bu mekanda bozuk albüm yok.'); return; }
+    if (!miktar || isNaN(Number(miktar)) || Number(miktar) <= 0) { setHata('Geçerli bir miktar girin.'); return; }
+    aktar([{ alan, miktar: Number(miktar) }]);
+  };
+
+  const tumunuAktar = () => {
+    aktar(alanlar.map(a => ({ alan: a, miktar: Number(mekan.bozuk?.[a]) || 0 })).filter(k => k.miktar > 0));
   };
 
   return (
@@ -1420,8 +1421,8 @@ function MekanBozukCikarModal({ mekan, onClose, onSuccess }: {
           <div className="flex items-center gap-2">
             <span className="text-xl">{mekan.emoji}</span>
             <div>
-              <h2 className="text-sm font-bold text-white">{mekan.name} — Bozuk İmha/İade</h2>
-              <p className="text-[10px] text-white/30">Birikimli bozuktan düşer</p>
+              <h2 className="text-sm font-bold text-white">{mekan.name} — Bozuk → Depoya Aktar</h2>
+              <p className="text-[10px] text-white/30">Fiziksel toplanan bozuklar depoya taşınır</p>
             </div>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-transform">
@@ -1454,16 +1455,142 @@ function MekanBozukCikarModal({ mekan, onClose, onSuccess }: {
               </div>
               {hata && <div className="rounded-xl bg-red-500/12 border border-red-500/20 px-4 py-3 text-xs text-red-300">{hata}</div>}
               {basarili && <div className="rounded-xl bg-emerald-500/12 border border-emerald-500/20 px-4 py-3 text-xs text-emerald-300">{basarili}</div>}
-              <div className="flex gap-2">
-                <button onClick={() => islem('imha')} disabled={yukleniyor || !miktar}
-                  className="flex-1 h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 bg-gradient-to-r from-red-500/80 to-rose-500/80 text-white">
-                  {yukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} İmha Et
-                </button>
-                <button onClick={() => islem('iade')} disabled={yukleniyor || !miktar}
-                  className="flex-1 h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 bg-white/6 border border-white/12 text-white/70">
-                  {yukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpFromLine className="w-4 h-4" />} İade Et
-                </button>
+              <button onClick={tekAktar} disabled={yukleniyor || !miktar}
+                className="w-full h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 bg-gradient-to-r from-amber-500/80 to-orange-500/80 text-white">
+                {yukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpFromLine className="w-4 h-4" />} Depoya Aktar
+              </button>
+              <button onClick={tumunuAktar} disabled={yukleniyor}
+                className="w-full h-11 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 bg-white/6 border border-white/12 text-white/70">
+                {yukleniyor ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '📦'} Tümünü Aktar ({toplamBozuk})
+              </button>
+              <p className="text-[10px] text-white/25 text-center">Toplanan bozuklar depoda birikir — tedarikçiye iade depodan yapılır.</p>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tedarikçiye İade Modalı ─────────────────────────────────────────────────
+// Bozuk boru hattı adım 3: depo bozuk kutusundan tedarikçiye iade — 0₺ değişim siparişi açılır
+function TedarikciIadeModal({ depoBozuk, cariler, onClose, onSuccess }: {
+  depoBozuk?: Record<string, number>;
+  cariler: any[];
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const alanlar: string[] = [];
+  for (const sz of [3, 5, 7, 9, 11, 13, 15]) {
+    for (const suf of ['_tam', '_yarim']) {
+      const a = `album${sz}${suf}`;
+      if ((Number(depoBozuk?.[a]) || 0) > 0) alanlar.push(a);
+    }
+  }
+  // Albüm tedarikçileri önce
+  const siraliCariler = [...cariler].sort((a, b) => (a.supplierType === 'album' ? 0 : 1) - (b.supplierType === 'album' ? 0 : 1));
+  const [cariId, setCariId] = useState<string>(siraliCariler[0]?.id || '');
+  const [adetler, setAdetler] = useState<Record<string, string>>({});
+  const [yukleniyor, setYukleniyor] = useState(false);
+  const [hata, setHata] = useState('');
+  const [basarili, setBasarili] = useState('');
+
+  const hepsiniSec = () => {
+    const yeni: Record<string, string> = {};
+    for (const a of alanlar) yeni[a] = String(depoBozuk?.[a] || 0);
+    setAdetler(yeni);
+  };
+
+  const iadeEt = async () => {
+    if (!cariId) { setHata('Tedarikçi seçin.'); return; }
+    const kalemler = alanlar
+      .map(a => ({ alan: a, adet: Number(adetler[a]) || 0 }))
+      .filter(k => k.adet > 0);
+    if (kalemler.length === 0) { setHata('En az bir kalem için adet girin.'); return; }
+    for (const k of kalemler) {
+      const max = Number(depoBozuk?.[k.alan]) || 0;
+      if (k.adet > max) { setHata(`${ALAN_ETIKET[k.alan]}: en fazla ${max} adet iade edilebilir.`); return; }
+    }
+    setYukleniyor(true); setHata(''); setBasarili('');
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`${API_BASE}/tedarikci/iade`, { method: 'POST', headers, body: JSON.stringify({ cariId, kalemler }) });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+      const toplam = kalemler.reduce((s, k) => s + k.adet, 0);
+      const cariAd = cariler.find(c => c.id === cariId)?.name || 'tedarikçi';
+      setBasarili(`✓ ${toplam} adet iade edildi — ${cariAd} için bedelsiz değişim siparişi oluşturuldu.`);
+      setAdetler({});
+      onSuccess();
+    } catch (err: any) {
+      setHata(err.message || 'İşlem başarısız.');
+    } finally {
+      setYukleniyor(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-md bg-[#0e0826] border border-white/12 rounded-t-3xl overflow-hidden mb-16 flex flex-col" style={{ maxHeight: '92vh' }}>
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/10">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🔄</span>
+            <div>
+              <h2 className="text-sm font-bold text-white">Tedarikçiye İade Et</h2>
+              <p className="text-[10px] text-white/30">Depo bozuklarından düşer — 0₺ değişim siparişi açılır</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/8 border border-white/12 flex items-center justify-center active:scale-90 transition-transform">
+            <X className="w-4 h-4 text-white/60" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4 overflow-y-auto">
+          {alanlar.length === 0 ? (
+            <p className="text-sm text-white/40 text-center py-6">Depoda bozuk albüm yok.</p>
+          ) : cariler.length === 0 ? (
+            <p className="text-sm text-white/40 text-center py-6">Tanımlı tedarikçi yok. Maliyet Yönetimi'nden cari ekleyin.</p>
+          ) : (
+            <>
+              <div>
+                <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider block mb-2">Tedarikçi</label>
+                <select value={cariId} onChange={e => setCariId(e.target.value)}
+                  className="w-full h-11 rounded-xl bg-white/6 border border-white/12 text-white text-sm px-3 outline-none focus:border-amber-400/50 transition-colors">
+                  {siraliCariler.map(cr => (
+                    <option key={cr.id} value={cr.id} className="bg-[#0e0826]">
+                      {cr.emoji || '🏢'} {cr.name}{cr.supplierType === 'album' ? ' · Albüm' : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider">İade Adetleri</label>
+                  <button onClick={hepsiniSec} className="text-[10px] font-semibold px-2 py-1 rounded-lg bg-white/6 border border-white/12 text-white/60 active:scale-95">Hepsini Seç</button>
+                </div>
+                <div className="space-y-2">
+                  {alanlar.map(a => (
+                    <div key={a} className="flex items-center justify-between bg-black/30 border border-white/8 rounded-xl px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-white">{ALAN_ETIKET[a]}</span>
+                        <span className="text-[10px] text-red-300/70">mevcut: {depoBozuk?.[a] || 0}</span>
+                      </div>
+                      <input type="number" inputMode="numeric" min={0} max={depoBozuk?.[a] || 0}
+                        value={adetler[a] || ''}
+                        onChange={e => setAdetler(p => ({ ...p, [a]: e.target.value }))}
+                        placeholder="0"
+                        className="w-16 h-9 rounded-lg bg-white/6 border border-white/12 text-white text-sm text-center outline-none focus:border-amber-400/50 transition-colors placeholder-white/20" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {hata && <div className="rounded-xl bg-red-500/12 border border-red-500/20 px-4 py-3 text-xs text-red-300">{hata}</div>}
+              {basarili && <div className="rounded-xl bg-emerald-500/12 border border-emerald-500/20 px-4 py-3 text-xs text-emerald-300">{basarili}</div>}
+              <button onClick={iadeEt} disabled={yukleniyor}
+                className="w-full h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 bg-gradient-to-r from-amber-500/80 to-orange-500/80 text-white">
+                {yukleniyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Tedarikçiye İade Et
+              </button>
+              <p className="text-[10px] text-white/25 text-center">Tedarikçi portalında 0₺ değişim siparişi görür — yeni albümler teslimatla depoya girer.</p>
             </>
           )}
         </div>
@@ -2016,6 +2143,8 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
   const [depoModalAcik, setDepoModalAcik] = useState(false);
   const [depoModalInitTab, setDepoModalInitTab] = useState<'giris' | 'cikis' | 'gecmis' | 'bozuk'>('giris');
   const [mekanBozukHedef, setMekanBozukHedef] = useState<MekanOzet | null>(null);
+  const [iadeModalAcik, setIadeModalAcik] = useState(false);
+  const [cariler, setCariler] = useState<any[]>([]);
   const [aktarimModalAcik, setAktarimModalAcik] = useState(false);
   const [transferler, setTransferler] = useState<Transfer[]>([]);
   const [transferYukleniyor, setTransferYukleniyor] = useState(false);
@@ -2052,6 +2181,7 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
         const maliyetJson = await maliyetRes.json();
         const papers = (maliyetJson.papers || []).filter((p: any) => p.id && p.name && p.pcsPerBox);
         setKagitTipleri(papers.map((p: any) => ({ id: p.id, name: p.name })));
+        setCariler(maliyetJson.cariler || []);
       }
     } catch (err) {
       console.error('[StokDagilimi] Veri yüklenemedi:', err);
@@ -2162,12 +2292,12 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
           {/* 2 · Ribon Stoğu */}
           <RibonCard mekanlar={veri.mekanlar} depo={veri.depo} kagitTipleri={kagitTipleri} />
 
-          {/* 2b · Bozuk Albümler (depo + mekan) */}
+          {/* 2b · Bozuk Albümler (depo + mekan) — boru hattı: mekan → depo → tedarikçi */}
           <BozukAlbumCard
             mekanlar={veri.mekanlar}
             depo={veri.depo}
             isYonetici={isYonetici}
-            onDepoIsle={() => { setDepoModalInitTab('bozuk'); setDepoModalAcik(true); }}
+            onDepoIade={() => setIadeModalAcik(true)}
             onMekanIsle={(m) => setMekanBozukHedef(m)}
           />
 
@@ -2239,7 +2369,17 @@ export function StokDagilimi({ userName, userRole, onLogout, onNavigate }: StokD
         />
       )}
 
-      {/* Mekan Bozuk İmha/İade Modalı */}
+      {/* Tedarikçiye İade Modalı (depo bozuklarından) */}
+      {iadeModalAcik && veri && (
+        <TedarikciIadeModal
+          depoBozuk={veri.depo.bozuk}
+          cariler={cariler}
+          onClose={() => setIadeModalAcik(false)}
+          onSuccess={() => yukle()}
+        />
+      )}
+
+      {/* Mekan Bozuk → Depoya Aktar Modalı */}
       {mekanBozukHedef && (
         <MekanBozukCikarModal
           mekan={mekanBozukHedef}

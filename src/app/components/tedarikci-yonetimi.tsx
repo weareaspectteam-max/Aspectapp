@@ -49,7 +49,11 @@ const TABS: Array<{ key: TabKey; label: string; icon: any; color: string }> = [
 function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onNavigate, kisitli = false }: TedarikciYonetimiProps & { kisitli?: boolean }) {
   const [activeTab, setActiveTab] = useState<TabKey>('tedarikci');
   const [selectedTedarikci, setSelectedTedarikci] = useState<any>(null); // seçili tedarikçi
-  const [tedarikciTab, setTedarikciTab] = useState<'siparisler' | 'fiyatlar' | 'bakiye'>('siparisler');
+  const [tedarikciTab, setTedarikciTab] = useState<'siparisler' | 'fiyatlar' | 'bakiye' | 'iadeler'>('siparisler');
+
+  // Bozuk albüm iadeleri (depo → tedarikçi) + telafi durumu
+  const [iadeler, setIadeler] = useState<any[]>([]);
+  const [iadelerLoading, setIadelerLoading] = useState(false);
 
   /* Kişi bazlı panel yetkisi (yönetici): sipariş + teslimat verilir, ödeme görünmez */
   const [showYetki, setShowYetki] = useState(false);
@@ -139,6 +143,22 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
   }, [accessToken]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // İadeler sekmesi açılınca yükle
+  useEffect(() => {
+    if (tedarikciTab !== 'iadeler' || !selectedTedarikci?.id) return;
+    let iptal = false;
+    (async () => {
+      setIadelerLoading(true);
+      try {
+        const res = await fetch(appendGhostParam(`${SERVER_URL}/tedarikci/iadeler?cariId=${encodeURIComponent(selectedTedarikci.id)}`), { headers: buildHeaders(accessToken) });
+        const json = await res.json().catch(() => ({}));
+        if (!iptal) setIadeler(json.iadeler || []);
+      } catch { if (!iptal) setIadeler([]); }
+      finally { if (!iptal) setIadelerLoading(false); }
+    })();
+    return () => { iptal = true; };
+  }, [tedarikciTab, selectedTedarikci?.id, accessToken]);
 
   const cariler: any[] = data?.cariler || [];
   const siparisler: any[] = data?.siparisler || [];
@@ -969,6 +989,7 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
               { key: 'siparisler' as const, label: '📦 Siparişler', color: '#60a5fa' },
               { key: 'fiyatlar' as const, label: '💰 Fiyatlar', color: '#fbbf24' },
               { key: 'bakiye' as const, label: '💳 Bakiye', color: '#34d399' },
+              { key: 'iadeler' as const, label: '🔄 İadeler', color: '#f87171' },
             ]).filter(t => !kisitli || t.key === 'siparisler').map(t => (
               <button key={t.key} onClick={() => setTedarikciTab(t.key)}
                 className="flex-1 py-2 rounded-xl text-[11px] font-bold transition-all"
@@ -1123,6 +1144,55 @@ function TedarikciYonetimiAdmin({ userName, userRole, accessToken, onLogout, onN
           </>)}
 
           {/* Bakiye */}
+          {/* İadeler — bozuk albüm iadeleri ve telafi durumu */}
+          {tedarikciTab === 'iadeler' && (
+            <div className="space-y-3">
+              {(() => {
+                const toplamIade = iadeler.reduce((s: number, i: any) => s + (Number(i.toplamAdet) || 0), 0);
+                const toplamTelafi = iadeler.reduce((s: number, i: any) => s + (Number(i.telafiAdet) || 0), 0);
+                const toplamBekleyen = iadeler.reduce((s: number, i: any) => s + (Number(i.bekleyenAdet) || 0), 0);
+                return (
+                  <>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="p-3 rounded-2xl text-center" style={{ background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.15)' }}>
+                        <p className="text-red-400/50 text-[9px]">İade Edilen</p>
+                        <p className="text-red-400 font-bold text-lg">{toplamIade}</p>
+                      </div>
+                      <div className="p-3 rounded-2xl text-center" style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.15)' }}>
+                        <p className="text-emerald-400/50 text-[9px]">Telafi Geldi</p>
+                        <p className="text-emerald-400 font-bold text-lg">{toplamTelafi}</p>
+                      </div>
+                      <div className="p-3 rounded-2xl text-center" style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.15)' }}>
+                        <p className="text-amber-400/50 text-[9px]">Bekleyen</p>
+                        <p className="text-amber-400 font-bold text-lg">{toplamBekleyen}</p>
+                      </div>
+                    </div>
+                    {iadelerLoading ? (
+                      <p className="text-center text-white/30 py-8 text-sm">Yükleniyor...</p>
+                    ) : iadeler.length === 0 ? (
+                      <p className="text-center text-white/30 py-8 text-sm">Bu tedarikçiye henüz bozuk iade yapılmadı.<br /><span className="text-[10px] text-white/20">İadeler Stok Dağılımı → Bozuk Albümler → Depo satırından yapılır.</span></p>
+                    ) : iadeler.map((i: any) => (
+                      <div key={i.id} className="p-3 rounded-2xl space-y-1.5" style={{ background: glassBg, border: `1px solid ${glassBorder}` }}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-white/40 text-xs">{new Date(i.tarih).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold"
+                            style={i.bekleyenAdet === 0
+                              ? { background: 'rgba(52,211,153,0.15)', color: '#34d399' }
+                              : { background: 'rgba(251,191,36,0.15)', color: '#fbbf24' }}>
+                            {i.bekleyenAdet === 0 ? '✓ TELAFİ EDİLDİ' : `${i.telafiAdet}/${i.toplamAdet} geldi`}
+                          </span>
+                        </div>
+                        <p className="text-white text-sm">{(i.kalemler || []).map((k: any) => `${k.adet}× ${k.productName}`).join(', ')}</p>
+                        {i.not && <p className="text-white/30 text-[10px]">💬 {i.not}</p>}
+                        <p className="text-white/20 text-[9px]">{i.yapanAd} · değişim siparişi: {i.siparisStatus === 'tamamlandi' ? 'tamamlandı' : i.siparisStatus === 'gonderildi' ? 'tedarikçi onayı bekliyor' : i.siparisStatus || '—'}</p>
+                      </div>
+                    ))}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
           {tedarikciTab === 'bakiye' && (
             <div className="space-y-3">
               {/* Dönem filtresi */}
