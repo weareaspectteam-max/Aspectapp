@@ -18822,6 +18822,18 @@ app.post("/make-server-4da0b637/kasa2/acilis", async (c) => {
   }
 });
 
+// Hakediş ödeme kimliği: ödenen KALEMLERİN anahtarlarından türetilir.
+// Eski formül (kişi+ay+toplam) sabit kademe tutarları yüzünden aynı ay içindeki
+// ikinci ödemede çakışıp sahte "zaten ödenmiş" hatası veriyordu (2026-07-23 fix).
+// Aynı kalem kümesi → aynı kimlik (gerçek çift ödeme yine engellenir),
+// yeni birikim (farklı kalemler) → farklı kimlik → ödenebilir.
+const hakedisOdemeKimlik = (ad: string, kAy: string, keys: any[]): string => {
+  const s = keys.map((d: any) => String(d?.key || "")).sort().join("|");
+  let h = 0;
+  for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
+  return `hakedis_${encodeURIComponent(ad)}_${kAy}_${Math.abs(h).toString(36)}`;
+};
+
 // POST /kasa2/gider — gider ekle (nakit / banka / karışık)
 app.post("/make-server-4da0b637/kasa2/gider", async (c) => {
   try {
@@ -18874,11 +18886,17 @@ app.post("/make-server-4da0b637/kasa2/gider", async (c) => {
       const keys: any[] = body.odemeKeys;
       const ad = String(body.personelAdi || keys[0]?.personelAdi || "").trim();
       const kAy = String(keys[0]?.tarih || tarih).slice(0, 7);
-      const origSum = keys.reduce((s: number, d: any) => s + Math.round(Number(d.primMiktar) || 0), 0);
-      const kid = `hakedis_${encodeURIComponent(ad)}_${kAy}_${origSum}`;
+      const kid = hakedisOdemeKimlik(ad, kAy, keys);
       const { data: kex } = await db.from("kasa_hareket").select("id").eq("company_id", companyId).eq("kaynak_id", kid).eq("iptal", false).limit(1);
       if (kex && kex.length) return c.json({ error: "Bu hakediş zaten ödenmiş." }, 400);
       const ckv = companyKvFor(companyId);
+      // Gerçek çift ödeme koruması — kalemler daha önce ödendi işaretlendiyse engelle
+      const odenmisSayG = (await Promise.all(keys.map(async (d: any) => {
+        const r: any = d?.key ? await ckv.get(d.key).catch(() => null) : null;
+        return r?.odendi ? 1 : 0;
+      }))).reduce((a: number, b: number) => a + b, 0);
+      if (odenmisSayG === keys.length) return c.json({ error: "Bu hakediş kalemleri zaten ödenmiş." }, 400);
+      if (odenmisSayG > 0) return c.json({ error: "Bazı kalemler zaten ödenmiş görünüyor — sayfayı yenileyip tekrar deneyin." }, 400);
       const now = new Date().toISOString();
       const tumGiderler = await getAllGiderler(companyId, ckv).catch(() => []);
       for (const d of keys) {
@@ -19313,10 +19331,18 @@ app.post("/make-server-4da0b637/kasa2/odeme-yap", async (c) => {
       const origSum = keys.reduce((s: number, d: any) => s + Math.round(Number(d.primMiktar) || 0), 0);
       const odenecek = Math.round(Number(tutar) || 0) || origSum;   // düzenlenmiş toplam (yoksa kota toplamı)
       if (odenecek <= 0) return c.json({ error: "Tutar zorunlu." }, 400);
-      const kid = `hakedis_${encodeURIComponent(ad)}_${kAy}_${origSum}`;
-      // idempotent: aynı kalem kümesi zaten ödendiyse tekrar yazma
+      const kid = hakedisOdemeKimlik(ad, kAy, keys);
+      // idempotent: AYNI kalem kümesi zaten ödendiyse tekrar yazma (kimlik kalem anahtarlarından türer —
+      // aynı ay+tutar çakışması artık sahte "zaten ödenmiş" üretmez)
       const { data: kex } = await db.from("kasa_hareket").select("id").eq("company_id", companyId).eq("kaynak_id", kid).eq("iptal", false).limit(1);
       if (kex && kex.length) return c.json({ error: "Bu hakediş zaten ödenmiş." }, 400);
+      // Gerçek çift ödeme koruması — kalemler daha önce ödendi işaretlendiyse engelle
+      const odenmisSay = (await Promise.all(keys.map(async (d: any) => {
+        const r: any = d?.key ? await ckv.get(d.key).catch(() => null) : null;
+        return r?.odendi ? 1 : 0;
+      }))).reduce((a: number, b: number) => a + b, 0);
+      if (odenmisSay === keys.length) return c.json({ error: "Bu hakediş kalemleri zaten ödenmiş." }, 400);
+      if (odenmisSay > 0) return c.json({ error: "Bazı kalemler zaten ödenmiş görünüyor — sayfayı yenileyip tekrar deneyin." }, 400);
       const tumGiderler = await getAllGiderler(companyId, ckv).catch(() => []);
       // Her kalemi Hakediş Takip'te "ödendi" işaretle (senkron)
       for (const d of keys) {
