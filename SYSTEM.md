@@ -155,6 +155,7 @@ vardiyaToplam.paperName = "Kagit A, Kagit B" (virgul ile)
 - **Tek anomali tanimi:** tum ekranlar (manager dashboard, liderlik, mekan anomali listesi, pano, raporlar) stok + yazici anomalilerini birlikte sayar
 - **acilis-sifirla:** yazici anomali alanlari dahil tum anomali alanlarini temizler + SQL'e (daily_stock) senkron yazar (yazilmazsa raporlarda hayalet anomali kaliyordu)
 - **Ekstra is:** urun eslestirme bastaki sayi ile TAM eslesir (includes() "13'lu"→album3 sahte anomali yaratiyordu), dijital atlanir. Mekan kaynak/iade stoku suffix'li (album{n}_tam/_yarim) alanlara yazilir; acilista alinan tipler `tipDusum` olarak kaydedilir, iade ayni tiplere doner
+- **Kapanis SONRASI satis iptali (2026-07-23):** satis iptal endpoint'i kapanisi yapilmis gunde `kapanisYenidenHesapla` cagirir — satis albüm düsümü, beklenen, stok+ribon anomalisi, bitis sayaci anomalisi ve `kapanis_rapor_` tahsilat fotografi guncel satislarla tazelenir (yeni popup uretilmez, mevcut rapor uzerine yazilir). Elle tetikleme: POST `/stok/kapanis-yenile` {mekanId|mekanAdi, tarih?} — yonetici token veya X-Migration-Key
 
 ---
 

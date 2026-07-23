@@ -9529,6 +9529,174 @@ app.post("/make-server-4da0b637/stok/satis", async (c) => {
   }
 });
 
+// ──────────────────────────────────────────
+// KAPANIŞ YENİDEN HESAPLA — kapanış SONRASI satış iptalinde çağrılır.
+// /stok/kapanis ile AYNI matematik: satış albüm düşümü, beklenen, stok+ribon anomalisi,
+// bitiş sayacı anomalisi ve kapanış tahsilat raporu (sarı popup) fotoğrafı tazelenir.
+// Kapanış anındaki sabit veriler (sayımlar, yazıcı sayaçları, bozuk, ribon değişimi) DEĞİŞMEZ —
+// sadece satışa bağlı türetilmiş alanlar yenilenir.
+// ──────────────────────────────────────────
+const kapanisYenidenHesapla = async (companyId: string, ckv: any, mekanId: string, tarih: string, kayitParam?: any): Promise<any> => {
+  const kayit: any = kayitParam || await ckv.get(`stok_gunluk_${mekanId}_${tarih}`);
+  if (!kayit || !kayit.kapanisYapildi || !kayit.kapanish) return { ok: false, sebep: "kapanis-yok" };
+
+  const alanlar = ["album3_tam","album3_yarim","album5_tam","album5_yarim","album7_tam","album7_yarim","album9_tam","album9_yarim","album11_tam","album11_yarim","album13_tam","album13_yarim","album15_tam","album15_yarim","paspartu","ribon"];
+
+  const [tumEklemelerYH, tumAktarimlarYH] = await Promise.all([
+    ckv.getByPrefix(`stok_ekleme_`).catch(() => []),
+    ckv.getByPrefix(`stok_aktarim_`).catch(() => []),
+  ]);
+  const eklemeler = (tumEklemelerYH || []).filter((e: any) => e.mekanId === mekanId && e.tarih === tarih);
+  const gelenOnaylandi = (tumAktarimlarYH || []).filter((a: any) => a.hedefMekanId === mekanId && a.tarih === tarih && a.durum === "onaylandi");
+  const gidenOnaylandi = (tumAktarimlarYH || []).filter((a: any) => a.kaynakMekanId === mekanId && a.tarih === tarih && a.durum === "onaylandi");
+
+  const mekanObjYH: any = await ckv.get(`mekan_${mekanId}`).catch(() => null);
+  const mekanPrintType: string = mekanObjYH?.printType || "yarim";
+  const tercihSuffix = mekanPrintType === "tam" ? "_tam" : "_yarim";
+  const digerSuffix = mekanPrintType === "tam" ? "_yarim" : "_tam";
+  const acilisYH = migrateMekanStok({ ...(kayit.acilis || {}) });
+
+  // Satış albüm düşümü — güncel (iptal olmayan) satışlarla
+  const satislar: any[] = kayit.satislar || [];
+  const satisAlbumDusum: Record<string, number> = {};
+  const farkliTipKullanim: { boyut: number; adet: number; tip: string }[] = [];
+  for (const satis of satislar) {
+    if (satis.iptal) continue;
+    for (const item of (satis.items || [])) {
+      if (item.dijital) continue;
+      const match = String(item.product || '').match(/^(\d+)/);
+      if (!match) continue;
+      const sz = match[1];
+      const tercihAlan = `album${sz}${tercihSuffix}`;
+      const digerAlan = `album${sz}${digerSuffix}`;
+      if (!alanlar.includes(tercihAlan)) continue;
+      const qty = Number(item.quantity) || 0;
+      const tercihMevcut = Math.max(0, (acilisYH?.[tercihAlan] || 0) - (satisAlbumDusum[tercihAlan] || 0));
+      if (tercihMevcut >= qty) {
+        satisAlbumDusum[tercihAlan] = (satisAlbumDusum[tercihAlan] || 0) + qty;
+      } else {
+        satisAlbumDusum[tercihAlan] = (satisAlbumDusum[tercihAlan] || 0) + tercihMevcut;
+        const kalanQty = qty - tercihMevcut;
+        satisAlbumDusum[digerAlan] = (satisAlbumDusum[digerAlan] || 0) + kalanQty;
+        if (kalanQty > 0) farkliTipKullanim.push({ boyut: Number(sz), adet: kalanQty, tip: digerSuffix === "_tam" ? "tam" : "yarim" });
+      }
+    }
+  }
+
+  // Beklenen — kapanış anındaki sabit girdiler (bozuk, ribon değişimi) kayıttan okunur
+  const newBozuk: Record<string, number> = kayit.kapanisBozuk || {};
+  const toplamRibonDegisim = Number(kayit.toplamRibonDegisim) || 0;
+  const ribonDegisimByTip: Record<string, number> = kayit.ribonDegisimByTip || {};
+  const beklenen: Record<string, number> = {};
+  for (const alan of alanlar) {
+    let toplam = acilisYH?.[alan] || 0;
+    for (const ek of eklemeler) toplam += ek.miktar?.[alan] || 0;
+    for (const ak of gelenOnaylandi) toplam += ak.gercekMiktar?.[alan] || 0;
+    for (const ak of gidenOnaylandi) toplam -= ak.gercekMiktar?.[alan] || 0;
+    toplam -= satisAlbumDusum[alan] || 0;
+    toplam -= Number(newBozuk[alan]) || 0;
+    if (alan === "ribon") toplam -= toplamRibonDegisim;
+    beklenen[alan] = Math.max(0, toplam);
+  }
+  const acilisRibonlar: Record<string, number> = acilisYH?.ribonlar || {};
+  const beklenenRibonlar: Record<string, number> = {};
+  for (const tip of new Set([...Object.keys(acilisRibonlar), ...Object.keys(ribonDegisimByTip)])) {
+    beklenenRibonlar[tip] = Math.max(0, (acilisRibonlar[tip] || 0) - (ribonDegisimByTip[tip] || 0));
+  }
+
+  const migKapSayim = migrateMekanStok({ ...(kayit.kapanish || {}) });
+  const anomali: Record<string, number> = {};
+  for (const alan of alanlar) {
+    const fark = (migKapSayim[alan] || 0) - (beklenen[alan] || 0);
+    if (fark !== 0) anomali[alan] = fark;
+  }
+  const sayimRibonlarKap: Record<string, number> = kayit.kapanish?.ribonlar || {};
+  for (const tip of new Set([...Object.keys(sayimRibonlarKap), ...Object.keys(beklenenRibonlar)])) {
+    const fark = (sayimRibonlarKap[tip] || 0) - (beklenenRibonlar[tip] || 0);
+    if (fark !== 0) anomali[`ribonlar.${tip}`] = fark;
+  }
+
+  // Bitiş sayacı anomalisi — yazıcı tarafı sabit (kayıttan), satış toplamı güncel
+  const netSatilanToplam = Number(kayit.vardiyaToplam?.["toplamSatılanFotograf"] ?? kayit.vardiyaToplam?.toplamSatilanFotograf) || 0;
+  let satisFotografToplam = 0;
+  for (const satis of satislar) {
+    if (satis.iptal) continue;
+    for (const item of (satis.items || [])) {
+      if (item.dijital) continue;
+      const urun = String(item.product || '');
+      let fotografSayisi = 0;
+      if (urun === '1 Fotoğraf') fotografSayisi = 1;
+      else { const m = urun.match(/^(\d+)/); if (m) fotografSayisi = Number(m[1]); }
+      satisFotografToplam += fotografSayisi * (Number(item.quantity) || 0);
+    }
+  }
+  const bitisAnomFark = netSatilanToplam - satisFotografToplam;
+  const kapanisYaziciAnomali = Math.abs(bitisAnomFark) > 2 ? { netSatilan: netSatilanToplam, satisToplam: satisFotografToplam, fark: bitisAnomFark } : null;
+
+  const guncel = {
+    ...kayit,
+    satisAlbumDusum,
+    farkliTipKullanim: farkliTipKullanim.length > 0 ? farkliTipKullanim : undefined,
+    kapanisAnomali: anomali,
+    kapanisBeklenen: beklenen,
+    kapanisBeklenenRibonlar: beklenenRibonlar,
+    kapanisYaziciAnomali: kapanisYaziciAnomali || null,
+    kapanisYenidenHesapZamani: new Date().toISOString(),
+  };
+  await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, guncel);
+  pgWrite("daily_stock", "upsert", { id: `${mekanId}_${tarih}`, company_id: companyId, venue_id: mekanId, date: tarih, extra_data: guncel, updated_at: new Date().toISOString() });
+
+  // Kapanış tahsilat raporu (sarı popup) fotoğrafını tazele — varsa üzerine yaz, yeni popup üretme
+  let raporYenilendi = false;
+  try {
+    const raporKey = `kapanis_rapor_${mekanId}_${tarih}`;
+    const eskiRapor = await ckv.get(raporKey).catch(() => null);
+    if (eskiRapor) {
+      const yeniRapor = kapanisRaporOlustur(guncel, mekanObjYH || {}, mekanId, tarih);
+      await ckv.set(raporKey, yeniRapor);
+      raporYenilendi = true;
+    }
+  } catch (rErr) { console.log("Kapanış raporu tazeleme hatası (non-fatal):", rErr); }
+
+  console.log(`Kapanış yeniden hesaplandı: ${mekanId}/${tarih} | anomali: ${JSON.stringify(anomali)} | bitiş: ${kapanisYaziciAnomali ? kapanisYaziciAnomali.fark : "yok"} | rapor: ${raporYenilendi}`);
+  return { ok: true, anomali, kapanisYaziciAnomali, beklenen, raporYenilendi };
+};
+
+// ──────────────────────────────────────────
+// STOK: Kapanışı yeniden hesapla (elle tetikleme) — yönetici veya migration key
+// POST /stok/kapanis-yenile — Body: { mekanId?: string, mekanAdi?: string, tarih?: string }
+// ──────────────────────────────────────────
+app.post("/make-server-4da0b637/stok/kapanis-yenile", async (c) => {
+  try {
+    const migKey = c.req.header("X-Migration-Key");
+    let companyId = "aspect";
+    if (migKey !== "aspect-pg-migration-2026") {
+      const user = await verifyToken(c);
+      if (!user || user.user_metadata?.role !== "yonetici") return c.json({ error: "Yetkisiz." }, 403);
+      companyId = getCompanyId(user);
+    } else {
+      companyId = c.req.query("company_id") || "aspect";
+    }
+    const ckv = companyKvFor(companyId);
+    const body: any = await c.req.json().catch(() => ({}));
+    const tarih = body.tarih && /^\d{4}-\d{2}-\d{2}$/.test(body.tarih) ? body.tarih : bizDateTR();
+    let mekanId = body.mekanId || "";
+    if (!mekanId && body.mekanAdi) {
+      const mekanlarYH: any[] = await getMekanlarFor(companyId);
+      const bul = (mekanlarYH || []).find((m: any) => String(m.name || "").toLowerCase().includes(String(body.mekanAdi).toLowerCase()));
+      if (!bul) return c.json({ error: `Mekan bulunamadı: ${body.mekanAdi}` }, 404);
+      mekanId = bul.id;
+    }
+    if (!mekanId) return c.json({ error: "mekanId veya mekanAdi zorunlu." }, 400);
+    const sonuc = await kapanisYenidenHesapla(companyId, ckv, mekanId, tarih);
+    if (!sonuc.ok) return c.json({ error: `Yeniden hesaplanamadı (${sonuc.sebep || "?"}) — ${mekanId}/${tarih}` }, 400);
+    return c.json({ ok: true, mekanId, tarih, ...sonuc });
+  } catch (err) {
+    console.log("Kapanis-yenile error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 // DELETE /stok/satis/:mekanId/:tarih/:satisId — iptal (soft delete)
 app.delete("/make-server-4da0b637/stok/satis/:mekanId/:tarih/:satisId", async (c) => {
   try {
@@ -9573,6 +9741,14 @@ app.delete("/make-server-4da0b637/stok/satis/:mekanId/:tarih/:satisId", async (c
     await ckv.set(`stok_gunluk_${mekanId}_${tarih}`, iptalGunluk);
     pgWrite("daily_stock", "upsert", { id: `${mekanId}_${tarih}`, company_id: getCompanyId(user), venue_id: mekanId, date: tarih, extra_data: iptalGunluk, updated_at: new Date().toISOString() });
     console.log(`Satış iptal (dual): ${satisId} | neden: ${neden} | skipTelegram: ${skipTelegram}`);
+
+    // ── Kapanış yapılmış günün satışı iptal edildi → anomali/beklenen/rapor tazele ──
+    // (iptal edilen satışın albüm düşümü ve foto toplamı beklenenden çıkar; sahte anomali kalmaz)
+    if (iptalGunluk.kapanisYapildi) {
+      try {
+        await kapanisYenidenHesapla(getCompanyId(user), ckv, mekanId, tarih, iptalGunluk);
+      } catch (yhErr) { console.log("Kapanış yeniden hesap hatası (non-fatal):", yhErr); }
+    }
 
     // ── Telegram bildirimi — onay akışından geliyorsa atla (karar endpoint zaten gönderdi) ──
     if (iptalEdilecek && !skipTelegram) {
