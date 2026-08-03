@@ -292,6 +292,8 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
   const [odemeItem, setOdemeItem] = useState<any>(null);
   const [odemeItemPot, setOdemeItemPot] = useState<'nakit' | 'banka'>('banka');
   const [odemeTutarStr, setOdemeTutarStr] = useState(''); // ödemeden önce düzenlenebilir tutar (kesinti/fazla)
+  const [odemeAy, setOdemeAy] = useState(''); // '' = içinde bulunulan ay; geçmişe bakarken YYYY-MM
+  const [showOdenen, setShowOdenen] = useState(false); // ödenen kalemler varsayılan katlı
   // görünürlük (kimler görebilir)
   const [showGorunur, setShowGorunur] = useState(false);
   const [gorunurList, setGorunurList] = useState<any[] | null>(null);
@@ -481,8 +483,23 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
   };
 
   // ── Ödemeler (maaş/kira) ──
-  const reloadOdeme = async () => { try { const r = await fetch(appendGhostParam(`${API_BASE}/kasa2/odemeler`), { headers: await authHeaders() }); if (r.ok) setOdemeData(await r.json()); } catch {} };
-  const openOdeme = async () => { setShowOdeme(true); setOdemeData(null); await reloadOdeme(); };
+  // ayOverride: undefined = görüntülenen ay (odemeAy state), '' = içinde bulunulan ay, 'YYYY-MM' = o ay
+  const reloadOdeme = async (ayOverride?: string) => {
+    const ay = ayOverride !== undefined ? ayOverride : odemeAy;
+    try { const r = await fetch(appendGhostParam(`${API_BASE}/kasa2/odemeler${ay ? `?ay=${ay}` : ''}`), { headers: await authHeaders() }); if (r.ok) setOdemeData(await r.json()); } catch {}
+  };
+  const openOdeme = async () => { setShowOdeme(true); setOdemeData(null); setOdemeAy(''); setShowOdenen(false); await reloadOdeme(''); };
+  // Ay gezinme: geriye ay ay; ileri yönde içinde bulunulan ayı geçemez ('' = bu ay, sunucu belirler)
+  const odemeAyGit = async (delta: number) => {
+    const g = odemeData?.ay; if (!g) return;
+    const [y, m] = g.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    const hedef = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const now = new Date();
+    const buAy = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const yeni = hedef >= buAy ? '' : hedef;
+    setOdemeAy(yeni); setOdemeData(null); setShowOdenen(false); await reloadOdeme(yeni);
+  };
   const odemeYap = async () => {
     if (!odemeItem) return;
     setSaving(true);
@@ -515,8 +532,9 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
   };
   const gBekleyen = showGider ? gBekleyenBul(gKat, gPersonel) : null;
   // Maaş/hakediş seçilince bekleyen kalemleri getir (eşleştirme kutusu için)
+  // Ödemeler panelinde geçmiş bir ay açık kalmışsa eşleştirme yanlış aya bakmasın — güncel aya dön
   useEffect(() => {
-    if (showGider && (gKat === 'maas' || gKat === 'hakedis') && !odemeData) reloadOdeme();
+    if (showGider && (gKat === 'maas' || gKat === 'hakedis') && (!odemeData || odemeAy !== '')) { setOdemeAy(''); reloadOdeme(''); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showGider, gKat]);
 
@@ -1100,26 +1118,48 @@ export function KasaYeni({ userName, userRole, userId, onNavigate }: KasaYeniPro
           <div className="k2sheet" style={{ maxHeight: '88vh', overflowY: 'auto' }}>
             <div className="sh"><h3>📅 Ödemeler{odemeData?.ay ? ` — ${odemeData.ay}` : ''}</h3><button className="close" onClick={() => setShowOdeme(false)}>×</button></div>
             {!odemeData ? <div className="empty">Yükleniyor…</div> : (<>
+              {/* ay gezinme — geçmişe ay ay gidilir, ileri yönde bu ayı geçemez */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+                <button className="subbtn" style={{ width: 'auto', padding: '6px 12px', fontSize: 12 }} onClick={() => odemeAyGit(-1)}>◀ Önceki ay</button>
+                <div style={{ fontSize: 12, fontWeight: 700, color: odemeAy ? 'var(--amber)' : 'var(--mut)' }}>{odemeAy ? 'geçmiş ay' : 'bu ay'}</div>
+                <button className="subbtn" style={{ width: 'auto', padding: '6px 12px', fontSize: 12, visibility: odemeAy ? 'visible' : 'hidden' }} onClick={() => odemeAyGit(1)}>Sonraki ay ▶</button>
+              </div>
               <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
                 <div style={{ flex: 1, background: 'var(--negBg)', borderRadius: 10, padding: '10px 12px' }}><div className="cap">Bekleyen</div><div style={{ fontSize: 18, fontWeight: 750, color: 'var(--neg)' }} className="tnum">{fmt(odemeData.toplamBekleyen)} ₺</div></div>
-                <div style={{ flex: 1, background: 'var(--posBg)', borderRadius: 10, padding: '10px 12px' }}><div className="cap">Bu ay ödenen</div><div style={{ fontSize: 18, fontWeight: 750, color: 'var(--pos)' }} className="tnum">{fmt(odemeData.toplamOdenen)} ₺</div></div>
+                <div style={{ flex: 1, background: 'var(--posBg)', borderRadius: 10, padding: '10px 12px' }}><div className="cap">{odemeAy ? 'O ay ödenen' : 'Bu ay ödenen'}</div><div style={{ fontSize: 18, fontWeight: 750, color: 'var(--pos)' }} className="tnum">{fmt(odemeData.toplamOdenen)} ₺</div></div>
               </div>
-              {(odemeData.items || []).length === 0 && <div className="empty">Ödeme kalemi yok.<br />Maaşlar Maliyet Yönetimi'nden, hakedişler kotalardan gelir.</div>}
-              {(odemeData.items || []).map((it: any) => (
-                <div key={it.key} className="item" style={{ paddingLeft: 15, opacity: it.odendi ? .55 : 1 }}>
-                  <span className="k" style={{ background: it.odendi ? 'var(--pos)' : it.gecikmis ? 'var(--neg)' : it.tip === 'kira' ? 'var(--amber)' : it.tip === 'hakedis' ? 'var(--brand2)' : 'var(--brand)' }} />
-                  <div className="body">
-                    <div className="t">{it.baslik}</div>
-                    <div className="m">{it.tip === 'kira' ? 'Kira' : it.tip === 'hakedis' ? 'Hakediş' : 'Maaş'} · {it.ay}{it.tip === 'hakedis' && (it.keys?.length > 0) && <span style={{ color: 'var(--mut2)' }}> · {it.keys.length} kalem</span>}{it.avans > 0 && <span style={{ color: 'var(--amber)' }}> · bu ay avans −{fmt(it.avans)} (maaş {fmt(it.base)})</span>}{it.gecikmis && <span style={{ color: 'var(--neg)', fontWeight: 700 }}> · gecikmiş</span>}</div>
+              {(() => {
+                const satir = (it: any) => (
+                  <div key={it.key} className="item" style={{ paddingLeft: 15, opacity: it.odendi ? .55 : 1 }}>
+                    <span className="k" style={{ background: it.odendi ? 'var(--pos)' : it.gecikmis ? 'var(--neg)' : it.tip === 'kira' ? 'var(--amber)' : it.tip === 'hakedis' ? 'var(--brand2)' : 'var(--brand)' }} />
+                    <div className="body">
+                      <div className="t">{it.baslik}</div>
+                      <div className="m">{it.tip === 'kira' ? 'Kira' : it.tip === 'hakedis' ? 'Hakediş' : 'Maaş'} · {it.ay}{it.tip === 'hakedis' && (it.keys?.length > 0) && <span style={{ color: 'var(--mut2)' }}> · {it.keys.length} kalem</span>}{it.avans > 0 && <span style={{ color: 'var(--amber)' }}> · bu ay avans −{fmt(it.avans)} (maaş {fmt(it.base)})</span>}{it.gecikmis && <span style={{ color: 'var(--neg)', fontWeight: 700 }}> · gecikmiş</span>}</div>
+                    </div>
+                    <div className="amt2" style={{ color: it.odendi ? 'var(--mut2)' : 'var(--ink)' }}>{fmt(it.tutar)} ₺</div>
+                    {it.odendi ? <span style={{ fontSize: 11, color: 'var(--pos)', fontWeight: 650, marginLeft: 8 }}>ödendi ✓</span>
+                      : canIslem ? (<>
+                          {it.tip === 'hakedis' && <button className="geri" onClick={() => hakedisSil(it)}>Sil</button>}
+                          <button className="ode" onClick={() => { setOdemeItem(it); setOdemeItemPot(it.tip === 'hakedis' ? 'nakit' : 'banka'); setOdemeTutarStr(fmtIn(String(it.tutar || 0))); }}>Öde</button>
+                        </>) : null}
                   </div>
-                  <div className="amt2" style={{ color: it.odendi ? 'var(--mut2)' : 'var(--ink)' }}>{fmt(it.tutar)} ₺</div>
-                  {it.odendi ? <span style={{ fontSize: 11, color: 'var(--pos)', fontWeight: 650, marginLeft: 8 }}>ödendi ✓</span>
-                    : canIslem ? (<>
-                        {it.tip === 'hakedis' && <button className="geri" onClick={() => hakedisSil(it)}>Sil</button>}
-                        <button className="ode" onClick={() => { setOdemeItem(it); setOdemeItemPot(it.tip === 'hakedis' ? 'nakit' : 'banka'); setOdemeTutarStr(fmtIn(String(it.tutar || 0))); }}>Öde</button>
-                      </>) : null}
-                </div>
-              ))}
+                );
+                const bekler = (odemeData.items || []).filter((i: any) => !i.odendi);
+                const odenen = (odemeData.items || []).filter((i: any) => i.odendi);
+                return (<>
+                  {bekler.length === 0 && (odenen.length > 0
+                    ? <div className="empty">Bekleyen kalem yok.</div>
+                    : <div className="empty">Ödeme kalemi yok.<br />Maaşlar Maliyet Yönetimi'nden, hakedişler kotalardan gelir.</div>)}
+                  {bekler.map(satir)}
+                  {odenen.length > 0 && (
+                    <div onClick={() => setShowOdenen((v) => !v)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, padding: '9px 12px', borderRadius: 10, background: 'var(--posBg)', cursor: 'pointer', userSelect: 'none' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--pos)' }}>{showOdenen ? '▾' : '▸'} Ödenenler ({odenen.length})</span>
+                      <span className="tnum" style={{ fontSize: 12, fontWeight: 700, color: 'var(--pos)' }}>{fmt(odemeData.toplamOdenen)} ₺</span>
+                    </div>
+                  )}
+                  {showOdenen && odenen.map(satir)}
+                </>);
+              })()}
               <div style={{ fontSize: 11, color: 'var(--mut2)', marginTop: 12, lineHeight: 1.5 }}>Maaşlar Maliyet Yönetimi'nden, <b style={{ color: 'var(--mut)' }}>hakedişler kota/rotasyondan</b> otomatik gelir; ödediğinde kasadan düşer, hakediş Hakediş Takip'te de <b style={{ color: 'var(--pos)' }}>ödendi</b> işaretlenir. <b style={{ color: 'var(--mut)' }}>Kiralar burada değil</b> — kirayı "Gider ekle" ile manuel girersin.</div>
             </>)}
           </div>
