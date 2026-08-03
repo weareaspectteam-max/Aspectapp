@@ -6341,6 +6341,76 @@ app.post("/make-server-4da0b637/primler/sil", async (c) => {
 });
 
 // ══════════════════════════════════════════
+// PRİM: Bekleyen hakedişleri toplu iptal (bakım)
+// POST /primler/toplu-sil
+// Auth: X-Migration-Key VEYA yonetici/ust-mudur token
+// body: { company_id? (migration-key ile zorunlu), cutoff: "YYYY-MM-DD", aylar?: string[], dryRun?: boolean }
+// cutoff'tan ÖNCEKİ tarihli bekleyen kalemler prim_silindi_ tombstone'lanır;
+// kasadan düşmez, Hakediş Takip'ten tek tek geri alınabilir. Ödenmişe dokunmaz.
+// ══════════════════════════════════════════
+app.post("/make-server-4da0b637/primler/toplu-sil", async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const migKey = c.req.header("X-Migration-Key");
+    let companyId: string;
+    let silenKisi: string;
+    if (migKey === "aspect-pg-migration-2026") {
+      companyId = String(body.company_id || "");
+      if (!companyId) return c.json({ error: "company_id zorunlu." }, 400);
+      silenKisi = "toplu-sil (bakim)";
+    } else {
+      const user = await verifyToken(c);
+      if (!user || !["yonetici", "ust-mudur"].includes(user.user_metadata?.role || "")) {
+        return c.json({ error: "Yetkisiz." }, 403);
+      }
+      companyId = getCompanyId(user);
+      silenKisi = user.email || user.id;
+    }
+    const cutoff = /^\d{4}-\d{2}-\d{2}$/.test(body.cutoff || "") ? body.cutoff : null;
+    if (!cutoff) return c.json({ error: "cutoff (YYYY-MM-DD) zorunlu — bu tarihten ONCEKI bekleyenler silinir." }, 400);
+    const dryRun = body.dryRun === true;
+    const ckv = companyKvFor(companyId);
+
+    // Aylar verilmediyse: daily_stock'ta verisi olan, cutoff ayı ve öncesi (son 12 ay)
+    let aylar: string[] = Array.isArray(body.aylar) ? body.aylar.filter((a: string) => /^\d{4}-\d{2}$/.test(a)) : [];
+    if (!aylar.length) {
+      const tumKayitlar = await getAllDailyStock(companyId, ckv);
+      const aySet = new Set<string>();
+      for (const k of (tumKayitlar || [])) {
+        const ay = String(k?.tarih || "").slice(0, 7);
+        if (/^\d{4}-\d{2}$/.test(ay) && ay <= cutoff.slice(0, 7)) aySet.add(ay);
+      }
+      aylar = [...aySet].sort().slice(-12);
+    }
+
+    const now = new Date().toISOString();
+    const silinen: any[] = [];
+    for (const ay of aylar) {
+      const prim = await _computePrimReport(companyId, ay);
+      for (const p of (prim.primKayitlari || [])) {
+        if (p.odendi) continue;
+        if (String(p.tarih) >= cutoff) continue;
+        if (!dryRun) {
+          await ckv.set(`prim_silindi_${p.odemeKey}`, {
+            silindi: true, silindiTarihi: now, silenKisi,
+            orijinalKey: p.odemeKey, topluSil: true, cutoff,
+          });
+        }
+        silinen.push({ ay, tarih: p.tarih, personelAdi: p.personelAdi, mekan: p.mekanName, primMiktar: p.primMiktar, key: p.odemeKey });
+      }
+    }
+    const toplamTutar = silinen.reduce((s, x) => s + (Number(x.primMiktar) || 0), 0);
+    const kisiOzet: Record<string, number> = {};
+    for (const s of silinen) kisiOzet[s.personelAdi] = (kisiOzet[s.personelAdi] || 0) + (Number(s.primMiktar) || 0);
+    console.log(`[primler/toplu-sil] ${companyId}: ${dryRun ? "DRY-RUN " : ""}${silinen.length} kalem, ${toplamTutar} TL, cutoff=${cutoff}, aylar=${aylar.join(",")} — by ${silenKisi}`);
+    return c.json({ success: true, dryRun, companyId, cutoff, aylar, kalemSayisi: silinen.length, toplamTutar, kisiOzet, silinen });
+  } catch (err) {
+    console.log("Prim toplu-sil error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
+// ══════════════════════════════════════════
 // HAKEDİŞ DAHİL: Kişi bazlı hakediş dahil listesi
 // Varsayılan: dahil değil — listeye eklenenler hakediş alır
 // GET  /hakedis/dahil — dahil userId listesini getir
