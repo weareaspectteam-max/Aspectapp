@@ -77,11 +77,25 @@ export const mdel = async (keys: string[]): Promise<void> => {
 };
 
 // Search for key-value pairs by prefix.
+// PostgREST tek istekte en fazla 1000 satır döndürür ve sıralama verilmezse
+// hangi 1000'in geleceği belirsizdir — 1000+ kayıtlı prefix'lerde yeni kayıtlar
+// sessizce düşüyordu. key sırasına göre sayfalayarak tüm kayıtları oku.
 export const getByPrefix = async (prefix: string): Promise<any[]> => {
   const supabase = client()
-  const { data, error } = await supabase.from("kv_store_4da0b637").select("key, value").like("key", prefix + "%");
-  if (error) {
-    throw new Error(error.message);
+  const pageSize = 1000;
+  const out: any[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("kv_store_4da0b637")
+      .select("key, value")
+      .like("key", prefix + "%")
+      .order("key")
+      .range(from, from + pageSize - 1);
+    if (error) {
+      throw new Error(error.message);
+    }
+    out.push(...(data ?? []).map((d) => d.value));
+    if (!data || data.length < pageSize) break;
   }
-  return data?.map((d) => d.value) ?? [];
+  return out;
 };
