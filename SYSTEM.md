@@ -10,6 +10,7 @@ Yeni bolumler ilgili sayfa duzenlenirken eklenir.
 - **Frontend:** Next.js 16 + React + TypeScript + Tailwind CSS + motion/react (framer-motion)
 - **Backend:** Supabase Edge Functions (Hono framework) + KV (Key-Value) storage
 - **KV okuma:** `getByPrefix` key sirali sayfalama yapar (2026-08-14) — PostgREST'in sessiz 1000 satir limiti nedeniyle; 1000+ kayitli prefix'lerde eski davranis yeni kayitlari dusuruyordu
+- **SQL liste okuma:** index.ts'deki tum SQL liste okumalari (`getAllDailyStock`, giderler/gelirler, duyurular, kasa/kv_cache prefix, siparis/teslimat/odeme) `sqlSelectAll` helper'indan gecer (2026-09-07) — ayni 1000 satir limiti SQL select'lerde de var; yeni tam-tablo okuma eklerken `sqlSelectAll` kullan. Inline `kasa_hareket`/`equipment` okumalari henuz sayfasiz (satir sayilari dusuk)
 - **API Base:** `https://{projectId}.supabase.co/functions/v1/make-server-4da0b637`
 - **Auth:** Supabase Auth + JWT token (X-Access-Token header)
 - **Roller:** yonetici, ust-mudur, mudur, personel, bekleyen

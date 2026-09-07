@@ -102,14 +102,33 @@ const pgWrite = async (table: string, action: "upsert" | "insert" | "update" | "
   }
 };
 
+// ── PostgREST sessiz 1000 satır limiti: sayfalı tam okuma ────────────────
+// Supabase select() sorguları LIMIT verilmese de en fazla 1000 satır döndürür
+// (kv_store getByPrefix'teki bug'ın SQL karşılığı). Tüm liste okumaları bu
+// helper'dan geçmeli. buildQuery her sayfada SIFIRDAN yeni query üretmeli
+// (builder mutable); helper deterministik sıra için id tie-break ekler.
+const sqlSelectAll = async (buildQuery: () => any): Promise<any[]> => {
+  const PAGE = 1000;
+  const all: any[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await buildQuery()
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    if (data && data.length > 0) all.push(...data);
+    if (!data || data.length < PAGE) return all;
+  }
+};
+
 // ── SQL daily_stock read helper (KV fallback) ────────────────────────────
 const getAllDailyStock = async (companyId: string, ckv: any, venueId?: string): Promise<any[]> => {
   try {
     const db = getAdminClient();
-    let q = db.from("daily_stock").select("extra_data").eq("company_id", companyId);
-    if (venueId) q = q.eq("venue_id", venueId);
-    const { data, error } = await q;
-    if (error || !data) throw new Error(error?.message || "no-data");
+    const data = await sqlSelectAll(() => {
+      let q = db.from("daily_stock").select("extra_data").eq("company_id", companyId);
+      if (venueId) q = q.eq("venue_id", venueId);
+      return q;
+    });
     return data.map((r: any) => r.extra_data);
   } catch (e) {
     console.log(`[getAllDailyStock] SQL fail (${e}), KV fallback`);
@@ -131,8 +150,10 @@ const getKasaRecord = async (companyId: string, ckv: any, kvKey: string): Promis
 const getKasaByPrefix = async (companyId: string, ckv: any, prefix: string): Promise<any[]> => {
   try {
     const db = getAdminClient();
-    const { data, error } = await db.from("kasa_records").select("extra_data").eq("company_id", companyId).like("id", `${prefix}%`);
-    if (error || !data || data.length === 0) throw new Error(error?.message || "no-data");
+    const data = await sqlSelectAll(() =>
+      db.from("kasa_records").select("extra_data").eq("company_id", companyId).like("id", `${prefix}%`)
+    );
+    if (data.length === 0) throw new Error("no-data");
     return data.map((r: any) => r.extra_data);
   } catch {
     return await ckv.getByPrefix(prefix) || [];
@@ -148,8 +169,10 @@ const delKasaRecord = (companyId: string, kvKey: string) => {
 const getAllGiderler = async (companyId: string, ckv: any): Promise<any[]> => {
   try {
     const db = getAdminClient();
-    const { data, error } = await db.from("operating_expenses").select("extra_data").eq("company_id", companyId);
-    if (error || !data || data.length === 0) throw new Error("kv-fallback");
+    const data = await sqlSelectAll(() =>
+      db.from("operating_expenses").select("extra_data").eq("company_id", companyId)
+    );
+    if (data.length === 0) throw new Error("kv-fallback");
     return data.map((r: any) => r.extra_data);
   } catch {
     return await ckv.getByPrefix("isletme_gider_") || [];
@@ -159,8 +182,10 @@ const getAllGiderler = async (companyId: string, ckv: any): Promise<any[]> => {
 const getAllGelirler = async (companyId: string, ckv: any): Promise<any[]> => {
   try {
     const db = getAdminClient();
-    const { data, error } = await db.from("operating_income").select("extra_data").eq("company_id", companyId);
-    if (error || !data || data.length === 0) throw new Error("kv-fallback");
+    const data = await sqlSelectAll(() =>
+      db.from("operating_income").select("extra_data").eq("company_id", companyId)
+    );
+    if (data.length === 0) throw new Error("kv-fallback");
     return data.map((r: any) => r.extra_data);
   } catch {
     return await ckv.getByPrefix("isletme_gelir_") || [];
@@ -170,8 +195,10 @@ const getAllGelirler = async (companyId: string, ckv: any): Promise<any[]> => {
 const getAllDuyurular = async (companyId: string, ckv: any): Promise<any[]> => {
   try {
     const db = getAdminClient();
-    const { data, error } = await db.from("announcements").select("extra_data").eq("company_id", companyId);
-    if (error || !data || data.length === 0) throw new Error("kv-fallback");
+    const data = await sqlSelectAll(() =>
+      db.from("announcements").select("extra_data").eq("company_id", companyId)
+    );
+    if (data.length === 0) throw new Error("kv-fallback");
     return data.map((r: any) => r.extra_data);
   } catch {
     return await ckv.getByPrefix("announcement_") || [];
@@ -192,8 +219,10 @@ const getKvCache = async (companyId: string, ckv: any, kvKey: string): Promise<a
 const getKvCacheByPrefix = async (companyId: string, ckv: any, prefix: string): Promise<any[]> => {
   try {
     const db = getAdminClient();
-    const { data, error } = await db.from("kv_cache").select("extra_data").eq("company_id", companyId).like("id", `${prefix}%`);
-    if (error || !data || data.length === 0) throw new Error("kv-fallback");
+    const data = await sqlSelectAll(() =>
+      db.from("kv_cache").select("extra_data").eq("company_id", companyId).like("id", `${prefix}%`)
+    );
+    if (data.length === 0) throw new Error("kv-fallback");
     return data.map((r: any) => r.extra_data);
   } catch {
     return await ckv.getByPrefix(prefix) || [];
@@ -210,11 +239,12 @@ const delKvCache = (companyId: string, kvKey: string) => {
 const getOrders = async (companyId: string, ckv: any, filters?: { vendorId?: string; status?: string }): Promise<any[]> => {
   try {
     const db = getAdminClient();
-    let q = db.from("purchase_orders").select("extra_data").eq("company_id", companyId);
-    if (filters?.vendorId) q = q.eq("vendor_id", filters.vendorId);
-    if (filters?.status) q = q.eq("status", filters.status);
-    const { data, error } = await q.order("created_at", { ascending: false });
-    if (error || !data) throw new Error(error?.message || "no-data");
+    const data = await sqlSelectAll(() => {
+      let q = db.from("purchase_orders").select("extra_data").eq("company_id", companyId);
+      if (filters?.vendorId) q = q.eq("vendor_id", filters.vendorId);
+      if (filters?.status) q = q.eq("status", filters.status);
+      return q.order("created_at", { ascending: false });
+    });
     return data.map((r: any) => r.extra_data);
   } catch (e) {
     console.log(`[getOrders] SQL fail (${e}), KV fallback`);
@@ -255,12 +285,13 @@ const deleteOrder = async (companyId: string, ckv: any, orderId: string) => {
 const getDeliveries = async (companyId: string, ckv: any, filters?: { orderId?: string; vendorId?: string; status?: string }): Promise<any[]> => {
   try {
     const db = getAdminClient();
-    let q = db.from("deliveries").select("extra_data").eq("company_id", companyId);
-    if (filters?.orderId) q = q.eq("order_id", filters.orderId);
-    if (filters?.vendorId) q = q.eq("vendor_id", filters.vendorId);
-    if (filters?.status) q = q.eq("status", filters.status);
-    const { data, error } = await q.order("created_at", { ascending: false });
-    if (error || !data) throw new Error(error?.message || "no-data");
+    const data = await sqlSelectAll(() => {
+      let q = db.from("deliveries").select("extra_data").eq("company_id", companyId);
+      if (filters?.orderId) q = q.eq("order_id", filters.orderId);
+      if (filters?.vendorId) q = q.eq("vendor_id", filters.vendorId);
+      if (filters?.status) q = q.eq("status", filters.status);
+      return q.order("created_at", { ascending: false });
+    });
     return data.map((r: any) => r.extra_data);
   } catch (e) {
     console.log(`[getDeliveries] SQL fail (${e}), KV fallback`);
@@ -295,11 +326,12 @@ const saveDelivery = async (companyId: string, ckv: any, delivery: any) => {
 const getSupplierPayments = async (companyId: string, ckv: any, filters?: { orderId?: string; vendorId?: string }): Promise<any[]> => {
   try {
     const db = getAdminClient();
-    let q = db.from("supplier_payments").select("extra_data").eq("company_id", companyId);
-    if (filters?.orderId) q = q.eq("order_id", filters.orderId);
-    if (filters?.vendorId) q = q.eq("vendor_id", filters.vendorId);
-    const { data, error } = await q.order("created_at", { ascending: false });
-    if (error || !data) throw new Error(error?.message || "no-data");
+    const data = await sqlSelectAll(() => {
+      let q = db.from("supplier_payments").select("extra_data").eq("company_id", companyId);
+      if (filters?.orderId) q = q.eq("order_id", filters.orderId);
+      if (filters?.vendorId) q = q.eq("vendor_id", filters.vendorId);
+      return q.order("created_at", { ascending: false });
+    });
     return data.map((r: any) => r.extra_data);
   } catch (e) {
     console.log(`[getSupplierPayments] SQL fail (${e}), KV fallback`);
