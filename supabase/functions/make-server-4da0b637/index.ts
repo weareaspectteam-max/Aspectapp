@@ -12477,6 +12477,137 @@ app.post("/make-server-4da0b637/kapanis-bildirim/gun-kapat", async (c) => {
   }
 });
 
+// POST /kapanis-bildirim/toplu-kapat — Body: { onay: "TOPLU-KAPAT", kuru?: boolean }
+// Geriye dönük toplu mutabakat: sistem canlıya alındıktan sonra hiç kullanılmadığı için
+// birikmiş TÜM bekleyen kapanış teslimlerini "teslim alındı" işaretler, açık gün kayıtlarını
+// teslim alıp kapatır ve popup işaretlerini temizler.
+// Her kayda toplu:true düşer — log'da gerçek elden teslimle karışmasın diye.
+// gun_kapatma birikimi bilerek YAPILMAZ: fiilen bugün kimse para toplamadı; birikim yazıp
+// hemen kapatmak "X bugün 644.385₺ topladı" gibi yanlış bir iz bırakırdı.
+// kuru:true → hiçbir şey yazmaz, sadece ne yapacağını raporlar.
+app.post("/make-server-4da0b637/kapanis-bildirim/toplu-kapat", async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({} as any));
+    if (body?.onay !== "TOPLU-KAPAT") {
+      return c.json({ error: "onay alanı 'TOPLU-KAPAT' olmalıdır." }, 400);
+    }
+    // Auth: X-Migration-Key (bakım) VEYA yonetici token
+    const migKey = c.req.header("X-Migration-Key");
+    let companyId: string;
+    let yapanId: string;
+    let yapanAd: string;
+    if (migKey === "aspect-pg-migration-2026") {
+      companyId = String(body.company_id || "");
+      if (!companyId) return c.json({ error: "company_id zorunlu." }, 400);
+      yapanId = "toplu-kapat";
+      yapanAd = "Toplu Mutabakat (bakim)";
+    } else {
+      const user = await verifyToken(c);
+      if (!user) return c.json({ error: "Yetkisiz erişim." }, 401);
+      if (user.user_metadata?.role !== "yonetici") {
+        return c.json({ error: "Bu işlem yalnızca yönetici tarafından yapılabilir." }, 403);
+      }
+      companyId = getCompanyId(user);
+      yapanId = user.id;
+      yapanAd = user.user_metadata?.full_name || user.email || "";
+    }
+    const kuru = body?.kuru === true;
+
+    const ckv = companyKvFor(companyId);
+    const config: any = await ckv.get("kapanis_bildirim_config");
+    const configKisiler: any[] = config?.kisiler || [];
+    const now = new Date().toISOString();
+
+    let raporSayisi = 0, kisiSayisi = 0, toplamTutar = 0;
+
+    // ── Faz 1: bekleyen kapanış teslimlerini işaretle ──
+    const raporlar: any[] = await ckv.getByPrefix("kapanis_rapor_").catch(() => []) || [];
+    for (const rapor of raporlar) {
+      if (!rapor?.id) continue;
+      const teslimKey = `kapanis_teslim_${rapor.id}`;
+      const teslim: any = await ckv.get(teslimKey) || { raporId: rapor.id, kisiler: {}, log: [] };
+      const hedefler = (rapor.personeller || []).filter(
+        (p: any) => (p.nakitTL || 0) > 0 && !teslim.kisiler[p.id]?.alindi
+      );
+      if (hedefler.length === 0) continue;
+      for (const p of hedefler) {
+        kisiSayisi++;
+        toplamTutar += p.nakitTL || 0;
+        if (kuru) continue;
+        teslim.kisiler[p.id] = { alindi: true, alanId: yapanId, alanAd: yapanAd, zaman: now, toplu: true };
+        teslim.log.push({
+          islem: "teslim", toplu: true, personelId: p.id, personelAd: p.ad,
+          tutar: p.nakitTL || 0, yapanId, yapanAd, zaman: now,
+        });
+      }
+      raporSayisi++;
+      if (!kuru) await ckv.set(teslimKey, teslim);
+    }
+
+    // ── Faz 2: açık gün kayıtlarını teslim al + kapat ──
+    let gunSayisi = 0, gunTutar = 0;
+    const tumGunler: any[] = await ckv.getByPrefix("gun_kapatma_").catch(() => []) || [];
+    for (const gun of tumGunler) {
+      if (!gun?.tarih || gun.kapandi) continue;
+      const toplayicilar = Object.entries(gun.toplayicilar || {});
+      if (toplayicilar.length === 0) continue;
+      for (const [tid, t] of toplayicilar as [string, any][]) {
+        if ((t.toplanan || 0) <= 0 || t.teslim?.alindi) continue;
+        gunTutar += t.toplanan || 0;
+        if (kuru) continue;
+        t.teslim = {
+          alindi: true, alanId: yapanId, alanAd: yapanAd, zaman: now,
+          alinanTutar: t.toplanan || 0, acikTutar: 0, toplu: true,
+        };
+        gun.log.push({
+          islem: "teslim", toplu: true, toplayiciId: tid, toplayiciAd: t.ad,
+          beklenen: t.toplanan || 0, alinan: t.toplanan || 0, acik: 0,
+          yapanId, yapanAd, zaman: now,
+        });
+        await ckv.del(`kapanis_acik_${tid}_gun_${gun.tarih}`).catch(() => {});
+      }
+      gunSayisi++;
+      if (!kuru) {
+        gun.kapandi = true;
+        gun.kapatanId = yapanId;
+        gun.kapatanAd = yapanAd;
+        gun.kapatmaZamani = now;
+        gun.log.push({ islem: "gun-kapat", toplu: true, yapanId, yapanAd, zaman: now });
+        await ckv.set(`gun_kapatma_${gun.tarih}`, gun);
+      }
+    }
+
+    // ── Faz 3: tüm bekleyen popup işaretlerini temizle (sahipsizler dahil) ──
+    let popupSayisi = 0;
+    const bekleyenler: any[] = await ckv.getByPrefix("kapanis_bekleyen_").catch(() => []) || [];
+    for (const b of bekleyenler) {
+      if (!b?.raporId || !b?.userId) continue;
+      popupSayisi++;
+      if (!kuru) await ckv.del(`kapanis_bekleyen_${b.userId}_${b.raporId}`).catch(() => {});
+    }
+    // Config'te olup kaydı okunamayan artıklar için ikinci tarama
+    if (!kuru) {
+      for (const k of configKisiler) {
+        for (const rapor of raporlar) {
+          if (rapor?.id) await ckv.del(`kapanis_bekleyen_${k.userId}_${rapor.id}`).catch(() => {});
+        }
+      }
+    }
+
+    const ozet = {
+      kuru, companyId,
+      raporSayisi, kisiSayisi, toplamTutar,
+      gunSayisi, gunTutar, popupSayisi,
+      yapan: yapanAd, zaman: now,
+    };
+    console.log(`[toplu-kapat] ${kuru ? "KURU " : ""}${JSON.stringify(ozet)}`);
+    return c.json({ ok: true, ...ozet });
+  } catch (err) {
+    console.log("POST kapanis-bildirim/toplu-kapat error:", err);
+    return c.json({ error: `Sunucu hatası: ${err}` }, 500);
+  }
+});
+
 // GET /kapanis-bildirim/acik — TÜM personelin açık/fazla kayıtları (yonetici + ust-mudur)
 app.get("/make-server-4da0b637/kapanis-bildirim/acik", async (c) => {
   try {
