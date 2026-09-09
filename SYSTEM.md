@@ -389,6 +389,13 @@ Yonetici menu girisini her zaman gorur; digerleri sadece config'de kayitliysa.
 | GET | `/kapanis-bildirim/acigim` | Kullanicinin SADECE kendi acik kayitlari |
 | POST | `/kapanis-bildirim/acik-tahsil` | Body `{acikId, tutar}` — yonetici/ust-mudur veya teslimYetkisi |
 | POST | `/kapanis-bildirim/test` | Yonetici: dunun kapanislarini kendine popup gonderir (X-Migration-Key alternatif auth) |
+| POST | `/kapanis-bildirim/toplu-kapat` | Bakim: birikmis TUM bekleyen teslimleri geriye donuk kapatir. Body `{onay:"TOPLU-KAPAT", kuru?:bool, company_id?}` — X-Migration-Key VEYA yonetici token. `kuru:true` yazmadan raporlar. Kayitlara `toplu:true` duser. **gun_kapatma birikimi YAPMAZ** (asagiya bak) |
+
+> ⚠️ **Toplu islem yazarken dikkat:** Tekil `/teslim` endpoint'i, isaretleyen kisinin ustune
+> `gun_kapatma_{tarih}` icinde toplayici borcu yazar. Yani "hepsini teslim aldim" demek sari yigini
+> kapatip ayni buyuklukte mor yigin acar. `toplu-kapat` bu birikimi bilerek atlar — fiilen kimse
+> para toplamadigi icin yanlis iz birakmamak adina. 2026-09-09'da aspect'te calistirildi:
+> 122 rapor / 163 kisi / 644.385 TL / 490 popup temizlendi.
 
 ### Menu Gorunurlugu
 - Hamburger > GENEL > "Kapanis Bildirimleri": yonetici her zaman gorur; digerleri config'de kayitliysa gorur
