@@ -810,9 +810,9 @@ Stil: `background: rgba(251,191,36,0.15)`, `border: 1px solid rgba(251,191,36,0.
 
 ---
 
-## Gorsel Kaplama (2026-09, dal: redesign/kaplama)
+## Gorsel Kaplama (2026-09-29 canli — main commit `11856dc3`)
 
-Mobil uygulamanin gorunumu yenilendi; akis, dugme yerleri, veri ve yetkiler DEGISMEDI. PC paneli (`/pc`, `.pc-root` kendi fontu) etkilenmez.
+Mobil uygulamanin gorunumu yenilendi; akis, dugme yerleri, veri ve yetkiler DEGISMEDI. PC paneli (`/pc`, `.pc-root` kendi fontu) etkilenmez. Calisma `redesign/kaplama` dalinda 4 adimda yapildi, main'e TEK commit (squash) olarak alindi; dal referans icin duruyor.
 
 **Dosyalar**
 | Dosya | Rol |
@@ -832,7 +832,7 @@ Mobil uygulamanin gorunumu yenilendi; akis, dugme yerleri, veri ve yetkiler DEGI
 
 **Kapsam (adim adim commit):** temel katman -> personel ana ekrani (+ vardiya karti, kur karti) -> hizli satis (satis + kare modu, operasyon karti) -> yonetici ana ekrani. Acilis/Kapanis sekmeleri, iskonto numpad'i, hamburger menu icerigi, mesajlar ve diger sayfalar HENUZ kaplanmadi (font global oldugu icin yazi tipi degisti, duzen ayni).
 
-**Geri alma:** dal `main`'e tek commit olarak (squash) birlestirilir; sorun cikarsa `git revert <o commit>` + push, ya da Vercel panelinde onceki deployment'a "Instant Rollback". Bileşen bazinda geri almak icin ilgili commit revert edilir.
+**Geri alma (tek komut):** `git revert 11856dc3 && git push origin main` → Vercel eski gorunumu yayinlar. Alternatif: Vercel panelinde bir onceki deployment'a "Instant Rollback". Bilesen bazinda geri almak icin `redesign/kaplama` dalindaki ilgili adim commit'i revert edilir.
 
 ---
 
