@@ -214,12 +214,13 @@
 .sk-dock__item--on { color: #fff; font-weight: 700; }
 .sk-dock__icon { transition: transform 0.2s, color 0.2s; }
 .sk-dock__item--on .sk-dock__icon { color: var(--c); filter: drop-shadow(0 0 8px rgba(var(--c-rgb), 0.85)); transform: translateY(-1px); }
+/* Not: motion (layoutId) bu ogeye kendi transform'unu yazar; ortalama bu yuzden transform'suz, left ile yapilir */
 .sk-dock__light {
-  position: absolute; top: -9px; left: 50%; transform: translateX(-50%); width: 30px; height: 3px;
+  position: absolute; top: -9px; left: calc(50% - 15px); width: 30px; height: 3px;
   border-radius: 0 0 4px 4px; background: var(--c); box-shadow: 0 3px 14px rgba(var(--c-rgb), 0.9);
 }
 .sk-dock__glow {
-  position: absolute; top: -8px; left: 50%; transform: translateX(-50%); width: 64px; height: 44px; border-radius: 50%;
+  position: absolute; top: -8px; left: calc(50% - 32px); width: 64px; height: 44px; border-radius: 50%;
   background: radial-gradient(closest-side, rgba(var(--c-rgb), 0.3), transparent); pointer-events: none;
 }
 .sk-dock__badge {
