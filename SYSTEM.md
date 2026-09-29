@@ -830,7 +830,7 @@ Mobil uygulamanin gorunumu yenilendi; akis, dugme yerleri, veri ve yetkiler DEGI
 - Ust bar (`app-header.tsx`): yukseklik korunur (icerik `pt-[60px]` buna gore).
 - Prim rayi (`project-selector.tsx`): kademe gecisinde kutlama (`kotaPop`/`kotaToast`); mekan degisiminde ve degisimden sonraki 3 sn icinde tetiklenmez.
 
-**Kapsam (adim adim commit):** temel katman -> personel ana ekrani (+ vardiya karti, kur karti) -> hizli satis (satis + kare modu, operasyon karti) -> yonetici ana ekrani. Acilis/Kapanis sekmeleri, iskonto numpad'i, hamburger menu icerigi, mesajlar ve diger sayfalar HENUZ kaplanmadi (font global oldugu icin yazi tipi degisti, duzen ayni).
+**Kapsam (adim adim commit):** temel katman -> personel ana ekrani (+ vardiya karti, kur karti) -> hizli satis (satis + kare modu, operasyon karti) -> yonetici ana ekrani. Sonraki kucuk commit'ler: alt bar isik cizgisi hizasi (`f12585f8`, motion transform cakismasi → `left: calc(50% - 15px)`), iskonto numpad'i + doviz net paneli (`31135cd7`). Acilis/Kapanis sekmeleri, hamburger menu icerigi, mesajlar ve diger sayfalar HENUZ kaplanmadi (font global oldugu icin yazi tipi degisti, duzen ayni).
 
 **Geri alma (tek komut):** `git revert 11856dc3 && git push origin main` → Vercel eski gorunumu yayinlar. Alternatif: Vercel panelinde bir onceki deployment'a "Instant Rollback". Bilesen bazinda geri almak icin `redesign/kaplama` dalindaki ilgili adim commit'i revert edilir.
 
