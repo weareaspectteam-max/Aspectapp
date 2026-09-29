@@ -1,8 +1,9 @@
 // quick-sales v2 — global iade, per-printer kaldirildi
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Send, Clock, ShoppingCart, X, Plus, Trash2, Tag, XCircle, CheckCircle, ArrowLeft, AlertCircle, Camera, ChevronRight, UserPlus, Package, Printer, Grid3x3, Film, AlertTriangle, TrendingDown, TrendingUp, Maximize2, Minimize2 } from 'lucide-react';
+import { Send, Clock, ShoppingCart, X, Plus, Trash2, Tag, XCircle, CheckCircle, ArrowLeft, AlertCircle, Camera, ChevronRight, UserPlus, Package, Printer, Grid3x3, Film, AlertTriangle, TrendingDown, TrendingUp, Maximize2, Minimize2, Sunrise, Flag, Check, Zap, Book, Smartphone, ArrowLeftRight, RefreshCw, BarChart3, Banknote, Landmark, CreditCard, User, Hourglass, WifiOff, Users, Pencil } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ProjectSelector } from './project-selector';
+import { skVars, albumFanSvg } from '../lib/skin';
 import { LiveFeedSheet } from './live-feed-sheet';
 
 import { NewBottomNav } from './new-bottom-nav';
@@ -839,16 +840,18 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
   const currencySymbol = (c: string) => c === 'EUR' ? '€' : c === 'USD' ? '$' : c === 'GBP' ? '£' : c === 'BGN' ? 'лв' : c === 'RUB' ? '₽' : c === 'SAR' ? '﷼' : '₺';
   const pSym = currencySymbol(mekanPriceCurrency);
 
+  // count/suffix/tileColor: görsel kaplama (polaroid yelpaze kutuları). name/price/color/icon aynen korunur.
   const products = [
-    { name: "1 Fotoğraf", price: mekanPhotoPrice,      color: 'from-[#9dd9ea] to-[#7ec8dd]', icon: '📸' },
-    { name: "3'lü",       price: mekanPhotoPrice * 3,  color: 'from-[#b8d4f1] to-[#9cc0e8]', icon: '🎨' },
-    { name: "5'li",       price: mekanPhotoPrice * 5,  color: 'from-[#d4b5f7] to-[#c79ff0]', icon: '🖼️' },
-    { name: "7'li",       price: mekanPhotoPrice * 7,  color: 'from-[#ffb3d9] to-[#ff99cc]', icon: '✨' },
-    { name: "9'lu",       price: mekanPhotoPrice * 9,  color: 'from-[#ffe5b4] to-[#ffd89b]', icon: '🌟' },
-    { name: "11'li",      price: mekanPhotoPrice * 11, color: 'from-[#a8e6cf] to-[#8dd9b8]', icon: '💎' },
-    { name: "13'lü",      price: mekanPhotoPrice * 13, color: 'from-[#c5a8f5] to-[#b490ed]', icon: '🏆' },
-    { name: "15'li",      price: mekanPhotoPrice * 15, color: 'from-[#ffd4a3] to-[#ffc78f]', icon: '🎯' },
+    { name: "1 Fotoğraf", price: mekanPhotoPrice,      color: 'from-[#9dd9ea] to-[#7ec8dd]', icon: '📸', count: 1,  suffix: 'Fotoğraf', tileColor: '#67e8f9' },
+    { name: "3'lü",       price: mekanPhotoPrice * 3,  color: 'from-[#b8d4f1] to-[#9cc0e8]', icon: '🎨', count: 3,  suffix: "'lü",      tileColor: '#93c5fd' },
+    { name: "5'li",       price: mekanPhotoPrice * 5,  color: 'from-[#d4b5f7] to-[#c79ff0]', icon: '🖼️', count: 5,  suffix: "'li",      tileColor: '#c4b5fd' },
+    { name: "7'li",       price: mekanPhotoPrice * 7,  color: 'from-[#ffb3d9] to-[#ff99cc]', icon: '✨', count: 7,  suffix: "'li",      tileColor: '#f9a8d4' },
+    { name: "9'lu",       price: mekanPhotoPrice * 9,  color: 'from-[#ffe5b4] to-[#ffd89b]', icon: '🌟', count: 9,  suffix: "'lu",      tileColor: '#fde68a' },
+    { name: "11'li",      price: mekanPhotoPrice * 11, color: 'from-[#a8e6cf] to-[#8dd9b8]', icon: '💎', count: 11, suffix: "'li",      tileColor: '#6ee7b7' },
+    { name: "13'lü",      price: mekanPhotoPrice * 13, color: 'from-[#c5a8f5] to-[#b490ed]', icon: '🏆', count: 13, suffix: "'lü",      tileColor: '#a78bfa' },
+    { name: "15'li",      price: mekanPhotoPrice * 15, color: 'from-[#ffd4a3] to-[#ffc78f]', icon: '🎯', count: 15, suffix: "'li",      tileColor: '#fdba74' },
   ];
+  const tileColorOf = (productName: string) => products.find(p => p.name === productName)?.tileColor ?? '#c4b5fd';
 
   const calculateTotal = () => cart.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -1925,56 +1928,40 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
 
           {/* ── 4 MODE TABS ── */}
           <div className="px-4 pb-3">
-            <div className="flex gap-1 items-stretch bg-white/5 rounded-2xl p-1 border border-white/10">
+            <div className="sk-tabs">
               <button
                 onClick={() => setActiveMode('shift-start')}
-                className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all flex flex-col items-center gap-0.5 ${
-                  activeMode === 'shift-start'
-                    ? 'bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] text-[#2d3748] shadow-lg'
-                    : 'text-gray-400 hover:text-white'
-                }`}
+                className={`sk-tab${activeMode === 'shift-start' ? ' sk-tab--on' : shiftStartDone ? ' sk-tab--done' : ''}`}
+                style={skVars('#34d399')}
               >
-                <span className="text-base">{shiftStartDone ? '✅' : '🌅'}</span>
+                {shiftStartDone ? <Check className="w-[18px] h-[18px]" strokeWidth={2.4} /> : <Sunrise className="w-[18px] h-[18px]" />}
                 <span>Açılış</span>
               </button>
               <button
                 onClick={() => setActiveMode('sales')}
-                className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all flex flex-col items-center gap-0.5 ${
-                  activeMode === 'sales'
-                    ? 'bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] shadow-lg'
-                    : 'text-gray-400 hover:text-white'
-                }`}
+                className={`sk-tab${activeMode === 'sales' ? ' sk-tab--on' : ''}`}
+                style={skVars('#22d3ee')}
               >
-                <span className="text-base">⚡</span>
+                <Zap className="w-[18px] h-[18px]" />
                 <span>Satış</span>
               </button>
               <button
                 onClick={() => setActiveMode('frames')}
-                className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all flex flex-col items-center gap-0.5 ${
-                  activeMode === 'frames'
-                    ? 'bg-gradient-to-br from-[#d4b5f7] to-[#c79ff0] text-[#2d3748] shadow-lg'
-                    : 'text-gray-400 hover:text-white'
-                }`}
+                className={`sk-tab${activeMode === 'frames' ? ' sk-tab--on' : ''}`}
+                style={skVars('#c084fc')}
               >
-                <div className="relative">
-                  <span className="text-base">📷</span>
-                  {pendingFrameCount > 0 && (
-                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#d4b5f7] rounded-full flex items-center justify-center text-[8px] font-black text-[#2d3748] leading-none">
-                      {pendingFrameCount}
-                    </span>
-                  )}
-                </div>
+                <Camera className="w-[18px] h-[18px]" />
+                {pendingFrameCount > 0 && (
+                  <span className="sk-tab__badge">{pendingFrameCount}</span>
+                )}
                 <span>Kare</span>
               </button>
               <button
                 onClick={() => setActiveMode('shift-end')}
-                className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all flex flex-col items-center gap-0.5 ${
-                  activeMode === 'shift-end'
-                    ? 'bg-gradient-to-br from-[#ffb3ba] to-[#ff9ea5] text-[#2d3748] shadow-lg'
-                    : 'text-gray-400 hover:text-white'
-                }`}
+                className={`sk-tab${activeMode === 'shift-end' ? ' sk-tab--on' : shiftEndDone ? ' sk-tab--done' : ''}`}
+                style={skVars('#fb7185')}
               >
-                <span className="text-base">{shiftEndDone ? '✅' : '🏁'}</span>
+                {shiftEndDone ? <Check className="w-[18px] h-[18px]" strokeWidth={2.4} /> : <Flag className="w-[18px] h-[18px]" />}
                 <span>Kapanış</span>
               </button>
 
@@ -2460,23 +2447,27 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
             <div className="px-6 space-y-4 pb-8">
               {/* Product Grid */}
               <div>
-                <label className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                <label className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                   <span>Albüm Seç</span>
-                  <span className="text-lg">📚</span>
+                  <Book className="w-4 h-4" style={{ color: '#f0abfc' }} />
                 </label>
                 <div className="grid grid-cols-4 gap-2">
                   {products.map((product) => (
                     <button
                       key={product.name}
                       onClick={() => addToCart(product.name, product.price)}
-                      className={`relative aspect-square p-2 rounded-xl bg-gradient-to-br ${product.color} text-[#2d3748] transition-all active:scale-95 shadow-lg hover:shadow-xl group flex flex-col items-center justify-center`}
+                      className="sk-tile"
+                      style={skVars(product.tileColor)}
+                      aria-label={`${product.name} ${pSym}${product.price}`}
                     >
-                      <div className="text-lg mb-0.5">{product.icon}</div>
-                      <div className="text-[10px] font-bold leading-tight text-center">{product.name}</div>
-                      <div className="text-[10px] opacity-90 font-semibold mt-0.5">{pSym}{product.price}</div>
-                      <div className="absolute top-1 right-1 w-5 h-5 bg-white/20 backdrop-blur rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Plus className="w-3 h-3 text-[#2d3748]" />
+                      <div className="sk-tile__fan">
+                        <svg viewBox="0 0 48 34" aria-hidden="true" dangerouslySetInnerHTML={{ __html: albumFanSvg(product.count, product.tileColor) }} />
                       </div>
+                      <div className="sk-tile__name">
+                        <b className="sk-tile__num">{product.count}</b>
+                        <span className="sk-tile__suffix">{product.suffix}</span>
+                      </div>
+                      <div className="sk-tile__price">{pSym}{product.price}</div>
                     </button>
                   ))}
                 </div>
@@ -2484,62 +2475,63 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
 
               {/* Cart */}
               {cart.length > 0 && (
-                <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border-2 border-[#9dd9ea]/50 rounded-2xl p-5 shadow-xl animate-in slide-in-from-bottom-4">
+                <div className="sk-card p-5 animate-in slide-in-from-bottom-4" style={{ borderColor: 'rgba(34,211,238,0.35)', boxShadow: '0 0 0 1px rgba(34,211,238,0.12)' }}>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <ShoppingCart className="w-5 h-5 text-[#9dd9ea]" />
-                      <h3 className="font-bold text-white">Sepet</h3>
-                      <span className="px-2 py-1 bg-[#9dd9ea] text-[#2d3748] rounded-full text-xs font-bold">{totalItems}</span>
+                      <ShoppingCart className="w-5 h-5" style={{ color: '#67e8f9' }} />
+                      <h3 className="font-extrabold text-white">Sepet</h3>
+                      <span className="sk-badge" style={skVars('#22d3ee')}>{totalItems}</span>
                     </div>
-                    <button onClick={() => { setCart([]); setShowForeignNet(false); setForeignNetRawInput(''); setDiscountAmount(''); }} className="text-[#ffb3ba] hover:bg-[#ffb3ba]/10 p-2 rounded-lg transition-all">
+                    <button onClick={() => { setCart([]); setShowForeignNet(false); setForeignNetRawInput(''); setDiscountAmount(''); }} className="p-2 rounded-xl transition-all" style={{ color: '#fda4af', background: 'rgba(251,113,133,0.1)' }}>
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                   <div className="space-y-2 mb-4">
                     {cart.map((item) => (
-                      <div key={item.product} className="flex items-center justify-between p-3 bg-white/5 rounded-xl">
+                      <div key={item.product} className="flex items-center justify-between p-3 rounded-2xl" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
                         <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${item.color} flex items-center justify-center text-[#2d3748] font-bold shadow-md`}>
+                          <div className="sk-ibox sk-ibox--lg font-extrabold text-base" style={skVars(tileColorOf(item.product), { borderRadius: 13 })}>
                             {item.quantity}
                           </div>
                           <div>
                             <span className="font-semibold text-white block">{item.product}</span>
-                            <span className="text-xs text-gray-400">{item.quantity} × {pSym}{item.unitPrice} = {pSym}{item.quantity * item.unitPrice}</span>
+                            <span className="text-xs sk-num" style={{ color: 'rgba(255,255,255,0.5)' }}>{item.quantity} × {pSym}{item.unitPrice} = {pSym}{item.quantity * item.unitPrice}</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => setCart(prev => prev.map(c => c.product === item.product ? { ...c, dijital: !c.dijital } : c))}
                             style={{
-                              padding: '4px 8px', borderRadius: 8, fontSize: 10, fontWeight: 700,
-                              background: item.dijital ? 'rgba(168,130,255,0.25)' : 'rgba(255,255,255,0.06)',
-                              border: item.dijital ? '1px solid rgba(168,130,255,0.5)' : '1px solid rgba(255,255,255,0.1)',
-                              color: item.dijital ? '#c4b5fd' : 'rgba(255,255,255,0.3)',
+                              display: 'inline-flex', alignItems: 'center', gap: 4,
+                              padding: '5px 9px', borderRadius: 999, fontSize: 10, fontWeight: 700,
+                              background: item.dijital ? 'rgba(168,85,247,0.25)' : 'rgba(255,255,255,0.05)',
+                              border: item.dijital ? '1px solid rgba(192,132,252,0.55)' : '1px solid rgba(255,255,255,0.1)',
+                              color: item.dijital ? '#e9d5ff' : 'rgba(255,255,255,0.35)',
                               cursor: 'pointer', transition: 'all 0.2s',
                             }}
                           >
-                            {item.dijital ? '📱 DİJİTAL' : '📱'}
+                            <Smartphone className="w-3 h-3" />{item.dijital ? 'DİJİTAL' : ''}
                           </button>
-                          <button onClick={() => removeFromCart(item.product)} className="w-8 h-8 rounded-lg bg-[#ffb3ba]/20 text-[#ffb3ba] hover:bg-[#ffb3ba]/30 flex items-center justify-center transition-all">
+                          <button onClick={() => removeFromCart(item.product)} className="w-8 h-8 rounded-[10px] flex items-center justify-center transition-all" style={{ background: 'rgba(251,113,133,0.12)', border: '1px solid rgba(251,113,133,0.3)', color: '#fda4af' }}>
                             <X className="w-4 h-4" />
                           </button>
-                          <button onClick={() => addToCart(item.product, item.unitPrice)} className="w-8 h-8 rounded-lg bg-[#9dd9ea] text-[#2d3748] hover:bg-[#7ec8dd] flex items-center justify-center transition-all">
+                          <button onClick={() => addToCart(item.product, item.unitPrice)} className="w-8 h-8 rounded-[10px] flex items-center justify-center transition-all" style={{ background: 'rgba(34,211,238,0.16)', border: '1px solid rgba(34,211,238,0.45)', color: '#a5f3fc' }}>
                             <Plus className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
                     ))}
                   </div>
-                  <div className="bg-gradient-to-br from-[#b8d4f1] to-[#9dd9ea] rounded-2xl p-5 mb-4 shadow-lg">
-                    <div className="text-[#2d3748]/70 text-sm mb-1">Toplam Tutar</div>
-                    <div className="text-[#2d3748] text-4xl font-bold">{pSym}{totalPrice}</div>
+                  <div className="p-5 mb-4" style={{ borderRadius: 22, background: 'rgba(0,0,0,0.28)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)' }}>
+                    <div className="text-[10.5px] font-semibold mb-1" style={{ color: 'rgba(255,255,255,0.6)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Toplam Tutar</div>
+                    <div className="text-4xl font-black sk-num" style={{ letterSpacing: '-0.04em', lineHeight: 1.05, background: 'linear-gradient(90deg,#e9d5ff,#f0abfc,#fbcfe8)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', WebkitTextFillColor: 'transparent' }}>{pSym}{totalPrice}</div>
                   </div>
                   {!showDiscount && !showForeignNet ? (
                     <div className="grid grid-cols-2 gap-3">
-                      <button onClick={() => { setShowDiscount(true); setShowForeignNet(false); setForeignNetRawInput(''); }} className="bg-gradient-to-r from-[#ffd4a3] to-[#ffc78f] text-[#744210] py-4 rounded-2xl font-bold text-base hover:shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg">
+                      <button onClick={() => { setShowDiscount(true); setShowForeignNet(false); setForeignNetRawInput(''); }} className="sk-btn sk-btn--tint" style={skVars('#fbbf24')}>
                         <Tag className="w-5 h-5" /> İskonto
                       </button>
-                      <button onClick={handleProceed} className="bg-gradient-to-r from-[#9dd9ea] via-[#7ec8dd] to-[#9dd9ea] text-[#2d3748] py-4 rounded-2xl font-bold text-base hover:shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg">
+                      <button onClick={handleProceed} className="sk-btn sk-btn--primary">
                         <Send className="w-5 h-5" /> İlerle
                       </button>
                     </div>
@@ -2613,8 +2605,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                         })()}
                       </div>
                       <div className="grid grid-cols-2 gap-3">
-                        <button onClick={() => { setShowDiscount(false); setDiscountAmount(''); setDiscountRawInput(''); setDiscountMode('iskonto'); }} className="bg-white/10 text-white py-4 rounded-2xl font-bold text-base transition-all active:scale-[0.98]">İptal</button>
-                        <button onClick={handleProceed} className="bg-gradient-to-r from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] py-4 rounded-2xl font-bold text-base hover:shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg">
+                        <button onClick={() => { setShowDiscount(false); setDiscountAmount(''); setDiscountRawInput(''); setDiscountMode('iskonto'); }} className="sk-btn sk-btn--ghost">İptal</button>
+                        <button onClick={handleProceed} className="sk-btn sk-btn--primary">
                           <Send className="w-5 h-5" /> İlerle
                         </button>
                       </div>
@@ -2624,9 +2616,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
               )}
 
               {/* Exchange Rates */}
-              <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-xl p-4 shadow-lg">
+              <div className="sk-card p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2"><span className="text-lg">💱</span><h3 className="text-sm font-bold text-white">Güncel Kurlar & Çevirici</h3></div>
+                  <div className="flex items-center gap-2"><ArrowLeftRight className="w-4 h-4" style={{ color: '#67e8f9' }} /><h3 className="text-sm font-bold text-white">Güncel Kurlar & Çevirici</h3></div>
                   <div className="flex items-center gap-1.5">
                     <div className={`w-1.5 h-1.5 rounded-full ${ratesLoading ? 'bg-yellow-400 animate-pulse' : 'bg-[#a8e6cf] animate-pulse'}`} />
                     <span className="text-[10px] text-gray-400">{ratesLoading ? 'Yükleniyor' : 'Canlı'}</span>
@@ -2643,9 +2635,9 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     { code: 'SAR', flag: '🇸🇦', rate: exchangeRates.SAR, color: '#86efac', sym: '﷼' },
                   ].filter(c => c.code !== mekanPriceCurrency).map(c => (
                     <button key={c.code} onClick={() => setSelectedCurrency(c.code === 'TRY' ? (mekanPriceCurrency !== 'TRY' ? 'TRY' as any : null) : c.code as any)}
-                      style={{ background: selectedCurrency === c.code ? `${c.color}22` : 'rgba(255,255,255,0.05)', border: selectedCurrency === c.code ? `2px solid ${c.color}88` : '2px solid transparent', borderRadius: 12, padding: '10px 4px', textAlign: 'center', transition: 'all 0.15s', cursor: 'pointer' }}
+                      style={{ background: selectedCurrency === c.code ? `${c.color}2a` : 'rgba(255,255,255,0.06)', border: selectedCurrency === c.code ? `1px solid ${c.color}73` : '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: '10px 4px', textAlign: 'center', transition: 'all 0.15s', cursor: 'pointer' }}
                     >
-                      <div className="text-xs text-gray-400 mb-1 flex items-center justify-center gap-1"><span>{c.flag}</span><span>{c.code}</span></div>
+                      <div className="text-xs font-semibold mb-1 flex items-center justify-center gap-1" style={{ color: 'rgba(255,255,255,0.6)' }}><span>{c.code}</span></div>
                       <div style={{ fontSize: 14, fontWeight: 700, color: c.color }}>{c.code === 'TRY' ? '₺ TRY' : `₺${c.rate.toFixed(2)}`}</div>
                       <div className="text-[10px] text-white/30 mt-0.5">{c.code === 'TRY' ? 'Türk Lirası' : `1 ${c.code}`}</div>
                     </button>
@@ -2653,20 +2645,20 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                 </div>
                 <div className="relative mb-3">
                   <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/20" /></div>
-                  <div className="relative flex justify-center"><span className="bg-white/5 px-2 py-0.5 text-xs text-gray-400 rounded-full">🔄</span></div>
+                  <div className="relative flex justify-center"><span className="px-2 py-1 rounded-full flex items-center" style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' }}><RefreshCw className="w-3 h-3" /></span></div>
                 </div>
                 {cart.length > 0 ? (
                   <div className="space-y-2">
-                    <div style={{ padding: 12, borderRadius: 12, border: '2px solid #a8e6cf88', background: '#a8e6cf22' }}>
+                    <div style={{ padding: 12, borderRadius: 18, border: '1px solid rgba(52,211,153,0.4)', background: 'linear-gradient(145deg, rgba(52,211,153,0.18), rgba(52,211,153,0.05))' }}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span style={{ fontSize: 18 }}>🛒</span>
+                          <ShoppingCart className="w-[18px] h-[18px]" style={{ color: '#6ee7b7' }} />
                           <div className="flex flex-col min-w-0">
                             <div className="text-xs text-gray-300 leading-tight">{discountAmount && Number(discountAmount) !== 0 ? 'Ödenecek Tutar' : 'Sepet Toplamı'}</div>
                             <div className="text-[10px] text-white/40 leading-tight">{totalItems} ürün</div>
                           </div>
                         </div>
-                        <div style={{ fontSize: 28, fontWeight: 900, color: '#a8e6cf' }}>{pSym}{discountAmount && Number(discountAmount) !== 0 ? totalPrice - Number(discountAmount) : totalPrice}</div>
+                        <div className="sk-num" style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.03em', color: '#6ee7b7' }}>{pSym}{discountAmount && Number(discountAmount) !== 0 ? totalPrice - Number(discountAmount) : totalPrice}</div>
                       </div>
                     </div>
                     {selectedCurrency && (() => {
@@ -2682,14 +2674,14 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                         type="button"
                         onClick={isClickable ? () => { setShowDiscount(false); setShowForeignNet(true); setForeignNetRawInput(''); setForeignNetMode('fiyat'); setDiscountAmount(''); } : undefined}
                         disabled={!isClickable}
-                        style={{ width: '100%', padding: 12, borderRadius: 12, border: `2px solid ${ci.color}88`, background: `${ci.color}22`, cursor: isClickable ? 'pointer' : 'default', textAlign: 'left' }}
+                        style={{ width: '100%', padding: 12, borderRadius: 18, border: `1px solid ${ci.color}73`, background: `linear-gradient(145deg, ${ci.color}2e, ${ci.color}0d)`, cursor: isClickable ? 'pointer' : 'default', textAlign: 'left' }}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <div className="text-xs text-gray-400">{ci.flag} {selectedCurrency}</div>
-                            {isClickable && <span className="text-[9px] text-white/40">✏️ tıkla</span>}
+                            <div className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.75)' }}>{selectedCurrency}</div>
+                            {isClickable && <span className="text-[9px] text-white/40 inline-flex items-center gap-1"><Pencil className="w-2.5 h-2.5" /> tıkla</span>}
                           </div>
-                          <div style={{ fontSize: 28, fontWeight: 900, color: ci.color }}>{selectedCurrency === 'TRY' ? `₺${((totalPrice - (Number(discountAmount) || 0)) * (exchangeRates[mekanPriceCurrency as keyof typeof exchangeRates] || 1)).toFixed(0)}` : calculateForeignCurrency()}</div>
+                          <div className="sk-num" style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.03em', color: ci.color }}>{selectedCurrency === 'TRY' ? `₺${((totalPrice - (Number(discountAmount) || 0)) * (exchangeRates[mekanPriceCurrency as keyof typeof exchangeRates] || 1)).toFixed(0)}` : calculateForeignCurrency()}</div>
                         </div>
                       </button>
                       {showForeignNet && isClickable && (
@@ -2771,8 +2763,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                           </div>
                           {/* Alt butonlar */}
                           <div className="grid grid-cols-2 gap-3">
-                            <button onClick={() => { setShowForeignNet(false); setForeignNetRawInput(''); setDiscountAmount(''); setForeignNetMode('fiyat'); setSelectedCurrency(null); }} className="bg-white/10 text-white py-4 rounded-2xl font-bold text-base transition-all active:scale-[0.98]">İptal</button>
-                            <button onClick={handleProceed} className="bg-gradient-to-r from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] py-4 rounded-2xl font-bold text-base hover:shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg">
+                            <button onClick={() => { setShowForeignNet(false); setForeignNetRawInput(''); setDiscountAmount(''); setForeignNetMode('fiyat'); setSelectedCurrency(null); }} className="sk-btn sk-btn--ghost">İptal</button>
+                            <button onClick={handleProceed} className="sk-btn sk-btn--primary">
                               <Send className="w-5 h-5" /> İlerle
                             </button>
                           </div>
@@ -2789,10 +2781,10 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
 
               {/* Recent Sales */}
               <div>
-                <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                  Bugünkü Satışlar <span className="text-lg">📊</span>
+                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                  Bugünkü Satışlar <BarChart3 className="w-4 h-4" style={{ color: '#6ee7b7' }} />
                   {recentSales.filter(s => !s._pending).length > 0 && (
-                    <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full bg-[#a8e6cf]/20 text-[#a8e6cf]">
+                    <span className="ml-auto sk-badge sk-badge--sm sk-num" style={skVars('#34d399')}>
                       ₺{recentSales.filter(s => !s._pending).reduce((s, sale) => s + (sale.finalPrice || sale.totalPrice - sale.discount), 0).toLocaleString('tr-TR')}
                     </span>
                   )}
@@ -2801,8 +2793,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                 {/* Çevrimdışı durum bandı */}
                 {!isOnline && (
                   <div style={{ background: 'rgba(255,180,50,0.12)', border: '1px solid rgba(255,180,50,0.35)', borderRadius: 12, padding: '10px 14px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 16 }}>📡</span>
-                    <span style={{ color: '#ffd4a3', fontSize: 12, fontWeight: 600 }}>Çevrimdışısınız — satışlar kuyruğa alınıyor</span>
+                    <WifiOff style={{ width: 16, height: 16, color: '#fcd34d', flexShrink: 0 }} />
+                    <span style={{ color: '#fde68a', fontSize: 12, fontWeight: 600 }}>Çevrimdışısınız — satışlar kuyruğa alınıyor</span>
                   </div>
                 )}
 
@@ -2812,7 +2804,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     {queueFlushing ? (
                       <span className="w-3 h-3 border-2 border-[#9dd9ea]/40 border-t-[#9dd9ea] rounded-full animate-spin flex-shrink-0" />
                     ) : (
-                      <span style={{ fontSize: 16 }}>🔄</span>
+                      <RefreshCw style={{ width: 16, height: 16, color: '#9dd9ea', flexShrink: 0 }} />
                     )}
                     <span style={{ color: '#9dd9ea', fontSize: 12, fontWeight: 600 }}>
                       {queueFlushing ? `${pendingQueueCount} satış sunucuya gönderiliyor...` : `${pendingQueueCount} satış senkronize bekliyor`}
@@ -2841,31 +2833,33 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                       <div className="text-xs text-gray-400">Henüz satış kaydı yok</div>
                     </div>
                   ) : recentSales.map(sale => {
-                    const itemSummary = sale.items?.map(i => `${i.dijital ? '📱 ' : ''}${i.quantity}× ${i.product}`).join(', ') || '—';
+                    const itemSummary = sale.items?.map(i => `${i.quantity}× ${i.product}${i.dijital ? ' (dijital)' : ''}`).join(', ') || '—';
                     const saleTime = sale.timestamp
                       ? new Date(sale.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                       : '—';
-                    const pmIcon = sale.paymentMethod === 'cash' ? '💵' : sale.paymentMethod === 'iban' ? '🏦' : '💳';
+                    const PmIcon = sale.paymentMethod === 'cash' ? Banknote : sale.paymentMethod === 'iban' ? Landmark : CreditCard;
                     const isPending = sale._pending === true;
                     return (
                       <div
                         key={sale.id}
                         style={isPending ? {
-                          background: 'linear-gradient(135deg, rgba(255,180,50,0.10), rgba(255,180,50,0.05))',
-                          border: '1px dashed rgba(255,180,50,0.45)',
-                          borderRadius: 12,
-                          padding: 16,
-                        } : undefined}
-                        className={isPending ? '' : 'backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-xl p-4'}
+                          background: 'linear-gradient(135deg, rgba(251,191,36,0.12), rgba(251,191,36,0.04))',
+                          border: '1px dashed rgba(251,191,36,0.45)',
+                          borderRadius: 18,
+                          padding: 14,
+                        } : { borderRadius: 18 }}
+                        className={isPending ? '' : 'sk-card p-3.5'}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             {isPending ? (
-                              <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg, rgba(255,180,50,0.3), rgba(255,140,0,0.2))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
-                                ⏳
+                              <div className="sk-ibox sk-ibox--lg" style={skVars('#fbbf24')}>
+                                <Hourglass className="w-5 h-5" />
                               </div>
                             ) : (
-                              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#a8e6cf] to-[#8dd9b8] flex items-center justify-center text-[#2d3748] text-lg shadow-md flex-shrink-0">✓</div>
+                              <div className="sk-ibox sk-ibox--lg" style={skVars('#34d399')}>
+                                <Check className="w-5 h-5" strokeWidth={2.5} />
+                              </div>
                             )}
                             <div className="min-w-0">
                               <div className="font-semibold text-white text-sm truncate max-w-[160px]">{itemSummary}</div>
@@ -2878,8 +2872,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                                 ) : (
                                   <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{saleTime}</span>
                                 )}
-                                <span>{pmIcon} {sale.paymentMethod === 'cash' ? 'Nakit' : sale.paymentMethod === 'iban' ? 'IBAN' : 'Kart'}</span>
-                                {sale.kaydeden && <span className="text-[#9dd9ea]">👤 {sale.kaydeden}</span>}
+                                <span className="flex items-center gap-1"><PmIcon className="w-3 h-3" />{sale.paymentMethod === 'cash' ? 'Nakit' : sale.paymentMethod === 'iban' ? 'IBAN' : 'Kart'}</span>
+                                {sale.kaydeden && <span className="flex items-center gap-1" style={{ color: '#a5f3fc' }}><User className="w-3 h-3" />{sale.kaydeden}</span>}
                                 {sale.currency !== 'TRY' && sale.currencyPrice && (
                                   <span className="text-[#ffd4a3]">{sale.currency} {sale.currencyPrice}</span>
                                 )}
@@ -2922,8 +2916,8 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
               {/* Çevrimdışı durum bandı */}
               {!isOnline && (
                 <div style={{ background: 'rgba(255,180,50,0.12)', border: '1px solid rgba(255,180,50,0.35)', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 16 }}>📡</span>
-                  <span style={{ color: '#ffd4a3', fontSize: 12, fontWeight: 600 }}>Çevrimdışısınız — kareler kuyruğa alınıyor</span>
+                  <WifiOff style={{ width: 16, height: 16, color: '#fcd34d', flexShrink: 0 }} />
+                  <span style={{ color: '#fde68a', fontSize: 12, fontWeight: 600 }}>Çevrimdışısınız — kareler kuyruğa alınıyor</span>
                 </div>
               )}
 
@@ -2933,7 +2927,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                   {frameFlushing ? (
                     <span className="w-3 h-3 border-2 border-[#d4b5f7]/40 border-t-[#d4b5f7] rounded-full animate-spin flex-shrink-0" />
                   ) : (
-                    <span style={{ fontSize: 16 }}>🔄</span>
+                    <RefreshCw style={{ width: 16, height: 16, color: '#d4b5f7', flexShrink: 0 }} />
                   )}
                   <span style={{ color: '#d4b5f7', fontSize: 12, fontWeight: 600 }}>
                     {frameFlushing ? `${pendingFrameCount} kare sunucuya gönderiliyor...` : `${pendingFrameCount} kare senkronize bekliyor`}
@@ -2950,20 +2944,21 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
               )}
 
               {/* Seçili Mekan */}
-              <div className="flex items-center gap-3 bg-gradient-to-br from-[#d4b5f7]/15 to-[#c79ff0]/10 border border-[#d4b5f7]/30 rounded-2xl p-3">
-                <span className="text-xl">{selectedProject.icon}</span>
+              <div className="flex items-center gap-3 p-3" style={{ borderRadius: 20, background: 'linear-gradient(145deg, rgba(192,132,252,0.16), rgba(192,132,252,0.05))', border: '1px solid rgba(192,132,252,0.35)' }}>
+                {/* Mekan simgesi veridir (emoji); çerçeve görsel kaplama */}
+                <span className="sk-ibox sk-ibox--emoji" style={skVars('#c084fc', { fontSize: 19 })}>{selectedProject.icon}</span>
                 <div className="flex-1">
                   <div className="font-bold text-white text-sm">{selectedProject.name}</div>
-                  <div className="text-xs text-[#d4b5f7]/70">Seçili mekan</div>
+                  <div className="text-xs" style={{ color: '#d8b4fe', opacity: 0.8 }}>Seçili mekan</div>
                 </div>
               </div>
 
               {/* Müşteri Sayısı Girişi */}
-              <div className="backdrop-blur-xl bg-gradient-to-br from-[#ffd4a3]/10 to-[#ffd4a3]/5 border border-[#ffd4a3]/25 rounded-2xl p-4 space-y-3">
+              <div className="sk-card p-4 space-y-3" style={{ background: 'linear-gradient(145deg, rgba(251,191,36,0.12), rgba(251,191,36,0.03))', borderColor: 'rgba(251,191,36,0.3)' }}>
                 <div className="flex items-center gap-2">
-                  <span className="text-lg">👥</span>
-                  <span className="font-black text-white text-sm">Bugünkü Müşteri Sayısı</span>
-                  {musteriSayisiKayitli && <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">✓ Kayıtlı</span>}
+                  <Users className="w-[18px] h-[18px]" style={{ color: '#fcd34d' }} />
+                  <span className="font-extrabold text-white text-sm">Bugünkü Müşteri Sayısı</span>
+                  {musteriSayisiKayitli && <span className="ml-auto sk-badge sk-badge--sm" style={skVars('#34d399')}><Check className="w-3 h-3" strokeWidth={3} /> Kayıtlı</span>}
                 </div>
                 <div className="flex items-center gap-2">
                   <input
@@ -2973,92 +2968,97 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     onChange={e => { if (!musteriSayisiKayitli) setMusteriSayisi(e.target.value); }}
                     readOnly={musteriSayisiKayitli && !['yonetici', 'ust-mudur', 'mudur'].includes(userRole)}
                     inputMode="numeric"
-                    className={`flex-1 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-lg font-black placeholder-gray-600 outline-none text-center ${musteriSayisiKayitli ? 'opacity-60' : 'focus:border-[#ffd4a3]/50'}`}
+                    className={`flex-1 sk-pill-input px-4 text-lg font-black placeholder-gray-600 ${musteriSayisiKayitli ? 'opacity-60' : ''}`}
                   />
                   {!musteriSayisiKayitli ? (
                     <button
                       onClick={handleMusteriSayisiSave}
                       disabled={!musteriSayisi || parseInt(musteriSayisi) <= 0 || musteriSayisiSaving}
-                      className={`px-4 py-3 rounded-xl font-bold text-sm transition-all ${
+                      className={`sk-btn sk-btn--sm sk-btn--inline ${
                         musteriSayisi && parseInt(musteriSayisi) > 0 && !musteriSayisiSaving
-                          ? 'bg-[#ffd4a3] text-[#2d3748] active:scale-95'
-                          : 'bg-white/10 text-gray-500 cursor-not-allowed'
+                          ? 'sk-btn--tint'
+                          : 'sk-btn--muted'
                       }`}
+                      style={skVars('#fbbf24', { height: 48, padding: '0 16px' })}
                     >
                       {musteriSayisiSaving ? '...' : 'Kaydet'}
                     </button>
                   ) : ['yonetici', 'ust-mudur', 'mudur'].includes(userRole) && (
                     <button
                       onClick={() => setMusteriSayisiKayitli(false)}
-                      className="px-3 py-3 rounded-xl text-xs font-bold border border-white/15 text-white/50 active:scale-95"
+                      className="sk-btn sk-btn--ghost sk-btn--sm sk-btn--inline"
+                      style={{ height: 48, padding: '0 14px', color: 'rgba(255,255,255,0.6)' }}
                     >
                       Düzelt
                     </button>
                   )}
                 </div>
                 {musteriSayisi && parseInt(musteriSayisi) > 0 && (
-                  <div className="text-[11px] text-[#ffd4a3]/60 text-center">
-                    Kota: {musteriSayisi} müşteri × {(selectedProject as any)?.kareCharpani || 5} = <span className="font-bold text-[#ffd4a3]">{parseInt(musteriSayisi) * ((selectedProject as any)?.kareCharpani || 5)} kare</span>
+                  <div className="text-[11px] text-center" style={{ color: '#fde68a', opacity: 0.8 }}>
+                    Kota: {musteriSayisi} müşteri × {(selectedProject as any)?.kareCharpani || 5} = <span className="font-bold" style={{ color: '#fde68a' }}>{parseInt(musteriSayisi) * ((selectedProject as any)?.kareCharpani || 5)} kare</span>
                   </div>
                 )}
               </div>
 
               {!framePhotographer ? (
-                <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-4 space-y-3">
+                <div className="sk-card p-4 space-y-3">
                   <div className="flex items-center gap-2 mb-1">
-                    <Camera className="w-4 h-4 text-[#9dd9ea]" />
-                    <span className="font-black text-white text-sm">Fotoğrafçı seç</span>
+                    <Camera className="w-4 h-4" style={{ color: '#67e8f9' }} />
+                    <span className="font-extrabold text-white text-sm">Fotoğrafçı seç</span>
                   </div>
                   {rotationPersonnel.length > 0 ? (
                     <>
-                      <p className="text-xs text-gray-400">Bugün bu mekanda rotasyonda:</p>
+                      <p className="text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>Bugün bu mekanda rotasyonda:</p>
                       <div className="space-y-2">
                         {rotationPersonnel.map(p => (
                           <button
                             key={p.id}
                             onClick={() => setFramePhotographer(p)}
-                            className="w-full flex items-center gap-3 bg-white/10 hover:bg-[#9dd9ea]/10 border border-white/15 rounded-xl p-3.5 text-left transition-all active:scale-95"
+                            className="w-full flex items-center gap-3 p-3.5 text-left transition-all active:scale-95"
+                            style={{ borderRadius: 18, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
                           >
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#9dd9ea]/30 to-[#7ec8dd]/20 flex items-center justify-center text-lg flex-shrink-0">{p.avatar}</div>
+                            {/* Personel avatarı veridir (emoji); çerçeve görsel kaplama */}
+                            <div className="sk-ibox sk-ibox--lg sk-ibox--emoji" style={skVars('#22d3ee')}>{p.avatar}</div>
                             <div className="flex-1">
                               <div className="font-bold text-white text-sm">{p.name}</div>
-                              <div className="text-xs text-[#9dd9ea]/80 flex items-center gap-1 mt-0.5">
-                                <div className="w-1.5 h-1.5 rounded-full bg-[#a8e6cf]" /> Rotasyonda
+                              <div className="text-xs flex items-center gap-1 mt-0.5" style={{ color: '#a5f3fc', opacity: 0.85 }}>
+                                <span className="sk-dot" style={{ color: '#34d399' }} /> Rotasyonda
                               </div>
                             </div>
-                            <ChevronRight className="w-4 h-4 text-gray-500" />
+                            <ChevronRight className="w-4 h-4" style={{ color: 'rgba(255,255,255,0.4)' }} />
                           </button>
                         ))}
                       </div>
                     </>
                   ) : (
-                    <div className="text-center py-4 bg-white/5 rounded-xl border border-white/10">
-                      <div className="text-2xl mb-1">📋</div>
+                    <div className="text-center py-4 rounded-2xl" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                      <div className="mb-1 flex justify-center"><Film className="w-6 h-6" style={{ color: 'rgba(255,255,255,0.3)' }} /></div>
                       <p className="text-gray-400 text-xs">Bu mekan için bugün rotasyon kaydı yok.</p>
                     </div>
                   )}
                   <button
                     onClick={() => { setManualSearch(''); setShowManualPicker(true); }}
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-white/5 border border-dashed border-white/20 text-gray-400 hover:text-white hover:border-white/40 transition-all text-sm font-bold"
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-dashed border-white/25 text-gray-400 hover:text-white hover:border-white/40 transition-all text-sm font-bold"
                   >
                     <UserPlus className="w-4 h-4" /> Listeden başka biri seç
                   </button>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="backdrop-blur-xl bg-gradient-to-br from-[#9dd9ea]/15 to-[#9dd9ea]/5 border border-[#9dd9ea]/30 rounded-2xl p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#9dd9ea]/30 to-[#7ec8dd]/20 flex items-center justify-center text-lg">{framePhotographer.avatar}</div>
+                  <div className="p-4 flex items-center gap-3" style={{ borderRadius: 20, background: 'linear-gradient(145deg, rgba(34,211,238,0.16), rgba(34,211,238,0.05))', border: '1px solid rgba(34,211,238,0.35)' }}>
+                    {/* Personel avatarı veridir (emoji); çerçeve görsel kaplama */}
+                    <div className="sk-ibox sk-ibox--lg sk-ibox--emoji" style={skVars('#22d3ee')}>{framePhotographer.avatar}</div>
                     <div className="flex-1">
                       <div className="font-bold text-white text-sm">{framePhotographer.name}</div>
-                      <div className="text-xs text-gray-400">Fotoğrafçı</div>
+                      <div className="text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>Fotoğrafçı</div>
                     </div>
-                    <button onClick={() => setFramePhotographer(null)} className="text-xs text-[#9dd9ea]/60 border border-[#9dd9ea]/20 rounded-lg px-2 py-1">Değiştir</button>
+                    <button onClick={() => setFramePhotographer(null)} className="sk-badge sk-badge--sm" style={skVars('#22d3ee', { cursor: 'pointer' })}>Değiştir</button>
                   </div>
 
-                  <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-2xl p-5 space-y-4">
+                  <div className="sk-card p-5 space-y-4">
                     <div className="flex items-center gap-2">
-                      <span className="text-lg">🎞️</span>
-                      <span className="font-black text-white text-sm">Kaç kare teslim edildi?</span>
+                      <Film className="w-[18px] h-[18px]" style={{ color: '#d8b4fe' }} />
+                      <span className="font-extrabold text-white text-sm">Kaç kare teslim edildi?</span>
                     </div>
                     <input
                       type="number"
@@ -3067,25 +3067,26 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                       onChange={e => setFrameCount(e.target.value)}
                       min="1"
                       autoFocus
-                      className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-4 text-white text-2xl font-black placeholder-gray-600 outline-none focus:border-[#ffd4a3]/50 text-center"
+                      className="w-full sk-pill-input px-4 text-2xl font-black placeholder-gray-600"
+                      style={{ height: 60 }}
                     />
-                    <div className="flex items-center justify-center gap-2 bg-white/5 rounded-xl px-4 py-2.5 border border-white/10">
+                    <div className="flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
                       <Clock className="w-4 h-4 text-gray-400" />
                       <span className="text-xs text-gray-400">Saat otomatik:</span>
-                      <span className="text-xs font-black text-[#9dd9ea]">{new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span className="text-xs font-black sk-num" style={{ color: '#a5f3fc' }}>{new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                     <button
                       onClick={handleFrameSave}
                       disabled={!frameCount || parseInt(frameCount) <= 0 || frameSaving}
-                      className={`w-full py-4 rounded-2xl font-black text-base transition-all flex items-center justify-center gap-2 ${
+                      className={`sk-btn ${
                         frameCount && parseInt(frameCount) > 0 && !frameSaving
-                          ? 'bg-gradient-to-br from-[#9dd9ea] to-[#7ec8dd] text-[#2d3748] shadow-xl active:scale-95'
-                          : 'bg-white/10 text-gray-500 cursor-not-allowed'
+                          ? 'sk-btn--primary'
+                          : 'sk-btn--muted'
                       }`}
                     >
                       {frameSaving ? (
-                        <><span className="w-5 h-5 border-2 border-[#2d3748]/40 border-t-[#2d3748] rounded-full animate-spin" /> Kaydediliyor...</>
-                      ) : '✅ Kareyi Kaydet'}
+                        <><span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Kaydediliyor...</>
+                      ) : <><Check className="w-5 h-5" strokeWidth={2.5} /> Kareyi Kaydet</>}
                     </button>
                   </div>
                 </div>
@@ -3094,11 +3095,11 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
 
               {/* Günün Kare Kayıtları */}
               {frameEntries.length > 0 && (
-                <div className="backdrop-blur-xl bg-gradient-to-br from-white/8 to-white/3 border border-white/15 rounded-2xl p-4">
+                <div className="sk-card p-4">
                   <div className="flex items-center gap-2 mb-3">
-                    <Film className="w-4 h-4 text-[#d4b5f7]" />
-                    <span className="font-black text-white text-sm">Bugünün Kayıtları</span>
-                    <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full bg-[#d4b5f7]/20 text-[#d4b5f7]">
+                    <Film className="w-4 h-4" style={{ color: '#d8b4fe' }} />
+                    <span className="font-extrabold text-white text-sm">Bugünün Kayıtları</span>
+                    <span className="ml-auto sk-badge sk-badge--sm sk-num" style={skVars('#c084fc')}>
                       {frameEntries.reduce((s: number, e: any) => s + (e.frameCount || 0), 0)} kare
                     </span>
                   </div>
@@ -3106,14 +3107,15 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     {frameEntries.map((entry: any) => {
                       const isPendingFrame = entry._pending === true;
                       return (
-                      <div key={entry.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5 border"
+                      <div key={entry.id} className="flex items-center gap-3 px-3 py-2.5 border"
                         style={{
-                          background: isPendingFrame ? 'rgba(212,181,247,0.07)' : 'rgba(255,255,255,0.05)',
-                          borderColor: isPendingFrame ? 'rgba(212,181,247,0.3)' : 'rgba(255,255,255,0.10)',
+                          borderRadius: 16,
+                          background: isPendingFrame ? 'rgba(192,132,252,0.08)' : 'rgba(255,255,255,0.05)',
+                          borderColor: isPendingFrame ? 'rgba(192,132,252,0.35)' : 'rgba(255,255,255,0.08)',
                         }}
                       >
-                        <div className="w-8 h-8 rounded-lg bg-[#d4b5f7]/20 flex items-center justify-center text-sm flex-shrink-0">
-                          {isPendingFrame ? '⏳' : '📸'}
+                        <div className="sk-ibox sk-ibox--sm" style={skVars('#c084fc')}>
+                          {isPendingFrame ? <Hourglass className="w-[14px] h-[14px]" /> : <Camera className="w-[14px] h-[14px]" />}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-white text-xs truncate">{entry.photographerName}</div>
@@ -3126,7 +3128,7 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0">
-                          <div className="font-black text-[#9dd9ea] text-sm">{entry.frameCount}</div>
+                          <div className="font-black text-base sk-num" style={{ color: '#a5f3fc', letterSpacing: '-0.02em' }}>{entry.frameCount}</div>
                           <div className="text-xs text-gray-500">kare</div>
                         </div>
                         {!isPendingFrame && ['yonetici', 'ust-mudur', 'mudur', 'operasyon'].includes(userRole) && (
