@@ -1,6 +1,6 @@
 // quick-sales v2 — global iade, per-printer kaldirildi
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Send, Clock, ShoppingCart, X, Plus, Trash2, Tag, XCircle, CheckCircle, ArrowLeft, AlertCircle, Camera, ChevronRight, UserPlus, Package, Printer, Grid3x3, Film, AlertTriangle, TrendingDown, TrendingUp, Maximize2, Minimize2, Sunrise, Flag, Check, Zap, Book, Smartphone, ArrowLeftRight, RefreshCw, BarChart3, Banknote, Landmark, CreditCard, User, Hourglass, WifiOff, Users, Pencil } from 'lucide-react';
+import { Send, Clock, ShoppingCart, X, Plus, Trash2, Tag, XCircle, CheckCircle, ArrowLeft, AlertCircle, Camera, ChevronRight, UserPlus, Package, Printer, Grid3x3, Film, AlertTriangle, TrendingDown, TrendingUp, Maximize2, Minimize2, Sunrise, Flag, Check, Zap, Book, Smartphone, ArrowLeftRight, RefreshCw, BarChart3, Banknote, Landmark, CreditCard, User, Hourglass, WifiOff, Users, Pencil, Delete } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ProjectSelector } from './project-selector';
 import { skVars, albumFanSvg } from '../lib/skin';
@@ -2537,25 +2537,25 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                     </div>
                   ) : !showForeignNet ? (
                     <div className="space-y-3">
-                      <div className="bg-gradient-to-br from-[#ffd4a3]/20 to-[#ffc78f]/10 rounded-2xl p-4 border-2 border-[#ffd4a3]/30">
+                      <div className="sk-card p-4" style={{ borderColor: 'rgba(251,191,36,0.35)', background: 'linear-gradient(145deg, rgba(251,191,36,0.1), rgba(251,191,36,0.03))' }}>
                         {/* Mod toggle */}
-                        <div className="flex rounded-xl overflow-hidden border border-white/15 mb-3">
+                        <div className="flex rounded-2xl overflow-hidden border border-white/10 mb-3" style={{ background: 'rgba(0,0,0,0.18)', padding: 3, gap: 3 }}>
                           <button
                             onClick={() => { setDiscountMode('iskonto'); setDiscountRawInput(''); setDiscountAmount(''); }}
-                            style={{ flex: 1, padding: '10px 0', fontSize: 13, fontWeight: 700, transition: 'all 0.2s', background: discountMode === 'iskonto' ? 'rgba(255,212,163,0.25)' : 'transparent', color: discountMode === 'iskonto' ? '#ffd4a3' : 'rgba(255,255,255,0.4)', borderRight: '1px solid rgba(255,255,255,0.1)' }}
+                            style={{ flex: 1, padding: '9px 0', borderRadius: 12, fontSize: 13, fontWeight: 700, transition: 'all 0.2s', background: discountMode === 'iskonto' ? 'rgba(251,191,36,0.18)' : 'transparent', border: discountMode === 'iskonto' ? '1px solid rgba(251,191,36,0.45)' : '1px solid transparent', color: discountMode === 'iskonto' ? '#fcd34d' : 'rgba(255,255,255,0.4)' }}
                           >
                             İskonto Tutarı
                           </button>
                           <button
                             onClick={() => { setDiscountMode('fiyat'); setDiscountRawInput(''); setDiscountAmount(''); }}
-                            style={{ flex: 1, padding: '10px 0', fontSize: 13, fontWeight: 700, transition: 'all 0.2s', background: discountMode === 'fiyat' ? 'rgba(168,230,207,0.25)' : 'transparent', color: discountMode === 'fiyat' ? '#a8e6cf' : 'rgba(255,255,255,0.4)' }}
+                            style={{ flex: 1, padding: '9px 0', borderRadius: 12, fontSize: 13, fontWeight: 700, transition: 'all 0.2s', background: discountMode === 'fiyat' ? 'rgba(52,211,153,0.18)' : 'transparent', border: discountMode === 'fiyat' ? '1px solid rgba(52,211,153,0.45)' : '1px solid transparent', color: discountMode === 'fiyat' ? '#6ee7b7' : 'rgba(255,255,255,0.4)' }}
                           >
                             Satış Fiyatı
                           </button>
                         </div>
-                        <div style={{ borderRadius: 16, padding: 16, marginBottom: 12, textAlign: 'right', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', background: discountMode === 'iskonto' ? 'linear-gradient(135deg, #ffd4a3, #ffc78f)' : 'linear-gradient(135deg, #a8e6cf, #8dd9b8)' }}>
-                          <div style={{ fontSize: 11, color: discountMode === 'iskonto' ? '#744210aa' : '#2d3748aa', marginBottom: 4 }}>{discountMode === 'iskonto' ? 'İskonto TL' : 'Satış Fiyatı TL'}</div>
-                          <div style={{ fontSize: 28, fontWeight: 800, color: discountMode === 'iskonto' ? '#744210' : '#2d3748', minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>{discountRawInput || '0'}</div>
+                        <div style={{ borderRadius: 18, padding: '12px 16px', marginBottom: 12, textAlign: 'right', background: 'rgba(0,0,0,0.28)', border: `1px solid ${discountMode === 'iskonto' ? 'rgba(251,191,36,0.4)' : 'rgba(52,211,153,0.4)'}` }}>
+                          <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: discountMode === 'iskonto' ? 'rgba(253,230,138,0.75)' : 'rgba(167,243,208,0.75)', marginBottom: 2 }}>{discountMode === 'iskonto' ? 'İskonto TL' : 'Satış Fiyatı TL'}</div>
+                          <div className="sk-num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.03em', color: discountMode === 'iskonto' ? '#fcd34d' : '#6ee7b7', minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>{discountRawInput || '0'}</div>
                         </div>
                         <div className="grid grid-cols-3 gap-2 mb-3">
                           {['1','2','3','4','5','6','7','8','9'].map(num => (
@@ -2565,24 +2565,24 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                               setDiscountRawInput(newVal);
                               if (discountMode === 'iskonto') { setDiscountAmount(newVal); }
                               else { const diff = totalPrice - Number(newVal); setDiscountAmount(String(diff)); }
-                            }} className="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xl font-bold py-3 rounded-xl transition-all active:scale-95">{num}</button>
+                            }} className="text-white text-xl font-bold py-3 rounded-2xl transition-all active:scale-95 sk-num" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}>{num}</button>
                           ))}
                         </div>
                         <div className="grid grid-cols-3 gap-2 mb-3">
-                          <button onClick={() => { setDiscountRawInput(''); setDiscountAmount(''); }} className="bg-[#ffb3ba]/20 text-[#ffb3ba] text-sm font-bold py-3 rounded-xl transition-all active:scale-95">C</button>
+                          <button onClick={() => { setDiscountRawInput(''); setDiscountAmount(''); }} className="text-sm font-bold py-3 rounded-2xl transition-all active:scale-95" style={{ background: 'rgba(251,113,133,0.12)', border: '1px solid rgba(251,113,133,0.3)', color: '#fda4af' }}>C</button>
                           <button onClick={() => {
                             if (discountRawInput.length >= 6) return;
                             const newVal = discountRawInput + '0';
                             setDiscountRawInput(newVal);
                             if (discountMode === 'iskonto') { setDiscountAmount(newVal); }
                             else { const diff = totalPrice - Number(newVal); setDiscountAmount(String(diff)); }
-                          }} className="bg-white/10 text-white text-xl font-bold py-3 rounded-xl transition-all active:scale-95">0</button>
+                          }} className="text-white text-xl font-bold py-3 rounded-2xl transition-all active:scale-95 sk-num" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}>0</button>
                           <button onClick={() => {
                             const newVal = discountRawInput.slice(0, -1);
                             setDiscountRawInput(newVal);
                             if (discountMode === 'iskonto') { setDiscountAmount(newVal); }
                             else { const diff = totalPrice - (Number(newVal) || 0); setDiscountAmount(String(diff)); }
-                          }} className="bg-[#ffd4a3]/20 text-[#ffd4a3] text-sm font-bold py-3 rounded-xl transition-all active:scale-95">⌫</button>
+                          }} className="text-sm font-bold py-3 rounded-2xl transition-all active:scale-95 flex items-center justify-center" style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.35)', color: '#fcd34d' }} aria-label="Sil"><Delete className="w-5 h-5" /></button>
                         </div>
                         {(() => {
                           const disc = Number(discountAmount) || 0;
@@ -2591,15 +2591,15 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                           const isZam = disc < 0;
                           const pct = Math.round((Math.abs(disc) / totalPrice) * 100);
                           return (
-                          <div className="bg-white/5 rounded-xl p-3 border-2 border-[#a8e6cf]/30 mb-3">
-                            <div className="flex items-center justify-between text-sm mb-1"><span className="text-gray-400">Orijinal:</span><span className="font-semibold text-white">{pSym}{totalPrice}</span></div>
+                          <div className="rounded-2xl p-3 mb-3" style={{ background: 'linear-gradient(145deg, rgba(52,211,153,0.14), rgba(52,211,153,0.04))', border: '1px solid rgba(52,211,153,0.35)' }}>
+                            <div className="flex items-center justify-between text-sm mb-1"><span style={{ color: 'rgba(255,255,255,0.5)' }}>Orijinal:</span><span className="font-semibold text-white sk-num">{pSym}{totalPrice}</span></div>
                             {isZam ? (
                               <div className="text-[11px] text-white/50 italic mb-1">↑ müşteri {pSym}{Math.abs(disc)} fazla ödüyor</div>
                             ) : (
-                              <div className="flex items-center justify-between text-sm mb-1"><span className="text-[#ffd4a3] font-semibold">İskonto ({pct}%):</span><span className="font-semibold text-[#ffd4a3]">-{pSym}{disc}</span></div>
+                              <div className="flex items-center justify-between text-sm mb-1"><span className="font-semibold" style={{ color: '#fcd34d' }}>İskonto ({pct}%):</span><span className="font-semibold sk-num" style={{ color: '#fcd34d' }}>-{pSym}{disc}</span></div>
                             )}
-                            <div className="border-t border-white/20 my-2" />
-                            <div className="flex items-center justify-between"><span className="font-bold text-white">Ödenecek:</span><span className="font-bold text-2xl text-[#a8e6cf]">{pSym}{odenecek}</span></div>
+                            <div className="border-t border-white/10 my-2" />
+                            <div className="flex items-center justify-between"><span className="font-bold text-white">Ödenecek:</span><span className="font-extrabold text-2xl sk-num" style={{ color: '#6ee7b7', letterSpacing: '-0.02em' }}>{pSym}{odenecek}</span></div>
                           </div>
                           );
                         })()}
@@ -2686,26 +2686,26 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                       </button>
                       {showForeignNet && isClickable && (
                         <div className="space-y-3 mt-3">
-                          <div className="rounded-2xl p-4 border-2" style={{ background: `${ci.color}10`, borderColor: `${ci.color}40` }}>
+                          <div className="sk-card p-4" style={{ background: `linear-gradient(145deg, ${ci.color}1f, ${ci.color}08)`, borderColor: `${ci.color}59` }}>
                             {/* Mod toggle */}
-                            <div className="flex rounded-xl overflow-hidden border border-white/15 mb-3">
+                            <div className="flex rounded-2xl overflow-hidden border border-white/10 mb-3" style={{ background: 'rgba(0,0,0,0.18)', padding: 3, gap: 3 }}>
                               <button
                                 onClick={() => { setForeignNetMode('iskonto'); setForeignNetRawInput(''); setDiscountAmount(''); }}
-                                style={{ flex: 1, padding: '10px 0', fontSize: 13, fontWeight: 700, transition: 'all 0.2s', background: foreignNetMode === 'iskonto' ? 'rgba(255,212,163,0.25)' : 'transparent', color: foreignNetMode === 'iskonto' ? '#ffd4a3' : 'rgba(255,255,255,0.4)', borderRight: '1px solid rgba(255,255,255,0.1)' }}
+                                style={{ flex: 1, padding: '9px 0', borderRadius: 12, fontSize: 13, fontWeight: 700, transition: 'all 0.2s', background: foreignNetMode === 'iskonto' ? 'rgba(251,191,36,0.18)' : 'transparent', border: foreignNetMode === 'iskonto' ? '1px solid rgba(251,191,36,0.45)' : '1px solid transparent', color: foreignNetMode === 'iskonto' ? '#fcd34d' : 'rgba(255,255,255,0.4)' }}
                               >
                                 İskonto Tutarı
                               </button>
                               <button
                                 onClick={() => { setForeignNetMode('fiyat'); setForeignNetRawInput(''); setDiscountAmount(''); }}
-                                style={{ flex: 1, padding: '10px 0', fontSize: 13, fontWeight: 700, transition: 'all 0.2s', background: foreignNetMode === 'fiyat' ? 'rgba(168,230,207,0.25)' : 'transparent', color: foreignNetMode === 'fiyat' ? '#a8e6cf' : 'rgba(255,255,255,0.4)' }}
+                                style={{ flex: 1, padding: '9px 0', borderRadius: 12, fontSize: 13, fontWeight: 700, transition: 'all 0.2s', background: foreignNetMode === 'fiyat' ? 'rgba(52,211,153,0.18)' : 'transparent', border: foreignNetMode === 'fiyat' ? '1px solid rgba(52,211,153,0.45)' : '1px solid transparent', color: foreignNetMode === 'fiyat' ? '#6ee7b7' : 'rgba(255,255,255,0.4)' }}
                               >
                                 Satış Fiyatı
                               </button>
                             </div>
                             {/* Display kutusu */}
-                            <div style={{ borderRadius: 16, padding: 16, marginBottom: 12, textAlign: 'right', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', background: foreignNetMode === 'iskonto' ? 'linear-gradient(135deg, #ffd4a3, #ffc78f)' : 'linear-gradient(135deg, #a8e6cf, #8dd9b8)' }}>
-                              <div style={{ fontSize: 11, color: foreignNetMode === 'iskonto' ? '#744210aa' : '#2d3748aa', marginBottom: 4 }}>{foreignNetMode === 'iskonto' ? `İskonto ${selectedCurrency}` : `Satış Fiyatı ${selectedCurrency}`}</div>
-                              <div style={{ fontSize: 28, fontWeight: 800, color: foreignNetMode === 'iskonto' ? '#744210' : '#2d3748', minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>{foreignNetRawInput || '0'}</div>
+                            <div style={{ borderRadius: 18, padding: '12px 16px', marginBottom: 12, textAlign: 'right', background: 'rgba(0,0,0,0.28)', border: `1px solid ${foreignNetMode === 'iskonto' ? 'rgba(251,191,36,0.4)' : 'rgba(52,211,153,0.4)'}` }}>
+                              <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: foreignNetMode === 'iskonto' ? 'rgba(253,230,138,0.75)' : 'rgba(167,243,208,0.75)', marginBottom: 2 }}>{foreignNetMode === 'iskonto' ? `İskonto ${selectedCurrency}` : `Satış Fiyatı ${selectedCurrency}`}</div>
+                              <div className="sk-num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.03em', color: foreignNetMode === 'iskonto' ? '#fcd34d' : '#6ee7b7', minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>{foreignNetRawInput || '0'}</div>
                             </div>
                             {/* Numpad 1-9 */}
                             <div className="grid grid-cols-3 gap-2 mb-3">
@@ -2715,22 +2715,22 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                                   const newVal = foreignNetRawInput + num;
                                   setForeignNetRawInput(newVal);
                                   applyForeignNet(newVal, foreignNetMode);
-                                }} className="bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xl font-bold py-3 rounded-xl transition-all active:scale-95">{num}</button>
+                                }} className="text-white text-xl font-bold py-3 rounded-2xl transition-all active:scale-95 sk-num" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}>{num}</button>
                               ))}
                             </div>
                             <div className="grid grid-cols-3 gap-2 mb-3">
-                              <button onClick={() => { setForeignNetRawInput(''); setDiscountAmount(''); }} className="bg-[#ffb3ba]/20 text-[#ffb3ba] text-sm font-bold py-3 rounded-xl transition-all active:scale-95">C</button>
+                              <button onClick={() => { setForeignNetRawInput(''); setDiscountAmount(''); }} className="text-sm font-bold py-3 rounded-2xl transition-all active:scale-95" style={{ background: 'rgba(251,113,133,0.12)', border: '1px solid rgba(251,113,133,0.3)', color: '#fda4af' }}>C</button>
                               <button onClick={() => {
                                 if (foreignNetRawInput.length >= 6) return;
                                 const newVal = foreignNetRawInput + '0';
                                 setForeignNetRawInput(newVal);
                                 applyForeignNet(newVal, foreignNetMode);
-                              }} className="bg-white/10 text-white text-xl font-bold py-3 rounded-xl transition-all active:scale-95">0</button>
+                              }} className="text-white text-xl font-bold py-3 rounded-2xl transition-all active:scale-95 sk-num" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}>0</button>
                               <button onClick={() => {
                                 const newVal = foreignNetRawInput.slice(0, -1);
                                 setForeignNetRawInput(newVal);
                                 applyForeignNet(newVal, foreignNetMode);
-                              }} className="bg-[#ffd4a3]/20 text-[#ffd4a3] text-sm font-bold py-3 rounded-xl transition-all active:scale-95">⌫</button>
+                              }} className="text-sm font-bold py-3 rounded-2xl transition-all active:scale-95 flex items-center justify-center" style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.35)', color: '#fcd34d' }} aria-label="Sil"><Delete className="w-5 h-5" /></button>
                             </div>
                             {/* Önizleme */}
                             {(() => {
@@ -2739,23 +2739,23 @@ export function QuickSales({ userName, userRole, accessToken, userId, onProjectS
                               if (disc === 0) return null;
                               const isZam = disc < 0;
                               return (
-                                <div className="bg-white/5 rounded-xl p-3 border-2 border-[#a8e6cf]/30">
+                                <div className="rounded-2xl p-3" style={{ background: 'linear-gradient(145deg, rgba(52,211,153,0.14), rgba(52,211,153,0.04))', border: '1px solid rgba(52,211,153,0.35)' }}>
                                   <div className="flex items-center justify-between text-sm mb-1">
-                                    <span className="text-gray-400">Sepet:</span>
-                                    <span className="font-semibold text-white">{pSym}{totalPrice}</span>
+                                    <span style={{ color: 'rgba(255,255,255,0.5)' }}>Sepet:</span>
+                                    <span className="font-semibold text-white sk-num">{pSym}{totalPrice}</span>
                                   </div>
                                   {!isZam ? (
                                     <div className="flex items-center justify-between text-sm mb-1">
-                                      <span className="text-[#ffd4a3] font-semibold">İskonto:</span>
-                                      <span className="font-semibold text-[#ffd4a3]">-{pSym}{disc}</span>
+                                      <span className="font-semibold" style={{ color: '#fcd34d' }}>İskonto:</span>
+                                      <span className="font-semibold sk-num" style={{ color: '#fcd34d' }}>-{pSym}{disc}</span>
                                     </div>
                                   ) : (
                                     <div className="text-[11px] text-white/50 italic mb-1">↑ müşteri {pSym}{Math.abs(disc)} fazla ödüyor</div>
                                   )}
-                                  <div className="border-t border-white/20 my-2" />
+                                  <div className="border-t border-white/10 my-2" />
                                   <div className="flex items-center justify-between">
                                     <span className="font-bold text-white">Ödenecek:</span>
-                                    <span className="font-bold text-2xl text-[#a8e6cf]">{pSym}{odenecek}</span>
+                                    <span className="font-extrabold text-2xl sk-num" style={{ color: '#6ee7b7', letterSpacing: '-0.02em' }}>{pSym}{odenecek}</span>
                                   </div>
                                 </div>
                               );
