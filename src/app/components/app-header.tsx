@@ -177,21 +177,11 @@ export function AppHeader({
            * Gerçek (×1.56): gap:6 pl:4 pr:10 py:4  ← demo ile neredeyse aynı
            */}
           <div
-            className="flex items-center flex-shrink-0"
-            style={{
-              gap:                  6,
-              padding:              '4px 10px 4px 4px',
-              borderRadius:         9999,
-              background:           'rgba(0,0,0,0.7)',
-              border:               `1px solid ${c}40`,
-              backdropFilter:       'blur(24px)',
-              WebkitBackdropFilter: 'blur(24px)',
-              boxShadow:            `0 0 12px ${c}25`,
-            }}
+            className="flex items-center flex-shrink-0 sk-hdr-pill"
+            style={{ boxShadow: `0 0 14px ${c}22` }}
           >
             {/*
-             * Demo icon dairesi: w-6 h-6 = 24px, icon w-3 h-3 = 12px
-             * Gerçek (×1.5): 36px, icon 16px
+             * Görsel kaplama 2026-09: cam hap + tonlu ikon dairesi (yükseklik aynı: 36px ikon, 44px hap)
              */}
             <button
               onClick={isDash ? undefined : () => onNavigate('dashboard')}
@@ -200,9 +190,9 @@ export function AppHeader({
                 width:     36,
                 height:    36,
                 borderRadius: 9999,
-                background: `${c}20`,
-                border:    `1.5px solid ${c}55`,
-                boxShadow: isDash ? 'none' : `0 0 8px ${c}50`,
+                background: `${c}24`,
+                border:    `1px solid ${c}66`,
+                boxShadow: isDash ? 'none' : `0 0 10px ${c}55`,
                 cursor:    isDash ? 'default' : 'pointer',
               }}
             >
@@ -268,22 +258,19 @@ export function AppHeader({
            * Gerçek (×1.5): 40px
            */}
           <button
-            className="relative flex items-center justify-center transition-all active:scale-90 flex-shrink-0"
+            className="sk-hdr-btn transition-all active:scale-90 flex-shrink-0"
             onClick={onBellClick}
             style={{
-              width:          40,
-              height:         40,
-              borderRadius:   9999,
-              background:     'rgba(0,0,0,0.7)',
-              border:         (hasNotification || notificationCount > 0)
-                                ? '1px solid rgba(251,146,60,0.5)'
-                                : '1px solid rgba(255,255,255,0.15)',
+              borderColor: (hasNotification || notificationCount > 0)
+                ? 'rgba(251,146,60,0.45)'
+                : 'rgba(255,255,255,0.12)',
               backdropFilter: 'blur(32px)',
+              WebkitBackdropFilter: 'blur(32px)',
             }}
           >
             {(hasNotification || notificationCount > 0)
-              ? <BellRing size={16} style={{ color: '#fb923c' }} />
-              : <Bell     size={16} className="text-gray-600" />
+              ? <BellRing size={16} style={{ color: '#fdba74' }} />
+              : <Bell     size={16} style={{ color: 'rgba(255,255,255,0.55)' }} />
             }
             {notificationCount > 0 && (
               <span
