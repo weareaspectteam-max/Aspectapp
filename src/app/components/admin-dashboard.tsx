@@ -5,10 +5,11 @@ import {
   BarChart2, AlertTriangle, MapPin, FileText,
   Camera, RefreshCw, ShoppingBag, Clock, ChevronRight,
   Star, Activity, Zap, Users, Settings as SettingsIcon, AlertCircle,
-  Trophy,
+  Trophy, Tag, Printer, Undo2, Medal,
 } from 'lucide-react';
 import { StaffPerformanceList } from './staff-performance-list';
 import { CurrencyWidget } from './currency-widget';
+import { skVars } from '../lib/skin';
 import { getToken, buildHeaders, ghostParams } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
@@ -71,12 +72,13 @@ function formatTL(val: number): string {
   return `₺${val.toLocaleString('tr-TR')}`;
 }
 
+/* Görsel kaplama 2026-09: kart yüzeyi (radius 24, hafif cam) */
 const glass: React.CSSProperties = {
-  background:           'rgba(255,255,255,0.05)',
-  border:               '1px solid rgba(255,255,255,0.10)',
+  background:           'rgba(255,255,255,0.06)',
+  border:               '1px solid rgba(255,255,255,0.09)',
   backdropFilter:       'blur(20px)',
   WebkitBackdropFilter: 'blur(20px)',
-  borderRadius:         20,
+  borderRadius:         24,
 };
 
 const COLORS = {
@@ -364,8 +366,8 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2 mb-0.5">
-                <h1 className="text-2xl font-black text-white">Genel Durum</h1>
-                <span className="text-xl">📊</span>
+                <h1 className="text-[26px] font-extrabold tracking-tight text-white">Genel Durum</h1>
+                <BarChart3 className="w-5 h-5" style={{ color: 'rgba(var(--app-accent-rgb),0.9)' }} />
               </div>
               <p className="text-xs font-medium" style={{ color: 'rgba(var(--app-accent-rgb),0.5)' }}>
                 {userName} · {roleLabel} · {new Date().toLocaleDateString('tr-TR')}
@@ -414,7 +416,7 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
             <div style={{ width: 1, background: 'rgba(52,211,153,0.15)', margin: '12px 0' }} />
             <div style={{ flex: 1, padding: 16, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
               <div style={{ marginBottom: 8 }}>
-                <p className="text-[9px] font-medium" style={{ color: '#ffd4a3' }}>🏷️ İskonto</p>
+                <p className="text-[9px] font-medium flex items-center gap-1" style={{ color: '#ffd4a3' }}><Tag className="w-2.5 h-2.5" /> İskonto</p>
                 {isLoading ? <div className="h-4 w-12 rounded bg-white/10 animate-pulse mt-1" />
                   : <p className="text-base font-black leading-none mt-0.5" style={{ color: '#ffd4a3' }}>₺{(data?.toplamIskonto ?? 0).toLocaleString('tr-TR')}</p>}
               </div>
@@ -468,12 +470,12 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
             <div style={{ width: 1, background: 'rgba(var(--app-accent-rgb),0.15)', margin: '12px 0' }} />
             <div style={{ flex: 1, padding: 16, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
               <div style={{ marginBottom: 8 }}>
-                <p className="text-[9px] font-medium" style={{ color: '#a8e6cf' }}>🖨️ Basılan</p>
+                <p className="text-[9px] font-medium flex items-center gap-1" style={{ color: '#a8e6cf' }}><Printer className="w-2.5 h-2.5" /> Basılan</p>
                 {isLoading ? <div className="h-4 w-10 rounded bg-white/10 animate-pulse mt-1" />
                   : <p className="text-base font-black leading-none mt-0.5" style={{ color: '#a8e6cf' }}>{(data?.toplamBasilan ?? 0).toLocaleString('tr-TR')}</p>}
               </div>
               <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 6 }}>
-                <p className="text-[9px] font-medium" style={{ color: (data?.toplamIadeFoto ?? 0) > 0 ? '#f87171' : 'rgba(255,255,255,0.4)' }}>↩️ İade</p>
+                <p className="text-[9px] font-medium flex items-center gap-1" style={{ color: (data?.toplamIadeFoto ?? 0) > 0 ? '#f87171' : 'rgba(255,255,255,0.4)' }}><Undo2 className="w-2.5 h-2.5" /> İade</p>
                 {isLoading ? <div className="h-4 w-8 rounded bg-white/10 animate-pulse mt-1" />
                   : <p className="text-sm font-bold leading-none mt-0.5" style={{ color: (data?.toplamIadeFoto ?? 0) > 0 ? '#f87171' : 'rgba(255,255,255,0.5)' }}>{data?.toplamIadeFoto ?? 0}</p>}
               </div>
@@ -537,13 +539,13 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
               <button
                 key={action.tab}
                 onClick={() => onNavigate(action.tab)}
-                className="flex flex-col items-center gap-2 p-3 rounded-xl transition-all active:scale-95"
-                style={{ background: `${action.color}10`, border: `1px solid ${action.color}25` }}
+                className="flex flex-col items-center gap-2 p-3 transition-all active:scale-95"
+                style={{ borderRadius: 16, background: `${action.color}14`, border: `1px solid ${action.color}38` }}
               >
-                <div style={{ width: 40, height: 40, borderRadius: 12, background: `${action.color}20`, border: `1px solid ${action.color}35`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <action.icon className="w-5 h-5" style={{ color: action.color }} />
+                <div className="sk-ibox" style={skVars(action.color, { width: 40, height: 40 })}>
+                  <action.icon className="w-5 h-5" />
                 </div>
-                <span className="text-[10px] font-bold text-center leading-tight" style={{ color: 'rgba(255,255,255,0.7)' }}>
+                <span className="text-[10px] font-bold text-center leading-tight" style={{ color: 'rgba(255,255,255,0.85)' }}>
                   {action.label}
                 </span>
               </button>
@@ -586,8 +588,9 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
           ) : (
             <div className="space-y-2">
               {data.aktifMekanlar.map((mekan) => (
-                <div key={mekan.id} className="flex items-center gap-3 rounded-xl" style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                  <div className="flex items-center justify-center text-lg shrink-0" style={{ width: 40, height: 40, borderRadius: 12, background: `${mekan.color}15`, border: `1px solid ${mekan.color}30` }}>
+                <div key={mekan.id} className="flex items-center gap-3" style={{ padding: '10px 12px', borderRadius: 16, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  {/* Mekan emojisi veridir; görsel kaplama yalnızca çerçeve */}
+                  <div className="flex items-center justify-center text-lg shrink-0" style={{ width: 40, height: 40, borderRadius: 13, background: `${mekan.color}24`, border: `1px solid ${mekan.color}59` }}>
                     {mekan.emoji}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -621,11 +624,11 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
                       const idx = [...sorted].map((k, i) => ({ k, i })).reverse().find(({ k }) => mekan.ciro >= k.hedef)?.i;
                       if (idx === undefined) return null;
                       const colors = ['#60a5fa', 'var(--app-accent, #a855f7)', '#fbbf24'];
-                      const emojis = ['🥉', '🥈', '🥇'];
+                      const pc = colors[Math.min(idx, 2)];
                       return (
-                        <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 6, background: `${colors[Math.min(idx, 2)]}20`, border: `1px solid ${colors[Math.min(idx, 2)]}40` }}>
-                          <span style={{ fontSize: 9 }}>{emojis[Math.min(idx, 2)]}</span>
-                          <span style={{ color: colors[Math.min(idx, 2)], fontSize: 8, fontWeight: 800 }}>PRİM</span>
+                        <div className="sk-badge sk-badge--sm" style={skVars(pc, { marginTop: 4, padding: '2px 7px', fontSize: 8, borderRadius: 7 })}>
+                          <Medal style={{ width: 9, height: 9 }} />
+                          <span>PRİM</span>
                         </div>
                       );
                     })()}
@@ -641,10 +644,10 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
           <button
             onClick={() => onNavigate('prim-takip')}
             className="w-full text-left transition-all active:scale-95"
-            style={{ background: 'linear-gradient(135deg, rgba(var(--app-accent-rgb),0.15) 0%, rgba(251,191,36,0.12) 100%)', border: '1px solid rgba(var(--app-accent-rgb),0.35)', borderRadius: 16, padding: '14px 16px', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
+            style={{ background: 'linear-gradient(135deg, rgba(var(--app-accent-rgb),0.2) 0%, rgba(251,191,36,0.1) 100%)', border: '1px solid rgba(var(--app-accent-rgb),0.4)', borderRadius: 20, padding: '14px 16px', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 44, height: 44, borderRadius: 13, background: 'rgba(var(--app-accent-rgb),0.2)', border: '1px solid rgba(var(--app-accent-rgb),0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🏆</div>
+              <div className="sk-ibox sk-ibox--lg" style={skVars('#fbbf24')}><Trophy className="w-5 h-5" /></div>
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                   <span style={{ color: 'white', fontSize: 13, fontWeight: 800 }}>Hakediş Takip</span>
@@ -704,7 +707,7 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
             style={{ ...glass, padding: 16 }}
           >
             <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-bold text-white">🏆 Mekan Ciro Sıralaması</p>
+              <p className="text-sm font-bold text-white flex items-center gap-2"><Trophy className="w-4 h-4" style={{ color: '#fcd34d' }} />Mekan Ciro Sıralaması</p>
               <button onClick={() => onNavigate('isletme-genel-durum')} className="text-xs font-bold" style={{ color: COLORS.yellow }}>
                 Tümü →
               </button>
@@ -715,8 +718,8 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
                 const pct = Math.round((mekan.ciro / maxC) * 100);
                 const rankColors = [COLORS.yellow, '#94a3b8', '#cd7f32', 'rgba(255,255,255,0.3)', 'rgba(255,255,255,0.2)'];
                 return (
-                  <div key={mekan.id} className="flex items-center gap-3" style={{ padding: '10px 12px', borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                    <div className="flex items-center justify-center text-xs font-black shrink-0" style={{ width: 28, height: 28, borderRadius: 8, background: `${rankColors[i]}20`, border: `1px solid ${rankColors[i]}50`, color: rankColors[i] }}>
+                  <div key={mekan.id} className="flex items-center gap-3" style={{ padding: '10px 12px', borderRadius: 16, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div className="flex items-center justify-center text-xs font-black shrink-0" style={{ width: 28, height: 28, borderRadius: 9, background: `${rankColors[i]}20`, border: `1px solid ${rankColors[i]}50`, color: rankColors[i] }}>
                       {i + 1}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -787,7 +790,7 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
           style={{ ...glass, padding: 16 }}
         >
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-bold text-white">🏆 En İyi Performans</p>
+            <p className="text-sm font-bold text-white flex items-center gap-2"><Trophy className="w-4 h-4" style={{ color: '#fcd34d' }} />En İyi Performans</p>
             <button onClick={() => setShowPerformanceList(true)} className="text-xs font-bold" style={{ color: COLORS.yellow }}>
               Tümünü Gör
             </button>
@@ -807,14 +810,13 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
             <div className="space-y-2">
               {data.personelPerformans.slice(0, 5).map((p, i) => {
                 const rankColors = [COLORS.yellow, '#94a3b8', '#cd7f32', 'rgba(255,255,255,0.3)', 'rgba(255,255,255,0.2)'];
-                const rankEmojis = ['🥇', '🥈', '🥉', '', ''];
                 const maxC = data.personelPerformans[0]?.ciro || 1;
                 const pct = Math.round((p.ciro / maxC) * 100);
                 return (
-                  <div key={p.id} className="rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div key={p.id} className="overflow-hidden" style={{ borderRadius: 16, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
                     <div className="flex items-center gap-3" style={{ padding: '10px 12px' }}>
-                      <div className="flex items-center justify-center text-xs font-black shrink-0" style={{ width: 28, height: 28, borderRadius: 8, background: `${rankColors[i]}20`, border: `1px solid ${rankColors[i]}50`, color: rankColors[i] }}>
-                        {rankEmojis[i] || i + 1}
+                      <div className="flex items-center justify-center text-xs font-black shrink-0" style={{ width: 28, height: 28, borderRadius: 9, background: `${rankColors[i]}20`, border: `1px solid ${rankColors[i]}50`, color: rankColors[i] }}>
+                        {i + 1}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-white truncate">{p.name}</p>
@@ -855,12 +857,12 @@ export function AdminDashboard({ userName, userRole, accessToken, onNavigate }: 
                 key={tab}
                 onClick={() => onNavigate(tab)}
                 className="flex flex-col items-center justify-center gap-2 transition-all active:scale-95"
-                style={{ ...glass, padding: '14px 8px', border: `1px solid ${color}30`, boxShadow: `0 4px 20px ${color}10` }}
+                style={{ ...glass, padding: '14px 6px', borderRadius: 18, background: `${color}12`, border: `1px solid ${color}30` }}
               >
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: `${color}20`, border: `1px solid ${color}40`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon className="w-4 h-4" style={{ color }} />
+                <div className="sk-ibox" style={skVars(color)}>
+                  <Icon className="w-4 h-4" />
                 </div>
-                <span className="text-xs font-bold" style={{ color: 'rgba(255,255,255,0.7)' }}>{label}</span>
+                <span className="text-[11px] font-bold" style={{ color: 'rgba(255,255,255,0.85)' }}>{label}</span>
               </button>
             ))}
           </div>
