@@ -4,9 +4,11 @@ import {
   Zap, Percent, ChevronRight, Flame, Star, Trophy,
   Tag, TrendingUp, MapPin, ShieldCheck,
   Camera, WifiOff, Megaphone, Loader2, Award, ArrowUp, ArrowDown, Minus,
+  Check, BarChart3,
 } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import { CurrencyWidget } from './currency-widget';
+import { skVars } from '../lib/skin';
 import { getUserQueue, getUserFrameQueue } from '../lib/offline-queue';
 import { buildHeaders, getToken, appendGhostParam } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
@@ -126,12 +128,12 @@ function MetrikBar({
       <Icon style={{ width: 12, height: 12, flexShrink: 0, color }} />
       <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.38)', width: 78, flexShrink: 0 }}>{label}</span>
       <div style={{
-        flex: 1, height: 6, borderRadius: 9999,
-        background: 'rgba(255,255,255,0.06)', overflow: 'hidden',
+        flex: 1, height: 7, borderRadius: 9999,
+        background: 'rgba(0,0,0,0.25)', overflow: 'hidden',
       }}>
         <div style={{
           width: `${puan}%`, height: '100%', borderRadius: 9999,
-          background: color, opacity: 0.85,
+          background: color, opacity: 0.9,
           transition: 'width 0.9s cubic-bezier(.4,0,.2,1)',
         }} />
       </div>
@@ -318,10 +320,15 @@ export function StaffPersonalDashboard({
   /* ── Performans etiketi ── */
   const skor = perf?.toplamSkor ?? 0;
   const perfLabel =
-    skor >= 90 ? { text: 'Mükemmel', emoji: '🏆', color: '#ffd4a3' } :
-    skor >= 75 ? { text: 'Harika',   emoji: '⭐', color: '#9dd9ea' } :
-    skor >= 60 ? { text: 'İyi',      emoji: '👍', color: '#a8e6cf' } :
-                 { text: 'Gelişiyor', emoji: '📈', color: 'var(--app-accent, #a855f7)' };
+    skor >= 90 ? { text: 'Mükemmel', color: '#ffd4a3' } :
+    skor >= 75 ? { text: 'Harika',   color: '#9dd9ea' } :
+    skor >= 60 ? { text: 'İyi',      color: '#a8e6cf' } :
+                 { text: 'Gelişiyor', color: 'var(--app-accent, #a855f7)' };
+
+  /* ── Avatar baş harfleri (görsel kaplama: emoji yerine) ── */
+  const initials = (userName || '')
+    .trim().split(/\s+/).filter(Boolean).slice(0, 2)
+    .map(p => p[0]?.toLocaleUpperCase('tr-TR') ?? '').join('') || '•';
 
   /* ── Duyuru rengi ── */
   const annColor =
@@ -351,20 +358,19 @@ export function StaffPersonalDashboard({
       ══════════════════════════════════════════ */}
       <div style={{ padding: '20px 20px 16px', position: 'relative', zIndex: 10 }}>
         <div style={{
-          position: 'relative', overflow: 'hidden', borderRadius: 24,
-          border: '1px solid rgba(255,255,255,0.12)',
-          background: 'rgba(255,255,255,0.07)',
-          backdropFilter: 'blur(20px)',
+          position: 'relative', overflow: 'hidden', borderRadius: 26,
+          border: '1px solid rgba(255,255,255,0.10)',
+          background: 'linear-gradient(135deg, rgba(var(--app-accent-rgb),0.62) 0%, rgba(var(--app-accent-2-rgb, 217,70,239),0.52) 100%)',
+          boxShadow: '0 24px 50px -28px rgba(var(--app-accent-2-rgb, 217,70,239),0.75)',
         }}>
-          {/* İç parıltı */}
+          {/* Dekoratif daireler (görsel kaplama) */}
           <div style={{
-            position: 'absolute', inset: 0, pointerEvents: 'none',
-            background: 'linear-gradient(135deg,rgba(var(--app-accent-rgb),0.10),transparent,rgba(157,217,234,0.08))',
+            position: 'absolute', width: 220, height: 220, borderRadius: '50%',
+            right: -70, top: -90, background: 'rgba(255,255,255,0.10)', pointerEvents: 'none',
           }} />
-          {/* Üst ince çizgi */}
           <div style={{
-            position: 'absolute', top: 0, left: 32, right: 32, height: 1,
-            background: 'linear-gradient(to right,transparent,rgba(255,255,255,0.30),transparent)',
+            position: 'absolute', width: 140, height: 140, borderRadius: '50%',
+            left: -50, bottom: -70, background: 'rgba(0,0,0,0.12)', pointerEvents: 'none',
           }} />
 
           <div style={{ position: 'relative', padding: 20 }}>
@@ -372,13 +378,13 @@ export function StaffPersonalDashboard({
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
               <div style={{ position: 'relative', flexShrink: 0 }}>
                 <div style={{
-                  width: 56, height: 56, borderRadius: 16,
-                  background: 'linear-gradient(135deg,var(--app-accent, #a855f7),#22d3ee)',
+                  width: 56, height: 56, borderRadius: 18,
+                  background: 'rgba(255,255,255,0.18)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 24,
-                  boxShadow: '0 8px 24px rgba(var(--app-accent-rgb),0.30)',
-                  border: '1px solid rgba(255,255,255,0.20)',
-                }}>😊</div>
+                  fontSize: 17, fontWeight: 800, letterSpacing: '0.02em', color: 'white',
+                  border: '1px solid rgba(255,255,255,0.35)',
+                  backdropFilter: 'blur(8px)',
+                }}>{initials}</div>
                 <div style={{
                   position: 'absolute', bottom: -4, right: -4,
                   width: 20, height: 20, borderRadius: '50%',
@@ -389,19 +395,19 @@ export function StaffPersonalDashboard({
                 </div>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <h1 style={{ fontSize: 18, fontWeight: 900, color: 'white', lineHeight: 1.2, margin: 0 }}>
-                  Merhaba, {userName}! 👋
+                <h1 style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', color: 'white', lineHeight: 1.2, margin: 0 }}>
+                  Merhaba, {userName}!
                 </h1>
-                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 2, marginBottom: 0 }}>
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 2, marginBottom: 0 }}>
                   {monthName} {year} performansın
                 </p>
               </div>
               <div style={{
-                flexShrink: 0, width: 36, height: 36, borderRadius: 12,
-                background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
+                flexShrink: 0, width: 36, height: 36, borderRadius: 14,
+                background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.2)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <Flame style={{ width: 16, height: 16, color: '#fb923c' }} />
+                <Flame style={{ width: 16, height: 16, color: 'white' }} />
               </div>
             </div>
 
@@ -410,15 +416,11 @@ export function StaffPersonalDashboard({
 
               {/* Kart 1 — Liderboard Sırası */}
               <div style={{
-                position: 'relative', overflow: 'hidden', borderRadius: 16,
-                border: '1px solid rgba(255,212,163,0.22)',
-                background: 'rgba(255,212,163,0.08)', padding: 12, textAlign: 'center',
+                position: 'relative', overflow: 'hidden', borderRadius: 20,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: 'rgba(255,255,255,0.12)', padding: 12, textAlign: 'center',
               }}>
-                <div style={{
-                  position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-                  width: 48, height: 1, background: 'rgba(255,212,163,0.40)',
-                }} />
-                <Trophy style={{ width: 16, height: 16, color: '#ffd4a3', margin: '0 auto 6px' }} />
+                <Trophy style={{ width: 16, height: 16, color: 'white', margin: '0 auto 6px' }} />
                 {perfLoading ? (
                   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 24 }}>
                     <Loader2 style={{ width: 16, height: 16, color: 'rgba(255,255,255,0.25)', animation: 'spin 1s linear infinite' }} />
@@ -429,8 +431,8 @@ export function StaffPersonalDashboard({
                   </div>
                 )}
                 <div style={{
-                  fontSize: 9, color: 'rgba(255,212,163,0.75)', fontWeight: 600,
-                  marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.05em',
+                  fontSize: 9.5, color: 'rgba(255,255,255,0.8)', fontWeight: 700,
+                  marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.08em',
                 }}>
                   {perf && !perfLoading ? `/ ${perf.toplamPersonel} kişi` : 'Sıralama'}
                 </div>
@@ -438,15 +440,11 @@ export function StaffPersonalDashboard({
 
               {/* Kart 2 — Aylık İskonto Ortalaması */}
               <div style={{
-                position: 'relative', overflow: 'hidden', borderRadius: 16,
-                border: '1px solid rgba(157,217,234,0.22)',
-                background: 'rgba(157,217,234,0.08)', padding: 12, textAlign: 'center',
+                position: 'relative', overflow: 'hidden', borderRadius: 20,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: 'rgba(255,255,255,0.12)', padding: 12, textAlign: 'center',
               }}>
-                <div style={{
-                  position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-                  width: 48, height: 1, background: 'rgba(157,217,234,0.40)',
-                }} />
-                <Percent style={{ width: 16, height: 16, color: '#9dd9ea', margin: '0 auto 6px' }} />
+                <Percent style={{ width: 16, height: 16, color: 'white', margin: '0 auto 6px' }} />
                 {perfLoading ? (
                   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 24 }}>
                     <Loader2 style={{ width: 16, height: 16, color: 'rgba(255,255,255,0.25)', animation: 'spin 1s linear infinite' }} />
@@ -457,39 +455,34 @@ export function StaffPersonalDashboard({
                   </div>
                 )}
                 <div style={{
-                  fontSize: 9, color: 'rgba(157,217,234,0.75)', fontWeight: 600,
-                  marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.05em',
+                  fontSize: 9.5, color: 'rgba(255,255,255,0.8)', fontWeight: 700,
+                  marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.08em',
                 }}>İskonto Ort.</div>
               </div>
 
               {/* Kart 3 — Offline Kuyruk */}
               <div style={{
-                position: 'relative', overflow: 'hidden', borderRadius: 16,
+                position: 'relative', overflow: 'hidden', borderRadius: 20,
                 border: offlineCount > 0
-                  ? '1px solid rgba(251,146,60,0.30)'
-                  : '1px solid rgba(52,211,153,0.22)',
+                  ? '1px solid rgba(251,191,36,0.55)'
+                  : '1px solid rgba(255,255,255,0.18)',
                 background: offlineCount > 0
-                  ? 'rgba(251,146,60,0.08)'
-                  : 'rgba(52,211,153,0.08)',
+                  ? 'rgba(251,191,36,0.22)'
+                  : 'rgba(255,255,255,0.12)',
                 padding: 12, textAlign: 'center',
               }}>
-                <div style={{
-                  position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-                  width: 48, height: 1,
-                  background: offlineCount > 0 ? 'rgba(251,146,60,0.40)' : 'rgba(52,211,153,0.40)',
-                }} />
                 <WifiOff style={{
                   width: 16, height: 16,
-                  color: offlineCount > 0 ? '#fb923c' : '#34d399',
+                  color: offlineCount > 0 ? '#fde68a' : 'white',
                   margin: '0 auto 6px',
                 }} />
-                <div style={{ fontSize: 20, fontWeight: 900, color: 'white', lineHeight: 1 }}>
-                  {offlineCount > 0 ? offlineCount : '✓'}
+                <div style={{ fontSize: 20, fontWeight: 900, color: 'white', lineHeight: 1, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {offlineCount > 0 ? offlineCount : <Check style={{ width: 18, height: 18 }} strokeWidth={2.5} />}
                 </div>
                 <div style={{
-                  fontSize: 9,
-                  color: offlineCount > 0 ? 'rgba(251,146,60,0.75)' : 'rgba(52,211,153,0.75)',
-                  fontWeight: 600, marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.05em',
+                  fontSize: 9.5,
+                  color: offlineCount > 0 ? '#fde68a' : 'rgba(255,255,255,0.8)',
+                  fontWeight: 700, marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.08em',
                 }}>
                   {offlineCount > 0 ? 'Bekliyor' : 'Temiz'}
                 </div>
@@ -517,48 +510,27 @@ export function StaffPersonalDashboard({
           AYLIK LIDERBOARD PERFORMANSI
       ══════════════════════════════════════════ */}
       <div style={{ padding: '0 20px 16px', position: 'relative', zIndex: 10 }}>
-        <div style={{
-          position: 'relative', overflow: 'hidden', borderRadius: 24,
-          border: '1px solid rgba(255,255,255,0.12)',
-          background: 'rgba(255,255,255,0.07)',
-          backdropFilter: 'blur(20px)',
-        }}>
-          <div style={{
-            position: 'absolute', inset: 0, pointerEvents: 'none',
-            background: 'linear-gradient(135deg,rgba(192,132,252,0.08),transparent,rgba(var(--app-accent-rgb),0.08))',
-          }} />
-          <div style={{
-            position: 'absolute', top: 0, left: 32, right: 32, height: 1,
-            background: 'linear-gradient(to right,transparent,rgba(255,255,255,0.25),transparent)',
-          }} />
-
+        <div className="sk-card" style={{ position: 'relative', overflow: 'hidden', borderRadius: 26 }}>
           <div style={{ position: 'relative', padding: 20 }}>
             {/* Başlık */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
               <div style={{
-                width: 40, height: 40, borderRadius: 12,
-                background: 'linear-gradient(135deg,rgba(var(--app-accent-rgb),0.40),rgba(192,132,252,0.30))',
-                border: '1px solid rgba(var(--app-accent-rgb),0.30)',
+                width: 40, height: 40, borderRadius: 13,
+                background: 'linear-gradient(135deg,rgba(var(--app-accent-rgb),0.5),rgba(var(--app-accent-2-rgb, 217,70,239),0.4))',
+                border: '1px solid rgba(var(--app-accent-rgb),0.4)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: '0 4px 16px rgba(var(--app-accent-rgb),0.20)',
               }}>
-                <Award style={{ width: 20, height: 20, color: 'var(--app-accent, #a855f7)' }} />
+                <Award style={{ width: 20, height: 20, color: 'white' }} />
               </div>
               <div style={{ flex: 1 }}>
-                <h2 style={{ fontSize: 14, fontWeight: 900, color: 'white', margin: 0 }}>Aylık Performans</h2>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', margin: 0 }}>
+                <h2 style={{ fontSize: 14, fontWeight: 800, letterSpacing: '-0.01em', color: 'white', margin: 0 }}>Aylık Performans</h2>
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0 }}>
                   {monthName} {year} · Liderboard Verisi
                 </p>
               </div>
               {/* Sıra Badge */}
               {perf && !perfLoading && (
-                <div style={{
-                  flexShrink: 0, borderRadius: 10,
-                  background: 'rgba(255,212,163,0.12)',
-                  border: '1px solid rgba(255,212,163,0.25)',
-                  padding: '4px 10px',
-                  fontSize: 11, fontWeight: 800, color: '#ffd4a3',
-                }}>
+                <div className="sk-badge" style={skVars('#fbbf24', { flexShrink: 0 })}>
                   #{perf.sira}&nbsp;/&nbsp;{perf.toplamPersonel}
                 </div>
               )}
@@ -582,7 +554,7 @@ export function StaffPersonalDashboard({
                 display: 'flex', flexDirection: 'column', alignItems: 'center',
                 padding: '28px 0', gap: 8, textAlign: 'center',
               }}>
-                <span style={{ fontSize: 36 }}>📊</span>
+                <BarChart3 style={{ width: 36, height: 36, color: 'rgba(255,255,255,0.25)' }} />
                 <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>
                   Bu ay henüz liderboard verisi yok.
                 </span>
@@ -641,7 +613,7 @@ export function StaffPersonalDashboard({
                     <div style={{ fontSize: 28, fontWeight: 900, color: 'white', lineHeight: 1 }}>{skor}</div>
                     <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.40)', fontWeight: 600 }}>/ 100</div>
                     <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4, color: perfLabel.color }}>
-                      {perfLabel.emoji} {perfLabel.text}
+                      {perfLabel.text}
                     </div>
                   </div>
                 </div>
@@ -817,26 +789,18 @@ export function StaffPersonalDashboard({
               textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0,
             }}>Son Duyuru</h3>
             {/* Öncelik rozeti */}
-            <span style={{
-              marginLeft: 'auto',
-              fontSize: 9, fontWeight: 800,
-              color: annColor,
-              background: `${annColor}18`,
-              border: `1px solid ${annColor}35`,
-              borderRadius: 6, padding: '2px 7px',
-              textTransform: 'uppercase', letterSpacing: '0.06em',
-            }}>
-              {announcement.priority === 'high' ? '🔴 Öncelikli' :
-               announcement.priority === 'medium' ? '🟡 Normal' : '🔵 Bilgi'}
+            <span className="sk-badge sk-badge--sm" style={skVars(annColor, { marginLeft: 'auto', textTransform: 'uppercase', letterSpacing: '0.06em' })}>
+              <span className="sk-dot" />
+              {announcement.priority === 'high' ? 'Öncelikli' :
+               announcement.priority === 'medium' ? 'Normal' : 'Bilgi'}
             </span>
           </div>
 
           <div style={{
-            position: 'relative', overflow: 'hidden', borderRadius: 20,
-            border: `1px solid ${annColor}40`,
-            background: `linear-gradient(135deg,${annColor}12,${annColor}06,rgba(255,255,255,0.04))`,
+            position: 'relative', overflow: 'hidden', borderRadius: 24,
+            border: `1px solid ${annColor}45`,
+            background: `linear-gradient(145deg,${annColor}2e,${annColor}0d)`,
             backdropFilter: 'blur(20px)',
-            boxShadow: `0 4px 24px ${annColor}18, inset 0 1px 0 ${annColor}20`,
             padding: 18,
           }}>
             {/* Üst parlama çizgisi */}
@@ -859,15 +823,8 @@ export function StaffPersonalDashboard({
 
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
               {/* İkon kutusu */}
-              <div style={{
-                width: 44, height: 44, borderRadius: 13,
-                background: `${annColor}20`,
-                border: `1.5px solid ${annColor}45`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
-                boxShadow: `0 4px 12px ${annColor}20`,
-              }}>
-                <Megaphone style={{ width: 20, height: 20, color: annColor }} />
+              <div className="sk-ibox sk-ibox--lg" style={skVars(annColor)}>
+                <Megaphone style={{ width: 20, height: 20 }} />
               </div>
 
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -898,15 +855,8 @@ export function StaffPersonalDashboard({
                   </span>
                   <button
                     onClick={() => onNavigate('announcements')}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 5,
-                      fontSize: 11, fontWeight: 800,
-                      color: annColor,
-                      background: `${annColor}15`,
-                      border: `1px solid ${annColor}30`,
-                      borderRadius: 8, padding: '5px 10px',
-                      cursor: 'pointer',
-                    }}
+                    className="sk-badge"
+                    style={skVars(annColor, { cursor: 'pointer' })}
                   >
                     Tüm Duyurular <ChevronRight style={{ width: 13, height: 13 }} />
                   </button>
@@ -942,22 +892,16 @@ export function StaffPersonalDashboard({
           {/* Hızlı Satış */}
           <button
             onClick={() => onNavigate('quick-sales')}
+            className="sk-card"
             style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-              padding: 14, borderRadius: 16,
-              border: '1px solid rgba(255,255,255,0.10)',
-              background: 'rgba(255,255,255,0.06)',
-              backdropFilter: 'blur(20px)',
+              padding: 14, borderRadius: 20,
+              background: 'rgba(255,255,255,0.07)',
               cursor: 'pointer', textAlign: 'left',
             }}
           >
-            <div style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: 'rgba(157,217,234,0.15)',
-              border: '1px solid rgba(157,217,234,0.25)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <Zap style={{ width: 16, height: 16, color: '#9dd9ea' }} />
+            <div className="sk-ibox" style={skVars('#22d3ee')}>
+              <Zap style={{ width: 16, height: 16 }} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>Hızlı Satış</div>
@@ -969,22 +913,16 @@ export function StaffPersonalDashboard({
           {/* Liderlik Tablosu */}
           <button
             onClick={() => onNavigate('leaderboard')}
+            className="sk-card"
             style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-              padding: 14, borderRadius: 16,
-              border: '1px solid rgba(255,255,255,0.10)',
-              background: 'rgba(255,255,255,0.06)',
-              backdropFilter: 'blur(20px)',
+              padding: 14, borderRadius: 20,
+              background: 'rgba(255,255,255,0.07)',
               cursor: 'pointer', textAlign: 'left',
             }}
           >
-            <div style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: 'rgba(255,212,163,0.15)',
-              border: '1px solid rgba(255,212,163,0.25)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <Star style={{ width: 16, height: 16, color: '#ffd4a3' }} />
+            <div className="sk-ibox" style={skVars('#fbbf24')}>
+              <Star style={{ width: 16, height: 16 }} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>Liderlik Tablosu</div>
@@ -1002,24 +940,19 @@ export function StaffPersonalDashboard({
             onClick={() => onNavigate('personel-prim-takip')}
             style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-              padding: 14, borderRadius: 16,
-              border: '1px solid rgba(251,191,36,0.20)',
-              background: 'rgba(251,191,36,0.07)',
+              padding: 14, borderRadius: 20,
+              border: '1px solid rgba(251,191,36,0.30)',
+              background: 'linear-gradient(145deg, rgba(251,191,36,0.16), rgba(251,191,36,0.05))',
               backdropFilter: 'blur(20px)',
               cursor: 'pointer', textAlign: 'left',
             }}
           >
-            <div style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: 'rgba(251,191,36,0.15)',
-              border: '1px solid rgba(251,191,36,0.25)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <Trophy style={{ width: 16, height: 16, color: '#fbbf24' }} />
+            <div className="sk-ibox" style={skVars('#fbbf24')}>
+              <Trophy style={{ width: 16, height: 16 }} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>Hakedişlerim</div>
-              <div style={{ fontSize: 11, color: 'rgba(251,191,36,0.60)' }}>Kazançlarını ve alacaklarını gör</div>
+              <div style={{ fontSize: 11, color: '#fde68a', opacity: 0.85 }}>Kazançlarını ve alacaklarını gör</div>
             </div>
             <ChevronRight style={{ width: 16, height: 16, color: 'rgba(255,255,255,0.30)', flexShrink: 0 }} />
           </button>

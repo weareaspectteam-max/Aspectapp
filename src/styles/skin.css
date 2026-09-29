@@ -1,0 +1,261 @@
+/* ═══════════════════════════════════════════════════════════════
+   ASPECT Görsel Kaplama (2026-09) — mobil uygulama stil sınıfları
+   Kural: yalnızca görünüm. Mantık dosyalarında sadece className /
+   style değişir. Renkler kullanıcı temasına (--app-accent) bağlıdır.
+   Renkli bileşenler --c (hex) ve --c-rgb ("r,g,b") değişkenlerini
+   inline style ile alır; bkz. src/app/lib/skin.ts → skVars().
+   Geri alma: bu dosya + skin.ts silinip commit revert edilir.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  --app-accent-2: #d946ef;
+  --app-accent-2-rgb: 217, 70, 239;
+  --sk-radius: 24px;
+  --sk-radius-sm: 16px;
+  --sk-surface: rgba(255, 255, 255, 0.06);
+  --sk-line: rgba(255, 255, 255, 0.09);
+  --sk-pos: #34d399;  --sk-pos-rgb: 52, 211, 153;
+  --sk-neg: #fb7185;  --sk-neg-rgb: 251, 113, 133;
+  --sk-cyan: #22d3ee; --sk-cyan-rgb: 34, 211, 238;
+  --sk-amber: #fbbf24; --sk-amber-rgb: 251, 191, 36;
+}
+
+/* ── Kart ── */
+.sk-card {
+  border-radius: var(--sk-radius);
+  border: 1px solid var(--sk-line);
+  background: var(--sk-surface);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+.sk-card--sm { border-radius: var(--sk-radius-sm); }
+
+/* ── İkon kutusu (--c / --c-rgb) ── */
+.sk-ibox {
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 36px; height: 36px; border-radius: 13px;
+  background: rgba(var(--c-rgb), 0.14);
+  border: 1px solid rgba(var(--c-rgb), 0.35);
+  color: var(--c);
+}
+.sk-ibox--sm { width: 30px; height: 30px; border-radius: 10px; }
+.sk-ibox--lg { width: 44px; height: 44px; border-radius: 14px; }
+.sk-ibox--emoji { font-size: 18px; line-height: 1; }
+
+/* ── Rozet / nokta ── */
+.sk-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 800; padding: 5px 11px; border-radius: 999px;
+  background: rgba(var(--c-rgb), 0.14);
+  border: 1px solid rgba(var(--c-rgb), 0.35);
+  color: var(--c); white-space: nowrap; line-height: 1.2;
+}
+.sk-badge--sm { font-size: 9.5px; padding: 3px 8px; }
+.sk-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  background: currentColor; box-shadow: 0 0 8px currentColor; display: inline-block;
+}
+.sk-dot--pulse { animation: skPulse 1.8s ease-in-out infinite; }
+
+/* ── Düğmeler ── */
+.sk-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 14px; border-radius: 18px;
+  border: 1px solid transparent; font: inherit; font-size: 15px; font-weight: 800;
+  color: #fff; cursor: pointer; transition: transform 0.12s ease, opacity 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.sk-btn:active { transform: scale(0.97); }
+.sk-btn:disabled { cursor: not-allowed; opacity: 0.6; transform: none; }
+.sk-btn--primary {
+  background: linear-gradient(135deg, var(--app-accent, #a855f7), var(--app-accent-2, #d946ef));
+  box-shadow: 0 14px 30px -12px rgba(var(--app-accent-2-rgb, 217, 70, 239), 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+.sk-btn--danger {
+  background: linear-gradient(135deg, #e11d48, #be123c);
+  box-shadow: 0 14px 30px -12px rgba(225, 29, 72, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.sk-btn--success {
+  background: linear-gradient(135deg, #059669, #10b981);
+  box-shadow: 0 14px 30px -12px rgba(16, 185, 129, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.sk-btn--warn {
+  background: linear-gradient(135deg, #d97706, #f59e0b);
+  box-shadow: 0 14px 30px -12px rgba(245, 158, 11, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.sk-btn--ghost { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.14); color: rgba(255, 255, 255, 0.88); }
+.sk-btn--tint { background: rgba(var(--c-rgb), 0.14); border-color: rgba(var(--c-rgb), 0.42); color: var(--c); }
+.sk-btn--muted { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.4); box-shadow: none; }
+.sk-btn--sm { padding: 10px 14px; font-size: 13px; border-radius: 14px; font-weight: 700; }
+.sk-btn--inline { width: auto; }
+
+/* ── Mod sekmeleri (Açılış / Satış / Kare / Kapanış) ── */
+.sk-tabs {
+  display: flex; gap: 6px; padding: 5px; border-radius: 20px;
+  background: rgba(0, 0, 0, 0.18); border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.sk-tab {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 4px; border-radius: 16px; font: inherit; font-size: 11px; font-weight: 700;
+  color: rgba(255, 255, 255, 0.45); border: 1px solid transparent; background: transparent;
+  transition: all 0.2s; position: relative; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.sk-tab--on { background: rgba(var(--c-rgb), 0.18); border-color: rgba(var(--c-rgb), 0.5); color: var(--c); }
+.sk-tab--done { color: var(--sk-pos); }
+.sk-tab__badge {
+  position: absolute; top: 6px; right: calc(50% - 20px);
+  width: 15px; height: 15px; border-radius: 50%; font-size: 8px; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--app-accent-2, #d946ef); color: #fff; box-shadow: 0 0 0 2px #1b0d40;
+}
+
+/* ── Albüm kutusu (polaroid yelpaze) ── */
+.sk-tile {
+  position: relative; overflow: hidden; display: flex; flex-direction: column;
+  justify-content: flex-end; align-items: stretch; height: 108px; min-width: 0;
+  padding: 8px 9px; border-radius: 18px; text-align: left; color: #fff;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.03));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: transform 0.12s; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.sk-tile:active { transform: scale(0.95); }
+.sk-tile::before {
+  content: ""; position: absolute; left: 50%; top: -18px; width: 78px; height: 66px;
+  transform: translateX(-50%); border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(var(--c-rgb), 0.34), transparent); pointer-events: none;
+}
+.sk-tile::after {
+  content: ""; position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px;
+  border-radius: 2px 2px 0 0; background: var(--c); opacity: 0.55;
+}
+.sk-tile__fan { position: absolute; left: 0; right: 0; top: 9px; display: flex; justify-content: center; pointer-events: none; }
+.sk-tile__fan svg { width: 52px; height: 37px; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.35)); }
+.sk-tile__name { display: flex; align-items: baseline; gap: 4px; line-height: 1; position: relative; }
+.sk-tile__num { font-size: 23px; font-weight: 800; letter-spacing: -0.04em; }
+.sk-tile__suffix { font-size: 8.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.62; white-space: nowrap; }
+.sk-tile__price { margin-top: 3px; font-size: 10.5px; font-weight: 800; color: var(--c); letter-spacing: -0.01em; position: relative; font-variant-numeric: tabular-nums; }
+
+/* ── Kota rayı (prim kademeleri) ── */
+.sk-rail { position: relative; height: 8px; border-radius: 99px; background: rgba(0, 0, 0, 0.3); }
+.sk-rail__fill {
+  position: absolute; left: 0; top: 0; height: 100%; border-radius: 99px; overflow: hidden;
+  background: linear-gradient(90deg, #60a5fa, var(--app-accent, #a855f7), var(--app-accent-2, #d946ef));
+  box-shadow: 0 0 12px rgba(var(--app-accent-2-rgb, 217, 70, 239), 0.5);
+  transition: width 0.6s ease;
+}
+.sk-rail__fill--none { background: rgba(255, 255, 255, 0.15); box-shadow: none; }
+.sk-rail__fill::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: translateX(-100%); animation: skShimmer 2.6s ease-in-out infinite;
+}
+.sk-rail__tip {
+  position: absolute; top: 50%; transform: translate(-50%, -50%); width: 14px; height: 14px; border-radius: 50%;
+  background: #fff; pointer-events: none; transition: left 0.6s ease;
+  box-shadow: 0 0 0 3px rgba(var(--app-accent-2-rgb, 217, 70, 239), 0.35), 0 0 16px var(--app-accent-2, #d946ef);
+}
+.sk-rail__node {
+  position: absolute; top: 50%; transform: translate(-50%, -50%); width: 11px; height: 11px; border-radius: 50%;
+  border: 2px solid #1b0d40; background: #2a1552;
+}
+.sk-rail__node--done { background: var(--c); box-shadow: 0 0 8px var(--c); }
+.sk-cps { position: relative; height: 52px; margin-bottom: 2px; }
+.sk-cp { position: absolute; bottom: 4px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 1px; white-space: nowrap; }
+.sk-cp__medal {
+  position: relative; width: 26px; height: 26px; border-radius: 50%; margin-bottom: 3px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, 0.05); border: 1.5px dashed rgba(255, 255, 255, 0.35); color: rgba(255, 255, 255, 0.55);
+  animation: skNextPulse 2s ease-in-out infinite;
+}
+.sk-cp--done .sk-cp__medal { background: var(--c); color: #1a0a3c; border: 0; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08), 0 0 14px var(--c); animation: none; }
+.sk-cp__label { font-size: 8.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(255, 255, 255, 0.55); line-height: 1.1; }
+.sk-cp__amt { font-size: 8px; font-weight: 700; color: rgba(255, 255, 255, 0.35); line-height: 1.1; }
+.sk-cp--done .sk-cp__label, .sk-cp--done .sk-cp__amt { color: var(--c); }
+.sk-cp__left { font-size: 8.5px; font-weight: 700; color: #fcd34d; line-height: 1.1; margin-top: 1px; }
+.sk-cp--pop .sk-cp__medal { animation: skPop 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+.sk-cp__ring { position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--c); opacity: 0; pointer-events: none; }
+.sk-cp--pop .sk-cp__ring { animation: skRingOut 0.9s ease-out both; }
+.sk-cp__pt { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; border-radius: 50%; background: var(--c); opacity: 0; pointer-events: none; }
+.sk-cp--pop .sk-cp__pt { animation: skBurst 0.85s ease-out both; }
+.sk-toast {
+  position: absolute; left: 12px; right: 12px; top: 10px; z-index: 5;
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 16px; color: #fff;
+  background: linear-gradient(135deg, var(--app-accent, #a855f7), var(--app-accent-2, #d946ef));
+  box-shadow: 0 18px 40px -14px rgba(var(--app-accent-2-rgb, 217, 70, 239), 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  opacity: 0; transform: translateY(-12px); transition: opacity 0.25s, transform 0.25s; pointer-events: none;
+}
+.sk-toast--show { opacity: 1; transform: translateY(0); }
+.sk-hk {
+  display: inline-flex; align-items: center; gap: 3px; padding: 3px 9px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 800; color: #fcd34d;
+  background: rgba(251, 191, 36, 0.14); border: 1px solid rgba(251, 191, 36, 0.4);
+  animation: skHkGlow 2.4s ease-in-out infinite;
+}
+
+/* ── Alt bar (dock) ── */
+.sk-dock {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; width: 100%;
+  padding: 9px 6px 8px; border-radius: 24px; position: relative;
+  background: linear-gradient(180deg, rgba(30, 15, 66, 0.94), rgba(13, 6, 32, 0.96));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
+  box-shadow: 0 22px 44px -18px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+.sk-dock--few { display: inline-grid; width: auto; padding: 9px 14px 8px; gap: 6px; }
+.sk-dock--few .sk-dock__item { width: 64px; }
+.sk-dock__item {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  height: 48px; border-radius: 14px; background: none; border: 0; padding: 0;
+  color: rgba(255, 255, 255, 0.42); font: inherit; font-size: 9.5px; font-weight: 600; letter-spacing: 0.02em; line-height: 1;
+  cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform 0.12s;
+}
+.sk-dock__item:active { transform: scale(0.92); }
+.sk-dock__item--on { color: #fff; font-weight: 700; }
+.sk-dock__icon { transition: transform 0.2s, color 0.2s; }
+.sk-dock__item--on .sk-dock__icon { color: var(--c); filter: drop-shadow(0 0 8px rgba(var(--c-rgb), 0.85)); transform: translateY(-1px); }
+.sk-dock__light {
+  position: absolute; top: -9px; left: 50%; transform: translateX(-50%); width: 30px; height: 3px;
+  border-radius: 0 0 4px 4px; background: var(--c); box-shadow: 0 3px 14px rgba(var(--c-rgb), 0.9);
+}
+.sk-dock__glow {
+  position: absolute; top: -8px; left: 50%; transform: translateX(-50%); width: 64px; height: 44px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(var(--c-rgb), 0.3), transparent); pointer-events: none;
+}
+.sk-dock__badge {
+  position: absolute; top: 1px; right: calc(50% - 21px); min-width: 17px; height: 17px; padding: 0 4px;
+  border-radius: 999px; background: #ec4899; border: 2px solid #150a36; color: #fff;
+  font-size: 9px; font-weight: 900; display: flex; align-items: center; justify-content: center; line-height: 1;
+}
+
+/* ── Üst bar ── */
+.sk-hdr-pill {
+  display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+.sk-hdr-btn {
+  width: 40px; height: 40px; border-radius: 14px; display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.12); color: #fff; position: relative;
+}
+
+/* ── Yardımcılar ── */
+.sk-num { font-variant-numeric: tabular-nums; }
+.sk-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 18px; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.08); }
+.sk-pill-input {
+  height: 48px; border-radius: 14px; background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff; font-weight: 800; letter-spacing: -0.02em; text-align: center; outline: none;
+}
+.sk-pill-input:focus { border-color: rgba(var(--app-accent-rgb, 168, 85, 247), 0.6); }
+
+/* ── Animasyonlar ── */
+@keyframes skPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes skShimmer { 0% { transform: translateX(-100%); } 60%, 100% { transform: translateX(100%); } }
+@keyframes skNextPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); } 50% { box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.07); } }
+@keyframes skPop { 0% { transform: scale(0.6); } 45% { transform: scale(1.45); } 70% { transform: scale(0.9); } 100% { transform: scale(1); } }
+@keyframes skRingOut { 0% { transform: scale(0.6); opacity: 0.9; } 100% { transform: scale(2.6); opacity: 0; } }
+@keyframes skBurst { 0% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.3); opacity: 0; } }
+@keyframes skHkGlow { 0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); } 50% { box-shadow: 0 0 14px 0 rgba(251, 191, 36, 0.35); } }
+@media (prefers-reduced-motion: reduce) {
+  .sk-rail__fill::after, .sk-cp__medal, .sk-hk, .sk-dot--pulse, .sk-cp--pop .sk-cp__medal, .sk-cp--pop .sk-cp__ring, .sk-cp--pop .sk-cp__pt { animation: none !important; }
+}

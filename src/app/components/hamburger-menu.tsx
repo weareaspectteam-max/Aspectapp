@@ -568,14 +568,8 @@ export function HamburgerMenu({
       {/* ── Trigger ── */}
       <button
         onClick={() => setIsOpen(true)}
-        className="rounded-full flex items-center justify-center transition-all active:scale-90 flex-shrink-0"
-        style={{
-          width:          40,
-          height:         40,
-          background:     'rgba(0,0,0,0.7)',
-          border:         '1px solid rgba(255,255,255,0.15)',
-          backdropFilter: 'blur(32px)',
-        }}
+        className="sk-hdr-btn transition-all active:scale-90 flex-shrink-0"
+        style={{ backdropFilter: 'blur(32px)', WebkitBackdropFilter: 'blur(32px)' }}
       >
         {/* Üç çizgi (hamburger) */}
         <div className="flex flex-col gap-[5px] items-center justify-center">

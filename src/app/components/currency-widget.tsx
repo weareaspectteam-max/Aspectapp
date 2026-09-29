@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw, ArrowLeftRight } from 'lucide-react';
 import { authHeaders } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
 
@@ -122,11 +122,11 @@ export function CurrencyWidget() {
   ];
 
   return (
-    <div className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-xl p-3 shadow-lg">
+    <div className="sk-card p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className="text-base">💱</span>
-          <h3 className="text-xs font-bold text-white">Güncel Kurlar & Çevirici</h3>
+          <ArrowLeftRight className="w-4 h-4" style={{ color: '#67e8f9' }} />
+          <h3 className="text-[12.5px] font-bold text-white">Güncel Kurlar & Çevirici</h3>
         </div>
         <div className="flex items-center gap-2">
           {fetchedAt && (
@@ -156,12 +156,16 @@ export function CurrencyWidget() {
                 <button
                   key={c.code}
                   onClick={() => setSelectedCurrency(isSelected ? null : c.code)}
-                  className={`bg-white/5 rounded-lg p-2 text-center transition-all active:scale-95 ${isSelected ? `ring-2 ${c.ring} ${c.bg}` : 'hover:bg-white/10'}`}
+                  className="rounded-2xl p-2.5 text-center transition-all active:scale-95 border"
+                  style={{
+                    background: isSelected ? `${c.color}2a` : 'rgba(255,255,255,0.06)',
+                    borderColor: isSelected ? `${c.color}73` : 'rgba(255,255,255,0.08)',
+                  }}
                 >
-                  <div className="text-[10px] text-gray-400 mb-0.5 flex items-center justify-center gap-1">
-                    <span>{c.flag}</span><span>{c.code}</span>
+                  <div className="text-[10px] font-semibold mb-0.5 flex items-center justify-center gap-1" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                    <span>{c.code}</span>
                   </div>
-                  <div className="text-sm font-bold" style={{ color: c.color }}>
+                  <div className="text-sm font-extrabold" style={{ color: c.color }}>
                     ₺{exchangeRates[c.code].toFixed(2)}
                   </div>
                   {t ? (
@@ -180,7 +184,7 @@ export function CurrencyWidget() {
           {selectedCurrency && (
             <div className="space-y-2 border-t border-white/10 pt-3 mt-3 animate-in slide-in-from-top-2">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs">🔄</span>
+                <RefreshCw className="w-3 h-3" style={{ color: 'rgba(255,255,255,0.5)' }} />
                 <span className="text-[10px] font-semibold text-white">Para Çevirici</span>
               </div>
               <div className="space-y-2">

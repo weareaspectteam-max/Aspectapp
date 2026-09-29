@@ -1,12 +1,20 @@
 import { getTasks, getLocations } from '../services/rotation-service';
 import type { Task } from '../services/rotation-service';
-import { MapPin, Clock, Navigation, CheckCircle2, Lock, ArrowLeft, Zap, Loader2, Trophy, HelpCircle, X } from 'lucide-react';
+import { MapPin, Clock, Navigation, CheckCircle2, Lock, ArrowLeft, Zap, Loader2, Trophy, HelpCircle, X, Award, Medal, Gem, Crown, PartyPopper } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { localDateStr, toLocalDateStr } from '../lib/date';
 import { authHeaders } from '../lib/api';
 import { projectId } from '../lib/supabase-info';
+import { skVars } from '../lib/skin';
 
 const API_BASE_PS = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
+
+/* Görsel kaplama: kademe geçiş kutlaması parçacıkları (10 nokta, deterministik) */
+const BURST = Array.from({ length: 10 }, (_, k) => {
+  const a = (k / 10) * Math.PI * 2;
+  const r = 24 + (k % 3) * 5;
+  return { dx: `${(Math.cos(a) * r).toFixed(1)}px`, dy: `${(Math.sin(a) * r).toFixed(1)}px`, delay: `${(k % 3) * 0.04}s` };
+});
 
 interface Project {
   id: string;
@@ -65,6 +73,41 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
     primBilgi: { toplamKademe: number; toplamPrim: number; coklu: boolean } | null;
     fark: number | null;
   } | null>(null);
+
+  // ── Görsel kaplama: kademe geçiş kutlaması (yalnızca görünüm) ──
+  const [kotaPop, setKotaPop] = useState<number | null>(null);
+  const [kotaToast, setKotaToast] = useState<{ title: string; sub: string } | null>(null);
+  const kotaPrevRef = useRef<{ name: string; count: number } | null>(null);
+  const kotaNameChangedAtRef = useRef<number>(Date.now());
+  const kotaAchievedCount = (() => {
+    if (!kotaData || !kotaData.kademeler?.length) return null;
+    const sorted = [...kotaData.kademeler].sort((a, b) => Number(a.hedef) - Number(b.hedef));
+    return sorted.filter(k => kotaData.ciro >= Number(k.hedef)).length;
+  })();
+  useEffect(() => {
+    kotaPrevRef.current = null;
+    kotaNameChangedAtRef.current = Date.now();
+  }, [selectedProject?.name]);
+  useEffect(() => {
+    if (kotaAchievedCount === null || !kotaData) return;
+    const name = selectedProject?.name ?? '';
+    const prev = kotaPrevRef.current;
+    kotaPrevRef.current = { name, count: kotaAchievedCount };
+    // Mekan yeni değiştiyse (eski veri hâlâ ekranda olabilir) kutlama yapma
+    if (!prev || prev.name !== name || kotaAchievedCount <= prev.count) return;
+    if (Date.now() - kotaNameChangedAtRef.current < 3000) return;
+    const idx = kotaAchievedCount - 1;
+    const sorted = [...kotaData.kademeler].sort((a, b) => Number(a.hedef) - Number(b.hedef));
+    const prim = Number(sorted[idx]?.primTek || 0);
+    setKotaPop(idx);
+    setKotaToast({
+      title: `${idx + 1}. kademe açıldı!`,
+      sub: prim > 0 ? `+₺${prim.toLocaleString('tr-TR')} hakediş kazandın` : 'Tebrikler, hedef geçildi',
+    });
+    const t1 = setTimeout(() => setKotaPop(null), 1200);
+    const t2 = setTimeout(() => setKotaToast(null), 2800);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [kotaAchievedCount]);
 
   // ── Kota fetch fonksiyonu (callback, birden fazla yerden çağrılabilir) ──
   const fetchKota = useCallback(async () => {
@@ -345,8 +388,19 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
             </button>
           )}
 
-          <div className="overflow-hidden backdrop-blur-xl bg-gradient-to-br from-white/15 to-white/10 rounded-2xl px-4 py-3.5 border border-white/20 shadow-lg">
+          <div className="sk-card relative overflow-hidden px-4 py-3.5" style={{ borderRadius: 24 }}>
             <Zap className="absolute -left-3 -bottom-4 w-28 h-28 text-white opacity-[0.05]" />
+            {kotaToast && (
+              <div className="sk-toast sk-toast--show">
+                <div className="sk-ibox" style={{ background: 'rgba(255,255,255,0.2)', borderColor: 'rgba(255,255,255,0.35)', color: '#fff' }}>
+                  <PartyPopper style={{ width: 18, height: 18 }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 800 }}>{kotaToast.title}</div>
+                  <div style={{ fontSize: 10.5, opacity: 0.8 }}>{kotaToast.sub}</div>
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center justify-between relative z-10">
               <div className="flex items-center gap-2.5">
@@ -360,8 +414,8 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                 )}
                 <div>
                   <div className="flex items-center gap-1.5 mb-0.5">
-                    <h1 className="text-lg font-bold text-white leading-tight">Operasyon</h1>
-                    <span className="text-lg leading-tight">⚡</span>
+                    <h1 className="text-lg font-extrabold text-white leading-tight tracking-tight">Operasyon</h1>
+                    <Zap className="w-4 h-4" style={{ color: '#fcd34d' }} />
                   </div>
                   <div className="flex items-center gap-2.5 text-xs text-gray-400">
                     <span className="flex items-center gap-1">
@@ -384,15 +438,16 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                   </div>
                   <button
                     onClick={() => setShowSelector(true)}
-                    className="text-[11px] font-semibold text-[#9dd9ea] hover:bg-[#9dd9ea]/10 px-2 py-0.5 rounded-lg transition-all"
+                    className="text-[11px] font-semibold text-[#67e8f9] hover:bg-[#67e8f9]/10 px-2 py-0.5 rounded-lg transition-all"
                   >
                     Değiştir
                   </button>
                 </div>
 
+                {/* Mekan simgesi veridir (emoji); görsel kaplama yalnızca çerçeveyi yeniler */}
                 <div
-                  className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl shadow-md flex-shrink-0"
-                  style={{ backgroundColor: selectedProject.color + '99' }}
+                  className="w-11 h-11 rounded-[14px] flex items-center justify-center text-2xl flex-shrink-0"
+                  style={{ background: selectedProject.color + '29', border: `1px solid ${selectedProject.color}66` }}
                 >
                   {selectedProject.icon}
                 </div>
@@ -416,140 +471,105 @@ export function ProjectSelector({ onProjectSelect, selectedProject, onNavigate, 
                 : 'rgba(255,255,255,0.15)';
               const glowColor = enYuksekAsildi ? COLORS[Math.min(enYuksekAsildi.i, 4)] : null;
 
-              // Kademe sayısından bağımsız: son kademe daima en iyi kupa
-              const TROPHY_POOL = ['🎖️', '🥉', '🥈', '🏆', '💎', '👑'];
-              const getTrophy = (i: number, total: number) => {
+              // Kademe sayısından bağımsız: son kademe daima en iyi madalya (görsel kaplama: emoji yerine ikon)
+              const MEDAL_POOL = [Award, Medal, Medal, Trophy, Gem, Crown];
+              const getMedal = (i: number, total: number) => {
                 const fromEnd = (total - 1) - i; // 0 = son kademe
-                const poolIdx = Math.max(0, TROPHY_POOL.length - 1 - fromEnd);
-                return TROPHY_POOL[poolIdx];
+                const poolIdx = Math.max(0, MEDAL_POOL.length - 1 - fromEnd);
+                return MEDAL_POOL[poolIdx];
               };
+              const isMgmt = ['yonetici', 'ust-mudur', 'mudur', 'operasyon'].includes(userRole || '');
+              void barGrad; void glowColor;
 
               return (
-                <div style={{ marginTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10 }}>
+                <div style={{ marginTop: 12, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 12 }}>
                   {/* Üst satır: ciro + prim rozeti */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.5)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                       Günlük Ciro
                     </span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {['yonetici', 'ust-mudur', 'mudur', 'operasyon'].includes(userRole || '') && (
-                      <span style={{ fontSize: 11, fontWeight: 800, color: glowColor ?? 'rgba(255,255,255,0.5)' }}>
+                      {isMgmt && (
+                      <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-0.01em', color: '#fcd34d' }}>
                         {formatTLc(ciro)}
                       </span>
                       )}
                       {primBilgi ? (
-                        <div style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 3,
-                          padding: '2px 7px', borderRadius: 8,
-                          background: `${glowColor}22`, border: `1px solid ${glowColor}44`,
-                        }}>
-                          <Trophy style={{ width: 9, height: 9, color: glowColor ?? '#fbbf24' }} />
-                          <span style={{ fontSize: 9, fontWeight: 800, color: glowColor ?? '#fbbf24' }}>HAKEDİŞ {primBilgi.toplamPrim > 0 ? `₺${primBilgi.toplamPrim.toLocaleString('tr-TR')}` : ''}</span>
-                        </div>
+                        <span className="sk-hk">
+                          <Trophy style={{ width: 9, height: 9 }} />
+                          HAKEDİŞ {primBilgi.toplamPrim > 0 ? `₺${primBilgi.toplamPrim.toLocaleString('tr-TR')}` : ''}
+                        </span>
                       ) : fark !== null && fark > 0 ? (
-                        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontWeight: 600 }}>
+                        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontWeight: 600 }}>
                           {formatTLc(fark)} eksik
                         </span>
                       ) : null}
                     </div>
                   </div>
 
-                  {/* Checkpoint etiketleri — bar'ın ÜSTÜNDE */}
-                  <div style={{ position: 'relative', height: 44, marginBottom: 2 }}>
+                  {/* Kademe düğümleri — rayın ÜSTÜNDE (görsel kaplama: madalya ikonu, sıradaki kademe nefes alır) */}
+                  <div className="sk-cps">
                     {sorted.map((k, i) => {
                       const pos = Number(k.hedef) / maxHedef;
                       const achieved = ciro >= Number(k.hedef);
                       const c = COLORS[Math.min(i, 4)];
-                      const trophy = getTrophy(i, sorted.length);
-                      const leftPct = Math.min(Math.max(pos * 100, 6), 94);
+                      const MedalIcon = getMedal(i, sorted.length);
+                      const leftPct = Math.min(Math.max(pos * 100, 8), 92);
+                      const isNext = !achieved && (i === 0 || ciro >= Number(sorted[i - 1].hedef));
+                      const isPop = kotaPop === i;
                       return (
-                        <div key={i} style={{
-                          position: 'absolute',
-                          left: `${leftPct}%`,
-                          transform: 'translateX(-50%)',
-                          bottom: 4,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          gap: 1,
-                        }}>
-                          {/* Kupa ikonu — sadece ulaşıldıysa göster, bounce animasyonlu */}
-                          {achieved ? (
-                            <span style={{
-                              fontSize: 16,
-                              lineHeight: 1,
-                              display: 'block',
-                              animation: 'kotaBounce 0.6s cubic-bezier(0.36,0.07,0.19,0.97) both',
-                              filter: `drop-shadow(0 0 6px ${c})`,
-                              marginBottom: 1,
-                            }}>
-                              {trophy}
-                            </span>
-                          ) : (
-                            <span style={{
-                              fontSize: 14,
-                              lineHeight: 1,
-                              display: 'block',
-                              opacity: 0.18,
-                              marginBottom: 1,
-                              filter: 'grayscale(1)',
-                            }}>
-                              {trophy}
+                        <div
+                          key={i}
+                          className={`sk-cp${achieved ? ' sk-cp--done' : ''}${isPop ? ' sk-cp--pop' : ''}`}
+                          style={skVars(c, { left: `${leftPct}%` })}
+                        >
+                          <span className="sk-cp__medal">
+                            <i className="sk-cp__ring" />
+                            {isPop && BURST.map((p, j) => (
+                              <i
+                                key={j}
+                                className="sk-cp__pt"
+                                style={{ ['--dx' as any]: p.dx, ['--dy' as any]: p.dy, animationDelay: p.delay }}
+                              />
+                            ))}
+                            <MedalIcon style={{ width: 14, height: 14 }} strokeWidth={2.2} />
+                          </span>
+                          <span className="sk-cp__label">{i + 1}. Kot</span>
+                          {isMgmt && (
+                            <span className="sk-cp__amt">
+                              {achieved ? `+${formatTLc(k.primTek || 0)}` : formatTLc(k.hedef)}
                             </span>
                           )}
-                          <span style={{
-                            fontSize: 7.5,
-                            fontWeight: 800,
-                            color: achieved ? c : 'rgba(255,255,255,0.30)',
-                            whiteSpace: 'nowrap',
-                            lineHeight: 1.1,
-                          }}>
-                            {i + 1}. Kot
-                          </span>
-                          {['yonetici', 'ust-mudur', 'mudur', 'operasyon'].includes(userRole || '') && (
-                          <span style={{
-                            fontSize: 7,
-                            fontWeight: 700,
-                            color: achieved ? c : 'rgba(255,255,255,0.18)',
-                            whiteSpace: 'nowrap',
-                            lineHeight: 1.1,
-                          }}>
-                            {achieved ? `+${formatTLc(k.primTek || 0)}` : formatTLc(k.hedef)}
-                          </span>
+                          {isMgmt && isNext && (
+                            <span className="sk-cp__left">{formatTLc(Number(k.hedef) - ciro)} kaldı</span>
                           )}
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* Bar */}
-                  <div style={{ position: 'relative', height: 5, borderRadius: 99, background: 'rgba(255,255,255,0.07)' }}>
-                    <div style={{
-                      position: 'absolute', top: 0, left: 0,
-                      height: '100%', borderRadius: 99,
-                      width: `${Math.min(barFill * 100, 100)}%`,
-                      background: barGrad,
-                      boxShadow: glowColor ? `0 0 8px ${glowColor}70` : 'none',
-                      transition: 'width 0.6s ease',
-                    }} />
+                  {/* Ray */}
+                  <div className="sk-rail">
+                    <div
+                      className={`sk-rail__fill${enYuksekAsildi ? '' : ' sk-rail__fill--none'}`}
+                      style={{ width: `${Math.min(barFill * 100, 100)}%` }}
+                    />
                     {sorted.map((k, i) => {
                       const pos = Number(k.hedef) / maxHedef;
-                      const dotLeftPct = Math.min(Math.max(pos * 100, 6), 94);
+                      const dotLeftPct = Math.min(Math.max(pos * 100, 8), 92);
                       const achieved = ciro >= Number(k.hedef);
                       const c = COLORS[Math.min(i, 4)];
                       return (
-                        <div key={i} style={{
-                          position: 'absolute', top: '50%', left: `${dotLeftPct}%`,
-                          transform: 'translate(-50%,-50%)',
-                          width: 10, height: 10, borderRadius: '50%',
-                          background: achieved ? c : 'rgba(255,255,255,0.12)',
-                          border: `2px solid ${achieved ? c : 'rgba(255,255,255,0.18)'}`,
-                          boxShadow: achieved ? `0 0 8px ${c}90` : 'none',
-                          transition: 'all 0.4s ease',
-                          zIndex: 2,
-                        }} />
+                        <span
+                          key={i}
+                          className={`sk-rail__node${achieved ? ' sk-rail__node--done' : ''}`}
+                          style={skVars(c, { left: `${dotLeftPct}%`, zIndex: 2 })}
+                        />
                       );
                     })}
+                    {barFill > 0.02 && (
+                      <span className="sk-rail__tip" style={{ left: `${Math.min(barFill * 100, 100)}%`, zIndex: 3 }} />
+                    )}
                   </div>
                 </div>
               );

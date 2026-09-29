@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   CheckCircle2, AlertCircle,
-  LogIn, LogOut, Bell, X, Loader2, Timer, Play, Coffee,
+  LogIn, LogOut, Bell, X, Loader2, Timer, Play, Coffee, Moon,
 } from 'lucide-react';
 import { buildHeaders, getToken } from '../lib/api';
+import { skVars } from '../lib/skin';
 import { projectId } from '../lib/supabase-info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-4da0b637`;
@@ -475,15 +476,15 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
   const badgeMap: Record<ShiftState, { label: string; color: string; bg: string; border: string; blink?: boolean }> = {
     loading:         { label: '...', color: 'rgba(255,255,255,0.4)', bg: 'rgba(255,255,255,0.06)', border: 'rgba(255,255,255,0.10)' },
     'no-shift':      { label: '', color: '', bg: '', border: '' },
-    waiting:         { label: '⏳ Bekliyor', color: '#ffd4a3', bg: 'rgba(255,212,163,0.12)', border: 'rgba(255,212,163,0.30)' },
-    grace:           { label: '🟡 Başladı', color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.30)' },
-    'late-no-checkin': { label: '🔴 Geç Kalıyor', color: '#f87171', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.35)', blink: true },
-    'active-ontime': { label: '🟢 Aktif', color: '#4ade80', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.30)' },
-    'active-late':   { label: '🟠 Geç Katıldı', color: '#fb923c', bg: 'rgba(251,146,60,0.12)', border: 'rgba(251,146,60,0.30)' },
-    overtime:        { label: '⚠️ Çıkış Yapılmadı', color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.35)', blink: true },
-    paused:          { label: '⏸️ Beklemede', color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.30)' },
-    'completed-ontime': { label: '✅ Tamamlandı', color: '#4ade80', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.25)' },
-    'completed-late':   { label: '✅ Tamamlandı', color: '#4ade80', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.25)' },
+    waiting:         { label: 'Bekliyor', color: '#ffd4a3', bg: 'rgba(255,212,163,0.12)', border: 'rgba(255,212,163,0.30)' },
+    grace:           { label: 'Başladı', color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.30)' },
+    'late-no-checkin': { label: 'Geç Kalıyor', color: '#f87171', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.35)', blink: true },
+    'active-ontime': { label: 'Aktif', color: '#4ade80', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.30)' },
+    'active-late':   { label: 'Geç Katıldı', color: '#fb923c', bg: 'rgba(251,146,60,0.12)', border: 'rgba(251,146,60,0.30)' },
+    overtime:        { label: 'Çıkış Yapılmadı', color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.35)', blink: true },
+    paused:          { label: 'Beklemede', color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.30)' },
+    'completed-ontime': { label: 'Tamamlandı', color: '#4ade80', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.25)' },
+    'completed-late':   { label: 'Tamamlandı', color: '#4ade80', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.25)' },
   };
 
   const badge = badgeMap[state];
@@ -504,7 +505,9 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
     if (state === 'no-shift') {
       return (
         <div style={{ textAlign: 'center', padding: '24px 0' }}>
-          <div style={{ fontSize: 36, marginBottom: 8 }}>🌙</div>
+          <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'center' }}>
+            <Moon style={{ width: 36, height: 36, color: 'rgba(255,255,255,0.3)' }} />
+          </div>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.70)' }}>Bugün rotasyonda görev yok</div>
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>İyi dinlenmeler!</div>
         </div>
@@ -518,7 +521,8 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
         {/* Lokasyon + Saat Satırı */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 20 }}>{task.locationIcon || '📍'}</span>
+            {/* Mekan simgesi veridir (emoji); görsel kaplama yalnızca çerçeve ekler */}
+            <span className="sk-ibox sk-ibox--sm sk-ibox--emoji" style={skVars('#60a5fa', { fontSize: 16 })}>{task.locationIcon || '📍'}</span>
             <div>
               <div style={{ fontSize: 13, fontWeight: 800, color: 'white', lineHeight: 1.2 }}>{task.location}</div>
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 2 }}>
@@ -547,10 +551,10 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
         {/* ANA SAYAÇ ALANI */}
         {(state === 'active-ontime' || state === 'active-late') && countdown > 0 && (
           <div style={{ textAlign: 'center', marginBottom: 14 }}>
-            <div style={{ fontSize: 34, fontWeight: 900, color: '#9dd9ea', letterSpacing: '-1px', fontVariantNumeric: 'tabular-nums' }}>
+            <div style={{ fontSize: 40, fontWeight: 900, color: 'white', letterSpacing: '-1.5px', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
               {fmtCountdown(countdown)}
             </div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>kaldı</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>kaldı</div>
           </div>
         )}
 
@@ -650,15 +654,8 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
             <button
               onClick={handleResume}
               disabled={actionLoading}
-              style={{
-                width: '100%', padding: '13px', borderRadius: 14, border: 'none',
-                background: 'linear-gradient(135deg,#22c55e,#16a34a)',
-                color: 'white', fontSize: 14, fontWeight: 800, cursor: actionLoading ? 'not-allowed' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                boxShadow: '0 4px 16px rgba(34,197,94,0.30)',
-                opacity: actionLoading ? 0.7 : 1,
-                marginBottom: 8,
-              }}
+              className="sk-btn sk-btn--success"
+              style={{ marginBottom: 8 }}
             >
               {actionLoading
                 ? <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
@@ -668,13 +665,8 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
             <button
               onClick={handleCheckOut}
               disabled={actionLoading}
-              style={{
-                width: '100%', padding: '10px', borderRadius: 12, border: '1px solid rgba(239,68,68,0.30)',
-                background: 'rgba(239,68,68,0.10)',
-                color: '#f87171', fontSize: 13, fontWeight: 700, cursor: actionLoading ? 'not-allowed' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                opacity: actionLoading ? 0.7 : 1,
-              }}
+              className="sk-btn sk-btn--tint sk-btn--sm"
+              style={skVars('#fb7185')}
             >
               {actionLoading
                 ? <Loader2 style={{ width: 14, height: 14, animation: 'spin 1s linear infinite' }} />
@@ -788,15 +780,7 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
             <button
               onClick={handleCheckIn}
               disabled={actionLoading}
-              style={{
-                width: '100%', padding: '13px', borderRadius: 14, border: 'none',
-                background: 'linear-gradient(135deg,#22c55e,#16a34a)',
-                color: 'white', fontSize: 14, fontWeight: 800, cursor: actionLoading ? 'not-allowed' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                boxShadow: '0 4px 16px rgba(34,197,94,0.30)',
-                opacity: actionLoading ? 0.7 : 1,
-                transition: 'opacity 0.2s',
-              }}
+              className="sk-btn sk-btn--success"
             >
               {actionLoading
                 ? <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
@@ -811,20 +795,8 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
               <button
                 onClick={handleCheckOut}
                 disabled={actionLoading}
-                style={{
-                  width: '100%', padding: '13px', borderRadius: 14, border: 'none',
-                  background: state === 'overtime'
-                    ? 'linear-gradient(135deg,#f59e0b,#d97706)'
-                    : 'linear-gradient(135deg,#ef4444,#dc2626)',
-                  color: 'white', fontSize: 14, fontWeight: 800, cursor: actionLoading ? 'not-allowed' : 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  boxShadow: state === 'overtime'
-                    ? '0 4px 16px rgba(245,158,11,0.30)'
-                    : '0 4px 16px rgba(239,68,68,0.30)',
-                  opacity: actionLoading ? 0.7 : 1,
-                  transition: 'opacity 0.2s',
-                  animation: state === 'overtime' ? 'pulse 2s ease-in-out infinite' : 'none',
-                }}
+                className={`sk-btn ${state === 'overtime' ? 'sk-btn--warn' : 'sk-btn--danger'}`}
+                style={{ animation: state === 'overtime' ? 'pulse 2s ease-in-out infinite' : 'none' }}
               >
                 {actionLoading
                   ? <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
@@ -836,16 +808,8 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
                 <button
                   onClick={handleEarlyCheckOut}
                   disabled={actionLoading}
-                  style={{
-                    width: '100%', padding: '10px', borderRadius: 12,
-                    border: '1px solid rgba(251,191,36,0.30)',
-                    background: 'rgba(251,191,36,0.08)',
-                    color: '#fbbf24', fontSize: 12, fontWeight: 700,
-                    cursor: actionLoading ? 'not-allowed' : 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                    opacity: actionLoading ? 0.6 : 1,
-                    transition: 'opacity 0.2s',
-                  }}
+                  className="sk-btn sk-btn--tint sk-btn--sm"
+                  style={skVars('#fbbf24')}
                 >
                   <Coffee style={{ width: 13, height: 13 }} />
                   Geçici Çıkış — Devam Edebilirim
@@ -912,48 +876,29 @@ export function ShiftCheckInCard({ userId, userName, accessToken, tasks, tasksLo
   return (
     <>
       {/* KART */}
-      <div style={{
-        position: 'relative', overflow: 'hidden', borderRadius: 24,
-        border: '1px solid rgba(255,255,255,0.12)',
-        background: 'rgba(255,255,255,0.05)',
-        backdropFilter: 'blur(20px)',
-      }}>
-        {/* İç parıltı */}
-        <div style={{
-          position: 'absolute', inset: 0, pointerEvents: 'none',
-          background: 'linear-gradient(135deg,rgba(157,217,234,0.08),transparent,rgba(var(--app-accent-rgb),0.06))',
-        }} />
-        {/* Üst ince çizgi */}
-        <div style={{
-          position: 'absolute', top: 0, left: 32, right: 32, height: 1,
-          background: 'linear-gradient(to right,transparent,rgba(255,255,255,0.25),transparent)',
-        }} />
-
+      <div className="sk-card" style={{ position: 'relative', overflow: 'hidden', borderRadius: 26 }}>
         <div style={{ position: 'relative', padding: 20 }}>
           {/* Başlık */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: 11,
-                background: 'linear-gradient(135deg,rgba(157,217,234,0.30),rgba(var(--app-accent-rgb),0.25))',
-                border: '1px solid rgba(157,217,234,0.30)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Timer style={{ width: 18, height: 18, color: '#9dd9ea' }} />
+              <div className="sk-ibox" style={skVars('#22d3ee')}>
+                <Timer style={{ width: 18, height: 18 }} />
               </div>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 900, color: 'white' }}>Anlık Durum</div>
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Vardiya Takibi</div>
+                <div style={{ fontSize: 14, fontWeight: 800, letterSpacing: '-0.01em', color: 'white' }}>Anlık Durum</div>
+                <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.4)' }}>Vardiya Takibi</div>
               </div>
             </div>
             {/* Badge */}
             {badge.label && (
               <div style={{
-                fontSize: 10, fontWeight: 800, padding: '4px 10px', borderRadius: 8,
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontSize: 11, fontWeight: 800, padding: '5px 11px', borderRadius: 999,
                 color: badge.color, background: badge.bg, border: `1px solid ${badge.border}`,
                 animation: badge.blink ? 'pulse 2s ease-in-out infinite' : 'none',
                 whiteSpace: 'nowrap',
               }}>
+                <span className="sk-dot" />
                 {badge.label}
               </div>
             )}
@@ -1104,8 +1049,8 @@ function ProgressBar({ state, missedPct, workedPct, remainPct, markerPct, startT
       {/* Bar */}
       <div style={{
         position: 'relative',
-        height: 8, borderRadius: 9999,
-        background: 'rgba(255,255,255,0.07)',
+        height: 10, borderRadius: 9999,
+        background: 'rgba(0,0,0,0.25)',
         overflow: 'visible',
         display: 'flex',
       }}>
@@ -1124,8 +1069,8 @@ function ProgressBar({ state, missedPct, workedPct, remainPct, markerPct, startT
           <div style={{
             width: `${workedPct}%`, height: '100%',
             background: isCompleted && missedPct === 0
-              ? 'linear-gradient(to right,#22c55e,#4ade80)'
-              : 'linear-gradient(to right,#16a34a,#4ade80)',
+              ? 'linear-gradient(to right,#34d399,#22d3ee)'
+              : 'linear-gradient(to right,#10b981,#34d399)',
             borderRadius: remainPct < 0.5 && missedPct < 0.5 ? 9999
               : remainPct < 0.5 ? '0 9999px 9999px 0'
               : missedPct < 0.5 ? '9999px 0 0 9999px'
@@ -1138,7 +1083,7 @@ function ProgressBar({ state, missedPct, workedPct, remainPct, markerPct, startT
         {remainPct > 0.5 && (
           <div style={{
             width: `${remainPct}%`, height: '100%',
-            background: 'rgba(255,255,255,0.07)',
+            background: 'transparent',
             borderRadius: '0 9999px 9999px 0',
             flexShrink: 0,
           }} />

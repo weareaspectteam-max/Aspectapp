@@ -810,6 +810,32 @@ Stil: `background: rgba(251,191,36,0.15)`, `border: 1px solid rgba(251,191,36,0.
 
 ---
 
+## Gorsel Kaplama (2026-09, dal: redesign/kaplama)
+
+Mobil uygulamanin gorunumu yenilendi; akis, dugme yerleri, veri ve yetkiler DEGISMEDI. PC paneli (`/pc`, `.pc-root` kendi fontu) etkilenmez.
+
+**Dosyalar**
+| Dosya | Rol |
+|---|---|
+| `src/styles/fonts.css` + `src/styles/fonts/*.woff2` | Outfit fontu, uygulamaya gomulu (cevrimdisi yuklenir; latin + latin-ext, Turkce karakter ve TL simgesi dahil) |
+| `src/styles/skin.css` | Tum kaplama siniflari: `.sk-card`, `.sk-ibox`, `.sk-badge`, `.sk-btn--*`, `.sk-tabs/.sk-tab`, `.sk-tile*` (album kutusu), `.sk-rail*/.sk-cp*` (prim rayi), `.sk-dock*` (alt bar), `.sk-toast`, animasyonlar |
+| `src/app/lib/skin.ts` | `skVars(color)` -> `--c` / `--c-rgb` inline degiskenleri; `albumFanSvg(n, color)` polaroid yelpaze SVG |
+| `src/app/lib/themes.ts` | Her temaya `accent2` eklendi; `applyTheme` `--app-accent-2` ve `--app-accent-2-rgb` set eder (gradyanlarin sicak ucu) |
+| `src/styles/index.css` | `html, body` font-family Outfit; skin.css import |
+
+**Kurallar**
+- Renkli bilesenler rengi `style={skVars('#hex')}` ile alir; tema vurgusu icin `skVars('var(--app-accent, #a855f7)')`.
+- Dekoratif emojiler SVG (lucide) ikona cevrildi. **Mekan `emoji`/`icon` ve personel `avatar` alanlari VERIDIR, emoji olarak kalir**; kaplama sadece cerceve (`.sk-ibox--emoji`) ekler.
+- Alt bar (`new-bottom-nav.tsx`): tam genislik dock, etiketli; `ROLE_TABS` ve yonlendirme aynen. Yukseklik ~73px; sayfalarin `pb-24/28/32` bosluklari yeterli.
+- Ust bar (`app-header.tsx`): yukseklik korunur (icerik `pt-[60px]` buna gore).
+- Prim rayi (`project-selector.tsx`): kademe gecisinde kutlama (`kotaPop`/`kotaToast`); mekan degisiminde ve degisimden sonraki 3 sn icinde tetiklenmez.
+
+**Kapsam (adim adim commit):** temel katman -> personel ana ekrani (+ vardiya karti, kur karti) -> hizli satis (satis + kare modu, operasyon karti) -> yonetici ana ekrani. Acilis/Kapanis sekmeleri, iskonto numpad'i, hamburger menu icerigi, mesajlar ve diger sayfalar HENUZ kaplanmadi (font global oldugu icin yazi tipi degisti, duzen ayni).
+
+**Geri alma:** dal `main`'e tek commit olarak (squash) birlestirilir; sorun cikarsa `git revert <o commit>` + push, ya da Vercel panelinde onceki deployment'a "Instant Rollback". Bileşen bazinda geri almak icin ilgili commit revert edilir.
+
+---
+
 ## Yapilacaklar (sonra)
 - Mekan katkisi (ciro×0.60 + kare×0.40) backend'e kaydedilecek — kapanista hesaplanip KV'ye yazilacak. Sonra istatistik sayfasi + gun raporunda kullanilacak. Su an sadece vardiya bazlida frontend'de hesaplaniyor.
 

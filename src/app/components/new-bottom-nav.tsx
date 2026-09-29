@@ -1,18 +1,16 @@
 /**
- * NewBottomNav — demo PillBottomNav ×1.56 ölçek
- * (mockup 240px → gerçek 375px = ×1.56)
+ * NewBottomNav — alt gezinme çubuğu.
  *
- * Demo → Gerçek:
- *   pill: px-2 py-1 gap-0.5  →  px-3 py-1.5 gap-1
- *   circle: w-7 h-7 = 28px   →  44px
- *   icon: w-3.5 h-3.5 = 14px →  18px
- *   badge: top-0.5 right-0.5 w-1.5 h-1.5  →  top:3 right:3 w:8 h:8
+ * Görsel kaplama 2026-09: tam genişlik "dock", etiketli sekmeler, aktif sekmede
+ * üstten ışık çizgisi + ikon parıltısı. Sekme listesi (ROLE_TABS), sıra ve
+ * onNavigate davranışı DEĞİŞMEDİ; yalnızca görünüm. Stiller: src/styles/skin.css (.sk-dock*)
  */
 
 import { Home, Zap, Trophy, MessageCircle, Users, Sparkles, Activity, Megaphone, Settings } from 'lucide-react';
 // Trophy zaten import edildi — aspect-ai yerine kullanılacak
 import { motion } from 'motion/react';
 import type { UserRole } from './login';
+import { skVars } from '../lib/skin';
 
 type IconComp = React.ComponentType<{
   className?: string;
@@ -80,6 +78,18 @@ const ROLE_TABS: Record<string, Tab[]> = {
   ],
 };
 
+/* Sekme etiketleri — yalnızca görünüm; key'ler ve yönlendirme aynı */
+const TAB_LABELS: Record<string, string> = {
+  'dashboard':     'Ana',
+  'live-feed':     'Feed',
+  'quick-sales':   'Satış',
+  'aspect-ai':     'AI',
+  'messaging':     'Mesaj',
+  'rotation':      'Rotasyon',
+  'announcements': 'Duyuru',
+  'settings':      'Ayarlar',
+};
+
 interface NewBottomNavProps {
   activeTab:           string;
   onTabChange?:        (tab: string) => void;
@@ -94,95 +104,49 @@ export function NewBottomNav({ activeTab, onTabChange, onNavigate, userRole, unr
   // AI tab'ı bekleyen hariç tüm rollerde ve tüm şirketlerde gösterilir
   const rawTabs    = ROLE_TABS[userRole] ?? ROLE_TABS['personel'];
   const tabs       = rawTabs;
+  const few        = tabs.length <= 2;
 
   return (
     <div
       className="fixed bottom-0 left-0 right-0 z-50 flex justify-center"
-      style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
+      style={{ padding: '0 16px max(8px, env(safe-area-inset-bottom))' }}
     >
-      {/*
-       * Demo pill: flex items-center rounded-full border border-white/15 px-2 py-1 gap-0.5
-       * Gerçek (×1.56): px-3 py-1.5 gap-1
-       */}
-      <div
-        className="flex items-center rounded-full border border-white/15"
-        style={{
-          padding:              '6px 12px',
-          gap:                  4,
-          background:           'rgba(0,0,0,0.75)',
-          backdropFilter:       'blur(32px)',
-          WebkitBackdropFilter: 'blur(32px)',
-          boxShadow:            '0 8px 40px rgba(0,0,0,0.5)',
-        }}
-      >
+      <div className={`sk-dock${few ? ' sk-dock--few' : ''}`}>
         {tabs.map(tab => {
           const Icon     = tab.icon;
           const isActive = activeTab === tab.key || (!activeTab && tab.key === 'dashboard');
+          const label    = TAB_LABELS[tab.key] ?? tab.key;
+          const showBadge = tab.badge && unreadMessages > 0;
 
           return (
-            /* Demo: relative flex items-center justify-center — NO labels */
             <button
               key={tab.key}
               onClick={() => handleNav(tab.key)}
-              className="relative flex items-center justify-center transition-all active:scale-90"
+              className={`sk-dock__item${isActive ? ' sk-dock__item--on' : ''}`}
+              style={skVars(tab.color)}
+              aria-label={label}
+              aria-current={isActive ? 'page' : undefined}
             >
-              {isActive ? (
-                /*
-                 * Demo active: motion.div w-7 h-7 (28px) rounded-full
-                 *   bg color+'22'  border color+'45'  shadow color+'40'
-                 *   icon w-3.5 h-3.5 (14px) strokeWidth 2.2
-                 * Gerçek (×1.56): 44px, icon 18px
-                 */
-                <motion.div
-                  layoutId="pill-nav-active"
-                  className="relative flex items-center justify-center rounded-full"
-                  style={{
-                    width:     44,
-                    height:    44,
-                    background: tab.color + '22',
-                    border:    `1px solid ${tab.color}45`,
-                    boxShadow: `0 0 10px ${tab.color}40`,
-                  }}
-                  transition={{ type: 'spring', damping: 22, stiffness: 280 }}
-                >
-                  <Icon
-                    style={{ width: 18, height: 18, color: tab.color }}
-                    strokeWidth={2.2}
+              {isActive && (
+                <>
+                  <motion.span
+                    layoutId="dock-light"
+                    className="sk-dock__light"
+                    transition={{ type: 'spring', damping: 24, stiffness: 300 }}
                   />
-                  {tab.badge && unreadMessages > 0 && (
-                    /* Demo: top-0.5 right-0.5 w-1.5 h-1.5 bg-rose-500 border-[#0a051e] */
-                    <span
-                      className="absolute rounded-full bg-rose-500 border border-[#0a051e] flex items-center justify-center"
-                      style={{ top: 2, right: 2, minWidth: 16, height: 16, padding: '0 4px', fontSize: 9, color: 'white', fontWeight: 900 }}
-                    >
-                      {unreadMessages > 99 ? '99+' : unreadMessages}
-                    </span>
-                  )}
-                </motion.div>
-              ) : (
-                /*
-                 * Demo inactive: div w-7 h-7 rounded-full
-                 *   icon w-3.5 h-3.5 text-gray-600 strokeWidth 1.8
-                 * Gerçek: 44px, icon 18px
-                 */
-                <div
-                  className="relative flex items-center justify-center rounded-full"
-                  style={{ width: 44, height: 44 }}
-                >
-                  <Icon
-                    className="text-gray-600"
-                    style={{ width: 18, height: 18 }}
-                    strokeWidth={1.8}
-                  />
-                  {tab.badge && unreadMessages > 0 && (
-                    <span
-                      className="absolute rounded-full bg-rose-500 border border-[#0a051e] flex items-center justify-center"
-                      style={{ top: 2, right: 2, minWidth: 16, height: 16, padding: '0 4px', fontSize: 9, color: 'white', fontWeight: 900 }}
-                    >
-                      {unreadMessages > 99 ? '99+' : unreadMessages}
-                    </span>
-                  )}
-                </div>
+                  <span className="sk-dock__glow" />
+                </>
+              )}
+              <Icon
+                className="sk-dock__icon"
+                style={{ width: 22, height: 22 }}
+                strokeWidth={isActive ? 2.2 : 1.9}
+              />
+              <span>{label}</span>
+              {showBadge && (
+                <span className="sk-dock__badge">
+                  {unreadMessages > 99 ? '99+' : unreadMessages}
+                </span>
               )}
             </button>
           );
